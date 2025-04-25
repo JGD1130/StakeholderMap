@@ -1,22 +1,19 @@
-body {
+html, body, #root {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  /* Remove or comment out overflow: hidden; */
+  /* overflow: hidden; */
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
 
-/* Add Mapbox map container styling */
 #map {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 100%;
+  height: 100%;
 }
+
 
