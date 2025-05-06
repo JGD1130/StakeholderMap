@@ -194,7 +194,7 @@ function InteractiveMap() {
         container: mapContainerRef.current,
         style: 'mapbox://styles/mapbox/streets-v11',
         // User's updated center
-        center: [-98.370524, 40.592469], // Use user's coordinates [Lon, Lat]
+        center: [-98.371421, 40.592469], // Use user's coordinates [Lon, Lat]
         zoom: 15.5, // User's zoom
         pitch: viewAngle, // Use initial state for pitch
         bearing: 0,
@@ -427,7 +427,7 @@ return (
       boxShadow: '0 1px 4px rgba(0,0,0,0.2)'
     }}>
       <img src={process.env.PUBLIC_URL + logoPath} alt="Mapfluence Logo" style={{ height: '90px', width: 'auto', marginRight: '12px' }} />
-      <span style={{ fontWeight: 'bold', fontSize: '48px', color: '#333' }}>Mapfluence</span>
+      <span style={{ fontWeight: 'bold', fontSize: '48px', color: '#ba3d04', fontFamily: 'Arial, Helvetica, sans-serif' }}>Mapfluence</span>
     </div>
 
     {/* 4. Control Panel and Legend Container (Top Left) - THIS MUST BE PRESENT */}
