@@ -1,67 +1,68 @@
-/* src/components/StakeholderMap.css */
-.custom-marker {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 2px solid white;
-    box-shadow: 0 0 4px rgba(0,0,0,0.4);
-    cursor: pointer;
-    box-sizing: border-box;
-}
-
-/* Add background colors based on type */
-.custom-marker.marker-type-Favorite { background-color: #4CAF50; }
-.custom-marker.marker-type-Improvement { background-color: #FF9800; }
-.custom-marker.marker-type-Concern { background-color: #F44336; }
-.custom-marker.marker-type-Idea { background-color: #9E9E9E; }
-
-/* Styles for the logo/title overlay */
-.map-overlay-container {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 5; /* Below controls panel (z-index: 10) */
-    background-color: rgba(255, 255, 255, 0.8);
-    padding: 5px 10px;
-    border-radius: 5px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-}
-
-.map-logo {
-    /* Using the specific size from your CSS */
-    width: 30px;
-    height: 30px;
-    /* margin-right: 8px; <- Removed as gap property on container handles spacing */
-}
-
-.map-title {
-    font-family: Arial, sans-serif;
-    font-size: 18px;
-    font-weight: bold;
-    color: #333;
-}
 .mapboxgl-canvas {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-  }
-  
-  .mapboxgl-canvas-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-  }
-  
-  /* Ensure the map container doesn't block pointer events */
-  .mapboxgl-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    pointer-events: auto !important;
-  }
-/* DO NOT include .map-controls here - use inline styles in JS */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.custom-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 4px rgba(0,0,0,0.4);
+  cursor: pointer;
+}
+
+.mapboxgl-popup {
+  z-index: 100;
+}
+
+.mapboxgl-popup-content {
+  padding: 15px;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+}
+
+button {
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+button:hover {
+  background-color: #f0f0f0;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input, select {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+h3, h4 {
+  font-family: Arial, sans-serif;
+}
+
+h3 {
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+
+h4 {
+  font-size: 16px;
+  margin-top: 0;
+}

@@ -1,0 +1,850 @@
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import mapboxgl from 'mapbox-gl';
+import { saveAs } from 'file-saver';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import './StakeholderMap.css';
+
+// Token
+mapboxgl.accessToken = 'pk.eyJ1IjoiamFjazExMzAiLCJhIjoiY205Y3kwbHJuMHBjczJrb2R6Mm44NmFkYSJ9.ZR3q-IyOfNZEjB3MKqWQTw';
+
+// Logo paths
+const clarkLogoPath = '/data/input_file_0.png'; // Clark and Enersen logo
+const hcLogoPath = '/data/HC_image.png'; // Hastings College Logo
+
+// Main Component - RENAMED to StakeholderMap as requested
+function StakeholderMap({ config, mode = "public" }) {
+  // --- State & Refs ---
+  const [markers, setMarkers] = useState([]);
+  const [showMarkers, setShowMarkers] = useState(true);
+  const [viewAngle, setViewAngle] = useState(30);
+  const [showInstructions, setShowInstructions] = useState(true);
+  const [exportLoading, setExportLoading] = useState(false);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const mapboxMarkersRef = useRef(new Map());
+  const [mapIsLoaded, setMapIsLoaded] = useState(false);
+
+  // --- State for Pathways ---
+  const [drawingMode, setDrawingMode] = useState('marker');
+  const [currentPathCoordinates, setCurrentPathCoordinates] = useState([]);
+  const [paths, setPaths] = useState([
+    {
+      id: "path-1",
+      coordinates: [[-98.371132, 40.593874], [-98.372132, 40.594874]],
+      type: "Preferred Route",
+    },
+  ]);
+  const [showPaths, setShowPaths] = useState(true);
+  const [pathType, setPathType] = useState('Preferred Route');
+  const [layersInitialized, setLayersInitialized] = useState(false);
+
+  // Determine admin view based on prop
+  const isAdminView = mode === 'admin';
+
+  // --- Memoized ---
+  // Marker colors configuration
+  const markerColors = useMemo(() => ({
+    'This is my favorite spot': '#006400',
+    'I meet friends here': '#008000',
+    'I study here': '#9ACD32',
+    'I feel safe here': '#20B2AA',
+    'This place is too busy': '#FFFF00',
+    'This place needs improvement': '#FF9800',
+    'I don\'t feel safe here': '#F44336',
+    'Just leave a comment': '#9E9E9E'
+  }), []);
+
+  // Path type colors
+  const pathColors = useMemo(() => ({
+    'Preferred Route': '#008000', // Green
+    'Avoided Route': '#FF0000',   // Red
+    'Comment': '#888888'          // Gray
+  }), []);
+
+  // --- Callbacks ---
+  const addMarkerToState = useCallback((coordinates, comment, type) => {
+    const newMarker = { coordinates, comment, type, id: `marker-${Date.now()}-${Math.random()}` };
+    setMarkers(prev => [...prev, newMarker]);
+  }, []);
+
+  const createMarkerElement = useCallback((markerData) => {
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.style.width = '18px'; 
+    el.style.height = '18px'; 
+    el.style.borderRadius = '50%';
+    el.style.border = '2px solid white'; 
+    el.style.boxShadow = '0 0 4px rgba(0,0,0,0.4)';
+    el.style.cursor = 'pointer'; 
+    el.style.boxSizing = 'border-box';
+    el.style.backgroundColor = markerColors[markerData.type] || markerColors['Just leave a comment'];
+    return el;
+  }, [markerColors]);
+
+  const createPopupHTML = useCallback((type, comment) => {
+    const color = markerColors[type] || markerColors['Just leave a comment'];
+    const safeComment = comment ? comment.replace(/</g, "&lt;").replace(/>/g, "&gt;") : '';
+    return `<div style="max-width: 180px; padding: 6px 8px; font-family: Arial, sans-serif; font-size: 12px; line-height: 1.3;"><strong style="color: ${color}; display: block; margin-bottom: 3px; text-transform: uppercase; font-size: 10px; font-weight: bold;">${type}</strong>${safeComment ? `<p style="margin: 0; word-wrap: break-word;">${safeComment}</p>` : ''}</div>`;
+  }, [markerColors]);
+
+  const showMarkerPopup = useCallback((lngLat) => {
+    const map = mapRef.current; 
+    if (!map) return;
+    
+    document.querySelectorAll('.mapboxgl-popup').forEach(p => { 
+      if (p.getElement().querySelector('#confirm-marker')) { 
+        p.remove(); 
+      } 
+    });
+    
+    const popupNode = document.createElement('div');
+    popupNode.style.cssText = `width: 250px; padding: 6px; font-family: Arial, sans-serif; background-color: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); box-sizing: border-box;`;
+    
+    const optionsHTML = Object.keys(markerColors).map(type => 
+      `<option value="${type}">${type}</option>`
+    ).join('');
+    
+    popupNode.innerHTML = `
+      <h3 style="margin: 0 0 5px 0; font-size: 13px; color: #333; font-weight: bold;">How do you use or feel about this place?</h3> 
+      <div style="margin-bottom: 5px;"> 
+        <select id="marker-type" title="Category" style="width: 100%; padding: 4px 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box; appearance: menulist;"> 
+          ${optionsHTML} 
+        </select> 
+      </div> 
+      <div id="comment-container" style="margin-bottom: 8px; display: none;"> 
+        <textarea id="marker-comment" placeholder="Add your comment" style="width: 100%; min-height: 60px; padding: 4px 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box; resize: vertical;"></textarea> 
+      </div> 
+      <div style="display: flex; gap: 6px;"> 
+        <button id="confirm-marker" style="flex: 1; padding: 6px 0; border: none; border-radius: 3px; background-color: #4CAF50; color: white; cursor: pointer; font-size: 12px;">Add</button> 
+        <button id="cancel-marker" style="flex: 1; padding: 6px 0; border: none; border-radius: 3px; background-color: #f5f5f5; color: #333; cursor: pointer; font-size: 12px;">Cancel</button> 
+      </div>
+    `;
+    
+    const popup = new mapboxgl.Popup({ 
+      closeButton: true, 
+      closeOnClick: false, 
+      offset: 15, 
+      maxWidth: '260px', 
+      focusAfterOpen: false 
+    }).setDOMContent(popupNode).setLngLat(lngLat).addTo(map);
+    
+    const confirmBtn = popupNode.querySelector('#confirm-marker');
+    const cancelBtn = popupNode.querySelector('#cancel-marker');
+    const typeSelect = popupNode.querySelector('#marker-type');
+    const commentText = popupNode.querySelector('#marker-comment');
+    const commentContainer = popupNode.querySelector('#comment-container');
+    
+    typeSelect.value = Object.keys(markerColors)[0];
+    
+    const toggleCommentVisibility = () => { 
+      commentContainer.style.display = typeSelect.value === 'Just leave a comment' ? 'block' : 'none'; 
+    };
+    
+    toggleCommentVisibility(); 
+    typeSelect.addEventListener('change', toggleCommentVisibility);
+    
+    const handleSubmit = () => { 
+      const selectedType = typeSelect.value; 
+      const comment = selectedType === 'Just leave a comment' ? commentText.value.trim() : ''; 
+      addMarkerToState(lngLat.toArray(), comment, selectedType); 
+      popup.remove(); 
+    };
+    
+    const handleCancel = () => { 
+      popup.remove(); 
+    };
+    
+    confirmBtn.addEventListener('click', handleSubmit); 
+    cancelBtn.addEventListener('click', handleCancel);
+    
+    popup.on('close', () => { 
+      confirmBtn.removeEventListener('click', handleSubmit); 
+      cancelBtn.removeEventListener('click', handleCancel); 
+      typeSelect.removeEventListener('change', toggleCommentVisibility); 
+    });
+  }, [markerColors, addMarkerToState]);
+
+  const finalizeCurrentPath = useCallback(() => {
+    if (currentPathCoordinates.length < 2) { 
+      console.log("PATH_FINALIZE: Not enough points (< 2), discarding."); 
+      setCurrentPathCoordinates([]); 
+      return; 
+    }
+    
+    // Save path with current path type
+    const newPath = { 
+      id: `path-${Date.now()}-${Math.random()}`, 
+      coordinates: [...currentPathCoordinates], 
+      type: pathType 
+    };
+    
+    setPaths(prevPaths => [...prevPaths, newPath]);
+    setCurrentPathCoordinates([]);
+  }, [currentPathCoordinates, pathType]);
+
+  const handleMapClick = useCallback((e) => {
+    let interceptedByDrawControlOrFeature = false;
+    if (mapRef.current) {
+      const bbox = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
+      const features = mapRef.current.queryRenderedFeatures(bbox, { layers: [] });
+      const clickedOnControl = e.originalEvent.target.closest('.mapboxgl-ctrl-group');
+
+      if (clickedOnControl || features.length > 0) {
+        console.log("Map click intercepted by control/feature.");
+        interceptedByDrawControlOrFeature = true;
+        return;
+      }
+    }
+
+    if (!interceptedByDrawControlOrFeature) {
+      if (drawingMode === 'marker') {
+        console.log("Map click in marker mode, showing marker popup.");
+        showMarkerPopup(e.lngLat);
+      } else if (drawingMode === 'path') {
+        console.log("Map click in path mode, adding coordinate.");
+        setCurrentPathCoordinates(prevCoords => [...prevCoords, e.lngLat.toArray()]);
+      }
+    }
+  }, [drawingMode, showMarkerPopup]);
+
+  // --- Effects ---
+
+  // Effect 1: Initialize Map
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    const mapInstance = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v11',
+      center: config?.initialCenter || [-98.371132, 40.593874],
+      zoom: config?.initialZoom || 15.5,
+      pitch: viewAngle,
+      antialias: true,
+    });
+
+    mapRef.current = mapInstance;
+
+    mapInstance.on('load', () => {
+      console.log("Map fully loaded.");
+      setMapIsLoaded(true);
+    });
+
+    mapInstance.on('error', (e) => {
+      console.error("Mapbox error:", e.error?.message || e);
+    });
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, [config, viewAngle]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      console.log("Map is not ready for style operations.");
+      return;
+    }
+
+    console.log("Map style is ready:", map.getStyle());
+  }, [mapIsLoaded]);
+
+  // Effect 2: Synchronize Mapbox Markers with React State
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      console.log("Map is not ready for marker synchronization.");
+      return;
+    }
+
+    const currentMapboxMarkerIds = new Set(mapboxMarkersRef.current.keys());
+    const reactMarkerIds = new Set(markers.map((m) => m.id));
+
+    // Add new markers
+    markers.forEach((markerData) => {
+      if (!currentMapboxMarkerIds.has(markerData.id)) {
+        const el = createMarkerElement(markerData);
+        const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
+          .setHTML(createPopupHTML(markerData.type, markerData.comment));
+
+        const newMapboxMarker = new mapboxgl.Marker({ element: el })
+          .setLngLat(markerData.coordinates)
+          .setPopup(popup)
+          .addTo(map);
+
+        mapboxMarkersRef.current.set(markerData.id, newMapboxMarker);
+      }
+    });
+
+    // Remove markers that are no longer in React state
+    mapboxMarkersRef.current.forEach((markerInstance, id) => {
+      if (!reactMarkerIds.has(id)) {
+        markerInstance.remove();
+        mapboxMarkersRef.current.delete(id);
+      }
+    });
+
+    // Update marker visibility
+    mapboxMarkersRef.current.forEach((markerInstance) => {
+      const element = markerInstance.getElement();
+      if (element) {
+        element.style.display = showMarkers ? "block" : "none";
+      }
+    });
+  }, [markers, showMarkers, createMarkerElement, createPopupHTML]);
+
+  // Effect 3: Handle View Angle Changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map) {
+      map.easeTo({ pitch: viewAngle, duration: 500 });
+    }
+  }, [viewAngle]);
+
+  // Effect 4: Display the path currently being drawn
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    
+    const sourceId = 'drawing-path-source';
+    const layerId = 'drawing-path-layer';
+    const verticesLayerId = layerId + '-vertices';
+    
+    const geojsonData = {
+      type: 'FeatureCollection',
+      features: currentPathCoordinates.length >= 1 ? [
+        {
+          type: 'Feature',
+          geometry: {
+            type: currentPathCoordinates.length === 1 ? 'Point' : 'LineString',
+            coordinates: currentPathCoordinates.length === 1 ? 
+              currentPathCoordinates[0] : currentPathCoordinates
+          }
+        }
+      ] : []
+    };
+    
+    const targetVisibility = showPaths ? 'visible' : 'none';
+    let source = map.getSource(sourceId);
+    
+    if (!source) {
+      try {
+        map.addSource(sourceId, { type: 'geojson', data: geojsonData });
+        
+        map.addLayer({
+          id: layerId,
+          type: 'line',
+          source: sourceId,
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+            'visibility': targetVisibility
+          },
+          paint: {
+            'line-color': pathColors[pathType],
+            'line-width': 2,
+            'line-dasharray': [2, 2]
+          },
+          filter: ['==', '$type', 'LineString']
+        });
+        
+        map.addLayer({
+          id: verticesLayerId,
+          type: 'circle',
+          source: sourceId,
+          layout: {
+            'visibility': targetVisibility
+          },
+          paint: {
+            'circle-radius': 4,
+            'circle-color': pathColors[pathType]
+          }
+        });
+      } catch (e) {
+        console.error("Error creating drawing path layers:", e);
+      }
+    } else {
+      try {
+        source.setData(geojsonData);
+        
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', targetVisibility);
+          map.setPaintProperty(layerId, 'line-color', pathColors[pathType]);
+        }
+        
+        if (map.getLayer(verticesLayerId)) {
+          map.setLayoutProperty(verticesLayerId, 'visibility', targetVisibility);
+          map.setPaintProperty(verticesLayerId, 'circle-color', pathColors[pathType]);
+        }
+      } catch (e) {
+        console.error("Error updating drawing path:", e);
+      }
+    }
+  }, [currentPathCoordinates, showPaths, pathType, pathColors]);
+
+  // --- Pathway Sync Effect START ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      console.log("Map is not ready for pathway synchronization.");
+      return;
+    }
+
+    const sourceId = 'saved-pathways-data';
+    const layerIdPrefix = 'saved-pathway-layer';
+
+    const pathwayFeatures = paths.map((path) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: path.coordinates,
+      },
+      properties: {
+        pathwayType: path.type,
+        id: path.id,
+      },
+    }));
+
+    const geojsonData = {
+      type: 'FeatureCollection',
+      features: pathwayFeatures,
+    };
+
+    if (map.getSource(sourceId)) {
+      map.getSource(sourceId).setData(geojsonData);
+    } else {
+      map.addSource(sourceId, { type: 'geojson', data: geojsonData });
+    }
+
+    Object.entries(pathColors).forEach(([type, color]) => {
+      const layerId = `${layerIdPrefix}-${type}`;
+      if (!map.getLayer(layerId)) {
+        map.addLayer({
+          id: layerId,
+          type: 'line',
+          source: sourceId,
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+            visibility: showPaths ? 'visible' : 'none',
+          },
+          paint: {
+            'line-color': color,
+            'line-width': 2,
+          },
+          filter: ['==', ['get', 'pathwayType'], type],
+        });
+      } else {
+        map.setLayoutProperty(layerId, 'visibility', showPaths ? 'visible' : 'none');
+      }
+    });
+  }, [paths, showPaths, pathColors]);
+  // --- Pathway Sync Effect END ---
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      console.log("Map is not ready for adding the campus boundary.");
+      return;
+    }
+
+    const boundaryPath = config?.boundary || '/data/Hastings_College_Boundary.geojson';
+    console.log("Loading boundary from:", boundaryPath);
+
+    if (!map.getSource('campus-boundary')) {
+      map.addSource('campus-boundary', {
+        type: 'geojson',
+        data: process.env.PUBLIC_URL + boundaryPath,
+      });
+
+      map.addLayer({
+        id: 'campus-boundary-fill',
+        type: 'fill',
+        source: 'campus-boundary',
+        paint: {
+          'fill-color': 'rgba(0, 128, 255, 0.2)',
+          'fill-outline-color': '#0077cc',
+        },
+      });
+    }
+  }, [config]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      console.log("Map is not ready for adding building footprints.");
+      return;
+    }
+
+    const buildingsPath = config?.buildings || '/data/Hastings_College_Buildings.geojson';
+    console.log("Loading buildings from:", buildingsPath);
+
+    if (!map.getSource('college-buildings')) {
+      map.addSource('college-buildings', {
+        type: 'geojson',
+        data: process.env.PUBLIC_URL + buildingsPath,
+      });
+
+      map.addLayer({
+        id: 'college-buildings-fill',
+        type: 'fill',
+        source: 'college-buildings',
+        paint: {
+          'fill-color': 'rgba(128, 0, 0, 0.3)',
+          'fill-outline-color': '#800000',
+        },
+      });
+    }
+  }, [config]);
+
+  useEffect(() => {
+    console.log("Current paths state:", paths);
+  }, [paths]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      console.log("Map is not ready.");
+      return;
+    }
+
+    console.log("Map sources:", map.getStyle().sources);
+    console.log("Map layers:", map.getStyle().layers);
+  }, [mapIsLoaded]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      console.log("Map instance is not available.");
+      return;
+    }
+
+    if (!map.isStyleLoaded()) {
+      console.log("Map style is not loaded yet.");
+      return;
+    }
+
+    console.log("Map style:", map.getStyle());
+  }, [mapIsLoaded]);
+
+  // --- UI Handlers ---
+  const toggleMarkers = useCallback(() => {
+    setShowMarkers(prev => !prev);
+  }, []);
+  
+  const togglePaths = useCallback(() => {
+    setShowPaths(prev => !prev);
+  }, []);
+  
+  const updateViewAngle = useCallback((angle) => {
+    setViewAngle(parseInt(angle, 10));
+  }, []);
+  
+  const exportToCSV = useCallback(() => {
+    if(markers.length === 0) {
+      alert('No marker data to export.');
+      return;
+    }
+    
+    setExportLoading(true);
+    
+    try {
+      const header = ['Type', 'Latitude', 'Longitude', 'Comment'];
+      const escapeCSV = value => {
+        const s = String(value ?? "");
+        return (s.includes(',')||s.includes('\n')||s.includes('"')) ? 
+          `"${s.replace(/"/g,'""')}"` : s;
+      };
+      
+      const rows = markers.map(m => [
+        escapeCSV(m.type),
+        m.coordinates[1],
+        m.coordinates[0],
+        escapeCSV(m.comment)
+      ].join(','));
+      
+      const csvContent = [header.join(','), ...rows].join('\n');
+      let blob;
+      
+      try {
+        blob = new Blob([csvContent], {type: 'text/csv;charset=utf-8;'});
+      } catch(blobError) {
+        console.error('CSV Export Blob Error:', blobError);
+        alert(`Blob Error: ${blobError.message || blobError}`);
+        setExportLoading(false);
+        return;
+      }
+      
+      saveAs(blob, `map-markers-${new Date().toISOString().split('T')[0]}.csv`);
+    } catch(error) {
+      console.error('CSV Export Error:', error);
+      alert(`Export Error: ${error.message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  }, [markers]);
+
+  const clearMarkers = useCallback(() => {
+    if (!isAdminView) {
+      alert("Admin privileges required.");
+      return;
+    }
+    
+    if (markers.length === 0) {
+      alert("No markers to clear.");
+      return;
+    }
+    
+    if (window.confirm(`Delete all ${markers.length} markers? This cannot be undone.`)) {
+      setMarkers([]);
+    }
+  }, [isAdminView, markers]);
+
+  // --- Render Function ---
+  return (
+    <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
+      {/* Map Container */}
+      <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
+
+      {/* Combined Mapfluence and Clark & Enersen Logo Box (Top Right) */}
+      <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '15px', backgroundColor: 'rgba(255, 255, 255, 0.8)', borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', width: '250px' }}>
+        {/* Mapfluence Text - Reduced font size to match logo */}
+        <span style={{ fontWeight: 'bold', fontSize: '24px', color: '#ba3d04', fontFamily: 'Arial, sans-serif', marginBottom: '15px' }}>Mapfluence</span>
+        
+        {/* Clark and Enersen Logo */}
+        <img src={process.env.PUBLIC_URL + clarkLogoPath} alt="Clark and Enersen Logo" style={{ height: '90px', width: 'auto' }} />
+      </div>
+      
+      {/* Hastings College Logo (Below Mapfluence box) */}
+      <div style={{ position: 'absolute', top: 'calc(10px + 110px + 20px)', right: '10px', zIndex: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <img src={process.env.PUBLIC_URL + (config?.logo || hcLogoPath)} alt={`${config?.name || 'College'} Logo`}
+          style={{
+              height: '110px',
+              width: 'auto',
+              backgroundColor: 'rgba(255, 255, 255, 0.85)',
+              padding: '5px',
+              borderRadius: '4px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.15)'
+          }} />
+      </div>
+
+      {/* Control Panel and Legend Container (Top Left) */}
+      <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 20, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
+
+        {/* Map Controls Panel */}
+        <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: '12px', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', width: '240px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', borderBottom: '1px solid #eee', paddingBottom: '6px', fontWeight:'bold' }}>Map Controls</h3>
+
+          {/* Mode Switching Buttons */}
+          <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <button 
+              onClick={() => setDrawingMode('marker')} 
+              disabled={drawingMode === 'marker'} 
+              title="Click map to add point markers" 
+              style={{ 
+                padding: '5px 8px', 
+                fontSize: '12px', 
+                cursor: 'pointer', 
+                borderRadius: '4px', 
+                border: '1px solid #ccc', 
+                flex: 1, 
+                backgroundColor: drawingMode === 'marker' ? '#c8e6c9' : '#fff', 
+                fontWeight: drawingMode === 'marker' ? 'bold' : 'normal' 
+              }}
+            > 
+              Add Marker 
+            </button>
+            <button 
+              onClick={() => setDrawingMode('path')} 
+              disabled={drawingMode === 'path'} // Fixed syntax error
+              title="Click map points to draw a path, double-click to finish" 
+              style={{ 
+                padding: '5px 8px', 
+                fontSize: '12px', 
+                cursor: 'pointer', 
+                borderRadius: '4px', 
+                border: '1px solid #ccc', 
+                flex: 1, 
+                backgroundColor: drawingMode === 'path' ? '#c8e6c9' : '#fff', 
+                fontWeight: drawingMode === 'path' ? 'bold' : 'normal' 
+              }}
+            > 
+              Draw Path 
+            </button>
+          </div>
+
+          {/* Path Type Selector */}
+          <div style={{ marginBottom: '5px' }}>
+            <label htmlFor="pathTypeSelector" style={{ display: 'block', marginBottom: '3px', fontSize: '12px', color: '#555' }}>Path Type:</label>
+            <select
+              id="pathTypeSelector"
+              value={pathType}
+              onChange={(e) => setPathType(e.target.value)}
+              style={{ width: '100%', padding: '5px', fontSize: '12px', border: '1px solid #ccc', borderRadius: '3px' }}
+            >
+              <option value="Preferred Route">Preferred Route</option>
+              <option value="Avoided Route">Avoided Route</option>
+              <option value="Comment">Comment</option>
+            </select>
+          </div>
+
+          {/* Toggle Markers Button */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <button 
+              onClick={toggleMarkers} 
+              style={{ 
+                padding: '6px', 
+                fontSize: '12px', 
+                cursor: 'pointer', 
+                borderRadius: '4px', 
+                border: '1px solid #ccc', 
+                backgroundColor: showMarkers ? '#e7f4e8' : '#fdecea', 
+                color: showMarkers ? '#2e7d32' : '#c62828' 
+              }}
+            > 
+              {showMarkers ? 'Hide' : 'Show'} Markers ({markers.length}) 
+            </button>
+          </div>
+
+          {/* Toggle Paths Button */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <button 
+              onClick={togglePaths} 
+              style={{ 
+                padding: '6px', 
+                fontSize: '12px', 
+                cursor: 'pointer', 
+                borderRadius: '4px', 
+                border: '1px solid #ccc', 
+                backgroundColor: showPaths ? '#e7f4e8' : '#fdecea', 
+                color: showPaths ? '#2e7d32' : '#c62828' 
+              }}
+            > 
+              {showPaths ? 'Hide' : 'Show'} Paths ({paths.length}) 
+            </button>
+          </div>
+
+          {/* View Angle Slider */}
+          <div>
+            <label htmlFor="viewAngleSlider" style={{ display: 'block', marginBottom: '3px', fontSize: '12px', color: '#555' }}>View Angle: {viewAngle}°</label>
+            <input 
+              id="viewAngleSlider" 
+              type="range" 
+              min="0" 
+              max="60" 
+              value={viewAngle} 
+              onChange={(e) => updateViewAngle(e.target.value)} 
+              style={{ width: '100%', cursor: 'pointer', height: '6px' }} 
+            />
+          </div>
+
+          {/* Export and Clear Buttons */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={exportToCSV} 
+              disabled={exportLoading || markers.length === 0} 
+              style={{ 
+                padding: '8px', 
+                fontSize: '13px', 
+                cursor: (exportLoading || markers.length === 0) ? 'not-allowed' : 'pointer', 
+                backgroundColor: (exportLoading || markers.length === 0) ? '#f5f5f5' : '#2196F3', 
+                color: (exportLoading || markers.length === 0) ? '#aaa' : 'white', 
+                border: 'none', 
+                borderRadius: '4px', 
+                flex: '1' 
+              }}
+            > 
+              {exportLoading ? 'Exporting...' : 'Export Data'} 
+            </button>
+            
+            {isAdminView && (
+              <button 
+                onClick={clearMarkers} 
+                disabled={markers.length === 0} 
+                title={"Clear all markers"} 
+                style={{ 
+                  padding: '8px', 
+                  fontSize: '13px', 
+                  cursor: markers.length === 0 ? 'not-allowed' : 'pointer', 
+                  backgroundColor: markers.length === 0 ? '#f5f5f5' : '#F44336', 
+                  color: markers.length === 0 ? '#aaa' : 'white', 
+                  border: 'none', 
+                  borderRadius: '4px', 
+                  flex: '1' 
+                }}
+              > 
+                Clear All 
+              </button>
+            )}
+          </div>
+
+          {/* Instructions */}
+          {showInstructions && (
+            <div style={{ padding: '12px', border: '1px solid #eee', borderRadius: '4px', width: '100%', marginTop: '10px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>How to Use</h3>
+                <button 
+                  onClick={() => setShowInstructions(false)} 
+                  title="Hide Instructions" 
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', lineHeight: '1', padding: '0 4px', color: '#666' }}
+                >
+                  ×
+                </button>
+              </div>
+              <ol style={{ margin: '0', paddingLeft: '18px', fontSize: '12px', color: '#333', listStylePosition: 'outside' }}>
+                <li style={{ marginBottom: '6px' }}>Select 'Add Marker' or 'Draw Path' mode.</li>
+                <li style={{ marginBottom: '6px' }}>Click on the map to place points.</li>
+                <li style={{ marginBottom: '6px' }}>Follow prompts for marker details.</li>
+                <li style={{ marginBottom: '6px' }}>Path drawing: Click points, then **double-click** to finish.</li>
+                <li>Use controls to hide/show markers/paths, change view angle, etc.</li>
+              </ol>
+            </div>
+          )}
+        </div>
+
+        {/* Legend Box */}
+        <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: '12px', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', width: '240px', maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', borderBottom: '1px solid #eee', paddingBottom: '6px', fontWeight: 'bold' }}>Legend</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Marker Legend Items */}
+            {Object.entries(markerColors).map(([type, color]) => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: color, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: '#333', flexGrow: 1 }}>{type}</span>
+              </div>
+            ))}
+            
+            {/* Path Legend Items */}
+            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee' }}>
+              <p style={{ fontSize: '13px', margin: '0 0 5px 0', fontWeight: 'bold' }}>Path Types:</p>
+              {Object.entries(pathColors).map(([type, color]) => (
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
+                  <div style={{ width: '20px', height: '3px', backgroundColor: color, flexShrink: 0 }} />
+                  <span style={{ fontSize: '12px', color: '#333', flexGrow: 1 }}>{type}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Define defaultProps
+StakeholderMap.defaultProps = {
+  config: {
+    initialCenter: [-98.371132, 40.593874], // Default center
+    initialZoom: 15.5,
+    logo: hcLogoPath,
+    name: 'Hastings College',
+    boundary: '/data/Hastings_College_Boundary.geojson',
+    buildings: '/data/Hastings_College_Buildings.geojson'
+  },
+  mode: 'public'
+};
+
+// Export the component
+export default StakeholderMap;

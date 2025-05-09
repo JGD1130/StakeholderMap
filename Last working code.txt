@@ -204,7 +204,6 @@ useEffect(() => {
         }
         
         if (fullBuildingsUrl) {
-          
           currentMap.addSource("college-buildings", { 
               type: "geojson", 
               data: fullBuildingsUrl,
@@ -381,7 +380,7 @@ useEffect(() => {
           map.addLayer({ 
             id: layerId, type: 'line', source: sourceId, 
             layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility }, 
-            paint: { 'line-color': drawingPathColor, 'line-width': 2, 'line-dasharray': [2, 2] }, 
+            paint: { 'line-color': drawingPathColor, 'line-width': 3, 'line-dasharray': [2, 2] }, 
             filter: ['==', '$type', 'LineString'] 
           });
           map.addLayer({ 
@@ -407,7 +406,7 @@ useEffect(() => {
               map.addLayer({ 
                   id: layerId, type: 'line', source: sourceId, 
                   layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility }, 
-                  paint: { 'line-color': drawingPathColor, 'line-width': 2, 'line-dasharray': [2, 2] }, 
+                  paint: { 'line-color': drawingPathColor, 'line-width': 3, 'line-dasharray': [2, 2] }, 
                   filter: ['==', '$type', 'LineString'] 
               });
           }
@@ -550,7 +549,7 @@ useEffect(() => {
         map.addLayer({
           id: layerId, type: 'line', source: sourceId,
           layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility },
-          paint: { 'line-color': lineColorExpression, 'line-width': 2, 'line-opacity': 0.8 }
+          paint: { 'line-color': lineColorExpression, 'line-width': 4, 'line-opacity': 0.8 }
         });
         console.log(`EFFECT 8 (Non-Aggressive): Added layer '${layerId}' with visibility ${targetVisibility}`);
     } catch (e) {
@@ -689,11 +688,11 @@ useEffect(() => {
       <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
         <div style={{ padding: '10px 15px', backgroundColor: 'rgba(255, 255, 255, 0.8)', borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', textAlign: 'center' }}>
-          <span style={{ fontWeight: 'bold', fontSize: '32px', color: '#ba3d04', fontFamily: 'Arial, sans-serif', display: 'block', marginBottom: '5px' }}>Mapfluence</span>
+          <span style={{ fontWeight: 'bold', fontSize: '28px', color: '#ba3d04', fontFamily: 'Arial, sans-serif', display: 'block', marginBottom: '5px' }}>Mapfluence</span>
           <img src={process.env.PUBLIC_URL + ceLogoPath} alt="Clark & Enersen Logo" style={{ height: '100px', width: 'auto' }} />
         </div>
         <div style={{ padding: '10px', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <img src={process.env.PUBLIC_URL + (config.logo || hcLogoPath)} alt={`${config.name || 'College'} Logo`} style={{ height: '190px', width: 'auto' }} />
+          <img src={process.env.PUBLIC_URL + (config.logo || hcLogoPath)} alt={`${config.name || 'College'} Logo`} style={{ height: '150px', width: 'auto' }} />
         </div>
       </div>
       <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 20, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
