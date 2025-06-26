@@ -1,22 +1,29 @@
-// Import Firebase modules
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAnalytics } from "firebase/analytics";
+import { getAuth } from "firebase/auth";
+import { getFunctions } from "firebase/functions";
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDqdNAi8z3vx8TJcbVwUN37GJtt4vGH_Cs",
-  authDomain: "stakeholder-map-a4bdc.firebaseapp.com",
-  projectId: "stakeholder-map-a4bdc",
-  storageBucket: "stakeholder-map-a4bdc.firebasestorage.app",
-  messagingSenderId: "201968932417",
-  appId: "1:201968932417:web:c6053a304f5dc5f2ffd8c0",
-  measurementId: "G-BEB17GFMBJ"
+  apiKey: process.env.REACT_APP_API_KEY,
+  authDomain: process.env.REACT_APP_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_APP_ID,
+  measurementId: process.env.REACT_APP_MEASUREMENT_ID
 };
 
-// Initialize Firebase
+// Initialize Firebase and all its services
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app); // Initialize Firestore
-const analytics = getAnalytics(app); // Initialize Analytics
+const db = getFirestore(app);
+const auth = getAuth(app);
+const functions = getFunctions(app);
 
-export { app, db, analytics }; // Export Firebase services
+// THIS IS THE KEY: If we are on localhost, connect to the emulators.
+if (window.location.hostname === "localhost") {
+  console.log("Connecting to local Firebase emulators.");
+  //connectAuthEmulator(auth, "http://localhost:9099");
+  //connectFunctionsEmulator(functions, "localhost", 5001);
+}
+
+export { db, auth, functions };

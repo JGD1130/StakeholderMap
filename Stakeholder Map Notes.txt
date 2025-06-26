@@ -10,7 +10,16 @@ Mapbox token = pk.eyJ1IjoiamFjazExMzAiLCJhIjoiY205Y3kwbHJuMHBjczJrb2R6Mm44NmFkYS
 
 Firebase API =
 
-Initiaize map extent coordinates
+InitMarketing/BD Committee Meeting
+Monday, Jun 161:30 PM–2:00 PMCDT1 other joined
+Your camera is turned off
+With camera off and
+
+Effects and avatars
+
+Computer microphone and speaker controls
+Computer audio
+iaize map extent coordinates
 	- Hastings College = -98.371164, 40.592958
 	- NU = -96.687272, 40.823264
 	- Rockhurst U = -94.572384, 39.030789

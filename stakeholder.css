@@ -1,0 +1,162 @@
+/* Core Layout */
+.map-page-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+.map-container { width: 100%; height: 100%; }
+/* FIX: More reliable cursor fix */
+.mapboxgl-canvas-container.mapboxgl-interactive, .mapboxgl-canvas-container.mapboxgl-interactive .mapboxgl-canvas { cursor: pointer; }
+
+/* Right-Side Logo Panel */
+.logo-panel-right { position: absolute; top: 20px; right: 50px; display: flex; flex-direction: column; gap: 15px; z-index: 10; }
+.logo-image { background-color: rgba(255, 255, 255, 0.85); padding: 2px; border-radius: 5px; box-shadow: 0 3px 9px rgba(0,0,0,0.2); height: 120px; width: 200px; }
+
+/* This is the main container on the right side of the map */
+.logo-panel-right {
+  position: absolute;
+  top: 20px;
+  right: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* Space between the two logo boxes */
+  z-index: 10;
+}
+
+/* This styles EACH white box that contains a logo */
+.logo-box {
+  background-color: rgba(255, 255, 255, 0.9);
+  padding:4px;
+  border-radius: 7px;
+  box-shadow: 0 4px 9px rgba(0,0,0,0.2);
+  width: 200px; /* A fixed width for both boxes */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* This styles the "MAPFLUENCE" title */
+.mapfluence-title {
+  font-family: Arial Condensed, 'Arial Narrow', Arial, sans-serif; 
+  font-weight: 540; /* A standard, non-bold weight */
+  font-size: 28px; /* A prominent size */
+  color: #d23a02;  /* orange color */
+  text-transform: uppercase; /* ALL CAPS */
+  margin-bottom: 3px; /* Space between the title and the logo below it */
+}
+
+/* This styles ALL images inside a logo box */
+.logo-box img {
+  width: 100%; /* Make the image fill the container */
+  height: auto;
+  display: block; /* Removes any extra space below the image */
+}
+
+/* FIX: Help Panel moved to bottom right */
+.help-panel {
+  position: absolute; bottom: 20px; right: 20px; width: 250px; background-color: white;
+  padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  z-index: 10; border-left: 5px solid #007bff;
+}
+.help-panel h4 { margin-top: 0; }
+.help-panel ul { padding-left: 20px; margin-bottom: 15px; font-size: 0.9em; }
+.help-panel .close-button { position: absolute; top: 5px; right: 10px; background: none; border: none; font-size: 1.5em; cursor: pointer; color: #888; }
+.help-panel .close-button-main { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background-color: #eee; cursor: pointer; }
+
+/* Left-Side Main Control Panel */
+.map-controls-panel {
+  position: absolute; top: 20px; left: 20px; width: 280px; background-color: #f9f9f9;
+  border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); font-family: sans-serif;
+  z-index: 10; padding: 15px; display: flex; flex-direction: column; gap: 12px;
+}
+.mode-selector { display: flex; width: 100%; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
+.mode-selector button { flex: 1; padding: 10px; background-color: #fff; border: none; cursor: pointer; font-size: 0.9em; font-weight: 500; transition: background-color 0.2s; }
+.mode-selector button:first-child { border-right: 1px solid #ccc; }
+.mode-selector button:hover { background-color: #f0f0f0; }
+.mode-selector button.active { background-color: #d4edda; color: #155724; font-weight: bold; }
+.control-section { display: flex; gap: 10px; flex-direction: column; }
+.control-section .button-row { display: flex; gap: 10px; }
+.control-section .button-row button { flex: 1; }
+.control-section select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+.admin-controls { flex-wrap: wrap; }
+.admin-controls button { flex-basis: calc(50% - 5px); background-color: #f8d7da; border-color: #f5c6cb; }
+
+/* Legend Styling */
+.legend { display: flex; flex-direction: column; border: 1px solid #ddd; padding: 10px; border-radius: 6px; }
+.legend h4 { margin: 0 0 10px 0; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+.legend-section { margin-bottom: 10px; }
+.legend-section:last-child { margin-bottom: 0; }
+.legend-section h5 { margin: 0 0 8px 0; font-size: 0.9em; color: #555; }
+.legend-item { display: flex; align-items: center; margin-bottom: 5px; font-size: 0.85em; }
+.legend-color-box { width: 16px; height: 16px; margin-right: 8px; flex-shrink: 0; border: 1px solid #eee; }
+
+/* --- Step 1: Control the OUTER Mapbox Box (Width is good) --- */
+.mapboxgl-popup-content {
+  padding: 0; 
+  width: 300px;
+  border-radius: 8px;
+}
+
+/* --- Step 2: Style OUR INNER Content Box with reduced vertical space --- */
+.marker-prompt-popup {
+  box-sizing: border-box;
+  padding: .5px 7px; /* Reduced top/bottom padding */
+  display: flex;
+  flex-direction: column;
+  gap: 4px; /* Reduced gap between elements */
+}
+
+/* --- Step 3: Make the Elements Inside shorter --- */
+.marker-prompt-popup h4 {
+  margin: 0 0 5px 0; /* Reduced bottom margin */
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.marker-prompt-popup select, 
+.marker-prompt-popup textarea {
+  width: 100%;
+  padding: 6px 10px; /* Reduced vertical padding */
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box; 
+  font-size: 14px;
+  line-height: 1.3; /* Tighter line height */
+}
+
+.marker-prompt-popup textarea {
+  min-height: 45px; /* Shorter text area */
+  resize: vertical;
+}
+
+.marker-prompt-popup .button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.marker-prompt-popup .button-group button {
+  flex-grow: 1;
+  padding: 8px; /* Shorter buttons */
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.marker-prompt-popup .button-group button#confirm-marker {
+  background-color: #4CAF50;
+  color: white;
+  border-color: #4CAF50;
+}
+
+.marker-prompt-popup .button-group button#cancel-marker {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+/* Custom Marker Styling */
+.custom-marker { width: 10px; height: 10px; border-radius: 50%; border: .5px solid white; box-shadow: 0 0 0 2px rgba(0,0,0,0.6); }
+
+/* Selected Building Panel Styling */
+.selected-building-panel { background-color: #e7f3ff; padding: 10px; border-radius: 6px; }
+.selected-building-panel h4 { margin: 0 0 5px 0; }
+.selected-building-panel p { margin: 0 0 10px 0; font-size: 0.8em; color: #555; }

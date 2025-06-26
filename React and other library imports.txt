@@ -1,0 +1,1318 @@
+// React and other library imports
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import mapboxgl from 'mapbox-gl';
+import { saveAs } from 'file-saver';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import './StakeholderMap.css';
+
+// Firestore imports
+import { db } from '../firebaseConfig';
+import {
+  doc,
+  setDoc,
+  getDocs,
+  collection, // Imported once
+  addDoc,     // Added here
+  deleteDoc,
+  writeBatch,
+  getDoc
+} from "firebase/firestore";
+
+
+// Token
+mapboxgl.accessToken = 'pk.eyJ1IjoiamFjazExMzAiLCJhIjoiY205Y3kwbHJuMHBjczJrb2R6Mm44NmFkYSJ9.ZR3q-IyOfNZEjB3MKqWQTw';
+
+const ceLogoPath = process.env.PUBLIC_URL + '/input_file_0.png'; // Added process.env.PUBLIC_URL
+const hcLogoPath = process.env.PUBLIC_URL + '/data/HC_image.png'; // Added process.env.PUBLIC_URL
+
+const defaultConfigValues = {
+    initialCenter: [-98.371132, 40.593874],
+    initialZoom: 15.5,
+    logo: hcLogoPath,
+    name: 'Hastings College',
+    boundary: '/data/Hastings_College_Boundary.geojson',
+    buildings: '/data/Hastings_College_Buildings.geojson',
+    initialPitch: 30,
+  }
+
+const BUILDING_ID_PROPERTY_NAME = 'id';
+const BUILDING_CONDITIONS = ['Excellent', 'Good', 'Fair', 'Poor'];
+const BUILDING_CONDITION_COLORS = {
+  Excellent: '#4CAF50', Good: '#8BC34A', Fair: '#FFEB3B',
+  Poor: '#F44336', Default: 'rgba(128, 0, 0, 0.3)', SelectedOutline: '#007cbf',
+};
+const DEFAULT_BUILDING_FILL_OPACITY = 0.5;
+const SELECTED_BUILDING_FILL_OPACITY = 0.7; // Changed from 1.0 to what we had before
+
+const StakeholderMap = ({ config: userConfig, mode = "public" }) => {
+   console.log("StakeholderMap RENDERED. Is userConfig prop same as last time? Inspect it ->", userConfig);
+   const firstUserConfigRef = useRef(userConfig); // This was for specific debug, can be removed if userConfig is stable
+   if (userConfig !== firstUserConfigRef.current && firstUserConfigRef.current !== undefined) { // Check if not initial render
+     console.error("ERROR: userConfig prop reference HAS CHANGED since first render!");
+   }
+  
+  const config = useMemo(() => {
+     console.log("%%%%% useMemo for 'config' RECALCULATING (this is the function inside useMemo) %%%%%"); 
+     return { ...defaultConfigValues, ...userConfig };
+  }, [userConfig]); 
+
+   console.log("Internal 'config' object after useMemo. Is it same as last time? Inspect it ->", config); 
+
+  // === useRef for DOM elements (don't depend on state for initialization) ===
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const mapboxMarkersRef = useRef(new Map());
+
+  // === useState hooks ===
+  
+  const [markers, setMarkers] = useState([]);
+  const [showMarkers, setShowMarkers] = useState(true);  
+  const [showInstructions, setShowInstructions] = useState(true);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [drawingMode, setDrawingMode] = useState('marker');
+  const [currentPathCoordinates, setCurrentPathCoordinates] = useState([]);
+  // --- CORRECTED ORDER ---
+  const [paths, setPaths] = useState([]);               // Declare paths state HERE
+  const [showPaths, setShowPaths] = useState(true);       // Declare showPaths state HERE
+  // -----------------------
+  const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [buildingConditions, setBuildingConditions] = useState({});
+  const [buildingFeaturesCache, setBuildingFeaturesCache] = useState({});
+    
+
+  // === useRef hooks that depend on state (MUST come AFTER state declaration) ===
+  const pathsRef = useRef(paths);       // Now 'paths' is defined
+  const showPathsRef = useRef(showPaths); // Now 'showPaths' is defined
+  // -----------------------------------------------------------------------
+  
+  // === useMemo hooks ===
+  
+  const pathOptions = useMemo(() => ({
+    'Preferred Route': { color: '#008000', name: 'Preferred Route' },
+    'Avoided Route': { color: '#F44336', name: 'Avoided Route' },
+  }), []);
+  const pathOptionsRef = useRef(pathOptions);
+  
+  const [currentPathDrawType, setCurrentPathDrawType] = useState(() => Object.keys(pathOptions)[0]); // Initialize after pathOptions
+  const renderCycleRef = useRef({ scheduled: false, listener: null });
+
+  const markerColors = useMemo(() => ({
+    'This is my favorite spot': '#006400', 'I meet friends here': '#008000',
+    'I study here': '#9ACD32', 'I feel safe here': '#20B2AA',
+    'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800',
+    'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E'
+  }), []);
+
+ const isAdminView = mode === 'admin';
+
+// === useEffects to keep refs synchronized ===
+useEffect(() => {
+  pathsRef.current = paths;
+}, [paths]);
+// ... (other ref sync useEffects) ...
+
+// === Functional useEffects ===
+// Effect 1: Initialize Map
+// ====================================================================
+useEffect(() => {
+  // Guard Clause: If the map instance already exists OR the container div isn't ready, do nothing.
+  // This prevents re-initialization and handles the race condition of the ref not being set yet.
+  if (mapRef.current || !mapContainerRef.current) {
+    return;
+  }
+
+  // If we proceed, it means the map doesn't exist yet AND the container is ready.
+  mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
+  
+  const map = new mapboxgl.Map({
+    container: mapContainerRef.current,
+    style: config.style,
+    center: [config.lng, config.lat],
+    zoom: config.zoom,
+    pitch: config.pitch,
+    bearing: config.bearing,
+  });
+
+  // Store the map instance in the ref for access in other hooks/functions
+  mapRef.current = map;
+
+  // Add standard map controls
+  map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  map.addControl(new mapboxgl.FullscreenControl());
+
+  // --- IMPORTANT ---
+  // This is the cleanup function. It runs when the component unmounts.
+  // It's crucial for preventing memory leaks.
+  return () => {
+    map.remove();
+    mapRef.current = null;
+  };
+
+}, [config]); // Dependency: Re-run only if the initial config object changes.
+
+// === useEffects to keep refs synchronized === // <<<< THIS SECTION NOW STARTS *AFTER* THE ABOVE useEffect
+useEffect(() => {
+  pathsRef.current = paths;
+}, [paths]);
+
+useEffect(() => {
+  showPathsRef.current = showPaths;
+}, [showPaths]);
+
+  // >>>>>>>>>> ADD useEffect TO UPDATE pathOptionsRef HERE <<<<<<<<<<<
+  useEffect(() => {
+    pathOptionsRef.current = pathOptions;
+  }, [pathOptions]);
+
+  // Place this section AFTER all your useState, useRef, useMemo, and useCallback definitions,
+// but BEFORE other functional useEffects (like Effect #1 for Map Init).
+  
+    // === useCallback Hooks === // Optional: Add a new section header comment
+  const clearMarkers = useCallback(async () => {
+  if (!isAdminView) { 
+    alert("Admin privileges required."); 
+    return; 
+  }
+  if (markers.length === 0) { 
+    alert("No markers to clear."); 
+    return; 
+  }
+  if (window.confirm(`Delete all ${markers.length} markers from the map and database? This cannot be undone.`)) {
+    const currentMarkerIds = markers.map(m => m.id);
+    setMarkers([]); // Optimistic UI update
+
+    // ... inside clearMarkers useCallback ...
+try {
+  console.log("Attempting to delete all markers from Firestore...");
+  const batch = writeBatch(db);
+  currentMarkerIds.forEach(markerId => { // markerId is the loop variable
+    const collectionName = config.firestorePrefix ? `${config.firestorePrefix}_markers` : "markers";
+    const markerDocRef = doc(db, collectionName, markerId); // Use markerId
+    batch.delete(markerDocRef);
+  });
+      await batch.commit();
+      console.log("All markers successfully deleted from Firestore.");
+    } catch (error) {
+      console.error("Error deleting markers from Firestore:", error);
+      alert("Error deleting markers from database. They may reappear on refresh.");
+    }
+  }
+}, [isAdminView, markers, setMarkers, config]); // ADDED config to dependency array
+
+  const clearPaths = useCallback(async () => {
+    if (!isAdminView) { 
+      alert("Admin privileges required."); 
+      return; 
+    }
+    if (paths.length === 0) { 
+      alert("No paths to clear."); 
+      return; 
+    }
+    if (window.confirm(`Delete all ${paths.length} paths from the map and database? This cannot be undone.`)) {
+      const currentPathIds = paths.map(p => p.id);
+      setPaths([]);
+      setCurrentPathCoordinates([]); 
+
+      try {
+        console.log("Attempting to delete all paths from Firestore...");
+        const batch = writeBatch(db); // Ensure 'writeBatch' and 'db' are available
+        currentPathIds.forEach(pathId => {
+          const pathDocRef = doc(db, "paths", pathId); // Ensure 'doc' is available
+          batch.delete(pathDocRef);
+        });
+        await batch.commit();
+        console.log("All paths successfully deleted from Firestore.");
+      } catch (error) {
+        console.error("Error deleting paths from Firestore:", error);
+        alert("Error deleting paths from database. They may reappear on refresh.");
+      }
+    }
+  }, [isAdminView, paths, setPaths, setCurrentPathCoordinates]); // db is implicitly from module scope
+
+  const clearBuildingConditions = useCallback(async () => {
+    const map = mapRef.current; // mapRef from component scope
+    if (!isAdminView) { 
+      alert("Admin privileges required."); 
+      return; 
+    }
+    if (!map || Object.keys(buildingConditions).length === 0) { 
+      alert("No building conditions to clear or map not ready."); 
+      return; 
+    }
+    if (window.confirm("Clear all building conditions from the map and database? This cannot be undone.")) {
+      const currentOriginalBuildingIds = Object.keys(buildingConditions);
+      
+      // Reset feature state on the map
+      currentOriginalBuildingIds.forEach(originalBuildingId => {
+        map.setFeatureState(
+          { source: 'college-buildings', id: originalBuildingId }, 
+          { condition: null, selected: (selectedBuildingId === originalBuildingId) } 
+        );
+      });
+
+      setBuildingConditions({});
+      // setSelectedBuildingId(null); // Optional: if you want to deselect building too
+
+      try {
+        console.log("Attempting to delete all building conditions from Firestore...");
+        const batch = writeBatch(db); // Ensure 'writeBatch' and 'db' are available
+        currentOriginalBuildingIds.forEach(originalBuildingId => {
+          const firestoreDocId = String(originalBuildingId).replace(/\//g, "__"); // Sanitize for Firestore
+          const conditionDocRef = doc(db, "buildingConditions", firestoreDocId); // Ensure 'doc' is available
+          batch.delete(conditionDocRef);
+        });
+        await batch.commit();
+        console.log("All building conditions successfully deleted from Firestore.");
+      } catch (error) {
+        console.error("Error deleting building conditions from Firestore:", error);
+        alert("Error deleting building conditions from database. They may reappear on refresh.");
+      }
+    }
+  }, [isAdminView, buildingConditions, setBuildingConditions, selectedBuildingId, mapRef]); // db implicit
+
+
+  const toggleMarkers = useCallback(() => {
+  setShowMarkers(prevShowMarkers => !prevShowMarkers);
+}, [setShowMarkers]); // setShowMarkers is stable from useState
+
+
+
+  // Sanitize the buildingIdFromMap to create a Firestore-safe document ID
+  const firestoreDocId = String(buildingIdFromMap).replace(/\//g, "__"); // Replace all '/' with '__'
+
+  console.log(`ADMIN_CONDITION_CHANGE: Original Building ID: '${buildingIdFromMap}', Firestore Doc ID: '${firestoreDocId}', New Condition: '${condition}'`);
+
+  
+  setBuildingConditions(prev => {
+    const newConditions = { ...prev };
+    // IMPORTANT: Use the ORIGINAL buildingIdFromMap as the key in your React state object
+    // Because this ID matches what's in your GeoJSON and used by map.setFeatureState
+    if (condition === '' || condition === null) {
+      delete newConditions[buildingIdFromMap]; 
+      map.setFeatureState({ source: 'college-buildings', id: buildingIdFromMap }, { condition: null });
+    } else {
+      newConditions[buildingIdFromMap] = condition;
+      map.setFeatureState({ source: 'college-buildings', id: buildingIdFromMap }, { condition: condition });
+    }
+    return newConditions;
+  });
+
+  try {
+    // Use the SANITIZED firestoreDocId for Firestore operations
+    const buildingConditionDocRef = doc(db, "buildingConditions", firestoreDocId);
+
+    if (condition === '' || condition === null) {
+      await deleteDoc(buildingConditionDocRef);
+      console.log("Building condition document deleted from Firestore for Doc ID:", firestoreDocId);
+    } else {
+      const firestoreBuildingConditionData = {
+        condition: condition,
+        timestamp: new Date(),
+        originalBuildingId: buildingIdFromMap // Store the original ID for reference if needed
+      };
+      await setDoc(buildingConditionDocRef, firestoreBuildingConditionData);
+      console.log("Building condition saved to Firestore for Doc ID:", firestoreDocId);
+    }
+  } catch (error) {
+    console.error("Error updating building condition in Firestore for Original ID:", buildingIdFromMap, "Firestore Doc ID:", firestoreDocId, error);
+    alert("Error saving building condition. Please try again.");
+    // Reverting React state here would be complex if the optimistic update used buildingIdFromMap
+    // and the Firestore operation used firestoreDocId. For now, this alert is the main feedback.
+  }
+};
+
+const handleBuildingConditionChange = useCallback(async (buildingIdFromMap, condition) => {
+  const map = mapRef.current;
+  if (!map || !buildingIdFromMap) {
+    console.warn("handleBuildingConditionChange: Map or BuildingID is invalid.", { map, buildingIdFromMap });
+    return;
+  }
+
+  // Sanitize the buildingIdFromMap to create a Firestore-safe document ID
+  const firestoreDocId = String(buildingIdFromMap).replace(/\//g, "__");
+
+  console.log(`ADMIN_CONDITION_CHANGE: Original Building ID: '${buildingIdFromMap}', Firestore Doc ID: '${firestoreDocId}', New Condition: '${condition}'`);
+
+  setBuildingConditions(prev => {
+    const newConditions = { ...prev };
+    if (condition === '' || condition === null) {
+      delete newConditions[buildingIdFromMap]; 
+      map.setFeatureState({ source: 'college-buildings', id: buildingIdFromMap }, { condition: null });
+    } else {
+      newConditions[buildingIdFromMap] = condition;
+      map.setFeatureState({ source: 'college-buildings', id: buildingIdFromMap }, { condition: condition });
+    }
+    return newConditions;
+  });
+
+  try {
+    const buildingConditionDocRef = doc(db, "buildingConditions", firestoreDocId);
+    if (condition === '' || condition === null) {
+      await deleteDoc(buildingConditionDocRef);
+      console.log("Building condition document deleted from Firestore for Doc ID:", firestoreDocId);
+    } else {
+      const firestoreBuildingConditionData = {
+        condition: condition,
+        timestamp: new Date(),
+        originalBuildingId: buildingIdFromMap
+      };
+      await setDoc(buildingConditionDocRef, firestoreBuildingConditionData);
+      console.log("Building condition saved to Firestore for Doc ID:", firestoreDocId);
+    }
+  } catch (error) {
+    console.error("Error updating building condition in Firestore for Original ID:", buildingIdFromMap, "Firestore Doc ID:", firestoreDocId, error);
+    alert("Error saving building condition. Please try again.");
+  }
+}, [setBuildingConditions]); // Dependencies for this hook
+
+const exportToCSV = useCallback(() => {
+  if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0) {
+    alert('No data to export.');
+    return;
+  }
+  setExportLoading(true);
+  try {
+    const csvRows = [];
+    const header = [
+      'DataType', 'ID', 'ItemTypeOrCondition', 
+      'Latitude', 'Longitude', 'Comment', 
+      'VertexIndex', 'PathCoordinates_JSON', 'BuildingName'
+    ];
+    csvRows.push(header.join(','));
+
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      let stringValue = String(value);
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        stringValue = `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    markers.forEach(m => {
+      csvRows.push([
+        escapeCSV('Marker'), escapeCSV(m.id), escapeCSV(m.type),
+        escapeCSV(m.coordinates[1]), escapeCSV(m.coordinates[0]),
+        escapeCSV(m.comment || ''), '', '', ''
+      ].join(','));
+    });
+
+    paths.forEach(p => {
+      csvRows.push([
+        escapeCSV('PathSummary'), escapeCSV(p.id), escapeCSV(p.type),
+        '', '', '', '', 
+        escapeCSV(JSON.stringify(p.coordinates.map(c => ({ lat: c[1], lng: c[0] })))),
+        ''
+      ].join(','));
+    });
+
+    Object.entries(buildingConditions).forEach(([bid, condition]) => {
+      const buildingName = buildingFeaturesCache[bid]?.Name || buildingFeaturesCache[bid]?.NAME || String(bid); 
+      csvRows.push([
+        escapeCSV('BuildingCondition'), escapeCSV(bid), escapeCSV(condition),
+        '', '', '', '', '', escapeCSV(buildingName)
+      ].join(','));
+    });
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, `map-data-${new Date().toISOString().split('T')[0]}.csv`);
+
+  } catch (error) { 
+    console.error('CSV_EXPORT: General Error:', error); 
+    alert(`Export Error: ${error.message}`);
+  } finally { 
+    setExportLoading(false);
+  }
+
+const addMarkerToState = useCallback(async (coordinates, comment, type) => {
+  const newMarkerId = `marker-${Date.now()}-${Math.random()}`;
+  console.log(`MARKER_ADD_FLOW (1/5): addMarkerToState called. ID: ${newMarkerId}, Coords: ${JSON.stringify(coordinates)}, Type: ${type}`);
+
+  const newMarkerDataInReactState = {
+    coordinates,
+    comment,
+    type,
+    id: newMarkerId,
+    timestamp: new Date()
+  };
+
+  // 1. OPTIMISTIC UI UPDATE
+  setMarkers(prev => {
+    console.log(`MARKER_ADD_FLOW (2/5): setMarkers. Prev length: ${prev.length}. Attempting to add:`, JSON.stringify(newMarkerDataInReactState));
+    const updatedMarkers = [...prev, newMarkerDataInReactState]; // Ensure this is correct
+    console.log(`MARKER_ADD_FLOW (3/5): setMarkers. New potential length: ${updatedMarkers.length}.`);
+    return updatedMarkers;
+  });
+
+  // 2. TRY TO SAVE TO FIRESTORE
+  try {
+    const firestoreMarkerData = {
+        coordinates: { longitude: coordinates[0], latitude: coordinates[1] },
+        comment: comment,
+        type: type,
+        timestamp: newMarkerDataInReactState.timestamp
+    };
+    await setDoc(doc(db, "markers", newMarkerId), firestoreMarkerData);
+    console.log(`MARKER_ADD_FLOW (4/5): Marker saved to Firestore. ID: ${newMarkerId}`);
+  } catch (error) {
+    console.error(`MARKER_ADD_FLOW (ERROR 4a/5): Firestore save error for ${newMarkerId}:`, error);
+    // 3. REVERT OPTIMISTIC UPDATE
+    setMarkers(prev => {
+      console.log(`MARKER_ADD_FLOW (ERROR 4b/5): Reverting marker add for ${newMarkerId}. Prev length: ${prev.length}`);
+      const revertedMarkers = prev.filter(m => m.id !== newMarkerId);
+      console.log(`MARKER_ADD_FLOW (ERROR 4c/5): Reverted. New length: ${revertedMarkers.length}`);
+      return revertedMarkers;
+    });
+    alert("Error saving marker. Please try again.");
+  }
+}, [setMarkers]);
+
+  const createMarkerElement = useCallback((markerData) => {
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.style.width = '18px'; el.style.height = '18px'; el.style.borderRadius = '50%';
+    el.style.border = '2px solid white'; el.style.boxShadow = '0 0 4px rgba(0,0,0,0.4)';
+    el.style.cursor = 'pointer'; el.style.boxSizing = 'border-box';
+    el.style.backgroundColor = markerColors[markerData.type] || markerColors['Just leave a comment'];
+    return el;
+  }, [markerColors]);
+
+  const createPopupHTML = useCallback((type, comment) => {
+    const color = markerColors[type] || markerColors['Just leave a comment'];
+    const safeComment = comment ? comment.replace(/</g, "<").replace(/>/g, ">") : '';
+    return `<div style="max-width: 180px; padding: 6px 8px; font-family: Arial, sans-serif; font-size: 12px; line-height: 1.3;"><strong style="color: ${color}; display: block; margin-bottom: 3px; text-transform: uppercase; font-size: 10px; font-weight: bold;">${type}</strong>${safeComment ? `<p style="margin: 0; word-wrap: break-word;">${safeComment}</p>` : ''}</div>`;
+  }, [markerColors]);
+
+  const showMarkerPopup = useCallback((lngLat) => {
+    const map = mapRef.current; if (!map) return;
+    document.querySelectorAll('.mapboxgl-popup').forEach(p => { if (p.getElement().querySelector('#confirm-marker')) { p.remove(); } });
+    const popupNode = document.createElement('div');
+    popupNode.style.cssText = `width: 250px; padding: 6px; font-family: Arial, sans-serif; background-color: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); box-sizing: border-box;`;
+    const optionsHTML = Object.keys(markerColors).map(type => `<option value="${type}">${type}</option>`).join('');
+    popupNode.innerHTML = `
+      <h3 style="margin: 0 0 5px 0; font-size: 13px; color: #333; font-weight: bold;">How do you use or feel about this place?</h3> <div style="margin-bottom: 5px;"> <select id="marker-type" title="Category" style="width: 100%; padding: 4px 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box; -webkit-appearance: none; appearance: none; background: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23666%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E') no-repeat right 6px center; background-size: 7px auto; background-color: white; padding-right: 20px;">${optionsHTML}</select> </div> <div id="comment-container" style="margin-bottom: 6px; display: none;"> <textarea id="marker-comment" placeholder="Your comment..." rows="2" style="width: 100%; padding: 4px 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; resize: none; box-sizing: border-box; overflow-y: auto;"></textarea> </div> <div style="display: flex; gap: 5px; justify-content: space-between;"> <button id="confirm-marker" style="flex-grow: 1; padding: 5px 8px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;">Add</button> <button id="cancel-marker" style="flex-grow: 1; padding: 5px 8px; background-color: #aaa; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;">Cancel</button> </div>`;
+    const popup = new mapboxgl.Popup({ closeButton: true, closeOnClick: false, offset: 15, maxWidth: '260px', focusAfterOpen: false }).setDOMContent(popupNode).setLngLat(lngLat).addTo(map);
+    const confirmBtn = popupNode.querySelector('#confirm-marker'), cancelBtn = popupNode.querySelector('#cancel-marker'), typeSelect = popupNode.querySelector('#marker-type'), commentText = popupNode.querySelector('#marker-comment'), commentContainer = popupNode.querySelector('#comment-container');
+    typeSelect.value = Object.keys(markerColors)[0];
+    const toggleCommentVisibility = () => { commentContainer.style.display = typeSelect.value === 'Just leave a comment' ? 'block' : 'none'; };
+    toggleCommentVisibility(); typeSelect.addEventListener('change', toggleCommentVisibility);
+    const handleSubmit = () => { const selectedType = typeSelect.value, comment = selectedType === 'Just leave a comment' ? commentText.value.trim() : ''; addMarkerToState(lngLat.toArray(), comment, selectedType); popup.remove(); };
+    const handleCancel = () => { popup.remove(); };
+    confirmBtn.addEventListener('click', handleSubmit); cancelBtn.addEventListener('click', handleCancel);
+    popup.on('close', () => { confirmBtn.removeEventListener('click', handleSubmit); cancelBtn.removeEventListener('click', handleCancel); typeSelect.removeEventListener('change', toggleCommentVisibility); });
+  }, [markerColors, addMarkerToState]);
+
+    // Inside StakeholderMap component
+
+const finalizeCurrentPath = useCallback(async () => {
+  if (!Array.isArray(currentPathCoordinates) || currentPathCoordinates.length < 2) {
+    alert("Path is too short. Please draw at least two points.");
+    setCurrentPathCoordinates([]);
+    return;
+  }
+
+  let isValidPath = true;
+  for (const coordPair of currentPathCoordinates) {
+    if (!Array.isArray(coordPair) || coordPair.length !== 2 || typeof coordPair[0] !== 'number' || isNaN(coordPair[0]) || typeof coordPair[1] !== 'number' || isNaN(coordPair[1])) {
+      isValidPath = false;
+      break;
+    }
+  }
+
+  if (!isValidPath) {
+    alert("Invalid path data. Please redraw the path.");
+    setCurrentPathCoordinates([]);
+    return;
+  }
+
+  const newPathId = `path-${Date.now()}-${Math.random()}`;
+  const newPathDataForReactState = {
+    id: newPathId,
+    coordinates: JSON.parse(JSON.stringify(currentPathCoordinates)),
+    type: currentPathDrawType,
+    timestamp: new Date()
+  };
+
+  setPaths(prevPaths => [...prevPaths, newPathDataForReactState]);
+  setCurrentPathCoordinates([]);
+
+  try {
+    const firestorePathData = {
+      coordinates: newPathDataForReactState.coordinates.map(coordPair => ({ lng: coordPair[0], lat: coordPair[1] })),
+      type: newPathDataForReactState.type,
+      timestamp: newPathDataForReactState.timestamp
+    };
+    await setDoc(doc(db, "paths", newPathId), firestorePathData);
+    console.log("SUCCESS: Path saved to Firestore with ID:", newPathId);
+  } catch (error) {
+    console.error("ERROR saving path to Firestore:", newPathId, error);
+    setPaths(prevPaths => prevPaths.filter(p => p.id !== newPathId));
+    alert("Error saving path. Please try again.");
+  }
+}, [currentPathCoordinates, currentPathDrawType, setPaths, setCurrentPathCoordinates]); // Correctly closed hook array
+
+// ... (end of finalizeCurrentPath dependencies)
+
+// >>>>> PASTE THE saveMapClick DEFINITION HERE <<<<<
+//const saveMapClick = useCallback(async (lngLat, clickedBuildingId = null) => {
+  //if (!db) {
+    //console.error("Firestore db instance is not available in saveMapClick.");
+    //return;
+  //}
+  //try {
+    //const clickCollectionRef = collection(db, "mapClicks"); // 'collection' & 'addDoc' from imports
+    //const clickData = {
+      //coordinates: { longitude: lngLat.lng, latitude: lngLat.lat },
+      //timestamp: new Date(),
+    //};
+    //if (clickedBuildingId) {
+      //clickData.clickedBuildingId = String(clickedBuildingId);
+      //clickData.context = "building_click";
+    //} else {
+      //clickData.context = "map_click";
+    //}
+    //await addDoc(clickCollectionRef, clickData);
+    // console.log("Map click saved:", clickData); // Optional for debugging
+  //} catch (error) {
+    //console.error("Error saving map click to Firestore:", error);
+  //}
+//}, []); // db, collection, addDoc are stable from imports, so empty array is fine.
+// >>>>> END OF saveMapClick DEFINITION <<<<<
+
+// Simpler Effect 1 (Map Init) - From before mapContainerReady state
+useEffect(() => {
+  console.log("EFFECT 1 (Map Init - Simpler) ATTEMPTING. mapContainerRef.current:", mapContainerRef.current);
+  if (!mapContainerRef.current || mapRef.current) {
+    if (!mapContainerRef.current) console.log("EFFECT 1 (Simpler): mapContainerRef.current is NULL. Waiting.");
+    if (mapRef.current) console.log("EFFECT 1 (Simpler): Map already exists. Returning.");
+    return;
+  }
+  console.log("EFFECT 1 (Simpler) PROCEEDING WITH INITIALIZATION. Using config:", config);
+  let mapInstance = new mapboxgl.Map({ /* ... your map options ... */ });
+  mapRef.current = mapInstance;
+  mapInstance.on('load', () => { /* ... your load logic ... */ });
+  mapInstance.on('error', (e) => console.error('MAP_ERROR:', e.error?.message || e));
+  return () => { /* ... cleanup ... */ };
+}, [config]);
+
+useEffect(() => {
+  const loadData = async () => {
+    // === START: Single Marker Read Test ===
+    const TEST_MARKER_ID = "marker-1748892944556-0.15308740428538792"; // <<<< REPLACE THIS WITH THE ACTUAL ID YOU COPIED
+    const MARKERS_COLLECTION_NAME = "markers"; // Assuming this is your collection name
+
+    if (TEST_MARKER_ID !== "marker-1748892944556-0.15308740428538792") { // Check if you replaced the placeholder
+        console.log(`LOAD_DATA_TEST: Attempting to get SINGLE doc: ${MARKERS_COLLECTION_NAME}/${TEST_MARKER_ID}`);
+        try {
+            const docRef = doc(db, MARKERS_COLLECTION_NAME, TEST_MARKER_ID);
+            const docSnap = await getDoc(docRef); // Ensure getDoc is imported from "firebase/firestore"
+            if (docSnap.exists()) {
+                console.log("LOAD_DATA_TEST: SINGLE MARKER DOCUMENT FOUND:", JSON.stringify(docSnap.data()));
+            } else {
+                console.warn("LOAD_DATA_TEST: SINGLE MARKER DOCUMENT NOT FOUND IN DB:", TEST_MARKER_ID);
+            }
+        } catch (e) {
+            console.error("LOAD_DATA_TEST: Error fetching single marker document:", e);
+        }
+    } else {
+        console.warn("LOAD_DATA_TEST: Please update TEST_MARKER_ID with a real ID for the single marker test.");
+    }
+    // === END: Single Marker Read Test ===
+
+    // --- Load All Markers (Your existing logic) ---
+    console.log("Attempting to load ALL markers from Firestore...");
+    try {
+      const markersCollectionRef = collection(db, MARKERS_COLLECTION_NAME); // Use the same const
+      const markerQuerySnapshot = await getDocs(markersCollectionRef);
+      console.log(`LOAD_DEBUG: Collection: ${MARKERS_COLLECTION_NAME}, Snapshot size: ${markerQuerySnapshot.size}, Is empty: ${markerQuerySnapshot.empty}`);
+      const loadedMarkers = [];
+      markerQuerySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.coordinates && data.coordinates.longitude !== undefined && data.coordinates.latitude !== undefined) {
+          loadedMarkers.push({
+            id: docSnap.id,
+            coordinates: [data.coordinates.longitude, data.coordinates.latitude],
+            comment: data.comment || "",
+            type: data.type || "Just leave a comment",
+            timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date()
+          });
+        } else {
+          // console.warn("MARKER_LOAD: SKIPPED marker doc (structure):", docSnap.id);
+        }
+      });
+      setMarkers(loadedMarkers);
+      console.log("Successfully loaded ALL markers (setMarkers called with):", loadedMarkers.length);
+    } catch (error) {
+      console.error("Error loading ALL markers from Firestore: ", error);
+      alert("Could not load existing map markers.");
+    }
+
+    // --- Load Paths ---
+    console.log("Attempting to load paths from Firestore..."); // Keep this
+    try {
+      const pathsCollectionRef = collection(db, "paths");
+      const pathQuerySnapshot = await getDocs(pathsCollectionRef);
+      console.log(`LOAD_DEBUG: Collection: paths, Snapshot size: ${pathQuerySnapshot.size}, Is empty: ${pathQuerySnapshot.empty}`);
+      const loadedPaths = [];
+      // =============================================================
+      // >>>>>>>>>> THIS IS THE MISSING/CORRECTED PATH LOOP <<<<<<<<<<<
+      // =============================================================
+      pathQuerySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        console.log("PATH_LOAD: Processing doc:", docSnap.id, "Raw Data:", JSON.stringify(data));
+        if (Array.isArray(data.coordinates) && data.coordinates.length >= 2 && 
+            data.coordinates.every(coord => typeof coord === 'object' && coord !== null && typeof coord.lng === 'number' && typeof coord.lat === 'number')) {
+          console.log("PATH_LOAD: VALID path doc:", docSnap.id);
+          loadedPaths.push({
+            id: docSnap.id,
+            coordinates: data.coordinates.map(coordObj => [coordObj.lng, coordObj.lat]), 
+            type: data.type || Object.keys(pathOptions)[0],
+            timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date()
+          });
+        } else {
+          console.warn("PATH_LOAD: SKIPPED path doc due to invalid structure:", docSnap.id, "Actual data.coordinates:", JSON.stringify(data.coordinates));
+        }
+      });
+      // =============================================================
+      setPaths(loadedPaths);
+      console.log("Successfully loaded paths (setPaths called with):", loadedPaths.length, "paths loaded.");
+    } catch (error) {
+      console.error("Error loading paths from Firestore:", error);
+      alert("Could not load existing map paths.");
+    }
+
+    // --- Load Building Conditions ---
+    console.log("Attempting to load building conditions from Firestore..."); // Keep this
+    try {
+      const conditionsCollectionRef = collection(db, "buildingConditions");
+      const conditionQuerySnapshot = await getDocs(conditionsCollectionRef);
+      console.log(`LOAD_DEBUG: Collection: buildingConditions, Snapshot size: ${conditionQuerySnapshot.size}, Is empty: ${conditionQuerySnapshot.empty}`);
+      const loadedBuildingConditions = {};
+      // =====================================================================
+      // >>>>>>>>>> THIS IS THE MISSING/CORRECTED BUILDING CONDITION LOOP <<<<<<<<<<<
+      // =====================================================================
+      conditionQuerySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        console.log("CONDITION_LOAD: Processing doc:", docSnap.id, "Raw Data:", JSON.stringify(data));
+        if (data.originalBuildingId && data.condition) {
+          console.log("CONDITION_LOAD: VALID condition doc:", docSnap.id);
+          loadedBuildingConditions[data.originalBuildingId] = data.condition;
+        } else {
+          console.warn("CONDITION_LOAD: SKIPPED condition doc due to missing originalBuildingId or condition:", docSnap.id);
+        }
+      });
+      // =====================================================================
+      setBuildingConditions(loadedBuildingConditions);
+      console.log("Successfully loaded building conditions (setBuildingConditions called with):", Object.keys(loadedBuildingConditions).length, "conditions loaded.");
+    } catch (error) {
+      console.error("Error loading building conditions from Firestore: ", error);
+      alert("Could not load existing building conditions.");
+    }
+  }; // End of loadData async function
+
+  loadData();
+
+}, [pathOptions]); // Dependency array
+                  // setMarkers & setPaths from useState are stable and don't need to be deps here.
+                  // db from Firebase is stable.
+                  // pathOptions is memoized and stable.
+
+  // NEW Effect: Synchronize buildingConditions state with map feature states
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) { return; } // Map not ready
+
+    // Only proceed if the source exists and is loaded.
+    const source = map.getSource('college-buildings');
+    if (!source || !map.isSourceLoaded('college-buildings')) {
+      // console.log("SYNC_CONDITIONS_EFFECT: college-buildings source not ready yet.");
+      return;
+    }
+    
+    console.log("SYNC_CONDITIONS_EFFECT: Applying buildingConditions to map features:", buildingConditions);
+    
+    // It's good practice to iterate over known building IDs from your state
+    // rather than querying all features, especially if the number of features is large.
+    Object.entries(buildingConditions).forEach(([bid, conditionVal]) => {
+      const idToUse = isNaN(Number(bid)) ? String(bid) : Number(bid); // Ensure consistent ID type
+      map.setFeatureState(
+          { source: 'college-buildings', id: idToUse },
+          { condition: conditionVal } // conditionVal could be 'Good', 'Poor', etc. or null
+      );
+    });
+
+    // Handle cases where a building ID was in buildingConditions but its condition was then cleared (set to null/empty string)
+    // This is implicitly handled by handleBuildingConditionChange setting { condition: null }
+    // If buildingConditions could be cleared by other means (e.g. `setBuildingConditions({})`),
+    // we might need to iterate all features on map that HAVE a condition state and clear it if not in current buildingConditions.
+    // For now, this should be sufficient.
+
+  }, [buildingConditions]); // This effect runs ONLY when buildingConditions changes.
+
+
+// Effect 2: Synchronize Mapbox Markers
+useEffect(() => {
+  const map = mapRef.current;
+  console.log(`MARKER_EFFECT_DEBUG (A): useEffect #2 triggered. markers count: ${markers.length}, showMarkers: ${showMarkers}, map available: ${!!map}`);
+  if (markers.length > 0) {
+     console.log(`MARKER_EFFECT_DEBUG (A.1): Current markers in state:`, JSON.stringify(markers.map(m => ({id: m.id, type: m.type, coords: m.coordinates}))));
+  }
+
+  // >>>>>>>> DEFINE processMarkers UP HERE <<<<<<<<<<
+  const processMarkers = () => {
+    console.log(`MARKER_EFFECT_DEBUG (D): processMarkers RUNNING. markers.length: ${markers.length}, showMarkers: ${showMarkers}`);
+
+    const currentMapboxMarkerIds = new Set(Array.from(mapboxMarkersRef.current.keys()));
+    const reactMarkerIds = new Set(markers.map(m => m.id));
+
+    markers.forEach(markerData => {
+      if (!markerData.id) {
+        console.warn("MARKER_EFFECT_DEBUG (E): Skipping marker with no ID in processMarkers.", markerData);
+        return;
+      }
+      if (!currentMapboxMarkerIds.has(markerData.id)) {
+        console.log(`MARKER_EFFECT_DEBUG (F): Attempting to add NEW marker to map. ID: ${markerData.id}`);
+        try {
+          if (!Array.isArray(markerData.coordinates) || markerData.coordinates.length !== 2 ||
+              typeof markerData.coordinates[0] !== 'number' || isNaN(markerData.coordinates[0]) ||
+              typeof markerData.coordinates[1] !== 'number' || isNaN(markerData.coordinates[1])) {
+            console.error(`MARKER_EFFECT_DEBUG (G-ERROR): Invalid coords for ${markerData.id}:`, markerData.coordinates);
+            return;
+          }
+
+          const el = createMarkerElement(markerData);
+          const popup = new mapboxgl.Popup({ offset: 25, closeButton: false }).setHTML(createPopupHTML(markerData.type, markerData.comment));
+          console.log(`MARKER_EFFECT_DEBUG (H): Element & Popup created for ${markerData.id}. Coords for Mapbox:`, markerData.coordinates);
+
+          const newMapboxMarker = new mapboxgl.Marker({ element: el })
+            .setLngLat(markerData.coordinates) // Ensure these are [lng, lat]
+            .setPopup(popup)
+            .addTo(map);
+          console.log(`MARKER_EFFECT_DEBUG (I): Marker ${markerData.id} ADDED TO MAP via .addTo(map).`);
+
+          mapboxMarkersRef.current.set(markerData.id, newMapboxMarker);
+
+          const markerElement = newMapboxMarker.getElement();
+          if (markerElement) {
+            markerElement.style.display = showMarkers ? 'block' : 'none';
+            console.log(`MARKER_EFFECT_DEBUG (J): Visibility set for NEW ${markerData.id}. Display: ${markerElement.style.display}`);
+          } else {
+            console.warn(`MARKER_EFFECT_DEBUG (K-WARN): getElement() is null for NEW ${markerData.id} immediately after adding to map and ref.`);
+          }
+        } catch (e) {
+          console.error(`MARKER_EFFECT_DEBUG (L-ERROR): Error adding marker ${markerData.id} to map in processMarkers:`, e);
+        }
+      }
+    });
+
+    // Remove stale markers
+    mapboxMarkersRef.current.forEach((markerInstance, id) => {
+      if (!reactMarkerIds.has(id)) {
+        console.log(`MARKER_EFFECT_DEBUG (M): Removing stale marker ${id}`);
+        try { markerInstance.remove(); } catch (e) { console.error("Error removing stale marker:", e); }
+        mapboxMarkersRef.current.delete(id);
+      }
+    });
+
+    // Ensure visibility for all OTHER existing markers
+     mapboxMarkersRef.current.forEach((markerInstance, id) => {
+         const markerInReactState = markers.find(m => m.id === id);
+         if (markerInReactState) {
+             if (currentMapboxMarkerIds.has(id)) { // Check if it's an old marker already on map
+                 const element = markerInstance.getElement();
+                 if (element) {
+                     const targetDisplay = showMarkers ? 'block' : 'none';
+                     if (element.style.display !== targetDisplay) {
+                         // console.log(`MARKER_EFFECT_DEBUG (N): Updating visibility for EXISTING marker ${id} to ${targetDisplay}`);
+                         element.style.display = targetDisplay;
+                     }
+                 }
+             }
+         }
+     });
+    console.log(`MARKER_EFFECT_DEBUG (O): processMarkers Finished. MapboxMarkersRef size: ${mapboxMarkersRef.current.size}`);
+  }; // End of processMarkers
+
+  // Now the rest of the useEffect can safely reference processMarkers
+  if (!map) {
+    console.log("MARKER_EFFECT_DEBUG (PRE-B): Map is not available. Returning early.");
+    return;
+  }
+
+  if (!map.isStyleLoaded()) {
+    console.log(`MARKER_EFFECT_DEBUG (B): Map not ready or style not loaded. Deferring. map.isStyleLoaded: ${map.isStyleLoaded()}`);
+    const onMapReadyForMarkers = () => {
+      console.log(`MARKER_EFFECT_DEBUG (C): Deferred call - map event ('idle') triggered. map.isStyleLoaded: ${map.isStyleLoaded()}`);
+      if (map.isStyleLoaded()) {
+        processMarkers(); // Now processMarkers is defined in this scope
+      } else {
+        // Fallback: if 'idle' fires but style somehow isn't loaded, try 'styledata' once
+        console.warn("MARKER_EFFECT_DEBUG (C.1): Style still not loaded after 'idle'. Listening for 'styledata' once.");
+        map.once('styledata', () => {
+            console.log("MARKER_EFFECT_DEBUG (C.2): 'styledata' event fired. Calling processMarkers.");
+            processMarkers();
+        });
+      }
+    };
+    map.once('idle', onMapReadyForMarkers); // Use 'idle' for primary deferral
+    
+    return () => { // Cleanup for the deferral
+      map.off('idle', onMapReadyForMarkers);
+      // If you added a 'styledata' listener, you might want to off it too, but 'once' handles it.
+    };
+  }
+
+  // If map style is already loaded
+  if (map.isStyleLoaded() && map.loaded()) { // map.loaded() is a good comprehensive check
+     console.log("MARKER_EFFECT_DEBUG (P): Map & Style loaded. Calling processMarkers directly.");
+     processMarkers();
+  } else {
+     // This case should ideally be caught by the !map.isStyleLoaded() block above,
+     // but as a fallback, you could log or re-attempt deferral.
+     console.log("MARKER_EFFECT_DEBUG (Q): map.isStyleLoaded() is false OR map.loaded() is false, even after initial check. Deferral should have been initiated by (B).");
+     // Consider the same deferral logic as in block (B) if this state is commonly reached.
+     // For now, the deferral in (B) should be the primary path for not-ready maps.
+  }
+
+}, [markers, showMarkers, createMarkerElement, createPopupHTML]);
+
+// Effect 5: Display the path currently being drawn
+useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      // ADD THIS LOG
+      console.log("EFFECT 5 (Drawing Path): SKIPPING - Map not ready or style not loaded.");
+      return;
+    }
+    // ADD THIS LOG
+    console.log(`EFFECT 5 (Drawing Path): TRIGGERED. currentPathCoordinates length: ${currentPathCoordinates.length}, showPaths: ${showPaths}`);
+    // ADD THIS LOG (optional, if you want to see the coordinates)
+    // console.log(`EFFECT 5 (Drawing Path): currentPathCoordinates:`, JSON.stringify(currentPathCoordinates));
+
+
+    const sourceId = 'drawing-path-source'; 
+    const layerId = 'drawing-path-layer'; 
+    const verticesLayerId = layerId + '-vertices';
+    
+    let source = map.getSource(sourceId);
+    
+    const geojsonData = { 
+      type: 'FeatureCollection', 
+      features: currentPathCoordinates.length >= 1 
+        ? [{ 
+            type: 'Feature', 
+            geometry: { 
+              type: currentPathCoordinates.length === 1 ? 'Point' : 'LineString', 
+              coordinates: currentPathCoordinates.length === 1 ? currentPathCoordinates[0] : currentPathCoordinates, 
+            } 
+          }] 
+        : [] 
+    };
+    
+    const targetVisibility = showPaths ? 'visible' : 'none';
+    // ADD THIS LOG
+    console.log(`EFFECT 5 (Drawing Path): Target visibility for drawing layers ('${layerId}', '${verticesLayerId}'): ${targetVisibility}`);
+
+    const drawingPathColor = pathOptions[currentPathDrawType]?.color || '#ff00ff';
+
+    if (!source) {
+      // ADD THIS LOG (optional, good to see when source is first added)
+      console.log(`EFFECT 5 (Drawing Path): Source '${sourceId}' not found. Adding source and layers with visibility ${targetVisibility}.`);
+      try {
+          map.addSource(sourceId, { type: 'geojson', data: geojsonData });
+          map.addLayer({ 
+            id: layerId, type: 'line', source: sourceId, 
+            layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility }, 
+            paint: { 'line-color': drawingPathColor, 'line-width': 2, 'line-dasharray': [2, 2] }, 
+            filter: ['==', '$type', 'LineString'] 
+          });
+          map.addLayer({ 
+            id: verticesLayerId, type: 'circle', source: sourceId, 
+            layout: { 'visibility': targetVisibility }, 
+            paint: { 'circle-radius': 4, 'circle-color': drawingPathColor } 
+          });
+      } catch (e) {
+          console.error(`EFFECT 5 (Drawing Path): Error adding source/layer '${sourceId}':`, e);
+      }
+    } else {
+      // ADD THIS LOG (optional, good to see when source is updated)
+      // console.log(`EFFECT 5 (Drawing Path): Source '${sourceId}' found. Setting data and layer properties with visibility ${targetVisibility}.`);
+      try {
+          source.setData(geojsonData);
+          const drawingLayer = map.getLayer(layerId);
+          if (drawingLayer) {
+            map.setLayoutProperty(layerId, 'visibility', targetVisibility);
+            map.setPaintProperty(layerId, 'line-color', drawingPathColor);
+          } else {
+              console.warn(`EFFECT 5 (Drawing Path): Drawing layer '${layerId}' expected but not found. Re-adding.`);
+              // Attempt to re-add if missing
+              map.addLayer({ 
+                  id: layerId, type: 'line', source: sourceId, 
+                  layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility }, 
+                  paint: { 'line-color': drawingPathColor, 'line-width': 2, 'line-dasharray': [2, 2] }, 
+                  filter: ['==', '$type', 'LineString'] 
+              });
+          }
+
+          const verticesLayer = map.getLayer(verticesLayerId);
+          if (verticesLayer) {
+            map.setLayoutProperty(verticesLayerId, 'visibility', targetVisibility);
+            map.setPaintProperty(verticesLayerId, 'circle-color', drawingPathColor);
+          } else {
+              console.warn(`EFFECT 5 (Drawing Path): Vertices layer '${verticesLayerId}' expected but not found. Re-adding.`);
+              map.addLayer({ 
+                  id: verticesLayerId, type: 'circle', source: sourceId, 
+                  layout: { 'visibility': targetVisibility }, 
+                  paint: { 'circle-radius': 4, 'circle-color': drawingPathColor } 
+              });
+          }
+      } catch (e) {
+          console.error(`EFFECT 5 (Drawing Path): Error setting data or layout for '${sourceId}':`, e);
+      }
+    }
+  }, [currentPathCoordinates, showPaths, currentPathDrawType, pathOptions]); // Dependencies are correct
+
+// Effect 6: Handle Map Clicks (Corrected for Rollback Test)
+useEffect(() => {
+  const map = mapRef.current;
+  if (!map) { return; }
+
+  let buildingClickHandler;
+  if (isAdminView) {
+    buildingClickHandler = (e) => {
+      if (drawingMode !== 'marker') { return; }
+      const features = map.queryRenderedFeatures(e.point, { layers: ['college-buildings-fill'] });
+      if (features.length > 0) {
+        e.preventDefault();
+        const clickedBuilding = features[0];
+        const rawBuildingId = clickedBuilding.id !== undefined ? clickedBuilding.id : clickedBuilding.properties?.[BUILDING_ID_PROPERTY_NAME];
+        const newSelectedBuildingId = rawBuildingId !== undefined ? String(rawBuildingId) : null;
+        if (newSelectedBuildingId && selectedBuildingId !== newSelectedBuildingId) {
+          if (selectedBuildingId !== null) {
+            map.setFeatureState({ source: 'college-buildings', id: String(selectedBuildingId) }, { selected: false });
+          }
+          map.setFeatureState({ source: 'college-buildings', id: newSelectedBuildingId }, { selected: true });
+          setSelectedBuildingId(newSelectedBuildingId);
+          if (!buildingFeaturesCache[newSelectedBuildingId]) {
+            setBuildingFeaturesCache(prev => ({...prev, [newSelectedBuildingId]: clickedBuilding.properties}));
+          }
+        }
+      } else {
+        if (selectedBuildingId !== null) {
+          map.setFeatureState({ source: 'college-buildings', id: String(selectedBuildingId) }, { selected: false });
+          setSelectedBuildingId(null);
+        } else {
+          showMarkerPopup(e.lngLat);
+        }
+      }
+    };
+    map.on('click', 'college-buildings-fill', buildingClickHandler);
+  }
+
+  const generalMapClickHandler = (e) => {
+    if (e.defaultPrevented) { return; }
+    if (drawingMode === 'path') {
+      setCurrentPathCoordinates(prev => [...prev, e.lngLat.toArray()]);
+      return;
+    }
+    if (drawingMode === 'marker') {
+      showMarkerPopup(e.lngLat);
+      return;
+    }
+  };
+  map.on('click', generalMapClickHandler);
+
+  return () => {
+    if (map.getStyle()) {
+      map.off('click', generalMapClickHandler);
+      if (isAdminView && buildingClickHandler) {
+        map.off('click', 'college-buildings-fill', buildingClickHandler);
+      }
+    }
+  };
+}, [isAdminView, drawingMode, selectedBuildingId, buildingFeaturesCache, config, showMarkerPopup, setCurrentPathCoordinates, setBuildingFeaturesCache, setSelectedBuildingId]);
+
+// Effect 7: Manage Double Click Listener for Finishing Paths
+useEffect(() => {
+  const map = mapRef.current;
+  if (!map || drawingMode !== 'path') return;
+  const doubleClickHandler = (e) => { e.preventDefault(); finalizeCurrentPath(); };
+  map.on('dblclick', doubleClickHandler);
+  return () => { if (map.getStyle()) map.off('dblclick', doubleClickHandler); };
+}, [drawingMode, finalizeCurrentPath]);
+
+
+  // =======================================================================
+  // >>>>>>>>>> REPLACE YOUR CURRENT useEffect #8 WITH THIS VERSION <<<<<<<<<<<
+  // =======================================================================
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const sourceId = 'saved-paths-source';
+    const layerId = 'saved-paths-layer';
+
+    // Directly use state variables from the effect's closure.
+    // These will be the latest values whenever this effect re-runs.
+    const RENDER_PATHS_LOG_PREFIX = `EFFECT 8 [Paths: ${paths.length}, Show: ${showPaths}]:`;
+
+    const executePathLayerUpdate = () => {
+      console.log(`${RENDER_PATHS_LOG_PREFIX} executePathLayerUpdate: Style IS loaded. Proceeding.`);
+
+      // Always remove previous layer and source
+      try {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      } catch (e) { console.error(`${RENDER_PATHS_LOG_PREFIX} Error removing existing items:`, e); }
+
+      if (paths.length === 0) {
+        console.log(`${RENDER_PATHS_LOG_PREFIX} No paths in state. Nothing to add.`);
+        return;
+      }
+
+      const features = paths.map((path) => {
+        if (Array.isArray(path.coordinates) && path.coordinates.length >= 2 &&
+            path.coordinates.every(cp => Array.isArray(cp) && cp.length === 2 && typeof cp[0] === 'number' && !isNaN(cp[0]) && typeof cp[1] === 'number' && !isNaN(cp[1]))) {
+          return { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates }, properties: { id: path.id, type: path.type } };
+        }
+        console.warn(`${RENDER_PATHS_LOG_PREFIX} Path ID ${path.id} SKIPPED (feature creation). Coords:`, JSON.stringify(path.coordinates));
+        return null;
+      }).filter(Boolean);
+      
+      console.log(`${RENDER_PATHS_LOG_PREFIX} Total paths in state: ${paths.length}, Generated features: ${features.length}`);
+
+      if (features.length === 0 && paths.length > 0) {
+        console.warn(`${RENDER_PATHS_LOG_PREFIX} All paths were filtered out or invalid. Nothing to add to map.`);
+        return;
+      }
+      if (features.length === 0) {
+        console.log(`${RENDER_PATHS_LOG_PREFIX} No features generated. Nothing to add to map.`);
+        return;
+      }
+
+      const geojsonData = { type: 'FeatureCollection', features };
+      const targetVisibility = showPaths ? 'visible' : 'none'; // Uses current showPaths state
+      let lineColorExpressionValue;
+      if (pathOptions && Object.keys(pathOptions).length > 0) { // Uses current pathOptions state
+          lineColorExpressionValue = ['match', ['get', 'type'], ...Object.entries(pathOptions).flatMap(([typeKey, { color }]) => [typeKey, color]), '#0000FF'];
+      } else {
+          lineColorExpressionValue = '#0000FF';
+      }
+
+      try {
+        map.addSource(sourceId, { type: 'geojson', data: geojsonData });
+        map.addLayer({
+          id: layerId, type: 'line', source: sourceId,
+          layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility },
+          paint: { 'line-color': lineColorExpressionValue, 'line-width': 3, 'line-opacity': 0.8 }
+        });
+        console.log(`${RENDER_PATHS_LOG_PREFIX} Layer '${layerId}' ADDED/UPDATED. Vis: ${targetVisibility}, Feats: ${features.length}`);
+      } catch (e) {
+        console.error(`${RENDER_PATHS_LOG_PREFIX} Error adding new source/layer:`, e);
+        if (map.getSource(sourceId) && !map.getLayer(layerId)) {
+          try { map.removeSource(sourceId); } catch (rsErr) { /* ignore */ }
+        }
+      }
+    }; // End of executePathLayerUpdate
+
+    // --- Execution Logic for this effect run ---
+    let idleListener = null; // To store the listener for cleanup
+
+    if (map.isStyleLoaded() && map.loaded()) {
+      // console.log(`${RENDER_PATHS_LOG_PREFIX} Map & Style fully ready. Executing update directly.`);
+      executePathLayerUpdate();
+    } else {
+      // console.log(`${RENDER_PATHS_LOG_PREFIX} Map or Style not fully ready. Waiting for 'idle'.`);
+      idleListener = () => { // Assign to variable so it can be removed
+        // console.log(`${RENDER_PATHS_LOG_PREFIX} 'idle' event fired. Calling executePathLayerUpdate.`);
+        executePathLayerUpdate();
+      };
+      map.once('idle', idleListener);
+    }
+
+    return () => {
+      // console.log(`${RENDER_PATHS_LOG_PREFIX} Cleanup running.`);
+      if (map && typeof map.off === 'function' && idleListener) {
+        // console.log(`${RENDER_PATHS_LOG_PREFIX} Removing 'idle' listener.`);
+        map.off('idle', idleListener);
+      }
+      // The aggressive remove in executePathLayerUpdate handles clearing the layer/source
+      // if the component unmounts OR if the effect re-runs.
+      // If you want to be absolutely sure layer/source are gone on unmount even if idle didn't fire:
+      // if (map && map.getStyle()) { // Check map.getStyle() to ensure map is not already removed
+      //   try {
+      //     if (map.getLayer(layerId)) map.removeLayer(layerId);
+      //     if (map.getSource(sourceId)) map.removeSource(sourceId);
+      //   } catch(e) {/* ignore */}
+      // }
+    };
+  }, [paths, showPaths, pathOptions]); // Dependencies: when these change, the effect re-runs
+  // =======================================================================
+
+   return (
+    <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
+      <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
+      
+      {/* Logos Overlay (Top Right) */}
+      <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+        <div style={{ padding: '10px 15px', backgroundColor: 'rgba(255, 255, 255, 0.8)', borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', textAlign: 'center' }}>
+          <span style={{ fontWeight: 'bold', fontSize: '32px', color: '#ba3d04', fontFamily: 'Arial, sans-serif', display: 'block', marginBottom: '5px' }}>Mapfluence</span>
+          {/* Corrected ceLogoPath usage - assuming ceLogoPath is relative path like '/input_file_0.png' */}
+          <img src={process.env.PUBLIC_URL + ceLogoPath} alt="Clark & Enersen Logo" style={{ height: '100px', width: 'auto' }} />
+        </div>
+        <div style={{ padding: '10px', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {/* Corrected config.logo usage - assuming config.logo stores relative path like '/data/HC_image.png' */}
+          <img src={process.env.PUBLIC_URL + config.logo} alt={`${config.name || 'College'} Logo`} style={{ height: '190px', width: 'auto' }} />
+        </div>
+      </div>
+      
+      {/* Controls and Legend Overlay (Top Left) */}
+      <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 20, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
+        
+        {/* Map Controls Panel - FULL VERSION */}
+        <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: '12px', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', width: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', borderBottom: '1px solid #eee', paddingBottom: '6px', fontWeight:'bold' }}>Map Controls</h3>
+          
+          <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <button onClick={() => setDrawingMode('marker')} disabled={drawingMode === 'marker'} title={isAdminView ? "Click map for markers OR select a building" : "Click map to add point markers"} style={{ padding: '5px 8px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #ccc', flex: 1, backgroundColor: drawingMode === 'marker' ? '#c8e6c9' : '#fff', fontWeight: drawingMode === 'marker' ? 'bold' : 'normal' }}>
+              {isAdminView ? 'Select/Marker' : 'Add Marker'}
+            </button>
+            <button onClick={() => setDrawingMode('path')} disabled={drawingMode === 'path'} title="Click map points to draw a path, double-click to finish" style={{ padding: '5px 8px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #ccc', flex: 1, backgroundColor: drawingMode === 'path' ? '#c8e6c9' : '#fff', fontWeight: drawingMode === 'path' ? 'bold' : 'normal' }}>
+              Draw Path
+            </button>
+          </div>
+
+          {drawingMode === 'path' && (
+            <div style={{ border: '1px solid #ddd', padding: '8px', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '5px', backgroundColor: '#f9f9f9' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#333', marginBottom: '3px' }}>Select Path Type:</div>
+              {Object.entries(pathOptions).map(([typeKey, {name, color}]) => (
+                <button key={typeKey} onClick={() => setCurrentPathDrawType(typeKey)} title={`Draw a ${name}`}
+                  style={{ padding: '4px 6px', fontSize: '11px', cursor: 'pointer', borderRadius: '3px', border: `1px solid ${currentPathDrawType === typeKey ? color : '#ccc'}`, backgroundColor: currentPathDrawType === typeKey ? color : '#fff', color: currentPathDrawType === typeKey ? '#fff' : color, fontWeight: currentPathDrawType === typeKey ? 'bold' : 'normal', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{width: '12px', height: '4px', backgroundColor: color, border:'1px solid rgba(0,0,0,0.2)', display: 'inline-block', borderRadius: '1px'}}></span> {name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isAdminView && selectedBuildingId && drawingMode === 'marker' && (
+            <div style={{ border: '1px solid #ddd', padding: '10px', borderRadius: '4px', backgroundColor: '#f9f9f9', marginTop: '5px' }}>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 'bold', color: '#333' }}>
+                Selected: <span style={{fontWeight: 'normal'}}>{(buildingFeaturesCache[selectedBuildingId]?.Name || buildingFeaturesCache[selectedBuildingId]?.NAME || buildingFeaturesCache[selectedBuildingId]?.id || selectedBuildingId)}</span>
+              </h4>
+              <label htmlFor="building-condition" style={{ display: 'block', fontSize: '12px', marginBottom: '3px' }}>Condition:</label>
+              <select 
+                id="building-condition" 
+                value={buildingConditions[selectedBuildingId] || ''} 
+                onChange={(e) => handleBuildingConditionChange(selectedBuildingId, e.target.value)}
+                style={{ width: '100%', padding: '6px', fontSize: '12px', borderRadius: '3px', border: '1px solid #ccc' }}
+              >
+                <option value="">-- Not Set --</option>
+                {BUILDING_CONDITIONS.map(cond => (<option key={cond} value={cond}>{cond}</option>))}
+              </select>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <button onClick={toggleMarkers} style={{ padding: '6px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #ccc', backgroundColor: showMarkers ? '#e7f4e8' : '#fdecea', color: showMarkers ? '#2e7d32' : '#c62828' }}>
+              {showMarkers ? 'Hide' : 'Show'} Markers ({markers.length})
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <button onClick={() => setShowPaths(prev => !prev)} style={{ padding: '6px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #ccc', backgroundColor: showPaths ? '#e7f4e8' : '#fdecea', color: showPaths ? '#2e7d32' : '#c62828' }} >
+              {showPaths ? 'Hide' : 'Show'} Paths ({paths.length})
+            </button>
+          </div>
+          
+          {isAdminView && (
+            <button 
+              onClick={exportToCSV} 
+              disabled={exportLoading || (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0) } 
+              style={{ padding: '8px', fontSize: '13px', cursor: (exportLoading || (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0)) ? 'not-allowed' : 'pointer', backgroundColor: (exportLoading || (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0)) ? '#f5f5f5' : '#607D8B', color: (exportLoading || (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0)) ? '#aaa' : 'white', border: 'none', borderRadius: '4px', width: '100%', marginTop: '5px' }}
+            >
+              {exportLoading ? 'Exporting...' : 'Export Data'} 
+            </button>
+          )}
+
+          {isAdminView && (
+            <div style={{display: 'flex', gap: '8px', marginTop: '5px', width: '100%'}}>
+                <button onClick={clearMarkers} disabled={markers.length === 0} title={"Clear all markers"} style={{ padding: '8px', fontSize: '13px', cursor: markers.length === 0 ? 'not-allowed' : 'pointer', backgroundColor: markers.length === 0 ? '#f5f5f5' : '#F44336', color: markers.length === 0 ? '#aaa' : 'white', border: 'none', borderRadius: '4px', flex: '1' }}>Clear Markers</button>
+                <button onClick={clearPaths} disabled={paths.length === 0} title={"Clear all paths"} style={{ padding: '8px', fontSize: '13px', cursor: paths.length === 0 ? 'not-allowed' : 'pointer', backgroundColor: paths.length === 0 ? '#f5f5f5' : '#F44336', color: paths.length === 0 ? '#aaa' : 'white', border: 'none', borderRadius: '4px', flex: '1' }}>Clear Paths</button>
+            </div>
+          )}
+          {isAdminView && (
+            <button 
+              onClick={clearBuildingConditions} 
+              disabled={Object.keys(buildingConditions).length === 0} 
+              title={"Clear all building conditions"} 
+              style={{ padding: '8px', fontSize: '13px', cursor: Object.keys(buildingConditions).length === 0 ? 'not-allowed' : 'pointer', backgroundColor: Object.keys(buildingConditions).length === 0 ? '#f5f5f5' : '#F44336', color: Object.keys(buildingConditions).length === 0 ? '#aaa' : 'white', border: 'none', borderRadius: '4px', width: '100%', marginTop: '5px' }}
+            >
+              Clear Conditions
+            </button>
+          )}
+
+          {showInstructions && (
+            <div style={{ padding: '12px', border: '1px solid #eee', borderRadius: '4px', width: '100%', marginTop: '10px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>How to Use</h3>
+                <button onClick={() => setShowInstructions(false)} title="Hide Instructions" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', lineHeight: '1', padding: '0 4px', color: '#666' }}>×</button>
+              </div>
+              <ol style={{ margin: '0', paddingLeft: '18px', fontSize: '12px', color: '#333', listStylePosition: 'outside' }}>
+                 <li style={{ marginBottom: '6px' }}>Select '{isAdminView ? 'Select/Marker' : 'Add Marker'}' or 'Draw Path' mode.</li>
+                 {isAdminView && <li style={{ marginBottom: '6px' }}>In 'Select/Marker' mode, click a building to select it and assign a condition. Click map to place standard markers.</li>}
+                 {!isAdminView && <li style={{ marginBottom: '6px' }}>In 'Add Marker' mode, click the map to place a marker.</li>}
+                 <li style={{ marginBottom: '6px' }}>If 'Draw Path', select 'Preferred' or 'Avoided' route.</li>
+                 <li style={{ marginBottom: '6px' }}>Click on the map to place points for markers or paths.</li>
+                 <li style={{ marginBottom: '6px' }}>Follow prompts for marker details.</li>
+                 <li style={{ marginBottom: '6px' }}>Path drawing: Click points to form the path, then **double-click** the last point to finish.</li>
+                 <li>Use controls to hide/show items, change view angle, export data, or clear items (admin).</li>
+              </ol>
+            </div>
+          )}
+        </div> {/* End of Map Controls Panel div */}
+
+        {/* Legend Panel - Corrected Version */}
+        <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: '12px', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', width: '260px', maxHeight: 'calc(100vh - 450px)', overflowY: 'auto' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', borderBottom: '1px solid #eee', paddingBottom: '6px', fontWeight: 'bold' }}>Legend</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {Object.entries(markerColors).map(([type, color]) => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: color, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: '#333', flexGrow: 1 }}>{type}</span>
+              </div>
+            ))}
+            <div style={{marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #eee'}}>
+              <h4 style={{margin: '0 0 6px 0', fontSize: '13px', fontWeight: 'bold'}}>Path Types:</h4>
+              {Object.entries(pathOptions).map(([typeKey, { name, color }]) => (
+                <div key={typeKey} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <div style={{ width: '14px', height: '4px', backgroundColor: color, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0, borderRadius: '1px' }} />
+                  <span style={{ fontSize: '12px', color: '#333', flexGrow: 1 }}>{name}</span>
+                </div>
+              ))}
+            </div>
+            {isAdminView && (
+              <div style={{marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #eee'}}>
+                <h4 style={{margin: '0 0 6px 0', fontSize: '13px', fontWeight: 'bold'}}>Building Conditions:</h4>
+                {BUILDING_CONDITIONS.map(cond => (
+                  <div key={cond} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <div style={{ width: '14px', height: '14px', backgroundColor: BUILDING_CONDITION_COLORS[cond] || BUILDING_CONDITION_COLORS.Default, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '12px', color: '#333', flexGrow: 1 }}>{cond}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <div style={{ width: '14px', height: '14px', border: `2px solid ${BUILDING_CONDITION_COLORS.SelectedOutline}`, backgroundColor: 'rgba(0,0,0,0.05)', boxSizing: 'border-box', flexShrink: 0 }} />
+                  <span style={{ fontSize: '12px', color: '#333', flexGrow: 1 }}>Selected Building</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div> {/* End of Legend Panel div */}
+      </div> {/* End of Controls and Legend Overlay Container div */}
+
+    </div> // This closes the outermost div
+  ); // This closes the return statement
+// END OF REPLACEMENT FOR return (...) STATEMENT
+}; // This closes the StakeholderMap component function
+
+export default StakeholderMap;

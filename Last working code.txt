@@ -1,14 +1,19 @@
+
+// ALL IMPORTS FIRST
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { saveAs } from 'file-saver';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import './StakeholderMap.css'; // Make sure this CSS file exists
+import './StakeholderMap.css';
+import { db } from '../firebaseConfig';
+import { doc, setDoc, getDocs, collection, deleteDoc, writeBatch, getDoc } from "firebase/firestore";
+
 
 // Token
 mapboxgl.accessToken = 'pk.eyJ1IjoiamFjazExMzAiLCJhIjoiY205Y3kwbHJuMHBjczJrb2R6Mm44NmFkYSJ9.ZR3q-IyOfNZEjB3MKqWQTw';
 
-const ceLogoPath = '/input_file_0.png';
-const hcLogoPath = '/data/HC_image.png';
+const ceLogoPath = process.env.PUBLIC_URL + '/input_file_0.png'; // Added process.env.PUBLIC_URL
+const hcLogoPath = process.env.PUBLIC_URL + '/data/HC_image.png'; // Added process.env.PUBLIC_URL
 
 const defaultConfigValues = {
     initialCenter: [-98.371132, 40.593874],
@@ -17,7 +22,7 @@ const defaultConfigValues = {
     name: 'Hastings College',
     boundary: '/data/Hastings_College_Boundary.geojson',
     buildings: '/data/Hastings_College_Buildings.geojson',
-    initialPitch: 30, // <<<< ADD THIS LINE
+    initialPitch: 30,
   };
 
 const BUILDING_ID_PROPERTY_NAME = 'id';
@@ -27,53 +32,57 @@ const BUILDING_CONDITION_COLORS = {
   Poor: '#F44336', Default: 'rgba(128, 0, 0, 0.3)', SelectedOutline: '#007cbf',
 };
 const DEFAULT_BUILDING_FILL_OPACITY = 0.5;
-const SELECTED_BUILDING_FILL_OPACITY = 0.7;
+const SELECTED_BUILDING_FILL_OPACITY = 0.7; // Changed from 1.0 to what we had before
 
 const StakeholderMap = ({ config: userConfig, mode = "public" }) => {
-  // =======================================================================
-  // CORRECTED SECTION
-  // =======================================================================
-  console.log("StakeholderMap RENDERED. Is userConfig the same as last time? Inspect it ->", userConfig); 
-
-  // Define 'config' using useMemo
+   console.log("StakeholderMap RENDERED. Is userConfig prop same as last time? Inspect it ->", userConfig);
+   const firstUserConfigRef = useRef(userConfig); // This was for specific debug, can be removed if userConfig is stable
+   if (userConfig !== firstUserConfigRef.current && firstUserConfigRef.current !== undefined) { // Check if not initial render
+     console.error("ERROR: userConfig prop reference HAS CHANGED since first render!");
+   }
+  
   const config = useMemo(() => {
-    console.log("%%%%% useMemo for 'config' RECALCULATING (this is the function inside useMemo) %%%%%"); 
-    return { 
-      ...defaultConfigValues, 
-      ...userConfig 
-    };
-  }, [userConfig]); // Dependency array for useMemo
+     console.log("%%%%% useMemo for 'config' RECALCULATING (this is the function inside useMemo) %%%%%"); 
+     return { ...defaultConfigValues, ...userConfig };
+  }, [userConfig]); 
 
-  // This log will show the 'config' object that useMemo returned
-  console.log("Internal 'config' object after useMemo. Is it same as last time? Inspect it ->", config); 
-  // =======================================================================
+   console.log("Internal 'config' object after useMemo. Is it same as last time? Inspect it ->", config); 
 
-  // Your existing useState hooks:
-  const [markers, setMarkers] = useState([]);
-  const [showMarkers, setShowMarkers] = useState(true);  
-  const [showInstructions, setShowInstructions] = useState(true);
-  const [exportLoading, setExportLoading] = useState(false);
+  // === useRef for DOM elements (don't depend on state for initialization) ===
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const mapboxMarkersRef = useRef(new Map());
 
+  // === useState hooks ===
+  const [markers, setMarkers] = useState([]);
+  const [showMarkers, setShowMarkers] = useState(true);  
+  const [showInstructions, setShowInstructions] = useState(true);
+  const [exportLoading, setExportLoading] = useState(false);
   const [drawingMode, setDrawingMode] = useState('marker');
   const [currentPathCoordinates, setCurrentPathCoordinates] = useState([]);
-  const [paths, setPaths] = useState([]);
-  const [showPaths, setShowPaths] = useState(true);
+  // --- CORRECTED ORDER ---
+  const [paths, setPaths] = useState([]);               // Declare paths state HERE
+  const [showPaths, setShowPaths] = useState(true);       // Declare showPaths state HERE
+  // -----------------------
+  const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [buildingConditions, setBuildingConditions] = useState({});
+  const [buildingFeaturesCache, setBuildingFeaturesCache] = useState({});
 
-  // This useMemo is for pathOptions, it's different and should be fine
+  // === useRef hooks that depend on state (MUST come AFTER state declaration) ===
+  const pathsRef = useRef(paths);       // Now 'paths' is defined
+  const showPathsRef = useRef(showPaths); // Now 'showPaths' is defined
+  // -----------------------------------------------------------------------
+  
+  // === useMemo hooks ===
+  
   const pathOptions = useMemo(() => ({
     'Preferred Route': { color: '#008000', name: 'Preferred Route' },
     'Avoided Route': { color: '#F44336', name: 'Avoided Route' },
   }), []);
-  const [currentPathDrawType, setCurrentPathDrawType] = useState(Object.keys(pathOptions)[0]);
-
-  const isAdminView = mode === 'admin';
-
-  const [selectedBuildingId, setSelectedBuildingId] = useState(null);
-  const [buildingConditions, setBuildingConditions] = useState({});
-  const [buildingFeaturesCache, setBuildingFeaturesCache] = useState({});
+  const pathOptionsRef = useRef(pathOptions);
+  
+  const [currentPathDrawType, setCurrentPathDrawType] = useState(() => Object.keys(pathOptions)[0]); // Initialize after pathOptions
+  const renderCycleRef = useRef({ scheduled: false, listener: null });
 
   const markerColors = useMemo(() => ({
     'This is my favorite spot': '#006400', 'I meet friends here': '#008000',
@@ -82,39 +91,219 @@ const StakeholderMap = ({ config: userConfig, mode = "public" }) => {
     'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E'
   }), []);
 
-  // MOVED EARLIER
-  const handleBuildingConditionChange = useCallback((buildingId, condition) => {
-    const map = mapRef.current;
-    if (!map || !buildingId) {
-      console.warn("handleBuildingConditionChange: Map or BuildingID is invalid.", { map, buildingId });
-      return;
+  const isAdminView = mode === 'admin';
+
+
+  // === useEffects to keep refs synchronized ===
+  useEffect(() => {
+    pathsRef.current = paths;
+  }, [paths]);
+
+  useEffect(() => {
+    showPathsRef.current = showPaths;
+  }, [showPaths]);
+
+  // >>>>>>>>>> ADD useEffect TO UPDATE pathOptionsRef HERE <<<<<<<<<<<
+  useEffect(() => {
+    pathOptionsRef.current = pathOptions;
+  }, [pathOptions]);
+  
+  // === useCallback Hooks === // Optional: Add a new section header comment
+    const clearMarkers = useCallback(async () => {
+    if (!isAdminView) { 
+      alert("Admin privileges required."); 
+      return; 
     }
-    const idToUse = isNaN(Number(buildingId)) ? String(buildingId) : Number(buildingId);
-    console.log(`ADMIN_CONDITION_CHANGE: Building ID: '${idToUse}' (type: ${typeof idToUse}), New Condition: '${condition}' (type: ${typeof condition})`);
+    if (markers.length === 0) { 
+      alert("No markers to clear."); 
+      return; 
+    }
+    if (window.confirm(`Delete all ${markers.length} markers from the map and database? This cannot be undone.`)) {
+      const currentMarkerIds = markers.map(m => m.id);
+      setMarkers([]); // Optimistic UI update
 
-    setBuildingConditions(prev => {
-      const newConditions = { ...prev };
-      if (condition === '' || condition === null) {
-        delete newConditions[idToUse];
-        map.setFeatureState(
-          { source: 'college-buildings', id: idToUse },
-          { condition: null }
-        );
-      } else {
-        newConditions[idToUse] = condition;
-        map.setFeatureState(
-          { source: 'college-buildings', id: idToUse },
-          { condition: condition }
-        );
+      try {
+        console.log("Attempting to delete all markers from Firestore...");
+        const batch = writeBatch(db); // Ensure 'writeBatch' and 'db' are available
+        currentMarkerIds.forEach(markerId => {
+          const markerDocRef = doc(db, `${config.firestorePrefix}_markers`, newMarkerId); // Ensure 'doc' is available
+          batch.delete(markerDocRef);
+        });
+        await batch.commit();
+        console.log("All markers successfully deleted from Firestore.");
+      } catch (error) {
+        console.error("Error deleting markers from Firestore:", error);
+        alert("Error deleting markers from database. They may reappear on refresh.");
+        // Consider re-fetching markers or restoring state if delete failed.
       }
-      return newConditions;
-    });
-  }, []); // Dependencies: mapRef (stable), setBuildingConditions (stable)
+    }
+  }, [isAdminView, markers, setMarkers]); // db is implicitly from module scope
 
-  const addMarkerToState = useCallback((coordinates, comment, type) => {
-    const newMarker = { coordinates, comment, type, id: `marker-${Date.now()}-${Math.random()}` };
-    setMarkers(prev => [...prev, newMarker]);
-  }, []);
+  const clearPaths = useCallback(async () => {
+    if (!isAdminView) { 
+      alert("Admin privileges required."); 
+      return; 
+    }
+    if (paths.length === 0) { 
+      alert("No paths to clear."); 
+      return; 
+    }
+    if (window.confirm(`Delete all ${paths.length} paths from the map and database? This cannot be undone.`)) {
+      const currentPathIds = paths.map(p => p.id);
+      setPaths([]);
+      setCurrentPathCoordinates([]); 
+
+      try {
+        console.log("Attempting to delete all paths from Firestore...");
+        const batch = writeBatch(db); // Ensure 'writeBatch' and 'db' are available
+        currentPathIds.forEach(pathId => {
+          const pathDocRef = doc(db, "paths", pathId); // Ensure 'doc' is available
+          batch.delete(pathDocRef);
+        });
+        await batch.commit();
+        console.log("All paths successfully deleted from Firestore.");
+      } catch (error) {
+        console.error("Error deleting paths from Firestore:", error);
+        alert("Error deleting paths from database. They may reappear on refresh.");
+      }
+    }
+  }, [isAdminView, paths, setPaths, setCurrentPathCoordinates]); // db is implicitly from module scope
+
+  const clearBuildingConditions = useCallback(async () => {
+    const map = mapRef.current; // mapRef from component scope
+    if (!isAdminView) { 
+      alert("Admin privileges required."); 
+      return; 
+    }
+    if (!map || Object.keys(buildingConditions).length === 0) { 
+      alert("No building conditions to clear or map not ready."); 
+      return; 
+    }
+    if (window.confirm("Clear all building conditions from the map and database? This cannot be undone.")) {
+      const currentOriginalBuildingIds = Object.keys(buildingConditions);
+      
+      // Reset feature state on the map
+      currentOriginalBuildingIds.forEach(originalBuildingId => {
+        map.setFeatureState(
+          { source: 'college-buildings', id: originalBuildingId }, 
+          { condition: null, selected: (selectedBuildingId === originalBuildingId) } 
+        );
+      });
+
+      setBuildingConditions({});
+      // setSelectedBuildingId(null); // Optional: if you want to deselect building too
+
+      try {
+        console.log("Attempting to delete all building conditions from Firestore...");
+        const batch = writeBatch(db); // Ensure 'writeBatch' and 'db' are available
+        currentOriginalBuildingIds.forEach(originalBuildingId => {
+          const firestoreDocId = String(originalBuildingId).replace(/\//g, "__"); // Sanitize for Firestore
+          const conditionDocRef = doc(db, "buildingConditions", firestoreDocId); // Ensure 'doc' is available
+          batch.delete(conditionDocRef);
+        });
+        await batch.commit();
+        console.log("All building conditions successfully deleted from Firestore.");
+      } catch (error) {
+        console.error("Error deleting building conditions from Firestore:", error);
+        alert("Error deleting building conditions from database. They may reappear on refresh.");
+      }
+    }
+  }, [isAdminView, buildingConditions, setBuildingConditions, selectedBuildingId, mapRef]); // db implicit
+
+  // MOVED EARLIER
+const handleBuildingConditionChange = useCallback(async (buildingIdFromMap, condition) => { // Renamed for clarity
+  const map = mapRef.current;
+  if (!map || !buildingIdFromMap) {
+    console.warn("handleBuildingConditionChange: Map or BuildingID is invalid.", { map, buildingIdFromMap });
+    return;
+  }
+
+  // Sanitize the buildingIdFromMap to create a Firestore-safe document ID
+  const firestoreDocId = String(buildingIdFromMap).replace(/\//g, "__"); // Replace all '/' with '__'
+
+  console.log(`ADMIN_CONDITION_CHANGE: Original Building ID: '${buildingIdFromMap}', Firestore Doc ID: '${firestoreDocId}', New Condition: '${condition}'`);
+
+  
+  setBuildingConditions(prev => {
+    const newConditions = { ...prev };
+    // IMPORTANT: Use the ORIGINAL buildingIdFromMap as the key in your React state object
+    // Because this ID matches what's in your GeoJSON and used by map.setFeatureState
+    if (condition === '' || condition === null) {
+      delete newConditions[buildingIdFromMap]; 
+      map.setFeatureState({ source: 'college-buildings', id: buildingIdFromMap }, { condition: null });
+    } else {
+      newConditions[buildingIdFromMap] = condition;
+      map.setFeatureState({ source: 'college-buildings', id: buildingIdFromMap }, { condition: condition });
+    }
+    return newConditions;
+  });
+
+  try {
+    // Use the SANITIZED firestoreDocId for Firestore operations
+    const buildingConditionDocRef = doc(db, "buildingConditions", firestoreDocId);
+
+    if (condition === '' || condition === null) {
+      await deleteDoc(buildingConditionDocRef);
+      console.log("Building condition document deleted from Firestore for Doc ID:", firestoreDocId);
+    } else {
+      const firestoreBuildingConditionData = {
+        condition: condition,
+        timestamp: new Date(),
+        originalBuildingId: buildingIdFromMap // Store the original ID for reference if needed
+      };
+      await setDoc(buildingConditionDocRef, firestoreBuildingConditionData);
+      console.log("Building condition saved to Firestore for Doc ID:", firestoreDocId);
+    }
+  } catch (error) {
+    console.error("Error updating building condition in Firestore for Original ID:", buildingIdFromMap, "Firestore Doc ID:", firestoreDocId, error);
+    alert("Error saving building condition. Please try again.");
+    // Reverting React state here would be complex if the optimistic update used buildingIdFromMap
+    // and the Firestore operation used firestoreDocId. For now, this alert is the main feedback.
+  }
+}, [setBuildingConditions, buildingFeaturesCache]); // Dependencies
+
+const addMarkerToState = useCallback(async (coordinates, comment, type) => {
+  const newMarkerId = `marker-${Date.now()}-${Math.random()}`;
+  console.log(`MARKER_ADD_FLOW (1/5): addMarkerToState called. ID: ${newMarkerId}, Coords: ${JSON.stringify(coordinates)}, Type: ${type}`);
+
+  const newMarkerDataInReactState = {
+    coordinates,
+    comment,
+    type,
+    id: newMarkerId,
+    timestamp: new Date()
+  };
+
+  // 1. OPTIMISTIC UI UPDATE
+  setMarkers(prev => {
+    console.log(`MARKER_ADD_FLOW (2/5): setMarkers. Prev length: ${prev.length}. Attempting to add:`, JSON.stringify(newMarkerDataInReactState));
+    const updatedMarkers = [...prev, newMarkerDataInReactState]; // Ensure this is correct
+    console.log(`MARKER_ADD_FLOW (3/5): setMarkers. New potential length: ${updatedMarkers.length}.`);
+    return updatedMarkers;
+  });
+
+  // 2. TRY TO SAVE TO FIRESTORE
+  try {
+    const firestoreMarkerData = {
+        coordinates: { longitude: coordinates[0], latitude: coordinates[1] },
+        comment: comment,
+        type: type,
+        timestamp: newMarkerDataInReactState.timestamp
+    };
+    await setDoc(doc(db, "markers", newMarkerId), firestoreMarkerData);
+    console.log(`MARKER_ADD_FLOW (4/5): Marker saved to Firestore. ID: ${newMarkerId}`);
+  } catch (error) {
+    console.error(`MARKER_ADD_FLOW (ERROR 4a/5): Firestore save error for ${newMarkerId}:`, error);
+    // 3. REVERT OPTIMISTIC UPDATE
+    setMarkers(prev => {
+      console.log(`MARKER_ADD_FLOW (ERROR 4b/5): Reverting marker add for ${newMarkerId}. Prev length: ${prev.length}`);
+      const revertedMarkers = prev.filter(m => m.id !== newMarkerId);
+      console.log(`MARKER_ADD_FLOW (ERROR 4c/5): Reverted. New length: ${revertedMarkers.length}`);
+      return revertedMarkers;
+    });
+    alert("Error saving marker. Please try again.");
+  }
+}, [setMarkers]);
 
   const createMarkerElement = useCallback((markerData) => {
     const el = document.createElement('div');
@@ -151,23 +340,66 @@ const StakeholderMap = ({ config: userConfig, mode = "public" }) => {
     popup.on('close', () => { confirmBtn.removeEventListener('click', handleSubmit); cancelBtn.removeEventListener('click', handleCancel); typeSelect.removeEventListener('change', toggleCommentVisibility); });
   }, [markerColors, addMarkerToState]);
 
-  const finalizeCurrentPath = useCallback(() => {
-    if (currentPathCoordinates.length < 2) { setCurrentPathCoordinates([]); return; }
-    const newPath = {
-      id: `path-${Date.now()}-${Math.random()}`,
-      coordinates: [...currentPathCoordinates],
-      type: currentPathDrawType
-    };
-    setPaths(prevPaths => [...prevPaths, newPath]);
+    // Inside StakeholderMap component
+
+const finalizeCurrentPath = useCallback(async () => {
+  // console.log("finalizeCurrentPath called. currentPathCoordinates:", JSON.stringify(currentPathCoordinates), "currentPathDrawType:", currentPathDrawType); // Keep logs if helpful
+
+  if (currentPathCoordinates.length < 2) {
+    // console.log("Path too short, clearing currentPathCoordinates.");
     setCurrentPathCoordinates([]);
-  }, [currentPathCoordinates, currentPathDrawType]);
+    return;
+  }
 
-  // Remove this duplicate StakeholderMap function definition
+  const newPathId = `path-${Date.now()}-${Math.random()}`;
+  // console.log("Generated newPathId:", newPathId);
 
+  const newPathDataForReactState = {
+    id: newPathId,
+    coordinates: JSON.parse(JSON.stringify(currentPathCoordinates)), // Deep copy
+    type: currentPathDrawType,
+    timestamp: new Date()
+  };
+  // console.log("newPathDataForReactState (for React):", JSON.stringify(newPathDataForReactState));
 
+  setPaths(prevPaths => {
+      const updatedPaths = [...prevPaths, newPathDataForReactState];
+      // console.log("Updated paths state (optimistic):", JSON.stringify(updatedPaths));
+      return updatedPaths;
+  });
+  setCurrentPathCoordinates([]);
+
+  try {
+    // =======================================================================
+    // >>>>>>>>>> THIS IS THE MODIFIED PART FOR OPTION 1 <<<<<<<<<<<
+    // Prepare data for Firestore - TRANSFORM COORDINATES
+    const firestorePathData = {
+      coordinates: newPathDataForReactState.coordinates.map(coordPair => ({ 
+        lng: coordPair[0], 
+        lat: coordPair[1] 
+      })), // Transforms [[lng,lat],...] to [{lng,lat},{lng,lat},...]
+      type: newPathDataForReactState.type,
+      timestamp: newPathDataForReactState.timestamp
+    };
+    // =======================================================================
+    // console.log("Attempting to save to Firestore. Document ID:", newPathId, "Data:", JSON.stringify(firestorePathData)); // Keep logs if helpful
+
+    await setDoc(doc(db, "paths", newPathId), firestorePathData);
+    console.log("SUCCESS: Path saved to Firestore with ID:", newPathId);
+
+  } catch (error) {
+    console.error("ERROR saving path to Firestore. Path ID attempt:", newPathId, "Error Object:", error);
+    setPaths(prevPaths => {
+        const revertedPaths = prevPaths.filter(p => p.id !== newPathId);
+        // console.log("Reverted paths state due to save error:", JSON.stringify(revertedPaths));
+        return revertedPaths;
+    });
+    alert("Error saving path. Please try again. Check console for details.");
+  }
+}, [currentPathCoordinates, currentPathDrawType, setCurrentPathCoordinates, setPaths]);
 // Effect 1: Initialize Map
 useEffect(() => {
-  console.log("EFFECT 1 (Map Init) RUNNING because internal 'config' reference changed. Current 'config':", config); 
+   console.log("EFFECT 1 (Map Init) RUNNING. Current 'config' (userConfig prop):", config); 
   // console.log("MAP_INIT: Starting map initialization. Config used:", config);
 
   if (!mapContainerRef.current || mapRef.current) {
@@ -204,6 +436,7 @@ useEffect(() => {
         }
         
         if (fullBuildingsUrl) {
+          
           currentMap.addSource("college-buildings", { 
               type: "geojson", 
               data: fullBuildingsUrl,
@@ -278,6 +511,166 @@ useEffect(() => {
   };
 }, [config]); // Dependency for Effect #1 is [config]
 
+// Inside StakeholderMap component
+
+// ... (your existing useState, useCallback, and other useEffect hooks) ...
+
+const toggleMarkers = useCallback(() => { 
+    setShowMarkers(prev => !prev); 
+  }, [setShowMarkers]); // setShowMarkers is stable, but good practice to list if used. Or just [] if only prev => !prev
+  
+  const exportToCSV = useCallback(() => {
+    if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0) {
+      alert('No data to export.'); return;
+    }
+    setExportLoading(true); // Make sure setExportLoading is defined via useState
+    try {
+      const csvRows = [];
+      const header = ['DataType', 'ID', 'ItemTypeOrCondition', 'Latitude', 'Longitude', 'Comment', 'VertexIndex', 'PathCoordinates_JSON', 'BuildingName'];
+      csvRows.push(header.join(','));
+      
+      const escapeCSV = value => { /* ... your escapeCSV function ... */ };
+
+      markers.forEach(m => { /* ... add marker rows ... */ });
+      paths.forEach(p => { /* ... add path summary and vertex rows ... */ });
+      Object.entries(buildingConditions).forEach(([bid, condition]) => { /* ... add building condition rows ... */ });
+      
+      const csvContent = csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      // Ensure 'saveAs' is imported from 'file-saver' at the top of your file
+      saveAs(blob, `map-data-${new Date().toISOString().split('T')[0]}.csv`);
+    } catch (error) { 
+      console.error('CSV_EXPORT: General Error:', error); 
+      alert(`Export Error: ${error.message}`);
+    } finally { 
+      setExportLoading(false); // Make sure setExportLoading is defined
+    }
+  }, [markers, paths, buildingConditions, buildingFeaturesCache, setExportLoading]); // Add all dependencies
+
+
+
+useEffect(() => {
+  const loadData = async () => {
+    // === START: Single Marker Read Test ===
+    const TEST_MARKER_ID = "marker-1748892944556-0.15308740428538792"; // <<<< REPLACE THIS WITH THE ACTUAL ID YOU COPIED
+    const MARKERS_COLLECTION_NAME = "markers"; // Assuming this is your collection name
+
+    if (TEST_MARKER_ID !== "marker-1748892944556-0.15308740428538792") { // Check if you replaced the placeholder
+        console.log(`LOAD_DATA_TEST: Attempting to get SINGLE doc: ${MARKERS_COLLECTION_NAME}/${TEST_MARKER_ID}`);
+        try {
+            const docRef = doc(db, MARKERS_COLLECTION_NAME, TEST_MARKER_ID);
+            const docSnap = await getDoc(docRef); // Ensure getDoc is imported from "firebase/firestore"
+            if (docSnap.exists()) {
+                console.log("LOAD_DATA_TEST: SINGLE MARKER DOCUMENT FOUND:", JSON.stringify(docSnap.data()));
+            } else {
+                console.warn("LOAD_DATA_TEST: SINGLE MARKER DOCUMENT NOT FOUND IN DB:", TEST_MARKER_ID);
+            }
+        } catch (e) {
+            console.error("LOAD_DATA_TEST: Error fetching single marker document:", e);
+        }
+    } else {
+        console.warn("LOAD_DATA_TEST: Please update TEST_MARKER_ID with a real ID for the single marker test.");
+    }
+    // === END: Single Marker Read Test ===
+
+    // --- Load All Markers (Your existing logic) ---
+    console.log("Attempting to load ALL markers from Firestore...");
+    try {
+      const markersCollectionRef = collection(db, MARKERS_COLLECTION_NAME); // Use the same const
+      const markerQuerySnapshot = await getDocs(markersCollectionRef);
+      console.log(`LOAD_DEBUG: Collection: ${MARKERS_COLLECTION_NAME}, Snapshot size: ${markerQuerySnapshot.size}, Is empty: ${markerQuerySnapshot.empty}`);
+      const loadedMarkers = [];
+      markerQuerySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.coordinates && data.coordinates.longitude !== undefined && data.coordinates.latitude !== undefined) {
+          loadedMarkers.push({
+            id: docSnap.id,
+            coordinates: [data.coordinates.longitude, data.coordinates.latitude],
+            comment: data.comment || "",
+            type: data.type || "Just leave a comment",
+            timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date()
+          });
+        } else {
+          // console.warn("MARKER_LOAD: SKIPPED marker doc (structure):", docSnap.id);
+        }
+      });
+      setMarkers(loadedMarkers);
+      console.log("Successfully loaded ALL markers (setMarkers called with):", loadedMarkers.length);
+    } catch (error) {
+      console.error("Error loading ALL markers from Firestore: ", error);
+      alert("Could not load existing map markers.");
+    }
+
+    // --- Load Paths ---
+    console.log("Attempting to load paths from Firestore..."); // Keep this
+    try {
+      const pathsCollectionRef = collection(db, "paths");
+      const pathQuerySnapshot = await getDocs(pathsCollectionRef);
+      console.log(`LOAD_DEBUG: Collection: paths, Snapshot size: ${pathQuerySnapshot.size}, Is empty: ${pathQuerySnapshot.empty}`);
+      const loadedPaths = [];
+      // =============================================================
+      // >>>>>>>>>> THIS IS THE MISSING/CORRECTED PATH LOOP <<<<<<<<<<<
+      // =============================================================
+      pathQuerySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        console.log("PATH_LOAD: Processing doc:", docSnap.id, "Raw Data:", JSON.stringify(data));
+        if (Array.isArray(data.coordinates) && data.coordinates.length >= 2 && 
+            data.coordinates.every(coord => typeof coord === 'object' && coord !== null && typeof coord.lng === 'number' && typeof coord.lat === 'number')) {
+          console.log("PATH_LOAD: VALID path doc:", docSnap.id);
+          loadedPaths.push({
+            id: docSnap.id,
+            coordinates: data.coordinates.map(coordObj => [coordObj.lng, coordObj.lat]), 
+            type: data.type || Object.keys(pathOptions)[0],
+            timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date()
+          });
+        } else {
+          console.warn("PATH_LOAD: SKIPPED path doc due to invalid structure:", docSnap.id, "Actual data.coordinates:", JSON.stringify(data.coordinates));
+        }
+      });
+      // =============================================================
+      setPaths(loadedPaths);
+      console.log("Successfully loaded paths (setPaths called with):", loadedPaths.length, "paths loaded.");
+    } catch (error) {
+      console.error("Error loading paths from Firestore:", error);
+      alert("Could not load existing map paths.");
+    }
+
+    // --- Load Building Conditions ---
+    console.log("Attempting to load building conditions from Firestore..."); // Keep this
+    try {
+      const conditionsCollectionRef = collection(db, "buildingConditions");
+      const conditionQuerySnapshot = await getDocs(conditionsCollectionRef);
+      console.log(`LOAD_DEBUG: Collection: buildingConditions, Snapshot size: ${conditionQuerySnapshot.size}, Is empty: ${conditionQuerySnapshot.empty}`);
+      const loadedBuildingConditions = {};
+      // =====================================================================
+      // >>>>>>>>>> THIS IS THE MISSING/CORRECTED BUILDING CONDITION LOOP <<<<<<<<<<<
+      // =====================================================================
+      conditionQuerySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        console.log("CONDITION_LOAD: Processing doc:", docSnap.id, "Raw Data:", JSON.stringify(data));
+        if (data.originalBuildingId && data.condition) {
+          console.log("CONDITION_LOAD: VALID condition doc:", docSnap.id);
+          loadedBuildingConditions[data.originalBuildingId] = data.condition;
+        } else {
+          console.warn("CONDITION_LOAD: SKIPPED condition doc due to missing originalBuildingId or condition:", docSnap.id);
+        }
+      });
+      // =====================================================================
+      setBuildingConditions(loadedBuildingConditions);
+      console.log("Successfully loaded building conditions (setBuildingConditions called with):", Object.keys(loadedBuildingConditions).length, "conditions loaded.");
+    } catch (error) {
+      console.error("Error loading building conditions from Firestore: ", error);
+      alert("Could not load existing building conditions.");
+    }
+  }; // End of loadData async function
+
+  loadData();
+
+}, [pathOptions]); // Dependency array
+                  // setMarkers & setPaths from useState are stable and don't need to be deps here.
+                  // db from Firebase is stable.
+                  // pathOptions is memoized and stable.
+
   // NEW Effect: Synchronize buildingConditions state with map feature states
   useEffect(() => {
     const map = mapRef.current;
@@ -311,27 +704,131 @@ useEffect(() => {
   }, [buildingConditions]); // This effect runs ONLY when buildingConditions changes.
 
 
-  // Effect 2: Synchronize Mapbox Markers
-  useEffect(() => {
-    const map = mapRef.current; if (!map || !map.isStyleLoaded()) return;
-    const currentMapboxMarkerIds = new Set(mapboxMarkersRef.current.keys());
+// Effect 2: Synchronize Mapbox Markers
+useEffect(() => {
+  const map = mapRef.current;
+  console.log(`MARKER_EFFECT_DEBUG (A): useEffect #2 triggered. markers count: ${markers.length}, showMarkers: ${showMarkers}, map available: ${!!map}`);
+  if (markers.length > 0) {
+     console.log(`MARKER_EFFECT_DEBUG (A.1): Current markers in state:`, JSON.stringify(markers.map(m => ({id: m.id, type: m.type, coords: m.coordinates}))));
+  }
+
+  // >>>>>>>> DEFINE processMarkers UP HERE <<<<<<<<<<
+  const processMarkers = () => {
+    console.log(`MARKER_EFFECT_DEBUG (D): processMarkers RUNNING. markers.length: ${markers.length}, showMarkers: ${showMarkers}`);
+
+    const currentmapboxMarkerIds = new Set(Array.from(mapboxMarkersRef.current.keys()));
     const reactMarkerIds = new Set(markers.map(m => m.id));
+
     markers.forEach(markerData => {
+      if (!markerData.id) {
+        console.warn("MARKER_EFFECT_DEBUG (E): Skipping marker with no ID in processMarkers.", markerData);
+        return;
+      }
       if (!currentMapboxMarkerIds.has(markerData.id)) {
-        const el = createMarkerElement(markerData);
-        const popup = new mapboxgl.Popup({ offset: 25, closeButton: false }).setHTML(createPopupHTML(markerData.type, markerData.comment));
-        const newMapboxMarker = new mapboxgl.Marker({ element: el }).setLngLat(markerData.coordinates).setPopup(popup).addTo(map);
-        mapboxMarkersRef.current.set(markerData.id, newMapboxMarker);
+        console.log(`MARKER_EFFECT_DEBUG (F): Attempting to add NEW marker to map. ID: ${markerData.id}`);
+        try {
+          if (!Array.isArray(markerData.coordinates) || markerData.coordinates.length !== 2 ||
+              typeof markerData.coordinates[0] !== 'number' || isNaN(markerData.coordinates[0]) ||
+              typeof markerData.coordinates[1] !== 'number' || isNaN(markerData.coordinates[1])) {
+            console.error(`MARKER_EFFECT_DEBUG (G-ERROR): Invalid coords for ${markerData.id}:`, markerData.coordinates);
+            return;
+          }
+
+          const el = createMarkerElement(markerData);
+          const popup = new mapboxgl.Popup({ offset: 25, closeButton: false }).setHTML(createPopupHTML(markerData.type, markerData.comment));
+          console.log(`MARKER_EFFECT_DEBUG (H): Element & Popup created for ${markerData.id}. Coords for Mapbox:`, markerData.coordinates);
+
+          const newMapboxMarker = new mapboxgl.Marker({ element: el })
+            .setLngLat(markerData.coordinates) // Ensure these are [lng, lat]
+            .setPopup(popup)
+            .addTo(map);
+          console.log(`MARKER_EFFECT_DEBUG (I): Marker ${markerData.id} ADDED TO MAP via .addTo(map).`);
+
+          mapboxMarkersRef.current.set(markerData.id, newMapboxMarker);
+
+          const markerElement = newMapboxMarker.getElement();
+          if (markerElement) {
+            markerElement.style.display = showMarkers ? 'block' : 'none';
+            console.log(`MARKER_EFFECT_DEBUG (J): Visibility set for NEW ${markerData.id}. Display: ${markerElement.style.display}`);
+          } else {
+            console.warn(`MARKER_EFFECT_DEBUG (K-WARN): getElement() is null for NEW ${markerData.id} immediately after adding to map and ref.`);
+          }
+        } catch (e) {
+          console.error(`MARKER_EFFECT_DEBUG (L-ERROR): Error adding marker ${markerData.id} to map in processMarkers:`, e);
+        }
       }
     });
+
+    // Remove stale markers
     mapboxMarkersRef.current.forEach((markerInstance, id) => {
-      if (!reactMarkerIds.has(id)) { try { markerInstance.remove(); } catch (e) { /* ignore */ } mapboxMarkersRef.current.delete(id); }
+      if (!reactMarkerIds.has(id)) {
+        console.log(`MARKER_EFFECT_DEBUG (M): Removing stale marker ${id}`);
+        try { markerInstance.remove(); } catch (e) { console.error("Error removing stale marker:", e); }
+        mapboxMarkersRef.current.delete(id);
+      }
     });
-    mapboxMarkersRef.current.forEach((markerInstance) => {
-        const element = markerInstance.getElement();
-        if (element) { element.style.display = showMarkers ? 'block' : 'none'; }
-    });
-  }, [markers, showMarkers, createMarkerElement, createPopupHTML]);
+
+    // Ensure visibility for all OTHER existing markers
+     mapboxMarkersRef.current.forEach((markerInstance, id) => {
+         const markerInReactState = markers.find(m => m.id === id);
+         if (markerInReactState) {
+             if (currentMapboxMarkerIds.has(id)) { // Check if it's an old marker already on map
+                 const element = markerInstance.getElement();
+                 if (element) {
+                     const targetDisplay = showMarkers ? 'block' : 'none';
+                     if (element.style.display !== targetDisplay) {
+                         // console.log(`MARKER_EFFECT_DEBUG (N): Updating visibility for EXISTING marker ${id} to ${targetDisplay}`);
+                         element.style.display = targetDisplay;
+                     }
+                 }
+             }
+         }
+     });
+    console.log(`MARKER_EFFECT_DEBUG (O): processMarkers Finished. MapboxMarkersRef size: ${mapboxMarkersRef.current.size}`);
+  }; // End of processMarkers
+
+  // Now the rest of the useEffect can safely reference processMarkers
+  if (!map) {
+    console.log("MARKER_EFFECT_DEBUG (PRE-B): Map is not available. Returning early.");
+    return;
+  }
+
+  if (!map.isStyleLoaded()) {
+    console.log(`MARKER_EFFECT_DEBUG (B): Map not ready or style not loaded. Deferring. map.isStyleLoaded: ${map.isStyleLoaded()}`);
+    const onMapReadyForMarkers = () => {
+      console.log(`MARKER_EFFECT_DEBUG (C): Deferred call - map event ('idle') triggered. map.isStyleLoaded: ${map.isStyleLoaded()}`);
+      if (map.isStyleLoaded()) {
+        processMarkers(); // Now processMarkers is defined in this scope
+      } else {
+        // Fallback: if 'idle' fires but style somehow isn't loaded, try 'styledata' once
+        console.warn("MARKER_EFFECT_DEBUG (C.1): Style still not loaded after 'idle'. Listening for 'styledata' once.");
+        map.once('styledata', () => {
+            console.log("MARKER_EFFECT_DEBUG (C.2): 'styledata' event fired. Calling processMarkers.");
+            processMarkers();
+        });
+      }
+    };
+    map.once('idle', onMapReadyForMarkers); // Use 'idle' for primary deferral
+    
+    return () => { // Cleanup for the deferral
+      map.off('idle', onMapReadyForMarkers);
+      // If you added a 'styledata' listener, you might want to off it too, but 'once' handles it.
+    };
+  }
+
+  // If map style is already loaded
+  if (map.isStyleLoaded() && map.loaded()) { // map.loaded() is a good comprehensive check
+     console.log("MARKER_EFFECT_DEBUG (P): Map & Style loaded. Calling processMarkers directly.");
+     processMarkers();
+  } else {
+     // This case should ideally be caught by the !map.isStyleLoaded() block above,
+     // but as a fallback, you could log or re-attempt deferral.
+     console.log("MARKER_EFFECT_DEBUG (Q): map.isStyleLoaded() is false OR map.loaded() is false, even after initial check. Deferral should have been initiated by (B).");
+     // Consider the same deferral logic as in block (B) if this state is commonly reached.
+     // For now, the deferral in (B) should be the primary path for not-ready maps.
+  }
+
+}, [markers, showMarkers, createMarkerElement, createPopupHTML]);
 
 // Effect 5: Display the path currently being drawn
 useEffect(() => {
@@ -380,7 +877,7 @@ useEffect(() => {
           map.addLayer({ 
             id: layerId, type: 'line', source: sourceId, 
             layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility }, 
-            paint: { 'line-color': drawingPathColor, 'line-width': 3, 'line-dasharray': [2, 2] }, 
+            paint: { 'line-color': drawingPathColor, 'line-width': 2, 'line-dasharray': [2, 2] }, 
             filter: ['==', '$type', 'LineString'] 
           });
           map.addLayer({ 
@@ -406,7 +903,7 @@ useEffect(() => {
               map.addLayer({ 
                   id: layerId, type: 'line', source: sourceId, 
                   layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility }, 
-                  paint: { 'line-color': drawingPathColor, 'line-width': 3, 'line-dasharray': [2, 2] }, 
+                  paint: { 'line-color': drawingPathColor, 'line-width': 2, 'line-dasharray': [2, 2] }, 
                   filter: ['==', '$type', 'LineString'] 
               });
           }
@@ -505,194 +1002,123 @@ useEffect(() => {
     return () => { if (map.getStyle()) map.off('dblclick', doubleClickHandler); };
   }, [drawingMode, finalizeCurrentPath]);
 
-// Effect 8: Synchronize saved 'paths' state with Mapbox layers (NON-Aggressive Version - NO isStyleLoaded Check)
-useEffect(() => {
-  const map = mapRef.current;
+  // =======================================================================
+  // >>>>>>>>>> REPLACE YOUR CURRENT useEffect #8 WITH THIS VERSION <<<<<<<<<<<
+  // =======================================================================
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
 
-  // Only check if map object exists
-  if (!map) {
-    console.log("EFFECT 8 (Non-Aggressive): SKIPPING - mapRef.current is NULL.");
-    return;
-  }
-  // REMOVED CHECK: if (!map.isStyleLoaded()) { ... }
+    const sourceId = 'saved-paths-source';
+    const layerId = 'saved-paths-layer';
 
-  console.log(`EFFECT 8 (Non-Aggressive): TRIGGERED. paths count: ${paths.length}, showPaths: ${showPaths}`);
-  // console.log("EFFECT 8 (Non-Aggressive): Current paths state:", JSON.stringify(paths));
+    // Directly use state variables from the effect's closure.
+    // These will be the latest values whenever this effect re-runs.
+    const RENDER_PATHS_LOG_PREFIX = `EFFECT 8 [Paths: ${paths.length}, Show: ${showPaths}]:`;
 
-  const sourceId = 'saved-paths-source';
-  const layerId = 'saved-paths-layer';
-  let source = map.getSource(sourceId);
-  
-  const geojsonData = {
-    type: 'FeatureCollection',
-    features: paths.map(path => ({
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: path.coordinates },
-      properties: { id: path.id, type: path.type }
-    }))
-  };
-  
-  // console.log(`EFFECT 8 (Non-Aggressive): GeoJSON data for saved paths:`, JSON.stringify(geojsonData));
-  if (paths.length > 0 && geojsonData.features.length === 0 && paths.some(p => p.coordinates.length > 1)) {
-      console.error("EFFECT 8 (Non-Aggressive): MISMATCH! paths state has items, but geojsonData is empty. Paths:", JSON.stringify(paths));
-  }
+    const executePathLayerUpdate = () => {
+      console.log(`${RENDER_PATHS_LOG_PREFIX} executePathLayerUpdate: Style IS loaded. Proceeding.`);
 
-  const targetVisibility = showPaths ? 'visible' : 'none';
-  console.log(`EFFECT 8 (Non-Aggressive): Target visibility for '${layerId}': ${targetVisibility}`);
+      // Always remove previous layer and source
+      try {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      } catch (e) { console.error(`${RENDER_PATHS_LOG_PREFIX} Error removing existing items:`, e); }
 
-  const lineColorExpression = ['match', ['get', 'type'], ...Object.entries(pathOptions).flatMap(([typeKey, { color }]) => [typeKey, color]), '#0000FF' ];
+      if (paths.length === 0) {
+        console.log(`${RENDER_PATHS_LOG_PREFIX} No paths in state. Nothing to add.`);
+        return;
+      }
 
-  if (!source) {
-    console.log(`EFFECT 8 (Non-Aggressive): Source '${sourceId}' not found. Adding source and layer.`);
-    try {
+      const features = paths.map((path) => {
+        if (Array.isArray(path.coordinates) && path.coordinates.length >= 2 &&
+            path.coordinates.every(cp => Array.isArray(cp) && cp.length === 2 && typeof cp[0] === 'number' && !isNaN(cp[0]) && typeof cp[1] === 'number' && !isNaN(cp[1]))) {
+          return { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates }, properties: { id: path.id, type: path.type } };
+        }
+        console.warn(`${RENDER_PATHS_LOG_PREFIX} Path ID ${path.id} SKIPPED (feature creation). Coords:`, JSON.stringify(path.coordinates));
+        return null;
+      }).filter(Boolean);
+      
+      console.log(`${RENDER_PATHS_LOG_PREFIX} Total paths in state: ${paths.length}, Generated features: ${features.length}`);
+
+      if (features.length === 0 && paths.length > 0) {
+        console.warn(`${RENDER_PATHS_LOG_PREFIX} All paths were filtered out or invalid. Nothing to add to map.`);
+        return;
+      }
+      if (features.length === 0) {
+        console.log(`${RENDER_PATHS_LOG_PREFIX} No features generated. Nothing to add to map.`);
+        return;
+      }
+
+      const geojsonData = { type: 'FeatureCollection', features };
+      const targetVisibility = showPaths ? 'visible' : 'none'; // Uses current showPaths state
+      let lineColorExpressionValue;
+      if (pathOptions && Object.keys(pathOptions).length > 0) { // Uses current pathOptions state
+          lineColorExpressionValue = ['match', ['get', 'type'], ...Object.entries(pathOptions).flatMap(([typeKey, { color }]) => [typeKey, color]), '#0000FF'];
+      } else {
+          lineColorExpressionValue = '#0000FF';
+      }
+
+      try {
         map.addSource(sourceId, { type: 'geojson', data: geojsonData });
         map.addLayer({
           id: layerId, type: 'line', source: sourceId,
           layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility },
-          paint: { 'line-color': lineColorExpression, 'line-width': 4, 'line-opacity': 0.8 }
+          paint: { 'line-color': lineColorExpressionValue, 'line-width': 3, 'line-opacity': 0.8 }
         });
-        console.log(`EFFECT 8 (Non-Aggressive): Added layer '${layerId}' with visibility ${targetVisibility}`);
-    } catch (e) {
-        console.error(`EFFECT 8 (Non-Aggressive): Error adding source/layer '${sourceId}':`, e);
-    }
-  } else {
-    console.log(`EFFECT 8 (Non-Aggressive): Source '${sourceId}' found. Setting data.`);
-    try {
-        // Check if source is valid before setting data (belt and braces)
-        if (map.getSource(sourceId)) { 
-            source.setData(geojsonData); 
-        } else {
-             console.warn(`EFFECT 8 (Non-Aggressive): Source '${sourceId}' disappeared before setData!`);
-             // Might need to re-add source here if this happens
-             return; // Skip layer update if source vanished
+        console.log(`${RENDER_PATHS_LOG_PREFIX} Layer '${layerId}' ADDED/UPDATED. Vis: ${targetVisibility}, Feats: ${features.length}`);
+      } catch (e) {
+        console.error(`${RENDER_PATHS_LOG_PREFIX} Error adding new source/layer:`, e);
+        if (map.getSource(sourceId) && !map.getLayer(layerId)) {
+          try { map.removeSource(sourceId); } catch (rsErr) { /* ignore */ }
         }
+      }
+    }; // End of executePathLayerUpdate
 
-        const existingLayer = map.getLayer(layerId);
-        if (existingLayer) {
-            console.log(`EFFECT 8 (Non-Aggressive): Layer '${layerId}' found. Setting layout visibility to ${targetVisibility}.`);
-            map.setLayoutProperty(layerId, 'visibility', targetVisibility);
-            map.setPaintProperty(layerId, 'line-color', lineColorExpression); // In case path types/colors change
-        } else {
-            console.warn(`EFFECT 8 (Non-Aggressive): Layer '${layerId}' was expected but not found. Attempting to re-add.`);
-            // This case might happen if something else removed the layer. Re-add it.
-             map.addLayer({
-                id: layerId, type: 'line', source: sourceId,
-                layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': targetVisibility },
-                paint: { 'line-color': lineColorExpression, 'line-width': 4, 'line-opacity': 0.8 }
-            });
-        }
-    } catch (e) {
-        console.error(`EFFECT 8 (Non-Aggressive): Error setting data or layout for '${sourceId}':`, e);
-    }
-  }
-}, [paths, showPaths, pathOptions]); // Dependencies are correct
+    // --- Execution Logic for this effect run ---
+    let idleListener = null; // To store the listener for cleanup
 
-  const toggleMarkers = useCallback(() => { setShowMarkers(prev => !prev); }, []);
-  
-  const exportToCSV = useCallback(() => {
-    if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0) {
-      alert('No data to export.'); return;
-    }
-    setExportLoading(true);
-    try {
-      const csvRows = [];
-      const header = ['DataType', 'ID', 'ItemTypeOrCondition', 'Latitude', 'Longitude', 'Comment', 'VertexIndex', 'PathCoordinates_JSON', 'BuildingName'];
-      csvRows.push(header.join(','));
-      
-      const escapeCSV = value => {
-        const s = String(value ?? ""); // Ensure value is a string, default to empty string if null/undefined
-        if (s.includes(',') || s.includes('\n') || s.includes('"')) {
-          return `"${s.replace(/"/g, '""')}"`;
-        }
-        return s;
+    if (map.isStyleLoaded() && map.loaded()) {
+      // console.log(`${RENDER_PATHS_LOG_PREFIX} Map & Style fully ready. Executing update directly.`);
+      executePathLayerUpdate();
+    } else {
+      // console.log(`${RENDER_PATHS_LOG_PREFIX} Map or Style not fully ready. Waiting for 'idle'.`);
+      idleListener = () => { // Assign to variable so it can be removed
+        // console.log(`${RENDER_PATHS_LOG_PREFIX} 'idle' event fired. Calling executePathLayerUpdate.`);
+        executePathLayerUpdate();
       };
-
-      markers.forEach(m => {
-        csvRows.push([
-          escapeCSV('Marker'), escapeCSV(m.id), escapeCSV(m.type),
-          m.coordinates[1], m.coordinates[0], escapeCSV(m.comment),
-          '', '', '' // VertexIndex, PathCoordinates_JSON, BuildingName
-        ].join(','));
-      });
-
-      paths.forEach(p => {
-        csvRows.push([
-            escapeCSV('PathSummary'), escapeCSV(p.id), escapeCSV(p.type),
-            '', '', '', '', // Lat, Lng, Comment, VertexIndex
-            escapeCSV(JSON.stringify(p.coordinates)), // PathCoordinates_JSON
-            '' // BuildingName
-        ].join(','));
-        
-        // This was the problematic area
-        p.coordinates.forEach((coord, index) => { // Added braces for clarity
-          csvRows.push([
-            escapeCSV('PathVertex'), escapeCSV(p.id), escapeCSV(p.type),
-            coord[1], coord[0], // Latitude, Longitude
-            '', // Comment
-            index, // VertexIndex
-            '', // PathCoordinates_JSON
-            '' // BuildingName
-          ].join(','));
-        }); // Closing brace for forEach
-      });
-
-      Object.entries(buildingConditions).forEach(([bid, condition]) => {
-        const buildingProps = buildingFeaturesCache[bid];
-        // Attempt to get a meaningful name, fallback to the ID
-        const buildingName = buildingProps?.Name || buildingProps?.NAME || buildingProps?.id || bid; 
-        csvRows.push([
-            escapeCSV('BuildingCondition'),
-            escapeCSV(bid), // The actual ID used by Mapbox (from promoteId)
-            escapeCSV(condition),
-            '', '', '', '', '', // Lat/Lng, Comment, VertexIndex, PathCoords
-            escapeCSV(buildingName)
-        ].join(','));
-      });
-      
-      const csvContent = csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      saveAs(blob, `map-data-${new Date().toISOString().split('T')[0]}.csv`);
-
-    } catch (error) { 
-      console.error('CSV_EXPORT: General Error:', error); 
-      alert(`Export Error: ${error.message}`);
-    } finally { 
-      setExportLoading(false); 
+      map.once('idle', idleListener);
     }
-  }, [markers, paths, buildingConditions, buildingFeaturesCache]); // Dependencies
 
-  const clearMarkers = useCallback(() => {
-    if (markers.length === 0) { alert("No markers to clear."); return; }
-    if (window.confirm(`Delete all ${markers.length} markers? This cannot be undone.`)) setMarkers([]);
-  }, [markers]);
-
-  const clearPaths = useCallback(() => {
-    if (paths.length === 0) { alert("No paths to clear."); return; }
-    if (window.confirm(`Delete all ${paths.length} paths? This cannot be undone.`)) { setPaths([]); setCurrentPathCoordinates([]); }
-  }, [paths]);
-
-  const clearBuildingConditions = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || Object.keys(buildingConditions).length === 0) { alert("No building conditions to clear."); return; }
-    if (window.confirm("Clear all building conditions? This cannot be undone.")) {
-      Object.keys(buildingConditions).forEach(bid => {
-        const idToUse = isNaN(Number(bid)) ? String(bid) : Number(bid);
-        map.setFeatureState({ source: 'college-buildings', id: idToUse }, { condition: null, selected: false });
-      });
-      setBuildingConditions({}); setSelectedBuildingId(null);
-    }
-  }, [buildingConditions]);
+    return () => {
+      // console.log(`${RENDER_PATHS_LOG_PREFIX} Cleanup running.`);
+      if (map && typeof map.off === 'function' && idleListener) {
+        // console.log(`${RENDER_PATHS_LOG_PREFIX} Removing 'idle' listener.`);
+        map.off('idle', idleListener);
+      }
+      // The aggressive remove in executePathLayerUpdate handles clearing the layer/source
+      // if the component unmounts OR if the effect re-runs.
+      // If you want to be absolutely sure layer/source are gone on unmount even if idle didn't fire:
+      // if (map && map.getStyle()) { // Check map.getStyle() to ensure map is not already removed
+      //   try {
+      //     if (map.getLayer(layerId)) map.removeLayer(layerId);
+      //     if (map.getSource(sourceId)) map.removeSource(sourceId);
+      //   } catch(e) {/* ignore */}
+      // }
+    };
+  }, [paths, showPaths, pathOptions]); // Dependencies: when these change, the effect re-runs
+  // =======================================================================
 
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
       <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
         <div style={{ padding: '10px 15px', backgroundColor: 'rgba(255, 255, 255, 0.8)', borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', textAlign: 'center' }}>
-          <span style={{ fontWeight: 'bold', fontSize: '28px', color: '#ba3d04', fontFamily: 'Arial, sans-serif', display: 'block', marginBottom: '5px' }}>Mapfluence</span>
+          <span style={{ fontWeight: 'bold', fontSize: '32px', color: '#ba3d04', fontFamily: 'Arial, sans-serif', display: 'block', marginBottom: '5px' }}>Mapfluence</span>
           <img src={process.env.PUBLIC_URL + ceLogoPath} alt="Clark & Enersen Logo" style={{ height: '100px', width: 'auto' }} />
         </div>
         <div style={{ padding: '10px', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '6px', boxShadow: '0 1px 5px rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <img src={process.env.PUBLIC_URL + (config.logo || hcLogoPath)} alt={`${config.name || 'College'} Logo`} style={{ height: '150px', width: 'auto' }} />
+          <img src={process.env.PUBLIC_URL + (config.logo || hcLogoPath)} alt={`${config.name || 'College'} Logo`} style={{ height: '190px', width: 'auto' }} />
         </div>
       </div>
       <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 20, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
