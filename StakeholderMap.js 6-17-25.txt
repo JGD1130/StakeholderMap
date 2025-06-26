@@ -4,16 +4,17 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { db } from '../firebaseConfig';
 import { collection, getDocs, doc, setDoc, addDoc, serverTimestamp, GeoPoint, deleteDoc, writeBatch } from 'firebase/firestore';
 import './StakeholderMap.css';
+import AssessmentPanel from './AssessmentPanel';
 
 // --- Constants ---
-const conditionColors = { 'Excellent': '#047e02', 'Good': '#2c9e7a', 'Fair': '#fce205', 'Poor': '#fd0804' };
-const defaultBuildingColor = '#9e2e2c'; // Default color for buildings without conditions
+const conditionColors = { 'Excellent': '#4CAF50', 'Good': '#8BC34A', 'Fair': '#FFEB3B', 'Poor': '#F44336' };
+const progressColors = { 0: '#cccccc', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
+const defaultBuildingColor = '#cccccc';
 
 const StakeholderMap = ({ config, isAdmin }) => {
   // --- Refs ---
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  //const activeMarkersRef = useRef(new Map());
   const previousSelectedBuildingId = useRef(null);
 
   // --- State ---
@@ -26,7 +27,9 @@ const StakeholderMap = ({ config, isAdmin }) => {
   const [paths, setPaths] = useState([]);
   const [newPathCoords, setNewPathCoords] = useState([]);
   const [buildingConditions, setBuildingConditions] = useState({});
+  const [buildingAssessments, setBuildingAssessments] = useState({});
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [mapTheme, setMapTheme] = useState('progress'); 
 
   // --- Memoized Data ---
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
@@ -61,109 +64,81 @@ const StakeholderMap = ({ config, isAdmin }) => {
     setNewPathCoords([]);
   }, [newPathCoords, currentPathDrawType]);
 
-  const handleConditionChange = useCallback(async (e) => {
-    if (!selectedBuildingId || !isAdmin) return;
-    const condition = e.target.value;
-    const sanitizedId = selectedBuildingId.replace(/\//g, "__");
-    const conditionRef = doc(db, "buildingConditions", sanitizedId);
-    setBuildingConditions(prev => ({...prev, [selectedBuildingId]: condition}));
-    if (condition) { await setDoc(conditionRef, { condition, originalId: selectedBuildingId }); } 
-    else { await deleteDoc(conditionRef); }
-    setSelectedBuildingId(null); // Deselect building after setting condition
-  }, [selectedBuildingId, isAdmin]);
+  const handleAssessmentSave = useCallback((updatedAssessment) => {
+    const id = updatedAssessment.originalId;
+    if (!id) { console.error("Cannot save assessment: missing originalId."); return; }
+    setBuildingAssessments(prev => ({ ...prev, [id]: updatedAssessment }));
+  }, []);
 
   const clearMarkers = useCallback(async () => {
-  if (!window.confirm(`Are you sure you want to delete all ${markers.length} markers?`)) return;
-  const originalMarkers = [...markers];
-  setMarkers([]); // Optimistic UI update
-  try {
+    if (!window.confirm(`Delete ${markers.length} markers?`)) return;
+    setMarkers([]);
     const batch = writeBatch(db);
-    const markersSnapshot = await getDocs(collection(db, "markers"));
-    markersSnapshot.forEach(doc => batch.delete(doc.ref));
+    const snapshot = await getDocs(collection(db, "markers"));
+    snapshot.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
-  } catch (error) { setMarkers(originalMarkers); alert("Error clearing markers."); }
-}, [markers]); // ESLint fix: Added dependency
-
-const clearPaths = useCallback(async () => {
-  if (!window.confirm(`Are you sure you want to delete all ${paths.length} paths?`)) return;
-  const map = mapRef.current;
-  if (map) {
-    paths.forEach(path => {
-      if (map.getLayer(`path-${path.id}`)) map.removeLayer(`path-${path.id}`);
-      if (map.getSource(`path-${path.id}`)) map.removeSource(`path-${path.id}`);
-    });
-  }
-  setPaths([]); // State update
-  try {
-    const batch = writeBatch(db);
-    const pathsSnapshot = await getDocs(collection(db, "paths"));
-    pathsSnapshot.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  } catch (error) { /* Reverting is complex, for now we assume success */ }
-}, [paths]); // ESLint fix: Added dependency
-
-const clearConditions = useCallback(async () => {
-  if (!window.confirm(`Are you sure you want to delete all ${Object.keys(buildingConditions).length} building conditions?`)) return;
-  const originalConditions = {...buildingConditions};
-  setBuildingConditions({}); // State update
-  try {
-    const batch = writeBatch(db);
-    const conditionsSnapshot = await getDocs(collection(db, "buildingConditions"));
-    conditionsSnapshot.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  } catch (error) { setBuildingConditions(originalConditions); alert("Error clearing conditions."); }
-}, [buildingConditions]); // ESLint fix: This dependency is correct
-
-const exportData = useCallback(() => {
-  if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0) {
-    return alert("No data to export.");
-  }
-
-  // Helper to escape CSV fields
-  const escapeCsvField = (field) => `"${String(field || '').replace(/"/g, '""')}"`;
-
-  const headers = ['DataType', 'ID', 'Type', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'];
-  const rows = [headers.join(',')];
-
-  // Add marker data
-  markers.forEach(m => {
-    rows.push([
-      escapeCsvField('Marker'), escapeCsvField(m.id), escapeCsvField(m.type),
-      escapeCsvField(m.coordinates[1]), escapeCsvField(m.coordinates[0]),
-      escapeCsvField(m.comment), ''
-    ].join(','));
-  });
-
-  // Add path data
-  paths.forEach(p => {
-    rows.push([
-      escapeCsvField('Path'), escapeCsvField(p.id), escapeCsvField(p.type),
-      '', '', '', escapeCsvField(JSON.stringify(p.coordinates))
-    ].join(','));
-  });
-
-  // Add building condition data
-  Object.entries(buildingConditions).forEach(([id, condition]) => {
-    if (condition) {
-      rows.push([
-        escapeCsvField('BuildingCondition'), escapeCsvField(id), escapeCsvField(condition),
-        '', '', '', ''
-      ].join(','));
+  }, [markers]);
+  
+  const clearPaths = useCallback(async () => {
+    if (!window.confirm(`Delete ${paths.length} paths?`)) return;
+    const map = mapRef.current;
+    if(map) {
+      paths.forEach(path => {
+        if (map.getLayer(`path-${path.id}`)) map.removeLayer(`path-${path.id}`);
+        if (map.getSource(`path-${path.id}`)) map.removeSource(`path-${path.id}`);
+      });
     }
-  });
-
-  const csvContent = rows.join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
-  link.setAttribute("href", url);
-  link.setAttribute("download", `map-data-${new Date().toISOString().slice(0, 10)}.csv`);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-}, [markers, paths, buildingConditions]);
+    setPaths([]);
+    const batch = writeBatch(db);
+    const snapshot = await getDocs(collection(db, "paths"));
+    snapshot.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }, [paths]);
+  
+  const clearConditions = useCallback(async () => {
+    if (!window.confirm(`Delete ${Object.keys(buildingConditions).length} conditions?`)) return;
+    setBuildingConditions({});
+    const batch = writeBatch(db);
+    const snapshot = await getDocs(collection(db, "buildingConditions"));
+    snapshot.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }, [buildingConditions]);
+  
+  const exportData = useCallback(() => {
+    if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0 && Object.keys(buildingAssessments).length === 0) {
+      return alert("No data to export.");
+    }
+    const escapeCsvField = (field) => `"${String(field || '').replace(/"/g, '""')}"`;
+    const rows = [];
+    rows.push(['DataType', 'BuildingID', 'Category', 'SubCategory', 'Score', 'Notes'].join(','));
+    Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
+      const notes = assessment.notes || '';
+      if (assessment.scores) {
+        Object.entries(assessment.scores).forEach(([category, subScores]) => {
+          Object.entries(subScores).forEach(([subCategory, score]) => {
+            rows.push([ escapeCsvField('TechnicalAssessment'), escapeCsvField(assessment.buildingName || buildingId), escapeCsvField(category), escapeCsvField(subCategory), escapeCsvField(score), escapeCsvField(notes) ].join(','));
+          });
+        });
+      }
+    });
+    rows.push([]);
+    rows.push(['DataType', 'ID', 'Type', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
+    markers.forEach(m => { rows.push([ escapeCsvField('Marker'), escapeCsvField(m.id), escapeCsvField(m.type), escapeCsvField(m.coordinates[1]), escapeCsvField(m.coordinates[0]), escapeCsvField(m.comment), '' ].join(',')); });
+    paths.forEach(p => { rows.push([ escapeCsvField('Path'), escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
+    Object.entries(buildingConditions).forEach(([id, condition]) => {
+      if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), escapeCsvField(condition), '', '', '', '' ].join(',')); }
+    });
+    const csvContent = rows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `map-data-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [markers, paths, buildingConditions, buildingAssessments]);
 
   // ====================================================================
   // EFFECTS
@@ -174,296 +149,229 @@ const exportData = useCallback(() => {
     const map = new mapboxgl.Map({ container: mapContainerRef.current, style: config.style, center: [config.lng, config.lat], zoom: config.zoom, pitch: config.pitch, bearing: config.bearing });
     mapRef.current = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.addControl(new mapboxgl.FullscreenControl());
     map.on('load', () => setMapLoaded(true));
     return () => map.remove();
   }, [config]);
 
-  // --- 2. Load All Data ---
-useEffect(() => {
-  const fetchData = async () => {
-    // Always fetch markers for all users.
-    const markerSnap = await getDocs(collection(db, "markers"));
-    setMarkers(markerSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude]})));
+  useEffect(() => { // --- 2. Load All Data on Role Change ---
+    const fetchData = async () => {
+      try {
+        const markerSnap = await getDocs(collection(db, "markers"));
+        setMarkers(markerSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude]})));
+        if (!isAdmin) {
+          setPaths([]);
+          setBuildingConditions({});
+          setBuildingAssessments({});
+          return;
+        }
+        const [pathSnap, condSnap, assessmentSnap] = await Promise.all([ getDocs(collection(db, "paths")), getDocs(collection(db, "buildingConditions")), getDocs(collection(db, "buildingAssessments")) ]);
+        setPaths(pathSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude])})));
+        const condData = {};
+        condSnap.forEach(d => { const id = d.data().originalId || d.id.replace(/__/g, "/"); condData[id] = d.data().condition; });
+        setBuildingConditions(condData);
+        const assessmentData = {};
+        assessmentSnap.forEach(doc => { const key = doc.data().originalId || doc.id.replace(/__/g, "/"); assessmentData[key] = doc.data(); });
+        setBuildingAssessments(assessmentData);
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+        setPaths([]); setBuildingConditions({}); setBuildingAssessments({});
+      }
+    };
+    fetchData();
+  }, [isAdmin]);
 
-    // If the user is NOT an admin, clear any old path/condition data and stop.
-    if (!isAdmin) {
-      setPaths([]);
-      setBuildingConditions({});
-      return; 
-    }
-    
-    // If the user IS an admin, proceed to fetch paths and conditions.
-    const [pathSnap, condSnap] = await Promise.all([
-      getDocs(collection(db, "paths")),
-      getDocs(collection(db, "buildingConditions"))
-    ]);
-    
-    setPaths(pathSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude])})));
-    
-    const condData = {};
-    condSnap.forEach(d => { 
-      const id = d.data().originalId || d.id.replace(/__/g, "/"); 
-      condData[id] = d.data().condition; 
-    });
-    setBuildingConditions(condData);
-  };
-  
-  fetchData().catch(console.error);
+  useEffect(() => {
+  if (!mapLoaded || !mapRef.current || !config) return;
+  const map = mapRef.current;
 
-}, [isAdmin]); // The dependency array is crucial. This effect re-runs when isAdmin changes.
-
-  useEffect(() => { // --- 3. Draw Static Layers ---
-    if (!mapLoaded || !mapRef.current || !config) return;
-    const map = mapRef.current;
+  // This function contains all the drawing logic.
+  const drawLayers = () => {
+    // Add Buildings Source and Layer if they don't exist
     if (!map.getSource('buildings')) {
       map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
       map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 }});
-      map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#000000', 'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0], 'line-color-transition': {duration: 0}, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
+      map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
     }
+
+    // Add Boundary Source and Layer if they don't exist
     if (!map.getSource('boundary')) {
       map.addSource('boundary', { type: 'geojson', data: config.boundary });
       map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#F44336', 'line-width': 2.5 } });
     }
-  }, [mapLoaded, config]);
+  };
+
+  // This ensures the drawing happens only after the map's initial style is fully loaded.
+  if (map.isStyleLoaded()) {
+    drawLayers();
+  } else {
+    map.once('load', drawLayers);
+  }
+  
+}, [mapLoaded, config]); // This effect only depends on the map and config being ready.
 
   useEffect(() => { // --- 4. Handle Building Selection Outline ---
-  if (!mapLoaded || !mapRef.current) return;
-  const map = mapRef.current;
-
-  // If we are in public mode, make sure no building is selected or highlighted.
-  if (!isAdmin) {
-    if (previousSelectedBuildingId.current) {
-      map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
-    }
-    if (selectedBuildingId) {
-      setSelectedBuildingId(null); // Clear the selection state as well
-    }
-    return; // Stop here for public users
-  }
-  
-  // If we are in admin mode, handle the selection logic.
-  // Turn off the highlight for the previously selected building
-  if (previousSelectedBuildingId.current) {
-    map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
-  }
-
-  // Turn on the highlight for the newly selected building
-  if (selectedBuildingId) {
-    map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
-  }
-
-  // Remember the current selection for the next change
-  previousSelectedBuildingId.current = selectedBuildingId;
-  
-}, [selectedBuildingId, mapLoaded, isAdmin]); // ESLint FIX: Added 'isAdmin'
-
-useEffect(() => { // --- 5. Draw Markers ---
-  if (!mapLoaded || !mapRef.current) return;
-  const map = mapRef.current;
-
-  // This is a map of marker IDs to their Mapbox marker instances
-  const markersOnMap = new Map();
-  // We use a custom class to find our markers without affecting map controls
-  map.getCanvas().parentElement.querySelectorAll('.custom-mapbox-marker').forEach(markerEl => {
-    markersOnMap.set(markerEl.dataset.markerId, markerEl);
-  });
-
-  // Remove markers from map that are no longer in state
-  markersOnMap.forEach((markerEl, markerId) => {
-    if (!markers.find(m => m.id === markerId)) {
-      markerEl.remove();
-    }
-  });
-
-  // Add or update markers from state
-  if (showMarkers) {
-    markers.forEach(marker => {
-      if (!markersOnMap.has(marker.id)) {
-        const el = document.createElement('div');
-        el.className = 'custom-marker custom-mapbox-marker'; // Add our custom class
-        el.style.backgroundColor = markerTypes[marker.type] || '#9E9E9E';
-        el.dataset.markerId = marker.id; // Store ID for tracking
-
-        new mapboxgl.Marker(el)
-          .setLngLat(marker.coordinates)
-          .setPopup(new mapboxgl.Popup({ offset: 25 }).setText(marker.comment || marker.type))
-          .addTo(map);
-      }
-    });
-  } else {
-    // If hiding markers, remove all of them
-    map.getCanvas().parentElement.querySelectorAll('.custom-mapbox-marker').forEach(markerEl => markerEl.remove());
-  }
-}, [markers, showMarkers, markerTypes, mapLoaded]);
-
-  useEffect(() => { // --- 6. Draw Paths ---
-    if (!isAdmin) return; // <-- ADD THIS LINE
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
-    paths.forEach(path => {
-      const sourceId = `path-${path.id}`;
-      if (!map.getSource(sourceId)) {
+    if (!isAdmin && selectedBuildingId) setSelectedBuildingId(null);
+    if (previousSelectedBuildingId.current) map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
+    if (selectedBuildingId && isAdmin) map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
+    previousSelectedBuildingId.current = selectedBuildingId;
+  }, [selectedBuildingId, mapLoaded, isAdmin]);
+
+  useEffect(() => { // --- 5. Draw Markers ---
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    map.getCanvas().parentElement.querySelectorAll('.custom-mapbox-marker').forEach(markerEl => markerEl.remove());
+    if (showMarkers) {
+      markers.forEach(marker => {
+        const el = document.createElement('div');
+        el.className = 'custom-marker custom-mapbox-marker';
+        el.style.backgroundColor = markerTypes[marker.type] || '#9E9E9E';
+        new mapboxgl.Marker(el).setLngLat(marker.coordinates).setPopup(new mapboxgl.Popup({ offset: 25 }).setText(marker.comment || marker.type)).addTo(map);
+      });
+    }
+  }, [markers, showMarkers, markerTypes, mapLoaded]);
+  
+  useEffect(() => { // --- 6. Draw Paths ---
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    const existingPathLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('path-'));
+    existingPathLayers.forEach(layer => {
+      map.removeLayer(layer.id);
+      if (map.getSource(layer.id)) { map.removeSource(layer.id); }
+    });
+    if (isAdmin && showPaths) {
+      paths.forEach(path => {
+        const sourceId = `path-${path.id}`;
         map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates } } });
         map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
-      }
-      map.setLayoutProperty(sourceId, 'visibility', showPaths ? 'visible' : 'none');
-    });
-  }, [paths, showPaths, pathTypes, mapLoaded, isAdmin]); // Add isAdmin
-  
-  useEffect(() => { // --- 7. Update Building Colors ---
-  if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
-  const map = mapRef.current;
-
-  // If not admin OR there are no conditions, set all buildings to default color and stop.
-  // THIS IS THE FIX for the "Clear Conditions" button and the Mapbox error.
-  if (!isAdmin || Object.keys(buildingConditions).length === 0) {
-    map.setPaintProperty('buildings-layer', 'fill-extrusion-color', defaultBuildingColor);
-    return;
-  }
-  
-  // If we are admin and have conditions, build the correct rule.
-  const matchExpr = ['match', ['get', 'id']];
-  Object.entries(buildingConditions).forEach(([id, condition]) => {
-    if (condition && conditionColors[condition]) {
-      matchExpr.push(id, conditionColors[condition]);
+      });
     }
-  });
-  matchExpr.push(defaultBuildingColor); // Fallback for buildings without a condition
-
-  map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
-
-}, [buildingConditions, mapLoaded, isAdmin]); // ESLint fix: Added isAdmin
+  }, [paths, showPaths, pathTypes, mapLoaded, isAdmin]);
   
+  useEffect(() => { // --- 7. Update Building Colors (DEFINITIVE FIX) ---
+    if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
+    const map = mapRef.current;
+    const matchExpr = ['match', ['get', 'id']];
+    if (isAdmin && mapTheme === 'progress') {
+      if (Object.keys(buildingAssessments).length > 0) {
+        Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
+          let completedSections = 0;
+          if (assessment.scores?.architecture && Object.values(assessment.scores.architecture).some(s => s > 0)) completedSections++;
+          if (assessment.scores?.engineering && Object.values(assessment.scores.engineering).some(s => s > 0)) completedSections++;
+          if (assessment.scores?.functionality && Object.values(assessment.scores.functionality).some(s => s > 0)) completedSections++;
+          const key = assessment.originalId || buildingId;
+          matchExpr.push(key, progressColors[completedSections]);
+        });
+      }
+    } else {
+      if (isAdmin && Object.keys(buildingConditions).length > 0) {
+        Object.entries(buildingConditions).forEach(([id, condition]) => {
+          if (condition && conditionColors[condition]) matchExpr.push(id, conditionColors[condition]);
+        });
+      }
+    }
+    matchExpr.push(defaultBuildingColor);
+    map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
+  }, [buildingConditions, buildingAssessments, mapLoaded, isAdmin, mapTheme]);
+
   useEffect(() => { // --- 8. Handle Map Clicks ---
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleMapClick = (e) => {
-  // Path drawing mode is the same for both
-  if (mode === 'drawPath') { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
-
-  // Logic for admin users
-  if (isAdmin) {
-    const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
-    if (features.length > 0) {
-      setSelectedBuildingId(features[0].properties.id);
-      return; // Admin clicked a building, stop here.
-    }
-  }
-  
-  // If not an admin OR admin clicked map background, show marker popup.
-  setSelectedBuildingId(null);
-  showMarkerPopup(e.lngLat);
-};
-    const handleDblClick = () => { if (mode === 'drawPath') handleFinishPath(); };
+      if (mode === 'drawPath' && isAdmin) { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
+      if (mode === 'select' && isAdmin) {
+        const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
+        if (features.length > 0) { setSelectedBuildingId(features[0].properties.id); return; }
+      }
+      setSelectedBuildingId(null);
+      showMarkerPopup(e.lngLat);
+    };
+    const handleDblClick = () => { if (mode === 'drawPath' && isAdmin) handleFinishPath(); };
     map.on('click', handleMapClick);
     map.on('dblclick', handleDblClick);
     return () => { map.off('click', handleMapClick); map.off('dblclick', handleDblClick); };
-  }, [mapLoaded, mode, handleFinishPath, showMarkerPopup, isAdmin]);
+  }, [mapLoaded, mode, isAdmin, handleFinishPath, showMarkerPopup]);
 
   // ====================================================================
-  // JSX RENDER (Complete with Admin/Public Logic)
+  // JSX RENDER
   // ====================================================================
-return (
-  <div className="map-page-container">
-    <div ref={mapContainerRef} className="map-container" />
-    <div className="logo-panel-right">
-  {/* Container 1: Mapfluence + C&E Logo */}
-  <div className="logo-box">
-    <div className="mapfluence-title">MAPFLUENCE</div>
-    <img src={`${process.env.PUBLIC_URL}${config.logos.clarkEnersen}`} alt="Clark & Enersen Logo" />
-  </div>
+  if (!config) { return <div>Loading Map Configuration...</div>; }
 
-  {/* Container 2: Hastings Logo */}
-  <div className="logo-box">
-    <img src={`${process.env.PUBLIC_URL}${config.logos.hastings}`} alt="Hastings College Logo" />
-  </div>
-</div>
-  
-    {showHelp && (
-      <div className="help-panel">
-        <button className="close-button" onClick={() => setShowHelp(false)}>×</button>
-        <h4>How to Use This Map</h4>
-        <ul>
-          <li>Click on the map to add a marker.</li>
-          {/* Admin-only instructions */}
+  return (
+    <div className="map-page-container">
+      <div ref={mapContainerRef} className="map-container" />
+      <div className="logo-panel-right">
+        <div className="logo-box">
+          <div className="mapfluence-title">MAPFLUENCE</div>
+          <img src={`${process.env.PUBLIC_URL}${config.logos.clarkEnersen}`} alt="Clark & Enersen Logo" />
+        </div>
+        <div className="logo-box">
+          <img src={`${process.env.PUBLIC_URL}${config.logos.hastings}`} alt="Hastings College Logo" />
+        </div>
+      </div>
+
+      {showHelp && (
+        <div className="help-panel">
+          <button className="close-button" onClick={() => setShowHelp(false)}>×</button>
+          <h4>How to Use This Map</h4>
+          <ul>
+            <li>Click on the map to add a marker.</li>
+            {isAdmin && ( <><li>Double-click to finish drawing a path.</li><li>Click on a building to select and update its condition.</li></> )}
+            <li>Use the controls to toggle markers.</li>
+          </ul>
+          <button className="close-button-main" onClick={() => setShowHelp(false)}>Close</button>
+        </div>
+      )}
+
+      {isAdmin && (
+        <AssessmentPanel 
+          buildingId={selectedBuildingId} 
+          assessments={buildingAssessments}
+          onClose={() => setSelectedBuildingId(null)} 
+          onSave={handleAssessmentSave}
+        />
+      )}
+
+      <div className="map-controls-panel">
+        {isAdmin && (
+          <div className="control-section theme-selector">
+            <label htmlFor="theme-select">Map View:</label>
+            <select id="theme-select" value={mapTheme} onChange={(e) => setMapTheme(e.target.value)}>
+              <option value="stakeholder">Stakeholder Condition</option>
+              <option value="progress">Assessment Progress</option>
+            </select>
+          </div>
+        )}
+        <div className="mode-selector">
+          <button className={mode === 'select' ? 'active' : ''} onClick={() => setMode('select')}>Select/Marker</button>
+          {isAdmin && ( <button className={mode === 'drawPath' ? 'active' : ''} onClick={() => setMode('drawPath')}>Draw Path</button> )}
+        </div>
+        <div className="control-section">
+          <div className="button-row">
+            <button onClick={() => setShowMarkers(s => !s)}>{showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}</button>
+            {isAdmin && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
+          </div>
+        </div>
+        {isAdmin && (<div className="control-section admin-controls"><div className="button-row"><button onClick={exportData}>Export Data</button><button onClick={clearMarkers}>Clear Markers</button></div><div className="button-row"><button onClick={clearPaths}>Clear Paths</button><button onClick={clearConditions}>Clear Conditions</button></div></div>)}
+        <div className="legend">
+          <h4>Legend</h4>
+          <div className="legend-section"><h5>Marker Types</h5>{Object.entries(markerTypes).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
           {isAdmin && (
             <>
-              <li>Double-click to finish drawing a path.</li>
-              <li>Click on a building to select and update its condition.</li>
+              <div className="legend-section"><h5>Path Types</h5>{Object.entries(pathTypes).map(([type, {color}]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>))}</div>
+              {mapTheme === 'stakeholder' ? (
+                <div className="legend-section"><h5>Building Conditions</h5>{Object.entries(conditionColors).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
+              ) : (
+                <div className="legend-section"><h5>Assessment Progress</h5>{Object.entries(progressColors).filter(([key])=>key > 0).map(([key, color]) => (<div key={key} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{key}/3 Complete</div>))}</div>
+              )}
             </>
           )}
-          <li>Use the controls to toggle markers.</li>
-        </ul>
-        <button className="close-button-main" onClick={() => setShowHelp(false)}>Close</button>
-      </div>
-    )}
-
-    <div className="map-controls-panel">
-      <div className="mode-selector">
-        <button className={mode === 'select' ? 'active' : ''} onClick={() => setMode('select')}>Select/Marker</button>
-        {/* Admin-only "Draw Path" button */}
-        {isAdmin && (
-          <button className={mode === 'drawPath' ? 'active' : ''} onClick={() => setMode('drawPath')}>Draw Path</button>
-        )}
-      </div>
-
-      {/* Admin-only "Path Type" selector */}
-      {isAdmin && mode === 'drawPath' && (
-        <div className="control-section">
-          <label>Path Type:</label>
-          <select value={currentPathDrawType} onChange={(e) => setCurrentPathDrawType(e.target.value)}>
-            {Object.keys(pathTypes).map(type => <option key={type} value={type}>{type}</option>)}
-          </select>
         </div>
-      )}
-
-      <div className="control-section">
-  <div className="button-row">
-    <button onClick={() => setShowMarkers(s => !s)}>
-      {showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}
-    </button>
-    {isAdmin && (
-      <button onClick={() => setShowPaths(s => !s)}>
-        {showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}
-      </button>
-    )}
-  </div>
-</div>
-      
-      {/* ALL Admin-only buttons */}
-      {isAdmin && (<div className="control-section admin-controls"><div className="button-row"><button onClick={exportData}>Export Data</button><button onClick={clearMarkers}>Clear Markers</button></div><div className="button-row"><button onClick={clearPaths}>Clear Paths</button><button onClick={clearConditions}>Clear Conditions</button></div></div>)}
-      
-      {/* Admin-only building condition panel */}
-      {isAdmin && selectedBuildingId && (
-        <div className="control-section selected-building-panel">
-          <h4>Set Condition</h4>
-          <p>Building ID: {selectedBuildingId}</p>
-          <select value={buildingConditions[selectedBuildingId] || ''} onChange={handleConditionChange}>
-            <option value="">-- Not Set --</option>
-            <option value="Excellent">Excellent</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Poor">Poor</option>
-          </select>
-        </div>
-      )}
-
-      <div className="legend">
-        <h4>Legend</h4>
-        <div className="legend-section"><h5>Marker Types</h5>{Object.entries(markerTypes).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
-        
-        {/* Admin-only legend sections */}
-        {isAdmin && (
-          <>
-            <div className="legend-section"><h5>Path Types</h5>{Object.entries(pathTypes).map(([type, {color}]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>))}</div>
-            <div className="legend-section"><h5>Building Conditions</h5>{Object.entries(conditionColors).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
-          </>
-        )}
       </div>
     </div>
-  </div>
-);
+  );
 };
 
 export default StakeholderMap;
-
-
-
-
