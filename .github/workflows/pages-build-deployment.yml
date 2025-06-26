@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - main
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# ====================================================================
+# THIS IS THE FIX: Set the permissions for the GITHUB_TOKEN
+# ====================================================================
+permissions:
+  contents: read
+  pages: write      # Required to deploy to GitHub Pages
+  id-token: write   # Required for authentication with other services if needed
+# ====================================================================
 
 jobs:
   deploy:
@@ -12,13 +23,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Use a specific, stable version of Node.js
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build React App
+        # This command creates the production 'build' folder
+        run: npm run build 
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './'
+          # This MUST point to the 'build' folder created by your React app
+          path: './build'
 
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
