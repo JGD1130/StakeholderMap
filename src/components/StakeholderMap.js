@@ -150,24 +150,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
     mapRef.current = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.addControl(new mapboxgl.FullscreenControl());
-    map.on('load', () => setMapLoaded(true));
-    map.addSource('buildings-3d', {
-      'type': 'geojson',
-      'data': './buildings.geojson' // Make sure this file is in your /public folder
-    });
-
-    // Add the 3D building layer for visualization
-    map.addLayer({
-      'id': 'building-layer-3d',
-      'type': 'fill-extrusion',
-      'source': 'buildings-3d',
-      'paint': {
-        'fill-extrusion-color': '#cccccc',
-        'fill-extrusion-height': ['get', 'height'],
-        'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.85
-      }
-    });
+    map.on('load', () => setMapLoaded(true));    
     return () => map.remove();
   }, [config]);
 
