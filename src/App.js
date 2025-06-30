@@ -1,85 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import StakeholderMap from './components/StakeholderMap';
-import { getFunctions } from "firebase/functions";
 import './App.css';
 
-// --- Firebase Imports ---
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-// Removed unused imports to clean up the file
-
-// --- Your Map Configuration ---
-const hastingsConfig = {
-  lng: -98.371421,
-  lat: 40.592469,
-  zoom: 15.5,
-  pitch: 30,
-  bearing: 0,
-  style: 'mapbox://styles/mapbox/streets-v12', // A simple, fast-loading style
-  boundary: '/data/Hastings_College_Boundary.geojson',
-  buildings: '/data/Hastings_College_Buildings.geojson',
-  logos: {
-    clarkEnersen: '/data/Clark_Enersen_Logo.png',
-    hastings: '/data/HC_image.png'
-  },
-  name: 'Hastings College',
-};
-
-// ====================================================================
-// The App Component
-// ====================================================================
 function App() {
-  const [user, setUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const auth = getAuth();
+  const [config, setConfig] = useState(null);
+  
+  // We are hard-coding isAdmin to true for now, since that's the mode we need to work in.
+  const isAdmin = true; 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        try {
-          const idTokenResult = await currentUser.getIdTokenResult(true);
-          setIsAdmin(!!idTokenResult.claims.admin);
-        } catch (error) {
-          console.error("Error getting user token:", error);
-          setIsAdmin(false);
-        }
-      } else {
-        setUser(null);
-        setIsAdmin(false);
-      }
-    });
-    return () => unsubscribe();
-  }, [auth]);
+  const fetchConfig = async () => {
+    try {
+      // This is the new, correct line
+const response = await fetch(process.env.PUBLIC_URL + '/config.json');
+      const configData = await response.json();
 
-  const signInWithGoogle = async () => { /* ... your working sign-in code ... */ };
-  const handleSignOut = async () => { /* ... your working sign-out code ... */ };
+      // --- NEW: Process paths to be absolute ---
+      const processedConfig = {
+  ...configData,
+  buildings: process.env.PUBLIC_URL + configData.buildings,
+  boundary: process.env.PUBLIC_URL + configData.boundary, // <-- ADD THIS LINE
+  logos: {
+    clarkEnersen: process.env.PUBLIC_URL + configData.logos.clarkEnersen,
+    hastings: process.env.PUBLIC_URL + configData.logos.hastings,
+  }
+};
+      
+      setConfig(processedConfig); // Set the new, processed config
+
+    } catch (error) {
+      console.error("Failed to fetch or process map configuration:", error);
+    }
+  };
+
+  fetchConfig();
+}, []);// The empty array ensures this runs only once when the app starts
 
   return (
     <div className="App">
-      <div className="auth-bar">
-        {user ? (
-          <>
-            <span>Welcome, {user.displayName} {isAdmin && '(Admin)'}</span>
-            <button onClick={handleSignOut}>Sign Out</button>
-          </>
-        ) : (
-          <button onClick={signInWithGoogle}>Sign in with Google</button>
-        )}
-      </div>
-
-      {/*
-        THIS IS THE DEFINITIVE FIX:
-        We check if 'hastingsConfig' exists before trying to render StakeholderMap.
-        This prevents the crash by ensuring the 'config' prop is never undefined.
-      */}
-      {hastingsConfig ? (
-        <StakeholderMap 
-          config={hastingsConfig} 
-          isAdmin={isAdmin} 
-        />
-      ) : (
-        <div>Loading map configuration...</div>
-      )}
+      <header className="App-header">
+        {/* The h1 is now optional, as you have a title in your map component */}
+      </header>
+      <main>
+        {/* We pass the loaded config down to the map component */}
+        <StakeholderMap config={config} isAdmin={isAdmin} />
+      </main>
     </div>
   );
 }

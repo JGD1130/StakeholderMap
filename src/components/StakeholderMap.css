@@ -170,3 +170,164 @@
   font-weight: bold;
   margin-right: 10px;
 }
+
+/* =================================== */
+/*           MOBILE STYLES             */
+/* (Applies to screens 768px or less)  */
+/* =================================== */
+@media (max-width: 768px) {
+
+  /* --- 1. Hide the Logos --- */
+  /* The simplest solution for small screens is to just hide the logos. */
+  .logo-panel-right {
+    display: none;
+  }
+
+  /* --- 2. Reposition the Control Panel --- */
+  /* We will move the entire left-side panel to the bottom of the screen. */
+  .map-controls-panel {
+    /* Detach from the left and anchor to the bottom */
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    
+    /* Make it full-width instead of a fixed width */
+    width: 100%;
+    max-width: 100%; /* Override the desktop max-width */
+    
+    /* Adjust height and remove side border */
+    height: auto; /* Let content determine height */
+    max-height: 40%; /* Don't let it cover more than 40% of the screen */
+    border-left: none;
+    border-top: 2px solid #ccc; /* Add a top border */
+    
+    /* Allow the panel to scroll vertically if content overflows */
+    overflow-y: auto;
+  }
+
+  /* --- 3. Adjust Help Panel for Mobile --- */
+  .help-panel {
+    width: 90%;
+    left: 5%; /* Center it */
+  }
+}
+/* =================================== */
+/*         PHONE-ONLY STYLES           */
+/* (Applies to screens 480px or less)  */
+/* =================================== */
+@media (max-width: 480px) {
+
+  /* --- 1. Make the Marker Pop-up fluid --- */
+  /* This prevents the pop-up from hitting the screen edges */
+  .mapboxgl-popup-content {
+    width: 90vw; /* 90% of the viewport width */
+    max-width: 300px; /* But never bigger than its original 300px */
+  }
+
+  /* --- 2. Make the Bottom Control Panel shorter --- */
+  .map-controls-panel {
+    max-height: 35%; /* Reduce from 40% to take up less vertical space */
+    padding: 10px;    /* Reduce internal spacing */
+    gap: 8px;         /* Reduce space between sections */
+  }
+
+  /* --- 3. Shrink the controls inside the panel --- */
+  .mode-selector button,
+  .control-section .button-row button,
+  .control-section select {
+    padding: 8px;     /* Reduce button height */
+    font-size: 0.85em; /* Make button text slightly smaller */
+  }
+
+  /* --- 4. Move the Help Panel to avoid overlap --- */
+  /* It currently appears on top of the bottom control panel */
+  .help-panel {
+    bottom: auto; /* Unset the bottom position */
+    top: 10px;    /* Move it to the top */
+    right: 10px;  /* Keep it on the right */
+    width: 200px; /* Make it narrower */
+  }
+}
+/* ================================================== */
+/*         EXTRA REFINEMENTS FOR PHONE SCREENS        */
+/*         (Applies to screens 480px or less)         */
+/* ================================================== */
+@media (max-width: 480px) {
+
+  /* --- 1. Make the MAIN CONTROL PANEL more compact --- */
+  
+  /* Further reduce padding and spacing inside the panel */
+  .map-controls-panel {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  /* Make the text for buttons and dropdowns even smaller */
+  .map-controls-panel button,
+  .map-controls-panel select,
+  .map-controls-panel label {
+    font-size: 0.8em;
+    padding: 6px 8px; /* Reduce button/select height */
+  }
+
+  /* Reduce space between buttons that are on the same row */
+  .control-section .button-row {
+    gap: 6px;
+  }
+
+  /* --- 2. Fix the TECHNICAL ASSESSMENT PANEL overflow --- */
+
+  /* 
+    IMPORTANT: You may need to replace '.technical-assessment-panel' 
+    below with the actual class or ID of your assessment popup.
+    Look in your HTML or JS for the element that contains the assessment dropdowns.
+  */
+  .assessment-panel {
+    /* Position the panel safely */
+    width: 90vw !important; /* Make panel width 90% of the screen */
+    left: 5vw !important;    /* Position 5% from the left edge */
+    top: 20px !important;    /* Give it space from the top */
+    transform: none !important; /* Override any centering transform */
+    
+    /* THE FIX: Constrain height and add scrolling */
+    max-height: 75vh;     /* Limit height to 75% of the viewport */
+    overflow-y: auto;     /* Add a vertical scrollbar if content is too tall */
+  }
+}
+/* ================================================== */
+/*      AGGRESSIVE SHRINK FOR VERY NARROW SCREENS     */
+/*      (Applies to screens 480px or less)          */
+/* ================================================== */
+@media (max-width: 480px) {
+
+  /* 
+    IMPORTANT: You may need to replace '.technical-assessment-panel' 
+    with the actual class or ID of your assessment popup.
+  */
+
+  /* --- 1. Shrink the panel's own internal spacing --- */
+  .assessment-panel {
+    /* Reduce padding to give content more room */
+    padding: 10px 8px; /* 10px top/bottom, 8px left/right */
+    
+    /* Reduce the gap between elements inside the panel */
+    gap: 5px; 
+  }
+
+  /* --- 2. Shrink the titles and text --- */
+  .assessment-panel h4, 
+  .assessment-panel p {
+    font-size: 0.9em;     /* Make header text smaller */
+    margin-bottom: 5px; /* Reduce space below titles */
+  }
+
+  /* --- 3. Shrink the dropdowns (MOST IMPORTANT) --- */
+  .assessment-panel select {
+    /* Make the text inside the dropdowns smaller */
+    font-size: 0.8em; 
+    
+    /* Reduce padding to make the element physically narrower */
+    padding: 6px 4px; /* 6px top/bottom, 4px left/right */
+  }
+}

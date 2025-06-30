@@ -182,14 +182,36 @@ const StakeholderMap = ({ config, isAdmin }) => {
   }, [isAdmin]);
 
   useEffect(() => { // --- 3. Draw Static Layers ---
-    if (!mapLoaded || !mapRef.current || !config) return;
-    const map = mapRef.current;
-    if (!map.getSource('buildings')) {
-      map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
-      map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 }});
-      map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
-    }
-  }, [mapLoaded, config]);
+  if (!mapLoaded || !mapRef.current || !config) return;
+  const map = mapRef.current;
+  
+  // Draw Buildings (this part is the same as before)
+  if (!map.getSource('buildings')) {
+    map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
+    map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 }});
+    map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
+  }
+
+  // --- NEW: Draw the Boundary ---
+  // First, check if a boundary path was provided in the config and if it hasn't been drawn yet
+  if (config.boundary && !map.getSource('boundary')) {
+    map.addSource('boundary', {
+      type: 'geojson',
+      data: config.boundary
+    });
+    map.addLayer({
+      id: 'boundary-layer',
+      type: 'line',
+      source: 'boundary',
+      paint: {
+        'line-color': '#a9040e', // A dark red color for the boundary line
+        'line-width': 3,
+        'line-dasharray': [2, 2] // Creates a dashed line effect
+      }
+    });
+  }
+
+}, [mapLoaded, config]);
 
   useEffect(() => { // --- 4. Handle Building Selection Outline ---
     if (!mapLoaded || !mapRef.current) return;
@@ -286,10 +308,10 @@ const StakeholderMap = ({ config, isAdmin }) => {
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
-          <img src={`${process.env.PUBLIC_URL}${config.logos.clarkEnersen}`} alt="Clark & Enersen Logo" />
+          <img src={config.logos.clarkEnersen} alt="Clark & Enersen Logo" />
         </div>
         <div className="logo-box">
-          <img src={`${process.env.PUBLIC_URL}${config.logos.hastings}`} alt="Hastings College Logo" />
+          <img src={config.logos.hastings} alt="Hastings College Logo" />
         </div>
       </div>
 
