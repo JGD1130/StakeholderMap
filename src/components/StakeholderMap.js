@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { db } from '../firebaseConfig';
-import { collection, getDocs, doc, setDoc, addDoc, serverTimestamp, GeoPoint, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch } from 'firebase/firestore';
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel';
 
@@ -34,7 +34,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
   // --- Memoized Data ---
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
   const pathTypes = useMemo(() => ({ 'Preferred Route': { color: '#008000' }, 'Avoided Route': { color: '#F44336' } }), []);
-  const [currentPathDrawType, setCurrentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
+  const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
 
   // ====================================================================
   // CALLBACKS
