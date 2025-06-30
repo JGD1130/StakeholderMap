@@ -19,6 +19,13 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions: # <-- ADD THIS BLOCK
+      contents: read
+      pages: write
+      id-token: write
+    environment: # <-- AND ADD THIS BLOCK
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
