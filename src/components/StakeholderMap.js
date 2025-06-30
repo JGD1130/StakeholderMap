@@ -276,8 +276,11 @@ const StakeholderMap = ({ config, isAdmin }) => {
       }
     }
     matchExpr.push(defaultBuildingColor);
-    map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
-  }, [buildingConditions, buildingAssessments, mapLoaded, isAdmin, mapTheme]);
+    if (matchExpr && matchExpr.length >= 4) {
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
+    }
+  // eslint-disable-next-line
+}, [buildingConditions, buildingAssessments, mapLoaded, isAdmin, mapTheme]);
 
   useEffect(() => { // --- 8. Handle Map Clicks ---
     if (!mapLoaded || !mapRef.current) return;
