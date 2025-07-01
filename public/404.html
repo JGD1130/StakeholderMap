@@ -2,25 +2,19 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Single Page Apps for GitHub Pages</title>
+    <title>Redirecting...</title>
     <script type="text/javascript">
-      // Get the path from the URL, like "/StakeholderMap/admin"
+      // Get the full path that was requested (e.g., /StakeholderMap/admin)
       var path = window.location.pathname;
 
-      // Get the segment of the path that is your repository name, like "StakeholderMap"
-      // This is needed to build the correct redirect URL.
-      var repo = path.split('/')[1];
-
-      // Re-build the URL to point to the index.html file, with a query parameter
-      // that tells our app where the user was trying to go.
-      var redirect = '/' + repo + '/?redirect=' + path;
-
-      // Use sessionStorage to store the path. The index.html file will read this.
+      // Store this path in sessionStorage. The index.html file will read this.
       sessionStorage.setItem('redirect', path);
       
-      // Perform the actual redirect.
-      window.location.replace(redirect);
+      // Get the repository name segment (e.g., /StakeholderMap)
+      var repo = '/' + path.split('/')[1];
 
+      // Redirect to the root of the app.
+      window.location.replace(repo);
     </script>
   </head>
   <body>
