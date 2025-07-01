@@ -159,7 +159,9 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       try {
         const markerSnap = await getDocs(collection(db, "markers"));
         setMarkers(markerSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude]})));
-        if (!mode === 'admin') {
+        
+        // FIX: The logic here depends on 'mode', so 'mode' must be a dependency
+        if (mode !== 'admin') {
           setPaths([]);
           setBuildingConditions({});
           setBuildingAssessments({});
@@ -179,48 +181,34 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       }
     };
     fetchData();
-  }, [mode === 'admin']);
+  // FIX: Added 'mode' as a dependency because it's used inside the effect.
+  }, [mode]);
 
   useEffect(() => { // --- 3. Draw Static Layers ---
-  if (!mapLoaded || !mapRef.current || !config) return;
-  const map = mapRef.current;
-  
-  // Draw Buildings (this part is the same as before)
-  if (!map.getSource('buildings')) {
-    map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
-    map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 }});
-    map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
-  }
-
-  // --- NEW: Draw the Boundary ---
-  // First, check if a boundary path was provided in the config and if it hasn't been drawn yet
-  if (config.boundary && !map.getSource('boundary')) {
-    map.addSource('boundary', {
-      type: 'geojson',
-      data: config.boundary
-    });
-    map.addLayer({
-      id: 'boundary-layer',
-      type: 'line',
-      source: 'boundary',
-      paint: {
-        'line-color': '#a9040e', // A dark red color for the boundary line
-        'line-width': 3,
-        'line-dasharray': [2, 2] // Creates a dashed line effect
-      }
-    });
-  }
-
-}, [mapLoaded, config]);
+    if (!mapLoaded || !mapRef.current || !config) return;
+    const map = mapRef.current;
+    if (!map.getSource('buildings')) {
+      map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
+      map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 }});
+      map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
+    }
+    if (config.boundary && !map.getSource('boundary')) {
+      map.addSource('boundary', { type: 'geojson', data: config.boundary });
+      map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#a9040e', 'line-width': 3, 'line-dasharray': [2, 2] }});
+    }
+  }, [mapLoaded, config]);
 
   useEffect(() => { // --- 4. Handle Building Selection Outline ---
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
-    if (!mode === 'admin' && selectedBuildingId) setSelectedBuildingId(null);
+    
+    // FIX: The logic here depends on 'mode', so 'mode' must be a dependency
+    if (mode !== 'admin' && selectedBuildingId) setSelectedBuildingId(null);
     if (previousSelectedBuildingId.current) map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
     if (selectedBuildingId && mode === 'admin') map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
     previousSelectedBuildingId.current = selectedBuildingId;
-  }, [selectedBuildingId, mapLoaded, mode === 'admin']);
+  // FIX: Added 'mode' as a dependency.
+  }, [selectedBuildingId, mapLoaded, mode]);
 
   useEffect(() => { // --- 5. Draw Markers ---
     if (!mapLoaded || !mapRef.current) return;
@@ -244,6 +232,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       map.removeLayer(layer.id);
       if (map.getSource(layer.id)) { map.removeSource(layer.id); }
     });
+    // FIX: The logic here depends on 'mode', so 'mode' must be a dependency
     if (mode === 'admin' && showPaths) {
       paths.forEach(path => {
         const sourceId = `path-${path.id}`;
@@ -251,12 +240,14 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
       });
     }
-  }, [paths, showPaths, pathTypes, mapLoaded, mode === 'admin']);
+  // FIX: Added 'mode' as a dependency.
+  }, [paths, showPaths, pathTypes, mapLoaded, mode]);
   
   useEffect(() => { // --- 7. Update Building Colors ---
     if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
     const map = mapRef.current;
     const matchExpr = ['match', ['get', 'id']];
+    // FIX: This logic depends on 'mode' and 'mapTheme'
     if (mode === 'admin' && mapTheme === 'progress') {
       if (Object.keys(buildingAssessments).length > 0) {
         Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
@@ -279,13 +270,14 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     if (matchExpr && matchExpr.length >= 4) {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
     }
-  // eslint-disable-next-line
-}, [buildingConditions, buildingAssessments, mapLoaded, mode === 'admin', mapTheme]);
+  // FIX: Added 'mode' and 'mapTheme' as dependencies.
+  }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapTheme]);
 
   useEffect(() => { // --- 8. Handle Map Clicks ---
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleMapClick = (e) => {
+      // FIX: This logic depends on 'interactionMode' and 'mode'.
       if (interactionMode === 'drawPath' && mode === 'admin') { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
       if (interactionMode === 'select' && mode === 'admin') {
         const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
@@ -298,7 +290,8 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     map.on('click', handleMapClick);
     map.on('dblclick', handleDblClick);
     return () => { map.off('click', handleMapClick); map.off('dblclick', handleDblClick); };
-  }, [mapLoaded, mode, mode === 'admin', handleFinishPath, showMarkerPopup]);
+  // FIX: Added all missing dependencies: 'mode', 'interactionMode', 'handleFinishPath', and 'showMarkerPopup'
+  }, [mapLoaded, mode, interactionMode, handleFinishPath, showMarkerPopup]);
 
   // ====================================================================
   // RENDER LOGIC
@@ -351,22 +344,22 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
           </div>
         )}
         <div className="mode-selector">
-  <button 
-    className={interactionMode === 'select' ? 'active' : ''} 
-    onClick={() => setInteractionMode('select')}  
-  >
-    Select/Marker
-  </button>
+          <button 
+            className={interactionMode === 'select' ? 'active' : ''} 
+            onClick={() => setInteractionMode('select')}  
+          >
+            Select/Marker
+          </button>
   
-  {mode === 'admin' && ( 
-    <button 
-      className={interactionMode === 'drawPath' ? 'active' : ''} 
-      onClick={() => setInteractionMode('drawPath')} 
-    >
-      Draw Path
-    </button> 
-  )}
-</div>
+          {mode === 'admin' && ( 
+            <button 
+              className={interactionMode === 'drawPath' ? 'active' : ''} 
+              onClick={() => setInteractionMode('drawPath')} 
+            >
+              Draw Path
+            </button> 
+          )}
+        </div>
 
         <div className="control-section">
           <div className="button-row">
