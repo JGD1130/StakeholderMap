@@ -11,7 +11,7 @@ const conditionColors = { 'Excellent': '#4CAF50', 'Good': '#8BC34A', 'Fair': '#F
 const progressColors = { 0: '#cccccc', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
 const defaultBuildingColor = '#cccccc';
 
-const StakeholderMap = ({ config, isAdmin }) => {
+const StakeholderMap = ({ config, mode = 'public' }) => {
   // --- Refs ---
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -19,7 +19,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
 
   // --- State ---
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [mode, setMode] = useState('select');
+  const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(true);
   const [showPaths, setShowPaths] = useState(true);
   const [showHelp, setShowHelp] = useState(true);
@@ -159,7 +159,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
       try {
         const markerSnap = await getDocs(collection(db, "markers"));
         setMarkers(markerSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude]})));
-        if (!isAdmin) {
+        if (!mode === 'admin') {
           setPaths([]);
           setBuildingConditions({});
           setBuildingAssessments({});
@@ -179,7 +179,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
       }
     };
     fetchData();
-  }, [isAdmin]);
+  }, [mode === 'admin']);
 
   useEffect(() => { // --- 3. Draw Static Layers ---
   if (!mapLoaded || !mapRef.current || !config) return;
@@ -216,11 +216,11 @@ const StakeholderMap = ({ config, isAdmin }) => {
   useEffect(() => { // --- 4. Handle Building Selection Outline ---
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
-    if (!isAdmin && selectedBuildingId) setSelectedBuildingId(null);
+    if (!mode === 'admin' && selectedBuildingId) setSelectedBuildingId(null);
     if (previousSelectedBuildingId.current) map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
-    if (selectedBuildingId && isAdmin) map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
+    if (selectedBuildingId && mode === 'admin') map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
     previousSelectedBuildingId.current = selectedBuildingId;
-  }, [selectedBuildingId, mapLoaded, isAdmin]);
+  }, [selectedBuildingId, mapLoaded, mode === 'admin']);
 
   useEffect(() => { // --- 5. Draw Markers ---
     if (!mapLoaded || !mapRef.current) return;
@@ -244,20 +244,20 @@ const StakeholderMap = ({ config, isAdmin }) => {
       map.removeLayer(layer.id);
       if (map.getSource(layer.id)) { map.removeSource(layer.id); }
     });
-    if (isAdmin && showPaths) {
+    if (mode === 'admin' && showPaths) {
       paths.forEach(path => {
         const sourceId = `path-${path.id}`;
         map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates } } });
         map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
       });
     }
-  }, [paths, showPaths, pathTypes, mapLoaded, isAdmin]);
+  }, [paths, showPaths, pathTypes, mapLoaded, mode === 'admin']);
   
   useEffect(() => { // --- 7. Update Building Colors ---
     if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
     const map = mapRef.current;
     const matchExpr = ['match', ['get', 'id']];
-    if (isAdmin && mapTheme === 'progress') {
+    if (mode === 'admin' && mapTheme === 'progress') {
       if (Object.keys(buildingAssessments).length > 0) {
         Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
           let completedSections = 0;
@@ -269,7 +269,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
         });
       }
     } else {
-      if (isAdmin && Object.keys(buildingConditions).length > 0) {
+      if (mode === 'admin' && Object.keys(buildingConditions).length > 0) {
         Object.entries(buildingConditions).forEach(([id, condition]) => {
           if (condition && conditionColors[condition]) { matchExpr.push(id, conditionColors[condition]); }
         });
@@ -280,25 +280,25 @@ const StakeholderMap = ({ config, isAdmin }) => {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
     }
   // eslint-disable-next-line
-}, [buildingConditions, buildingAssessments, mapLoaded, isAdmin, mapTheme]);
+}, [buildingConditions, buildingAssessments, mapLoaded, mode === 'admin', mapTheme]);
 
   useEffect(() => { // --- 8. Handle Map Clicks ---
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleMapClick = (e) => {
-      if (mode === 'drawPath' && isAdmin) { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
-      if (mode === 'select' && isAdmin) {
+      if (interactionMode === 'drawPath' && mode === 'admin') { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
+      if (interactionMode === 'select' && mode === 'admin') {
         const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
         if (features.length > 0) { setSelectedBuildingId(features[0].properties.id); return; }
       }
       setSelectedBuildingId(null);
       showMarkerPopup(e.lngLat);
     };
-    const handleDblClick = () => { if (mode === 'drawPath' && isAdmin) handleFinishPath(); };
+    const handleDblClick = () => { if (interactionMode === 'drawPath' && mode === 'admin') handleFinishPath(); };
     map.on('click', handleMapClick);
     map.on('dblclick', handleDblClick);
     return () => { map.off('click', handleMapClick); map.off('dblclick', handleDblClick); };
-  }, [mapLoaded, mode, isAdmin, handleFinishPath, showMarkerPopup]);
+  }, [mapLoaded, mode, mode === 'admin', handleFinishPath, showMarkerPopup]);
 
   // ====================================================================
   // RENDER LOGIC
@@ -324,14 +324,14 @@ const StakeholderMap = ({ config, isAdmin }) => {
           <h4>How to Use This Map</h4>
           <ul>
             <li>Click on the map to add a marker.</li>
-            {isAdmin && ( <><li>Double-click to finish drawing a path.</li><li>Click on a building to select and update its condition.</li></> )}
+            {mode === 'admin' && ( <><li>Double-click to finish drawing a path.</li><li>Click on a building to select and update its condition.</li></> )}
             <li>Use the controls to toggle markers.</li>
           </ul>
           <button className="close-button-main" onClick={() => setShowHelp(false)}>Close</button>
         </div>
       )}
 
-      {isAdmin && (
+      {mode === 'admin' && (
         <AssessmentPanel 
           buildingId={selectedBuildingId} 
           assessments={buildingAssessments}
@@ -341,7 +341,7 @@ const StakeholderMap = ({ config, isAdmin }) => {
       )}
 
       <div className="map-controls-panel">
-        {isAdmin && (
+        {mode === 'admin' && (
           <div className="control-section theme-selector">
             <label htmlFor="theme-select">Map View:</label>
             <select id="theme-select" value={mapTheme} onChange={(e) => setMapTheme(e.target.value)}>
@@ -351,20 +351,34 @@ const StakeholderMap = ({ config, isAdmin }) => {
           </div>
         )}
         <div className="mode-selector">
-          <button className={mode === 'select' ? 'active' : ''} onClick={() => setMode('select')}>Select/Marker</button>
-          {isAdmin && ( <button className={mode === 'drawPath' ? 'active' : ''} onClick={() => setMode('drawPath')}>Draw Path</button> )}
-        </div>
+  <button 
+    className={interactionMode === 'select' ? 'active' : ''} 
+    onClick={() => setInteractionMode('select')}  
+  >
+    Select/Marker
+  </button>
+  
+  {mode === 'admin' && ( 
+    <button 
+      className={interactionMode === 'drawPath' ? 'active' : ''} 
+      onClick={() => setInteractionMode('drawPath')} 
+    >
+      Draw Path
+    </button> 
+  )}
+</div>
+
         <div className="control-section">
           <div className="button-row">
             <button onClick={() => setShowMarkers(s => !s)}>{showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}</button>
-            {isAdmin && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
+            {mode === 'admin' && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
           </div>
         </div>
-        {isAdmin && (<div className="control-section admin-controls"><div className="button-row"><button onClick={exportData}>Export Data</button><button onClick={clearMarkers}>Clear Markers</button></div><div className="button-row"><button onClick={clearPaths}>Clear Paths</button><button onClick={clearConditions}>Clear Conditions</button></div></div>)}
+        {mode === 'admin' && (<div className="control-section admin-controls"><div className="button-row"><button onClick={exportData}>Export Data</button><button onClick={clearMarkers}>Clear Markers</button></div><div className="button-row"><button onClick={clearPaths}>Clear Paths</button><button onClick={clearConditions}>Clear Conditions</button></div></div>)}
         <div className="legend">
           <h4>Legend</h4>
           <div className="legend-section"><h5>Marker Types</h5>{Object.entries(markerTypes).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
-          {isAdmin && (
+          {mode === 'admin' && (
             <>
               <div className="legend-section"><h5>Path Types</h5>{Object.entries(pathTypes).map(([type, {color}]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>))}</div>
               {mapTheme === 'stakeholder' ? (

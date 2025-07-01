@@ -180,8 +180,8 @@
   /* --- 1. Hide the Logos --- */
   /* The simplest solution for small screens is to just hide the logos. */
   .logo-panel-right {
-    display: none;
-  }
+  display: none;
+}
 
   /* --- 2. Reposition the Control Panel --- */
   /* We will move the entire left-side panel to the bottom of the screen. */
