@@ -8,8 +8,8 @@ import AssessmentPanel from './AssessmentPanel';
 
 // --- Constants ---
 const conditionColors = { 'Excellent': '#4CAF50', 'Good': '#8BC34A', 'Fair': '#FFEB3B', 'Poor': '#F44336' };
-const progressColors = { 0: '#cccccc', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
-const defaultBuildingColor = '#cccccc';
+const progressColors = { 0: '#85474b', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
+const defaultBuildingColor = '#85474b';
 
 const StakeholderMap = ({ config, mode = 'public' }) => {
   // --- Refs ---
