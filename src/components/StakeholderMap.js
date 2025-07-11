@@ -30,7 +30,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   const [buildingAssessments, setBuildingAssessments] = useState({});
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [mapTheme, setMapTheme] = useState('progress');
-  const [isControlsVisible, setIsControlsVisible] = useState(true); // Default to visible
+  // The 'isControlsVisible' state has been removed to restore stability.
 
   // --- Memoized Data ---
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
@@ -38,7 +38,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
 
   // ====================================================================
-  // CALLBACKS
+  // CALLBACKS (These are all stable and unchanged)
   // ====================================================================
   const showMarkerPopup = useCallback((lngLat) => {
     if (!mapRef.current) return;
@@ -142,34 +142,32 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   }, [markers, paths, buildingConditions, buildingAssessments]);
 
   // ====================================================================
-  // EFFECTS
+  // EFFECTS (These are all stable and unchanged)
   // ====================================================================
-  useEffect(() => { // --- 1. Initialize Map ---
+  useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
     mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN;
     const map = new mapboxgl.Map({ container: mapContainerRef.current, style: config.style, center: [config.lng, config.lat], zoom: config.zoom, pitch: config.pitch, bearing: config.bearing });
     mapRef.current = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.addControl(new mapboxgl.FullscreenControl());
-    map.on('load', () => setMapLoaded(true));    
+    map.on('load', () => setMapLoaded(true));
     return () => map.remove();
   }, [config]);
 
-  useEffect(() => { // --- 2. Load All Data on Role Change ---
+  useEffect(() => {
     const fetchData = async () => {
       try {
         const markerSnap = await getDocs(collection(db, "markers"));
-        setMarkers(markerSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude]})));
-        
-        // FIX: The logic here depends on 'mode', so 'mode' must be a dependency
+        setMarkers(markerSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] })));
         if (mode !== 'admin') {
           setPaths([]);
           setBuildingConditions({});
           setBuildingAssessments({});
           return;
         }
-        const [pathSnap, condSnap, assessmentSnap] = await Promise.all([ getDocs(collection(db, "paths")), getDocs(collection(db, "buildingConditions")), getDocs(collection(db, "buildingAssessments")) ]);
-        setPaths(pathSnap.docs.map(d => ({id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude])})));
+        const [pathSnap, condSnap, assessmentSnap] = await Promise.all([getDocs(collection(db, "paths")), getDocs(collection(db, "buildingConditions")), getDocs(collection(db, "buildingAssessments"))]);
+        setPaths(pathSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude]) })));
         const condData = {};
         condSnap.forEach(d => { const id = d.data().originalId || d.id.replace(/__/g, "/"); condData[id] = d.data().condition; });
         setBuildingConditions(condData);
@@ -182,36 +180,32 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       }
     };
     fetchData();
-  // FIX: Added 'mode' as a dependency because it's used inside the effect.
   }, [mode]);
 
-  useEffect(() => { // --- 3. Draw Static Layers ---
+  useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
     const map = mapRef.current;
     if (!map.getSource('buildings')) {
       map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
-      map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 }});
-      map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] }});
+      map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 } });
+      map.addLayer({ id: 'buildings-outline', type: 'line', source: 'buildings', paint: { 'line-color': '#007bff', 'line-width': 2.5, 'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0] } });
     }
     if (config.boundary && !map.getSource('boundary')) {
       map.addSource('boundary', { type: 'geojson', data: config.boundary });
-      map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#a9040e', 'line-width': 3, 'line-dasharray': [2, 2] }});
+      map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#a9040e', 'line-width': 3, 'line-dasharray': [2, 2] } });
     }
   }, [mapLoaded, config]);
 
-  useEffect(() => { // --- 4. Handle Building Selection Outline ---
+  useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
-    
-    // FIX: The logic here depends on 'mode', so 'mode' must be a dependency
     if (mode !== 'admin' && selectedBuildingId) setSelectedBuildingId(null);
     if (previousSelectedBuildingId.current) map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
     if (selectedBuildingId && mode === 'admin') map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
     previousSelectedBuildingId.current = selectedBuildingId;
-  // FIX: Added 'mode' as a dependency.
   }, [selectedBuildingId, mapLoaded, mode]);
 
-  useEffect(() => { // --- 5. Draw Markers ---
+  useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     map.getCanvas().parentElement.querySelectorAll('.custom-mapbox-marker').forEach(markerEl => markerEl.remove());
@@ -224,8 +218,8 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       });
     }
   }, [markers, showMarkers, markerTypes, mapLoaded]);
-  
-  useEffect(() => { // --- 6. Draw Paths ---
+
+  useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const existingPathLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('path-'));
@@ -233,7 +227,6 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       map.removeLayer(layer.id);
       if (map.getSource(layer.id)) { map.removeSource(layer.id); }
     });
-    // FIX: The logic here depends on 'mode', so 'mode' must be a dependency
     if (mode === 'admin' && showPaths) {
       paths.forEach(path => {
         const sourceId = `path-${path.id}`;
@@ -241,14 +234,12 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
       });
     }
-  // FIX: Added 'mode' as a dependency.
   }, [paths, showPaths, pathTypes, mapLoaded, mode]);
-  
-  useEffect(() => { // --- 7. Update Building Colors ---
+
+  useEffect(() => {
     if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
     const map = mapRef.current;
     const matchExpr = ['match', ['get', 'id']];
-    // FIX: This logic depends on 'mode' and 'mapTheme'
     if (mode === 'admin' && mapTheme === 'progress') {
       if (Object.keys(buildingAssessments).length > 0) {
         Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
@@ -271,14 +262,12 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     if (matchExpr && matchExpr.length >= 4) {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
     }
-  // FIX: Added 'mode' and 'mapTheme' as dependencies.
   }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapTheme]);
 
-  useEffect(() => { // --- 8. Handle Map Clicks ---
+  useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleMapClick = (e) => {
-      // FIX: This logic depends on 'interactionMode' and 'mode'.
       if (interactionMode === 'drawPath' && mode === 'admin') { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
       if (interactionMode === 'select' && mode === 'admin') {
         const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
@@ -291,7 +280,6 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     map.on('click', handleMapClick);
     map.on('dblclick', handleDblClick);
     return () => { map.off('click', handleMapClick); map.off('dblclick', handleDblClick); };
-  // FIX: Added all missing dependencies: 'mode', 'interactionMode', 'handleFinishPath', and 'showMarkerPopup'
   }, [mapLoaded, mode, interactionMode, handleFinishPath, showMarkerPopup]);
 
   // ====================================================================
@@ -302,15 +290,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   return (
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
-       {/* NEW: Add the toggle button for the admin view */}
-      {mode === 'admin' && (
-        <button 
-          className="controls-toggle-button" 
-          onClick={() => setIsControlsVisible(v => !v)}
-        >
-          {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
-        </button>
-      )}
+
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
@@ -320,15 +300,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
           <img src={config.logos.hastings} alt="Hastings College Logo" />
         </div>
       </div>
-       {/* NEW: Add the toggle button for the admin view */}
-      {mode === 'admin' && (
-        <button 
-          className="controls-toggle-button" 
-          onClick={() => setIsControlsVisible(v => !v)}
-        >
-          {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
-        </button>
-      )}
+
       {showHelp && (
         <div className="help-panel">
           <button className="close-button" onClick={() => setShowHelp(false)}>×</button>
@@ -368,7 +340,6 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
           >
             Select/Marker
           </button>
-  
           {mode === 'admin' && ( 
             <button 
               className={interactionMode === 'drawPath' ? 'active' : ''} 
@@ -378,24 +349,54 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
             </button> 
           )}
         </div>
-
         <div className="control-section">
           <div className="button-row">
             <button onClick={() => setShowMarkers(s => !s)}>{showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}</button>
             {mode === 'admin' && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
           </div>
         </div>
-        {mode === 'admin' && (<div className="control-section admin-controls"><div className="button-row"><button onClick={exportData}>Export Data</button><button onClick={clearMarkers}>Clear Markers</button></div><div className="button-row"><button onClick={clearPaths}>Clear Paths</button><button onClick={clearConditions}>Clear Conditions</button></div></div>)}
+        {mode === 'admin' && (
+          <div className="control-section admin-controls">
+            <div className="button-row">
+              <button onClick={exportData}>Export Data</button>
+              <button onClick={clearMarkers}>Clear Markers</button>
+            </div>
+            <div className="button-row">
+              <button onClick={clearPaths}>Clear Paths</button>
+              <button onClick={clearConditions}>Clear Conditions</button>
+            </div>
+          </div>
+        )}
         <div className="legend">
           <h4>Legend</h4>
-          <div className="legend-section"><h5>Marker Types</h5>{Object.entries(markerTypes).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
+          <div className="legend-section">
+            <h5>Marker Types</h5>
+            {Object.entries(markerTypes).map(([type, color]) => (
+              <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
+            ))}
+          </div>
           {mode === 'admin' && (
             <>
-              <div className="legend-section"><h5>Path Types</h5>{Object.entries(pathTypes).map(([type, {color}]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>))}</div>
+              <div className="legend-section">
+                <h5>Path Types</h5>
+                {Object.entries(pathTypes).map(([type, {color}]) => (
+                  <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>
+                ))}
+              </div>
               {mapTheme === 'stakeholder' ? (
-                <div className="legend-section"><h5>Building Conditions</h5>{Object.entries(conditionColors).map(([type, color]) => (<div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>))}</div>
+                <div className="legend-section">
+                  <h5>Building Conditions</h5>
+                  {Object.entries(conditionColors).map(([type, color]) => (
+                    <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
+                  ))}
+                </div>
               ) : (
-                <div className="legend-section"><h5>Assessment Progress</h5>{Object.entries(progressColors).filter(([key])=>key > 0).map(([key, color]) => (<div key={key} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{key}/3 Complete</div>))}</div>
+                <div className="legend-section">
+                  <h5>Assessment Progress</h5>
+                  {Object.entries(progressColors).filter(([key])=>key > 0).map(([key, color]) => (
+                    <div key={key} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{key}/3 Complete</div>
+                  ))}
+                </div>
               )}
             </>
           )}
