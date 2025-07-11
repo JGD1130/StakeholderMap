@@ -30,6 +30,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   const [buildingAssessments, setBuildingAssessments] = useState({});
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [mapTheme, setMapTheme] = useState('progress');
+  const [isControlsVisible, setIsControlsVisible] = useState(true); // Default to visible
 
   // --- Memoized Data ---
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
@@ -301,6 +302,15 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   return (
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
+       {/* NEW: Add the toggle button for the admin view */}
+      {mode === 'admin' && (
+        <button 
+          className="controls-toggle-button" 
+          onClick={() => setIsControlsVisible(v => !v)}
+        >
+          {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
+        </button>
+      )}
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
@@ -310,7 +320,15 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
           <img src={config.logos.hastings} alt="Hastings College Logo" />
         </div>
       </div>
-
+       {/* NEW: Add the toggle button for the admin view */}
+      {mode === 'admin' && (
+        <button 
+          className="controls-toggle-button" 
+          onClick={() => setIsControlsVisible(v => !v)}
+        >
+          {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
+        </button>
+      )}
       {showHelp && (
         <div className="help-panel">
           <button className="close-button" onClick={() => setShowHelp(false)}>×</button>

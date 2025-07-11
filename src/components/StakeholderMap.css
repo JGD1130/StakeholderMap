@@ -86,6 +86,26 @@
 .legend-item { display: flex; align-items: center; margin-bottom: 5px; font-size: 0.85em; }
 .legend-color-box { width: 16px; height: 16px; margin-right: 8px; flex-shrink: 0; border: 1px solid #eee; }
 
+/* NEW: Styling for the Show/Hide Controls Toggle Button */
+.controls-toggle-button {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 11; /* Must be higher than the control panel's z-index (10) */
+  background-color: #fff;
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  font-weight: 600;
+}
+
+.controls-toggle-button:hover {
+  background-color: #f0f0f0;
+}
+
 /* --- Step 1: Control the OUTER Mapbox Box (Width is good) --- */
 .mapboxgl-popup-content {
   padding: 0; 
