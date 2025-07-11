@@ -30,9 +30,9 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   const [buildingAssessments, setBuildingAssessments] = useState({});
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [mapTheme, setMapTheme] = useState('progress');
-  // The 'isControlsVisible' state has been removed to restore stability.
+  const [isControlsVisible, setIsControlsVisible] = useState(true);
 
-  // --- Memoized Data ---
+    // --- Memoized Data ---
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
   const pathTypes = useMemo(() => ({ 'Preferred Route': { color: '#008000' }, 'Avoided Route': { color: '#F44336' } }), []);
   const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
@@ -291,6 +291,18 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
 
+      {/* NEW: Add the toggle button, only in admin mode. */}
+      {/* It is a SIBLING to the map-controls-panel, not inside it. */}
+      {mode === 'admin' && (
+        <button
+          className="controls-toggle-button"
+          onClick={() => setIsControlsVisible(v => !v)}
+        >
+          {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
+        </button>
+      )}
+
+      {/* The existing logo panel is untouched */}
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
@@ -301,6 +313,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         </div>
       </div>
 
+      {/* The existing help panel is untouched */}
       {showHelp && (
         <div className="help-panel">
           <button className="close-button" onClick={() => setShowHelp(false)}>×</button>
@@ -314,96 +327,101 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         </div>
       )}
 
+      {/* The existing assessment panel is untouched */}
       {mode === 'admin' && (
-        <AssessmentPanel 
-          buildingId={selectedBuildingId} 
+        <AssessmentPanel
+          buildingId={selectedBuildingId}
           assessments={buildingAssessments}
-          onClose={() => setSelectedBuildingId(null)} 
+          onClose={() => setSelectedBuildingId(null)}
           onSave={handleAssessmentSave}
         />
       )}
 
-      <div className="map-controls-panel">
-        {mode === 'admin' && (
-          <div className="control-section theme-selector">
-            <label htmlFor="theme-select">Map View:</label>
-            <select id="theme-select" value={mapTheme} onChange={(e) => setMapTheme(e.target.value)}>
-              <option value="stakeholder">Stakeholder Condition</option>
-              <option value="progress">Assessment Progress</option>
-            </select>
-          </div>
-        )}
-        <div className="mode-selector">
-          <button 
-            className={interactionMode === 'select' ? 'active' : ''} 
-            onClick={() => setInteractionMode('select')}  
-          >
-            Select/Marker
-          </button>
-          {mode === 'admin' && ( 
-            <button 
-              className={interactionMode === 'drawPath' ? 'active' : ''} 
-              onClick={() => setInteractionMode('drawPath')} 
-            >
-              Draw Path
-            </button> 
+      {/* NEW: Wrap the entire map-controls-panel in our conditional state */}
+      {isControlsVisible && (
+        <div className="map-controls-panel">
+          {/* All the original content of the panel is now safely inside this wrapper */}
+          {mode === 'admin' && (
+            <div className="control-section theme-selector">
+              <label htmlFor="theme-select">Map View:</label>
+              <select id="theme-select" value={mapTheme} onChange={(e) => setMapTheme(e.target.value)}>
+                <option value="stakeholder">Stakeholder Condition</option>
+                <option value="progress">Assessment Progress</option>
+              </select>
+            </div>
           )}
-        </div>
-        <div className="control-section">
-          <div className="button-row">
-            <button onClick={() => setShowMarkers(s => !s)}>{showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}</button>
-            {mode === 'admin' && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
+          <div className="mode-selector">
+            <button
+              className={interactionMode === 'select' ? 'active' : ''}
+              onClick={() => setInteractionMode('select')}
+            >
+              Select/Marker
+            </button>
+            {mode === 'admin' && (
+              <button
+                className={interactionMode === 'drawPath' ? 'active' : ''}
+                onClick={() => setInteractionMode('drawPath')}
+              >
+                Draw Path
+              </button>
+            )}
           </div>
-        </div>
-        {mode === 'admin' && (
-          <div className="control-section admin-controls">
+          <div className="control-section">
             <div className="button-row">
-              <button onClick={exportData}>Export Data</button>
-              <button onClick={clearMarkers}>Clear Markers</button>
+              <button onClick={() => setShowMarkers(s => !s)}>{showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}</button>
+              {mode === 'admin' && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
             </div>
-            <div className="button-row">
-              <button onClick={clearPaths}>Clear Paths</button>
-              <button onClick={clearConditions}>Clear Conditions</button>
-            </div>
-          </div>
-        )}
-        <div className="legend">
-          <h4>Legend</h4>
-          <div className="legend-section">
-            <h5>Marker Types</h5>
-            {Object.entries(markerTypes).map(([type, color]) => (
-              <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
-            ))}
           </div>
           {mode === 'admin' && (
-            <>
-              <div className="legend-section">
-                <h5>Path Types</h5>
-                {Object.entries(pathTypes).map(([type, {color}]) => (
-                  <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>
-                ))}
+            <div className="control-section admin-controls">
+              <div className="button-row">
+                <button onClick={exportData}>Export Data</button>
+                <button onClick={clearMarkers}>Clear Markers</button>
               </div>
-              {mapTheme === 'stakeholder' ? (
-                <div className="legend-section">
-                  <h5>Building Conditions</h5>
-                  {Object.entries(conditionColors).map(([type, color]) => (
-                    <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
-                  ))}
-                </div>
-              ) : (
-                <div className="legend-section">
-                  <h5>Assessment Progress</h5>
-                  {Object.entries(progressColors).filter(([key])=>key > 0).map(([key, color]) => (
-                    <div key={key} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{key}/3 Complete</div>
-                  ))}
-                </div>
-              )}
-            </>
+              <div className="button-row">
+                <button onClick={clearPaths}>Clear Paths</button>
+                <button onClick={clearConditions}>Clear Conditions</button>
+              </div>
+            </div>
           )}
+          <div className="legend">
+            <h4>Legend</h4>
+            <div className="legend-section">
+              <h5>Marker Types</h5>
+              {Object.entries(markerTypes).map(([type, color]) => (
+                <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
+              ))}
+            </div>
+            {mode === 'admin' && (
+              <>
+                <div className="legend-section">
+                  <h5>Path Types</h5>
+                  {Object.entries(pathTypes).map(([type, {color}]) => (
+                    <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color, border: `2px solid ${color}`}}></span>{type}</div>
+                  ))}
+                </div>
+                {mapTheme === 'stakeholder' ? (
+                  <div className="legend-section">
+                    <h5>Building Conditions</h5>
+                    {Object.entries(conditionColors).map(([type, color]) => (
+                      <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="legend-section">
+                    <h5>Assessment Progress</h5>
+                    {Object.entries(progressColors).filter(([key])=>key > 0).map(([key, color]) => (
+                      <div key={key} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{key}/3 Complete</div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
-  );
+);
 };
 
 export default StakeholderMap;
