@@ -377,7 +377,7 @@
 -98.37471015347589,40.59324279822121</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
 <Placemark>
 <ExtendedData>
-  <Data name="id"><value>MacKay House</value></Data></ExtendedData>
+  <Data name="id"><value>611 E. 9th St</value></Data></ExtendedData>
   <Polygon>
 <outerBoundaryIs>
   <LinearRing><coordinates>-98.37464990421633,40.59375608706591
@@ -608,7 +608,7 @@
 -98.37481677520717,40.59378243356543</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
 <Placemark>
 <ExtendedData>
-  <Data name="id"><value>603 E 9th St</value></Data></ExtendedData>
+  <Data name="id"><value>McKay House</value></Data></ExtendedData>
   <Polygon>
 <outerBoundaryIs>
   <LinearRing><coordinates>-98.37505232877834,40.59378603329276
@@ -640,4 +640,14 @@
 -98.37123658640381,40.592170272795876
 -98.37123658640381,40.592083686763935
 -98.3713716620568,40.59208501885758
--98.3713716620568,40.59216760861196</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark></Document></kml>
+-98.3713716620568,40.59216760861196</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+<Placemark>
+<ExtendedData>
+  <Data name="id"><value>Track and Field Bldg</value></Data></ExtendedData>
+  <Polygon>
+<outerBoundaryIs>
+  <LinearRing><coordinates>-98.36464455503827,40.59679561799539
+-98.36454207664373,40.59679561799539
+-98.36453998524793,40.5966765169185
+-98.36463932654875,40.596677310926374
+-98.36464455503827,40.59679561799539</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark></Document></kml>
