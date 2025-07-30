@@ -3,6 +3,8 @@ import './AssessmentPanel.css';
 import { doc, setDoc } from "firebase/firestore"; 
 import { db } from '../firebaseConfig';
 
+
+
 // Define the options for the dropdowns
 const scoreOptions = [
   { value: 5, label: '5 - Excellent' },

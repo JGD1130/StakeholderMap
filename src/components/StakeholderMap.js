@@ -5,9 +5,16 @@ import { db } from '../firebaseConfig';
 import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch } from 'firebase/firestore';
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel';
+import BuildingInteractionPanel from './BuildingInteractionPanel';
 
 // --- Constants ---
-const conditionColors = { 'Excellent': '#4CAF50', 'Good': '#8BC34A', 'Fair': '#FFEB3B', 'Poor': '#F44336' };
+const stakeholderConditionConfig = {
+  '5': { label: '5 = Excellent condition', color: '#4CAF50' },
+  '4': { label: '4 = Good condition',      color: '#8BC34A' },
+  '3': { label: '3 = Adequate condition',  color: '#FFEB3B' },
+  '2': { label: '2 = Poor condition',      color: '#FF9800' },
+  '1': { label: '1 = Very poor condition', color: '#F44336' }
+};
 const progressColors = { 0: '#85474b', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
 const defaultBuildingColor = '#85474b';
 
@@ -31,14 +38,15 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [mapTheme, setMapTheme] = useState('progress');
   const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
 
-    // --- Memoized Data ---
+  // --- Memoized Data ---
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
   const pathTypes = useMemo(() => ({ 'Preferred Route': { color: '#008000' }, 'Avoided Route': { color: '#F44336' } }), []);
   const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
 
   // ====================================================================
-  // CALLBACKS (These are all stable and unchanged)
+  // CALLBACKS
   // ====================================================================
   const showMarkerPopup = useCallback((lngLat) => {
     if (!mapRef.current) return;
@@ -71,6 +79,14 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     setBuildingAssessments(prev => ({ ...prev, [id]: updatedAssessment }));
   }, []);
 
+  const handleConditionSave = (buildingId, newCondition) => {
+    setBuildingConditions(prev => ({ ...prev, [buildingId]: newCondition }));
+  };
+
+  const handleOpenTechnical = () => {
+    setIsTechnicalPanelOpen(true);
+  };
+
   const clearMarkers = useCallback(async () => {
     if (!window.confirm(`Delete ${markers.length} markers?`)) return;
     setMarkers([]);
@@ -79,7 +95,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     snapshot.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
   }, [markers]);
-  
+
   const clearPaths = useCallback(async () => {
     if (!window.confirm(`Delete ${paths.length} paths?`)) return;
     const map = mapRef.current;
@@ -95,7 +111,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     snapshot.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
   }, [paths]);
-  
+
   const clearConditions = useCallback(async () => {
     if (!window.confirm(`Delete ${Object.keys(buildingConditions).length} conditions?`)) return;
     setBuildingConditions({});
@@ -104,7 +120,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     snapshot.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
   }, [buildingConditions]);
-  
+
   const exportData = useCallback(() => {
     if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0 && Object.keys(buildingAssessments).length === 0) {
       return alert("No data to export.");
@@ -142,7 +158,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   }, [markers, paths, buildingConditions, buildingAssessments]);
 
   // ====================================================================
-  // EFFECTS (These are all stable and unchanged)
+  // EFFECTS
   // ====================================================================
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
@@ -235,11 +251,13 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       });
     }
   }, [paths, showPaths, pathTypes, mapLoaded, mode]);
-
+  
+  // THIS IS THE CORRECTED COLORING EFFECT
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
     const map = mapRef.current;
     const matchExpr = ['match', ['get', 'id']];
+
     if (mode === 'admin' && mapTheme === 'progress') {
       if (Object.keys(buildingAssessments).length > 0) {
         Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
@@ -251,15 +269,19 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
           matchExpr.push(key, progressColors[completedSections]);
         });
       }
-    } else {
-      if (mode === 'admin' && Object.keys(buildingConditions).length > 0) {
-        Object.entries(buildingConditions).forEach(([id, condition]) => {
-          if (condition && conditionColors[condition]) { matchExpr.push(id, conditionColors[condition]); }
+    } else if (mode === 'admin' && mapTheme === 'stakeholder') {
+      if (Object.keys(buildingConditions).length > 0) {
+        Object.entries(buildingConditions).forEach(([id, conditionValue]) => {
+          const conditionData = stakeholderConditionConfig[conditionValue];
+          if (conditionData) {
+            matchExpr.push(id, conditionData.color);
+          }
         });
       }
     }
+
     matchExpr.push(defaultBuildingColor);
-    if (matchExpr && matchExpr.length >= 4) {
+    if (matchExpr.length >= 4) {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
     }
   }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapTheme]);
@@ -268,10 +290,17 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleMapClick = (e) => {
-      if (interactionMode === 'drawPath' && mode === 'admin') { setNewPathCoords(prev => [...prev, e.lngLat.toArray()]); return; }
+      if (interactionMode === 'drawPath' && mode === 'admin') {
+        setNewPathCoords(prev => [...prev, e.lngLat.toArray()]);
+        return;
+      }
       if (interactionMode === 'select' && mode === 'admin') {
         const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
-        if (features.length > 0) { setSelectedBuildingId(features[0].properties.id); return; }
+        if (features.length > 0) {
+          setSelectedBuildingId(features[0].properties.id);
+          setIsTechnicalPanelOpen(false); // Reset to show interaction panel first
+          return;
+        }
       }
       setSelectedBuildingId(null);
       showMarkerPopup(e.lngLat);
@@ -291,18 +320,12 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
 
-      {/* NEW: Add the toggle button, only in admin mode. */}
-      {/* It is a SIBLING to the map-controls-panel, not inside it. */}
       {mode === 'admin' && (
-        <button
-          className="controls-toggle-button"
-          onClick={() => setIsControlsVisible(v => !v)}
-        >
+        <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
           {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
         </button>
       )}
 
-      {/* The existing logo panel is untouched */}
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
@@ -313,7 +336,6 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         </div>
       </div>
 
-      {/* The existing help panel is untouched */}
       {showHelp && (
         <div className="help-panel">
           <button className="close-button" onClick={() => setShowHelp(false)}>×</button>
@@ -327,20 +349,34 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         </div>
       )}
 
-      {/* The existing assessment panel is untouched */}
       {mode === 'admin' && (
-        <AssessmentPanel
-          buildingId={selectedBuildingId}
-          assessments={buildingAssessments}
-          onClose={() => setSelectedBuildingId(null)}
-          onSave={handleAssessmentSave}
-        />
+        <>
+          {selectedBuildingId && !isTechnicalPanelOpen && (
+            <BuildingInteractionPanel
+              buildingId={selectedBuildingId}
+              buildingName={config?.buildings?.features?.find(f => f.properties.id === selectedBuildingId)?.properties?.name}
+              currentCondition={buildingConditions[selectedBuildingId]}
+              onSave={handleConditionSave}
+              onOpenTechnical={handleOpenTechnical}
+              onClose={() => {
+                setSelectedBuildingId(null);
+                setIsTechnicalPanelOpen(false);
+              }}
+            />
+          )}
+          {selectedBuildingId && isTechnicalPanelOpen && (
+            <AssessmentPanel
+              buildingId={selectedBuildingId}
+              assessments={buildingAssessments}
+              onClose={() => setIsTechnicalPanelOpen(false)}
+              onSave={handleAssessmentSave}
+            />
+          )}
+        </>
       )}
 
-      {/* NEW: Wrap the entire map-controls-panel in our conditional state */}
       {isControlsVisible && (
         <div className="map-controls-panel">
-          {/* All the original content of the panel is now safely inside this wrapper */}
           {mode === 'admin' && (
             <div className="control-section theme-selector">
               <label htmlFor="theme-select">Map View:</label>
@@ -351,17 +387,11 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
             </div>
           )}
           <div className="mode-selector">
-            <button
-              className={interactionMode === 'select' ? 'active' : ''}
-              onClick={() => setInteractionMode('select')}
-            >
+            <button className={interactionMode === 'select' ? 'active' : ''} onClick={() => setInteractionMode('select')}>
               Select/Marker
             </button>
             {mode === 'admin' && (
-              <button
-                className={interactionMode === 'drawPath' ? 'active' : ''}
-                onClick={() => setInteractionMode('drawPath')}
-              >
+              <button className={interactionMode === 'drawPath' ? 'active' : ''} onClick={() => setInteractionMode('drawPath')}>
                 Draw Path
               </button>
             )}
@@ -403,8 +433,8 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
                 {mapTheme === 'stakeholder' ? (
                   <div className="legend-section">
                     <h5>Building Conditions</h5>
-                    {Object.entries(conditionColors).map(([type, color]) => (
-                      <div key={type} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{type}</div>
+                    {Object.entries(stakeholderConditionConfig).map(([value, { label, color }]) => (
+                      <div key={value} className="legend-item"><span className="legend-color-box" style={{backgroundColor: color}}></span>{label}</div>
                     ))}
                   </div>
                 ) : (
@@ -421,7 +451,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         </div>
       )}
     </div>
-);
+  );
 };
 
 export default StakeholderMap;
