@@ -1,16 +1,14 @@
 {
   "universityId": "rockhurst",
   "universityName": "Rockhurst University",
-  "lat": 39.034,
-  "lng": -94.57,
-  "zoom": 16,
+  "lat": 39.030761,
+  "lng": -94.573,
+  "zoom": 18,
   "pitch": 45,
   "bearing": -17.6,
   "style": "mapbox://styles/mapbox/streets-v12",
   "logos": {
     "clarkEnersen": "Clark_Enersen_Logo.png",
-    "university": "RockhurstU_logo.png"
-  },
-  "buildings": "/geojson/RockhurstU_Buildings.geojson",
-  "boundary": "/geojson/RockhurstU_Boundary.geojson"
+    "university": "RockhurstU_Logo.png"
+  }
 }
