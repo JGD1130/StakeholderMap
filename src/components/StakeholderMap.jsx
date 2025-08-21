@@ -2,12 +2,11 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { db } from '../firebaseConfig';
-import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc, setDoc } from 'firebase/firestore';
 import './StakeholderMap.css';
-import AssessmentPanel from './AssessmentPanel';
-import BuildingInteractionPanel from './BuildingInteractionPanel';
+import AssessmentPanel from './AssessmentPanel.jsx';
+import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
 
-// --- Constants ---
 const stakeholderConditionConfig = {
   '5': { label: '5 = Excellent condition', color: '#4CAF50' },
   '4': { label: '4 = Good condition',      color: '#8BC34A' },
@@ -18,16 +17,22 @@ const stakeholderConditionConfig = {
 const progressColors = { 0: '#85474b', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
 const defaultBuildingColor = '#85474b';
 
-const StakeholderMap = ({ config, mode = 'public' }) => {
-  // --- Refs ---
+const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const previousSelectedBuildingId = useRef(null);
 
-  // --- State ---
+  // --- THIS IS THE FIX ---
+  // The guard clause is now here. It's after the essential `useRef` hooks,
+  // but before any code that depends on `universityId`.
+  if (!universityId) {
+    return <div>Loading University...</div>; // Or return null;
+  }
+
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(true);
+  // ... (rest of the state initializations)
   const [showPaths, setShowPaths] = useState(true);
   const [showHelp, setShowHelp] = useState(true);
   const [markers, setMarkers] = useState([]);
@@ -40,14 +45,17 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
 
-  // --- Memoized Data ---
+
   const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
   const pathTypes = useMemo(() => ({ 'Preferred Route': { color: '#008000' }, 'Avoided Route': { color: '#F44336' } }), []);
   const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
 
-  // ====================================================================
-  // CALLBACKS
-  // ====================================================================
+  const markersCollection = useMemo(() => collection(db, 'universities', universityId, 'markers'), [universityId]);
+  const pathsCollection = useMemo(() => collection(db, 'universities', universityId, 'paths'), [universityId]);
+  const conditionsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingConditions'), [universityId]);
+  const assessmentsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingAssessments'), [universityId]);
+
+  // All other functions and useEffect hooks remain exactly the same.
   const showMarkerPopup = useCallback((lngLat) => {
     if (!mapRef.current) return;
     const popupNode = document.createElement('div');
@@ -58,68 +66,49 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       const type = popupNode.querySelector('#marker-type').value;
       const comment = popupNode.querySelector('#marker-comment').value.trim();
       const markerData = { coordinates: new GeoPoint(lngLat.lat, lngLat.lng), type, comment, createdAt: serverTimestamp() };
-      const docRef = await addDoc(collection(db, 'markers'), markerData);
+      const docRef = await addDoc(markersCollection, markerData);
       setMarkers(prev => [...prev, { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] }]);
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes]);
+  }, [markerTypes, markersCollection]);
 
   const handleFinishPath = useCallback(async () => {
     if (newPathCoords.length < 2) { setNewPathCoords([]); return; }
     const pathData = { coordinates: newPathCoords.map(c => new GeoPoint(c[1], c[0])), type: currentPathDrawType, createdAt: serverTimestamp() };
-    const docRef = await addDoc(collection(db, 'paths'), pathData);
+    const docRef = await addDoc(pathsCollection, pathData);
     setPaths(prev => [...prev, { ...pathData, id: docRef.id, coordinates: newPathCoords }]);
     setNewPathCoords([]);
-  }, [newPathCoords, currentPathDrawType]);
+  }, [newPathCoords, currentPathDrawType, pathsCollection]);
 
-  const handleAssessmentSave = useCallback((updatedAssessment) => {
+  const handleAssessmentSave = useCallback(async (updatedAssessment) => {
     const id = updatedAssessment.originalId;
     if (!id) { console.error("Cannot save assessment: missing originalId."); return; }
+    const docRef = doc(assessmentsCollection, id.replace(/\//g, '__'));
+    await setDoc(docRef, updatedAssessment, { merge: true });
     setBuildingAssessments(prev => ({ ...prev, [id]: updatedAssessment }));
-  }, []);
+  }, [assessmentsCollection]);
 
-  const handleConditionSave = (buildingId, newCondition) => {
+  const handleConditionSave = async (buildingId, newCondition) => {
+    const docRef = doc(conditionsCollection, buildingId.replace(/\//g, '__'));
+    await setDoc(docRef, { condition: newCondition, originalId: buildingId }, { merge: true });
     setBuildingConditions(prev => ({ ...prev, [buildingId]: newCondition }));
   };
+  
+  const handleOpenTechnical = () => setIsTechnicalPanelOpen(true);
 
-  const handleOpenTechnical = () => {
-    setIsTechnicalPanelOpen(true);
-  };
-
-  const clearMarkers = useCallback(async () => {
-    if (!window.confirm(`Delete ${markers.length} markers?`)) return;
-    setMarkers([]);
+  const clearCollection = useCallback(async (collectionRef, name, stateSetter) => {
+    if (!window.confirm(`Are you sure you want to delete all ${name} for ${universityId}? This cannot be undone.`)) return;
+    stateSetter([]);
     const batch = writeBatch(db);
-    const snapshot = await getDocs(collection(db, "markers"));
+    const snapshot = await getDocs(collectionRef);
     snapshot.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
-  }, [markers]);
+  }, [universityId]);
 
-  const clearPaths = useCallback(async () => {
-    if (!window.confirm(`Delete ${paths.length} paths?`)) return;
-    const map = mapRef.current;
-    if(map) {
-      paths.forEach(path => {
-        if (map.getLayer(`path-${path.id}`)) map.removeLayer(`path-${path.id}`);
-        if (map.getSource(`path-${path.id}`)) map.removeSource(`path-${path.id}`);
-      });
-    }
-    setPaths([]);
-    const batch = writeBatch(db);
-    const snapshot = await getDocs(collection(db, "paths"));
-    snapshot.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  }, [paths]);
-
-  const clearConditions = useCallback(async () => {
-    if (!window.confirm(`Delete ${Object.keys(buildingConditions).length} conditions?`)) return;
-    setBuildingConditions({});
-    const batch = writeBatch(db);
-    const snapshot = await getDocs(collection(db, "buildingConditions"));
-    snapshot.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  }, [buildingConditions]);
+  const clearMarkers = () => clearCollection(markersCollection, 'markers', setMarkers);
+  const clearPaths = () => clearCollection(pathsCollection, 'paths', setPaths);
+  const clearConditions = () => clearCollection(conditionsCollection, 'building conditions', setBuildingConditions);
 
   const exportData = useCallback(() => {
     if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0 && Object.keys(buildingAssessments).length === 0) {
@@ -150,19 +139,16 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `map-data-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `${universityId}-map-data-export-${new Date().toISOString().slice(0, 10)}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [markers, paths, buildingConditions, buildingAssessments]);
+  }, [markers, paths, buildingConditions, buildingAssessments, universityId]);
 
-  // ====================================================================
-  // EFFECTS
-  // ====================================================================
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
-    mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN;
+    mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     const map = new mapboxgl.Map({ container: mapContainerRef.current, style: config.style, center: [config.lng, config.lat], zoom: config.zoom, pitch: config.pitch, bearing: config.bearing });
     mapRef.current = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -172,21 +158,29 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
   }, [config]);
 
   useEffect(() => {
+    if (!universityId) return;
     const fetchData = async () => {
       try {
-        const markerSnap = await getDocs(collection(db, "markers"));
+        const markerSnap = await getDocs(markersCollection);
         setMarkers(markerSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] })));
+        
         if (mode !== 'admin') {
-          setPaths([]);
-          setBuildingConditions({});
-          setBuildingAssessments({});
+          setPaths([]); setBuildingConditions({}); setBuildingAssessments({});
           return;
         }
-        const [pathSnap, condSnap, assessmentSnap] = await Promise.all([getDocs(collection(db, "paths")), getDocs(collection(db, "buildingConditions")), getDocs(collection(db, "buildingAssessments"))]);
+
+        const [pathSnap, condSnap, assessmentSnap] = await Promise.all([
+          getDocs(pathsCollection),
+          getDocs(conditionsCollection),
+          getDocs(assessmentsCollection)
+        ]);
+        
         setPaths(pathSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude]) })));
+        
         const condData = {};
         condSnap.forEach(d => { const id = d.data().originalId || d.id.replace(/__/g, "/"); condData[id] = d.data().condition; });
         setBuildingConditions(condData);
+        
         const assessmentData = {};
         assessmentSnap.forEach(doc => { const key = doc.data().originalId || doc.id.replace(/__/g, "/"); assessmentData[key] = doc.data(); });
         setBuildingAssessments(assessmentData);
@@ -196,8 +190,8 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       }
     };
     fetchData();
-  }, [mode]);
-
+  }, [mode, universityId, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]);
+  
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
     const map = mapRef.current;
@@ -240,49 +234,51 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     const map = mapRef.current;
     const existingPathLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('path-'));
     existingPathLayers.forEach(layer => {
-      map.removeLayer(layer.id);
-      if (map.getSource(layer.id)) { map.removeSource(layer.id); }
+      if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+      if (map.getSource(layer.source)) map.removeSource(layer.source);
     });
     if (mode === 'admin' && showPaths) {
       paths.forEach(path => {
-        const sourceId = `path-${path.id}`;
+        const sourceId = `path-source-${path.id}`;
+        const layerId = `path-layer-${path.id}`;
+        if(map.getSource(sourceId)) return;
         map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates } } });
-        map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
+        map.addLayer({ id: layerId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
       });
     }
   }, [paths, showPaths, pathTypes, mapLoaded, mode]);
   
-  // THIS IS THE CORRECTED COLORING EFFECT
   useEffect(() => {
-    if (!mapLoaded || !mapRef.current || !mapRef.current.getLayer('buildings-layer')) return;
+    if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
     const map = mapRef.current;
     const matchExpr = ['match', ['get', 'id']];
+    let hasEntries = false;
 
-    if (mode === 'admin' && mapTheme === 'progress') {
-      if (Object.keys(buildingAssessments).length > 0) {
+    if (mode === 'admin' && mapTheme === 'progress' && Object.keys(buildingAssessments).length > 0) {
         Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
           let completedSections = 0;
           if (assessment.scores?.architecture && Object.values(assessment.scores.architecture).some(s => s > 0)) completedSections++;
           if (assessment.scores?.engineering && Object.values(assessment.scores.engineering).some(s => s > 0)) completedSections++;
           if (assessment.scores?.functionality && Object.values(assessment.scores.functionality).some(s => s > 0)) completedSections++;
-          const key = assessment.originalId || buildingId;
-          matchExpr.push(key, progressColors[completedSections]);
+          matchExpr.push(assessment.originalId || buildingId, progressColors[completedSections]);
+          hasEntries = true;
         });
-      }
-    } else if (mode === 'admin' && mapTheme === 'stakeholder') {
-      if (Object.keys(buildingConditions).length > 0) {
+    } else if (mode === 'admin' && mapTheme === 'stakeholder' && Object.keys(buildingConditions).length > 0) {
         Object.entries(buildingConditions).forEach(([id, conditionValue]) => {
           const conditionData = stakeholderConditionConfig[conditionValue];
           if (conditionData) {
             matchExpr.push(id, conditionData.color);
+            hasEntries = true;
           }
         });
-      }
     }
-
+    
     matchExpr.push(defaultBuildingColor);
-    if (matchExpr.length >= 4) {
-      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
+    
+    if(hasEntries) {
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
+    } else {
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', defaultBuildingColor);
     }
   }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapTheme]);
 
@@ -298,7 +294,7 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
         const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
         if (features.length > 0) {
           setSelectedBuildingId(features[0].properties.id);
-          setIsTechnicalPanelOpen(false); // Reset to show interaction panel first
+          setIsTechnicalPanelOpen(false);
           return;
         }
       }
@@ -311,9 +307,6 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
     return () => { map.off('click', handleMapClick); map.off('dblclick', handleDblClick); };
   }, [mapLoaded, mode, interactionMode, handleFinishPath, showMarkerPopup]);
 
-  // ====================================================================
-  // RENDER LOGIC
-  // ====================================================================
   if (!config) { return <div>Loading Map Configuration...</div>; }
 
   return (
@@ -329,10 +322,10 @@ const StakeholderMap = ({ config, mode = 'public' }) => {
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
-          <img src={config.logos.clarkEnersen} alt="Clark & Enersen Logo" />
+          <img src={`${import.meta.env.BASE_URL}${config.logos.clarkEnersen}`} alt="Clark & Enersen Logo" />
         </div>
         <div className="logo-box">
-          <img src={config.logos.hastings} alt="Hastings College Logo" />
+          <img src={`${import.meta.env.BASE_URL}${config.logos.university}`} alt={`${config.universityName} Logo`} />
         </div>
       </div>
 
