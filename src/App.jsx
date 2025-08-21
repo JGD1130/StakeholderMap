@@ -1,54 +1,21 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-dom';
-import PublicMapPage from './pages/PublicMapPage';
-import AdminMapPage from './pages/AdminMapPage';
+import PublicMapPage from './pages/PublicMapPage.jsx';
+import AdminMapPage from './pages/AdminMapPage.jsx';
+import { getConfig } from './configLoader'; // <-- Use our new loader
 import './App.css';
-
-// --- ULTIMATE DEBUGGING STEP ---
-// We are importing everything directly into this file.
-// If there is a typo in any filename or folder name, the error
-// message in the terminal will tell us exactly which line failed.
-
-// Import the raw JSON data
-import hastingsConfigData from './Configs/Hastings.json';
-import rockhurstConfigData from './Configs/Rockhurst.json';
-
-// Import the GeoJSON data (with the corrected .json extension)
-import hastingsBuildings from './geojson/Hastings_College_Buildings.json';
-import hastingsBoundary from './geojson/Hastings_College_Boundary.json';
-import rockhurstBuildings from './geojson/RockhurstU_Buildings.json';
-import rockhurstBoundary from './geojson/RockhurstU_Boundary.json';
-
-// Assemble the final, complete config objects right here
-const finalHastingsConfig = {
-  ...hastingsConfigData,
-  buildings: hastingsBuildings,
-  boundary: hastingsBoundary,
-};
-
-const finalRockhurstConfig = {
-  ...rockhurstConfigData,
-  buildings: rockhurstBuildings,
-  boundary: rockhurstBoundary,
-};
-
-// Create a simple lookup object for the final configs
-const universityConfigs = {
-  hastings: finalHastingsConfig,
-  rockhurst: finalRockhurstConfig,
-};
 
 function UniversityMapLoader() {
   const { universityId } = useParams();
   
-  // Directly get the fully-assembled config object
-  const config = universityConfigs[universityId];
+  // Directly get the fully-assembled config object. No fetching, no waiting.
+  const config = getConfig(universityId);
 
-  // This check is now much simpler
   if (!config) {
-    return <div>Error: Configuration not found for "{universityId}". Please check the spelling.</div>;
+    return <div>Error: Configuration not found for "{universityId}".</div>;
   }
 
+  // Pass the complete config object down to the page.
   return (
     <Routes>
       <Route path="/admin" element={<AdminMapPage config={config} universityId={universityId} />} />
@@ -69,4 +36,3 @@ function App() {
 }
 
 export default App;
-

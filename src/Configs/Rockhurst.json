@@ -1,9 +1,9 @@
 {
   "universityId": "rockhurst",
   "universityName": "Rockhurst University",
-  "lat": 39.030761,
-  "lng": -94.573,
-  "zoom": 18,
+  "lat": 39.030531,
+  "lng": -94.57182,
+  "zoom": 16.2,
   "pitch": 45,
   "bearing": -17.6,
   "style": "mapbox://styles/mapbox/streets-v12",

@@ -320,14 +320,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
       )}
 
       <div className="logo-panel-right">
-        <div className="logo-box">
-          <div className="mapfluence-title">MAPFLUENCE</div>
-          <img src={`${import.meta.env.BASE_URL}${config.logos.clarkEnersen}`} alt="Clark & Enersen Logo" />
-        </div>
-        <div className="logo-box">
-          <img src={`${import.meta.env.BASE_URL}${config.logos.university}`} alt={`${config.universityName} Logo`} />
-        </div>
-      </div>
+  <div className="logo-box">
+    <div className="mapfluence-title">MAPFLUENCE</div>
+    <img src={config.logos.clarkEnersen} alt="Clark & Enersen Logo" />
+  </div>
+  <div className="logo-box">
+    <img src={config.logos.university} alt={`${config.universityName} Logo`} />
+  </div>
+</div>
 
       {showHelp && (
         <div className="help-panel">
