@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+   <script type="text/javascript">
+      (function() {
+        // Check sessionStorage for a redirect path from 404.html
+        var redirect = sessionStorage.getItem('redirect');
+        
+        // If we have a path, and it's not the current path
+        if (redirect && redirect !== window.location.pathname) {
+          // Clear the stored path so we don't get into a redirect loop
+          sessionStorage.removeItem('redirect');
+          
+          // Use the History API to update the URL in the browser bar.
+          // This does NOT cause a page reload. React Router will see the new path.
+          window.history.replaceState(null, null, redirect);
+        }
+      })();
+    </script>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/StakeholderMap/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <link rel="apple-touch-icon" href="/StakeholderMap/logo192.png" />
+    <!--
+      manifest.json provides metadata used when your web app is installed on a
+      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
+    <link rel="manifest" href="/StakeholderMap/manifest.json" />
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+    -->
+    <title>Mapfluence</title>
+    <script type="module" crossorigin src="/StakeholderMap/assets/index-Bvw6sUlv.js"></script>
+    <link rel="stylesheet" crossorigin href="/StakeholderMap/assets/index-D8XCIyys.css">
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <!--
+      This HTML file is a template.
+      If you open it directly in the browser, you will see an empty page.
+
+      You can add webfonts, meta tags, or analytics to this file.
+      The build step will place the bundled scripts into the <body> tag.
+
+      To begin the development, run `npm start` or `yarn start`.
+      To create a production bundle, use `npm run build` or `yarn build`.
+    -->
+      html 
+  </body>
+</html>
