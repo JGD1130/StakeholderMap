@@ -9,12 +9,11 @@
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  z-index: 10;
+  z-index: 30; /* <-- THIS IS THE ONLY CHANGE NEEDED */
   display: flex;
   flex-direction: column;
-  gap: 15px; /* Adds space between all direct children */
+  gap: 15px;
 }
-
 .interaction-panel .close-button {
   position: absolute;
   top: 10px;

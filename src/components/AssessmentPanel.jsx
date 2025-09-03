@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './AssessmentPanel.css';
 import { doc, setDoc } from "firebase/firestore"; 
 import { db } from '../firebaseConfig';
+import './AssessmentPanel.css';
 
 
 
