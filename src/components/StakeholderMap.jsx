@@ -22,17 +22,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
   const mapRef = useRef(null);
   const previousSelectedBuildingId = useRef(null);
 
-  // --- THIS IS THE FIX ---
-  // The guard clause is now here. It's after the essential `useRef` hooks,
-  // but before any code that depends on `universityId`.
   if (!universityId) {
-    return <div>Loading University...</div>; // Or return null;
+    return <div>Loading University...</div>;
   }
+
+  // --- NEW STATE FOR FLOORPLAN ---
+  const [activeFloorplan, setActiveFloorplan] = useState(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(true);
-  // ... (rest of the state initializations)
   const [showPaths, setShowPaths] = useState(true);
   const [showHelp, setShowHelp] = useState(true);
   const [markers, setMarkers] = useState([]);
@@ -55,7 +54,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
   const conditionsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingConditions'), [universityId]);
   const assessmentsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingAssessments'), [universityId]);
 
-  // All other functions and useEffect hooks remain exactly the same.
   const showMarkerPopup = useCallback((lngLat) => {
     if (!mapRef.current) return;
     const popupNode = document.createElement('div');
@@ -146,6 +144,27 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     document.body.removeChild(link);
   }, [markers, paths, buildingConditions, buildingAssessments, universityId]);
 
+  // --- NEW: FUNCTION TO HANDLE FLOORPLAN SELECTION ---
+  const handleSelectFloorplan = (floorplan) => {
+    setActiveFloorplan(floorplan);
+    if (mapRef.current) {
+        mapRef.current.flyTo({
+            center: floorplan.bounds[0],
+            zoom: 20,
+            pitch: 0,
+            bearing: 0,
+            essential: true
+        });
+    }
+  };
+
+  // --- NEW: HELPER TO GET SELECTED BUILDING DATA ---
+  const selectedBuildingData = useMemo(() => {
+    if (!selectedBuildingId || !config?.buildings?.features) return null;
+    return config.buildings.features.find(f => f.properties.id === selectedBuildingId);
+  }, [selectedBuildingId, config]);
+
+
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
     mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -192,6 +211,31 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     fetchData();
   }, [mode, universityId, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]);
   
+  // --- NEW: USEEFFECT TO HANDLE FLOORPLAN OVERLAY ---
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    const sourceId = 'floorplan-source';
+    const layerId = 'floorplan-layer';
+
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+    if (activeFloorplan && mode === 'admin') {
+      map.addSource(sourceId, {
+        type: 'image',
+        url: activeFloorplan.url,
+        coordinates: activeFloorplan.bounds
+      });
+      map.addLayer({
+        id: layerId,
+        type: 'raster',
+        source: sourceId,
+        paint: { 'raster-fade-duration': 150, 'raster-opacity': 0.85 }
+      });
+    }
+  }, [activeFloorplan, mapLoaded, mode]);
+
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
     const map = mapRef.current;
@@ -313,6 +357,13 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
 
+      {/* --- NEW: "BACK TO CAMPUS" BUTTON --- */}
+      {activeFloorplan && mode === 'admin' && (
+        <button className="back-to-campus-button" onClick={() => setActiveFloorplan(null)}>
+          Back to Campus View
+        </button>
+      )}
+
       {mode === 'admin' && (
         <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
           {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
@@ -320,14 +371,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
       )}
 
       <div className="logo-panel-right">
-  <div className="logo-box">
-    <div className="mapfluence-title">MAPFLUENCE</div>
-    <img src={config.logos.clarkEnersen} alt="Clark & Enersen Logo" />
-  </div>
-  <div className="logo-box">
-    <img src={config.logos.university} alt={`${config.universityName} Logo`} />
-  </div>
-</div>
+        <div className="logo-box">
+          <div className="mapfluence-title">MAPFLUENCE</div>
+          <img src={config.logos.clarkEnersen} alt="Clark & Enersen Logo" />
+        </div>
+        <div className="logo-box">
+          <img src={config.logos.university} alt={`${config.universityName} Logo`} />
+        </div>
+      </div>
 
       {showHelp && (
         <div className="help-panel">
@@ -347,14 +398,18 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
           {selectedBuildingId && !isTechnicalPanelOpen && (
             <BuildingInteractionPanel
               buildingId={selectedBuildingId}
-              buildingName={config?.buildings?.features?.find(f => f.properties.id === selectedBuildingId)?.properties?.name}
+              buildingName={selectedBuildingData?.properties?.name}
               currentCondition={buildingConditions[selectedBuildingId]}
               onSave={handleConditionSave}
               onOpenTechnical={handleOpenTechnical}
               onClose={() => {
                 setSelectedBuildingId(null);
                 setIsTechnicalPanelOpen(false);
+                setActiveFloorplan(null); // Also clear floorplan on close
               }}
+              // --- PASS NEW PROPS ---
+              floorplans={selectedBuildingData?.properties?.floorplans}
+              onSelectFloorplan={handleSelectFloorplan}
             />
           )}
           {selectedBuildingId && isTechnicalPanelOpen && (

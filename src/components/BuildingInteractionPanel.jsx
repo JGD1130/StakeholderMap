@@ -1,69 +1,58 @@
-import React, { useState } from 'react';
-import { db } from '../firebaseConfig';
-import { doc, setDoc } from 'firebase/firestore';
-import './StakeholderMap.css'; // We can reuse some styles
+// src/components/BuildingInteractionPanel.jsx
+import React from 'react';
+import './BuildingInteractionPanel.css';
 
-const stakeholderConditionConfig = {
-  '5': { label: '5 = Excellent condition' },
-  '4': { label: '4 = Good condition' },
-  '3': { label: '3 = Adequate condition' },
-  '2': { label: '2 = Poor condition' },
-  '1': { label: '1 = Very poor condition' }
-};
-
-const BuildingInteractionPanel = ({ buildingId, buildingName, currentCondition, onSave, onOpenTechnical, onClose }) => {
-  const [selectedCondition, setSelectedCondition] = useState(currentCondition || '');
-
-  const handleSaveCondition = async () => {
-    if (!selectedCondition) {
-      alert('Please select a condition before saving.');
-      return;
-    }
-    try {
-      // The document ID in Firestore is the buildingId, with slashes replaced
-      const docId = buildingId.replace(/\//g, "__");
-      await setDoc(doc(db, "buildingConditions", docId), { 
-        condition: selectedCondition,
-        originalId: buildingId // Store original ID for reference
-      });
-      alert(`Condition for ${buildingName} saved!`);
-      onSave(buildingId, selectedCondition); // Tell the map to update its state
-      onClose(); // Close the panel after saving
-    } catch (error) {
-      console.error("Error saving condition: ", error);
-      alert("Failed to save condition. See console for details.");
-    }
+// --- UPDATED ---
+// The component now accepts `floorplans` and an `onSelectFloorplan` function.
+const BuildingInteractionPanel = ({
+  buildingId,
+  buildingName,
+  currentCondition,
+  onSave,
+  onOpenTechnical,
+  onClose,
+  floorplans,
+  onSelectFloorplan
+}) => {
+  const handleConditionChange = (event) => {
+    onSave(buildingId, event.target.value);
   };
-
-  if (!buildingId) return null;
 
   return (
     <div className="interaction-panel">
-      <div className="panel-header">
-        <h4>{buildingName || buildingId}</h4>
-        <button onClick={onClose} className="close-button">×</button>
+      <button className="close-button" onClick={onClose}>×</button>
+      <h4>{buildingName || buildingId}</h4>
+      
+      <div className="control-section">
+        <h5>Stakeholder Condition</h5>
+        <select value={currentCondition || ''} onChange={handleConditionChange}>
+          <option value="" disabled>Select condition...</option>
+          <option value="5">5 = Excellent</option>
+          <option value="4">4 = Good</option>
+          <option value="3">3 = Adequate</option>
+          <option value="2">2 = Poor</option>
+          <option value="1">1 = Very Poor</option>
+        </select>
       </div>
-      <div className="panel-content">
-        <div className="condition-section">
-          <label htmlFor="condition-select">Set Stakeholder Condition:</label>
-          <select 
-            id="condition-select" 
-            value={selectedCondition} 
-            onChange={(e) => setSelectedCondition(e.target.value)}
-          >
-            <option value="" disabled>Select a condition...</option>
-            {Object.entries(stakeholderConditionConfig).reverse().map(([value, { label }]) => (
-              <option key={value} value={value}>{label}</option>
+
+      <div className="button-row">
+        <button onClick={onOpenTechnical}>Technical Assessment</button>
+      </div>
+
+      {/* --- THIS IS THE NEW SECTION --- */}
+      {/* If floorplans exist, show this section */}
+      {floorplans && floorplans.length > 0 && (
+        <div className="control-section">
+          <h5>Floor Plans</h5>
+          <div className="floorplan-buttons">
+            {floorplans.map((plan, index) => (
+              <button key={index} onClick={() => onSelectFloorplan(plan)}>
+                {plan.name}
+              </button>
             ))}
-          </select>
-          <button onClick={handleSaveCondition}>Save Condition</button>
+          </div>
         </div>
-        <hr />
-        <div className="assessment-section">
-          <p>Or perform a detailed review:</p>
-          <button onClick={onOpenTechnical}>Open Technical Assessment</button>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

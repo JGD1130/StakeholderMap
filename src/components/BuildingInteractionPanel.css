@@ -1,0 +1,50 @@
+/* src/components/BuildingInteractionPanel.css */
+
+.interaction-panel .control-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #ccc;
+}
+
+.interaction-panel h5 {
+  margin-bottom: 10px;
+}
+
+.floorplan-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.floorplan-buttons button {
+  width: 100%;
+  padding: 8px;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.floorplan-buttons button:hover {
+  background-color: #e0e0e0;
+}
+
+/* This style is for the button on the map itself */
+.back-to-campus-button {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 10px 20px;
+  font-size: 16px;
+  background-color: rgba(0, 0, 0, 0.75);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.back-to-campus-button:hover {
+  background-color: rgba(0, 0, 0, 0.9);
+}
