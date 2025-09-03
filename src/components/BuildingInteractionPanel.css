@@ -1,23 +1,78 @@
 /* src/components/BuildingInteractionPanel.css */
 
+.interaction-panel {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 300px;
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* Adds space between all direct children */
+}
+
+.interaction-panel .close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.interaction-panel h4 {
+  margin: 0;
+  padding-right: 20px; /* Prevents text from running under the close button */
+}
+
 .interaction-panel .control-section {
-  margin-top: 15px;
+  border-top: 1px solid #eee;
   padding-top: 15px;
-  border-top: 1px solid #ccc;
 }
 
 .interaction-panel h5 {
+  margin-top: 0;
   margin-bottom: 10px;
+}
+
+.interaction-panel select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+/* This will style all buttons directly inside the panel */
+.interaction-panel > button, 
+.interaction-panel .button-row > button {
+  width: 100%;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.interaction-panel .button-row button {
+    background-color: #007bff;
+    color: white;
+}
+.interaction-panel .button-row button:hover {
+    background-color: #0056b3;
 }
 
 .floorplan-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 10px;
 }
 
 .floorplan-buttons button {
-  width: 100%;
   padding: 8px;
   background-color: #f0f0f0;
   border: 1px solid #ccc;
@@ -27,24 +82,4 @@
 
 .floorplan-buttons button:hover {
   background-color: #e0e0e0;
-}
-
-/* This style is for the button on the map itself */
-.back-to-campus-button {
-  position: absolute;
-  top: 90px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  padding: 10px 20px;
-  font-size: 16px;
-  background-color: rgba(0, 0, 0, 0.75);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.back-to-campus-button:hover {
-  background-color: rgba(0, 0, 0, 0.9);
 }
