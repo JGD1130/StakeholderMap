@@ -45,7 +45,23 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
 
 
-  const markerTypes = useMemo(() => ({ 'This is my favorite spot': '#006400', 'I meet friends here': '#008000', 'I study here': '#9ACD32', 'I feel safe here': '#20B2AA', 'This place is too busy': '#FFFF00', 'This place needs improvement': '#FF9800', 'I don\'t feel safe here': '#F44336', 'Just leave a comment': '#9E9E9E' }), []);
+  const markerTypes = useMemo(() => ({
+    'This is one of my go-to study spots': '#006400',
+    'This is a go-to hangout spot for me and my friends': '#008000',
+    'This space just has a great vibe': '#008000',
+    'This space has great potential': '#20B2AA',
+    'I wish this were a better space for group projects and collaboration': '#f3f707ff',
+    'I wish this were a better space for quiet focus and solo work': '#f3f707ff',
+    'I wish there were food or coffee options near this space': '#f3f707ff',
+    'The Wi-Fi is weak in this space': '#f1652eff',    
+    'The furniture in this space is uncomfortable or not functional': '#f1652eff',
+    'The lighting or temperature in this space makes it uncomfortable': '#f1652eff',
+    'I rarely or never use this space': '#f1652eff',
+    'This space is often too crowded or loud': '#eb4a4aff',
+    'This space feels outdated or run-down': '#eb4a4aff',
+    'I do not feel safe in this space': '#f30505ff',
+    'Just leave a comment about this space': '#9E9E9E',    
+  }), []);
   const pathTypes = useMemo(() => ({ 'Preferred Route': { color: '#008000' }, 'Avoided Route': { color: '#F44336' } }), []);
   const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
 
