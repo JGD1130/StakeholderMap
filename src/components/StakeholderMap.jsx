@@ -6,6 +6,7 @@ import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
+import { surveyConfigs } from '../surveyConfigs'; // <-- IMPORT OUR NEW SURVEYS
 
 const stakeholderConditionConfig = {
   '5': { label: '5 = Excellent condition', color: '#4CAF50' },
@@ -17,7 +18,8 @@ const stakeholderConditionConfig = {
 const progressColors = { 0: '#85474b', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
 const defaultBuildingColor = '#85474b';
 
-const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
+// --- UPDATED: The component now accepts `persona` ---
+const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const previousSelectedBuildingId = useRef(null);
@@ -26,9 +28,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     return <div>Loading University...</div>;
   }
 
-  // --- NEW STATE FOR FLOORPLAN ---
   const [activeFloorplan, setActiveFloorplan] = useState(null);
-
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(true);
@@ -45,23 +45,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
 
 
-  const markerTypes = useMemo(() => ({
-    'This is one of my go-to study spots': '#006400',
-    'This is a go-to hangout spot for me and my friends': '#008000',
-    'This space just has a great vibe': '#008000',
-    'This space has great potential': '#20B2AA',
-    'I wish this were a better space for group projects and collaboration': '#f3f707ff',
-    'I wish this were a better space for quiet focus and solo work': '#f3f707ff',
-    'I wish there were food or coffee options near this space': '#f3f707ff',
-    'The Wi-Fi is weak in this space': '#f1652eff',    
-    'The furniture in this space is uncomfortable or not functional': '#f1652eff',
-    'The lighting or temperature in this space makes it uncomfortable': '#f1652eff',
-    'I rarely or never use this space': '#f1652eff',
-    'This space is often too crowded or loud': '#eb4a4aff',
-    'This space feels outdated or run-down': '#eb4a4aff',
-    'I do not feel safe in this space': '#f30505ff',
-    'Just leave a comment about this space': '#9E9E9E',    
-  }), []);
+  // --- THIS IS THE KEY CHANGE ---
+  // We now dynamically load the marker types based on the persona.
+  const markerTypes = useMemo(() => {
+    if (mode === 'admin') {
+      // Admins see a union of all possible markers for data consistency
+      return { ...surveyConfigs.student, ...surveyConfigs.staff };
+    }
+    // For public users, we get the survey for their persona, or a default.
+    return surveyConfigs[persona] || surveyConfigs.default;
+  }, [persona, mode]);
+
   const pathTypes = useMemo(() => ({ 'Preferred Route': { color: '#008000' }, 'Avoided Route': { color: '#F44336' } }), []);
   const [currentPathDrawType] = useState(() => Object.keys(pathTypes)[0]);
 
@@ -79,13 +73,22 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     popupNode.querySelector('#confirm-marker').addEventListener('click', async () => {
       const type = popupNode.querySelector('#marker-type').value;
       const comment = popupNode.querySelector('#marker-comment').value.trim();
-      const markerData = { coordinates: new GeoPoint(lngLat.lat, lngLat.lng), type, comment, createdAt: serverTimestamp() };
+      
+      // --- UPDATED: We now save the persona with the marker data ---
+      const markerData = { 
+        coordinates: new GeoPoint(lngLat.lat, lngLat.lng), 
+        type, 
+        comment, 
+        persona: persona || 'admin', // Save the persona
+        createdAt: serverTimestamp() 
+      };
+
       const docRef = await addDoc(markersCollection, markerData);
       setMarkers(prev => [...prev, { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] }]);
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes, markersCollection]);
+  }, [markerTypes, markersCollection, persona]); // Add persona to dependency array
 
   const handleFinishPath = useCallback(async () => {
     if (newPathCoords.length < 2) { setNewPathCoords([]); return; }
@@ -142,11 +145,12 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
       }
     });
     rows.push([]);
-    rows.push(['DataType', 'ID', 'Type', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
-    markers.forEach(m => { rows.push([ escapeCsvField('Marker'), escapeCsvField(m.id), escapeCsvField(m.type), escapeCsvField(m.coordinates[1]), escapeCsvField(m.coordinates[0]), escapeCsvField(m.comment), '' ].join(',')); });
-    paths.forEach(p => { rows.push([ escapeCsvField('Path'), escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
+    // --- UPDATED: Add Persona to CSV Export ---
+    rows.push(['DataType', 'ID', 'Type', 'Persona', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
+    markers.forEach(m => { rows.push([ escapeCsvField('Marker'), escapeCsvField(m.id), escapeCsvField(m.type), escapeCsvField(m.persona), escapeCsvField(m.coordinates[1]), escapeCsvField(m.coordinates[0]), escapeCsvField(m.comment), '' ].join(',')); });
+    paths.forEach(p => { rows.push([ escapeCsvField('Path'), escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
     Object.entries(buildingConditions).forEach(([id, condition]) => {
-      if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), escapeCsvField(condition), '', '', '', '' ].join(',')); }
+      if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), escapeCsvField(condition), '', '', '', '', '' ].join(',')); }
     });
     const csvContent = rows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -160,7 +164,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     document.body.removeChild(link);
   }, [markers, paths, buildingConditions, buildingAssessments, universityId]);
 
-  // --- NEW: FUNCTION TO HANDLE FLOORPLAN SELECTION ---
   const handleSelectFloorplan = (floorplan) => {
     setActiveFloorplan(floorplan);
     if (mapRef.current) {
@@ -174,7 +177,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     }
   };
 
-  // --- NEW: HELPER TO GET SELECTED BUILDING DATA ---
   const selectedBuildingData = useMemo(() => {
     if (!selectedBuildingId || !config?.buildings?.features) return null;
     return config.buildings.features.find(f => f.properties.id === selectedBuildingId);
@@ -227,7 +229,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     fetchData();
   }, [mode, universityId, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]);
   
-  // --- NEW: USEEFFECT TO HANDLE FLOORPLAN OVERLAY ---
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
@@ -373,7 +374,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
 
-      {/* --- NEW: "BACK TO CAMPUS" BUTTON --- */}
       {activeFloorplan && mode === 'admin' && (
         <button className="back-to-campus-button" onClick={() => setActiveFloorplan(null)}>
           Back to Campus View
@@ -421,9 +421,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
               onClose={() => {
                 setSelectedBuildingId(null);
                 setIsTechnicalPanelOpen(false);
-                setActiveFloorplan(null); // Also clear floorplan on close
+                setActiveFloorplan(null);
               }}
-              // --- PASS NEW PROPS ---
               floorplans={selectedBuildingData?.properties?.floorplans}
               onSelectFloorplan={handleSelectFloorplan}
             />
