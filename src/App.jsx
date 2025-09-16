@@ -45,7 +45,7 @@ function UniversityLandingPage() {
 
 function App() {
   return (
-    <Router basename="/StakeholderMap">
+    <Router basename="/StakeholderMap"> 
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
         <Route path="/:universityId/:persona" element={<UniversityMapLoader />} />
