@@ -45,10 +45,12 @@ function UniversityLandingPage() {
 
 function App() {
   return (
-    <Router basename="/StakeholderMap"> 
+    // This basename is CRITICAL for GitHub Pages deployment in a subdirectory
+    <Router basename="/StakeholderMap">
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
-        <Route path="/:universityId/:persona" element={<UniversityMapLoader />} />
+        {/* THIS IS THE LINE TO FIX */}
+        <Route path="/:universityId/:persona" element={<UniversityMapLoader />} /> 
         <Route path="/:universityId" element={<UniversityLandingPage />} />
         <Route path="/" element={<div>Please select a university by navigating to its URL (e.g., /hastings)</div>} />
       </Routes>
