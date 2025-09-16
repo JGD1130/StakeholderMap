@@ -1,70 +1,50 @@
-// src/pages/PublicMapPage.jsx
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-
-// FIX #1: The path to StakeholderMap.jsx
-// It's in the components folder, so we go up one level (..) then into components/
-import StakeholderMap from '../components/StakeholderMap'; 
-
-// FIX #2: The path to EmailEntryForm.jsx
-// It's in the SAME folder (pages), so we use a relative path (./)
+// src/pages/PublicMapPage.jsx --- NEW AND IMPROVED VERSION ---
+import React from 'react';
+import StakeholderMap from '../components/StakeholderMap';
 import EmailEntryForm from '../components/EmailEntryForm';
 
 const PublicMapPage = ({ config, universityId, persona }) => {
-  const navigate = useNavigate();
-  const [showEmailForm, setShowEmailForm] = useState(false);
-  const [emailFormSubmitted, setEmailFormSubmitted] = useState(false);
+  // Use a state to track if the user has interacted with the form.
+  // Initialize it based on sessionStorage to remember across refreshes.
+  const [formInteracted, setFormInteracted] = React.useState(() => 
+    sessionStorage.getItem('emailSubmittedForMap') === 'true'
+  );
 
-  useEffect(() => {
-    // Only show email form for 'student' persona and if it hasn't been submitted
-    if (persona === 'student' && config.enableDrawingEntry && !sessionStorage.getItem('emailSubmittedForMap')) {
-      setShowEmailForm(true);
-    } else {
-      setShowEmailForm(false);
-    }
-  }, [persona, config.enableDrawingEntry]); // Depend on persona and config setting
-
-  const handleEmailSuccess = () => {
-    setEmailFormSubmitted(true);
-    setShowEmailForm(false);
-    // Optionally, store something in session storage to prevent re-showing
-    // the form if the user navigates away and back within the same session.
+  const handleFormCompletion = () => {
+    // When the form is submitted or skipped, update the state and sessionStorage.
     sessionStorage.setItem('emailSubmittedForMap', 'true');
+    setFormInteracted(true);
   };
 
-  const handleEmailCancel = () => {
-    setEmailFormSubmitted(true); // Treat as submitted (skipped) to show map
-    setShowEmailForm(false);
-    sessionStorage.setItem('emailSubmittedForMap', 'true'); // Still prevent re-showing
-  };
+  // Determine if the email form should be shown.
+  // It should only show for the 'student' persona, if the config enables it,
+  // AND if the user hasn't already interacted with it.
+  const shouldShowEmailForm = 
+    persona === 'student' && 
+    config?.enableDrawingEntry && 
+    !formInteracted;
 
-  // If the email form is visible, render it.
-  if (showEmailForm) {
+  if (shouldShowEmailForm) {
+    // If we need to show the form, render it and pass the completion handler.
     return (
       <EmailEntryForm
         universityId={universityId}
-        onSuccess={handleEmailSuccess}
-        onCancel={handleEmailCancel}
+        onSuccess={handleFormCompletion}
+        onCancel={handleFormCompletion} // Both success and cancel count as completion
+      />
+    );
+  } else {
+    // In all other cases (staff, admin, or student who has finished the form),
+    // render the map.
+    return (
+      <StakeholderMap 
+        config={config} 
+        universityId={universityId} 
+        persona={persona} 
       />
     );
   }
-
-  // If the persona is student AND drawing entry is enabled AND the form hasn't been submitted/skipped,
-  // then we should *wait* for the form interaction.
-  // Otherwise, render the map.
-  if (persona === 'student' && config.enableDrawingEntry && !emailFormSubmitted) {
-      // This state should ideally not be reached if showEmailForm is true and handled above,
-      // but as a fallback, we could render a loader or nothing until the decision is made.
-      // For now, if showEmailForm is false but emailFormSubmitted is also false,
-      // it means the useEffect likely hasn't caught up, or an unexpected state.
-      // Let's ensure the form is shown if needed, otherwise proceed.
-      return null; // Or a loading spinner
-  }
-
-  // Render the map when the form is not needed or has been dealt with.
-  return (
-    <StakeholderMap config={config} universityId={universityId} persona={persona} />
-  );
 };
 
 export default PublicMapPage;
+
