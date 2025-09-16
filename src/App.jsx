@@ -33,7 +33,10 @@ function UniversityLandingPage() {
             <h2>{config.universityName} Stakeholder Map</h2>
             <p>Please select your role to continue to the survey:</p>
             <div className="landing-links">
+                {/* VERIFY THIS LINE uses '/student' (singular) */}
                 <Link to={`/${universityId}/student`} className="landing-link-button">I am a Student</Link>
+                
+                {/* This one should be correct already */}
                 <Link to={`/${universityId}/staff`} className="landing-link-button">I am a Staff/Faculty Member</Link>
             </div>
         </div>
