@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { db } from '../firebaseConfig';
-import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc, setDoc, query, where } from 'firebase/firestore';
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
@@ -205,9 +205,27 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (!universityId) return;
     const fetchData = async () => {
       try {
-        const markerSnap = await getDocs(markersCollection);
+        // --- MODIFIED SECTION START ---
+
+        let markersQuery;
+
+        // If the mode is 'admin', we fetch all markers.
+        // Otherwise, we create a query to only fetch markers where the 'persona'
+        // field matches the current user's persona ('student' or 'staff').
+        if (mode === 'admin') {
+          markersQuery = query(markersCollection);
+        } else {
+          markersQuery = query(markersCollection, where('persona', '==', persona));
+        }
+
+        // Now we execute the query we just built
+        const markerSnap = await getDocs(markersQuery);
+
+        // --- MODIFIED SECTION END ---
+
         setMarkers(markerSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] })));
         
+        // This part remains the same, it only runs for admins
         if (mode !== 'admin') {
           setPaths([]); setBuildingConditions({}); setBuildingAssessments({});
           return;
@@ -228,13 +246,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         const assessmentData = {};
         assessmentSnap.forEach(doc => { const key = doc.data().originalId || doc.id.replace(/__/g, "/"); assessmentData[key] = doc.data(); });
         setBuildingAssessments(assessmentData);
+
       } catch (error) {
         console.error("Failed to fetch data:", error);
         setPaths([]); setBuildingConditions({}); setBuildingAssessments({});
       }
     };
     fetchData();
-  }, [mode, universityId, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]);
+  }, [mode, universityId, persona, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]); // IMPORTANT: 'persona' is added here
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
