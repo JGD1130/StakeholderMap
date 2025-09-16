@@ -1,5 +1,8 @@
 {
   "universityName": "Hastings College",
+  "enableDrawingEntry": true,
+  "buildings": "Hastings_College_Buildings.geojson",
+  "boundary": "Hastings_College_Boundary.geojson",
   "style": "mapbox://styles/mapbox/streets-v12",
   "lng": -98.371164,
   "lat": 40.592958,

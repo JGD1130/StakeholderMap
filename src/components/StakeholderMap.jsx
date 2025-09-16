@@ -6,7 +6,7 @@ import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
-import { surveyConfigs } from '../surveyConfigs'; // <-- IMPORT OUR NEW SURVEYS
+import { surveyConfigs } from '../surveyConfigs';
 
 const stakeholderConditionConfig = {
   '5': { label: '5 = Excellent condition', color: '#4CAF50' },
@@ -18,7 +18,6 @@ const stakeholderConditionConfig = {
 const progressColors = { 0: '#85474b', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
 const defaultBuildingColor = '#85474b';
 
-// --- UPDATED: The component now accepts `persona` ---
 const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -27,8 +26,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   if (!universityId) {
     return <div>Loading University...</div>;
   }
-
-  const [activeFloorplan, setActiveFloorplan] = useState(null);
+  
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(true);
@@ -44,15 +42,10 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
 
-
-  // --- THIS IS THE KEY CHANGE ---
-  // We now dynamically load the marker types based on the persona.
   const markerTypes = useMemo(() => {
     if (mode === 'admin') {
-      // Admins see a union of all possible markers for data consistency
       return { ...surveyConfigs.student, ...surveyConfigs.staff };
     }
-    // For public users, we get the survey for their persona, or a default.
     return surveyConfigs[persona] || surveyConfigs.default;
   }, [persona, mode]);
 
@@ -63,32 +56,45 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const pathsCollection = useMemo(() => collection(db, 'universities', universityId, 'paths'), [universityId]);
   const conditionsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingConditions'), [universityId]);
   const assessmentsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingAssessments'), [universityId]);
+  const drawingEntriesCollection = useMemo(() => collection(db, 'universities', universityId, 'drawingEntries'), [universityId]);
 
   const showMarkerPopup = useCallback((lngLat) => {
     if (!mapRef.current) return;
     const popupNode = document.createElement('div');
     popupNode.className = 'marker-prompt-popup';
-    popupNode.innerHTML = `<h4>Add a Marker</h4><select id="marker-type">${Object.keys(markerTypes).map(type => `<option value="${type}">${type}</option>`).join('')}</select><textarea id="marker-comment" placeholder="Optional comment..."></textarea><div class="button-group"><button id="confirm-marker">Add</button><button id="cancel-marker">Cancel</button></div>`;
+
+    
+
+    popupNode.innerHTML = `
+      <h4>Add a Marker</h4>
+      <select id="marker-type">${Object.keys(markerTypes).map(type => `<option value="${type}">${type}</option>`).join('')}</select>
+      <textarea id="marker-comment" placeholder="Optional comment..."></textarea>  
+      <div class="button-group">
+        <button id="confirm-marker">Add</button>
+        <button id="cancel-marker">Cancel</button>
+      </div>`;
+      
     const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' }).setDOMContent(popupNode).setLngLat(lngLat).addTo(mapRef.current);
+
     popupNode.querySelector('#confirm-marker').addEventListener('click', async () => {
       const type = popupNode.querySelector('#marker-type').value;
       const comment = popupNode.querySelector('#marker-comment').value.trim();
-      
-      // --- UPDATED: We now save the persona with the marker data ---
       const markerData = { 
         coordinates: new GeoPoint(lngLat.lat, lngLat.lng), 
         type, 
         comment, 
-        persona: persona || 'admin', // Save the persona
+        persona: persona || 'admin',
         createdAt: serverTimestamp() 
       };
-
       const docRef = await addDoc(markersCollection, markerData);
       setMarkers(prev => [...prev, { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] }]);
+      
+      
+      
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes, markersCollection, persona]); // Add persona to dependency array
+  }, [markerTypes, markersCollection, drawingEntriesCollection, persona, config.enableDrawingEntry]);
 
   const handleFinishPath = useCallback(async () => {
     if (newPathCoords.length < 2) { setNewPathCoords([]); return; }
@@ -145,7 +151,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       }
     });
     rows.push([]);
-    // --- UPDATED: Add Persona to CSV Export ---
     rows.push(['DataType', 'ID', 'Type', 'Persona', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
     markers.forEach(m => { rows.push([ escapeCsvField('Marker'), escapeCsvField(m.id), escapeCsvField(m.type), escapeCsvField(m.persona), escapeCsvField(m.coordinates[1]), escapeCsvField(m.coordinates[0]), escapeCsvField(m.comment), '' ].join(',')); });
     paths.forEach(p => { rows.push([ escapeCsvField('Path'), escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
@@ -164,24 +169,26 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     document.body.removeChild(link);
   }, [markers, paths, buildingConditions, buildingAssessments, universityId]);
 
-  const handleSelectFloorplan = (floorplan) => {
-    setActiveFloorplan(floorplan);
-    if (mapRef.current) {
-        mapRef.current.flyTo({
-            center: floorplan.bounds[0],
-            zoom: 20,
-            pitch: 0,
-            bearing: 0,
-            essential: true
-        });
-    }
-  };
-
-  const selectedBuildingData = useMemo(() => {
-    if (!selectedBuildingId || !config?.buildings?.features) return null;
-    return config.buildings.features.find(f => f.properties.id === selectedBuildingId);
-  }, [selectedBuildingId, config]);
-
+  const exportDrawingEntries = useCallback(async () => {
+    const snapshot = await getDocs(drawingEntriesCollection);
+    if (snapshot.empty) return alert("No drawing entries to export.");
+    const rows = [['Email', 'SubmittedAt'].join(',')];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const email = data.email || '';
+      const date = data.submittedAt?.toDate().toLocaleString() || '';
+      rows.push([`"${email}"`, `"${date}"`].join(','));
+    });
+    const csvContent = rows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${universityId}-drawing-entries-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [drawingEntriesCollection, universityId]);
 
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
@@ -228,30 +235,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     };
     fetchData();
   }, [mode, universityId, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]);
-  
-  useEffect(() => {
-    if (!mapLoaded || !mapRef.current) return;
-    const map = mapRef.current;
-    const sourceId = 'floorplan-source';
-    const layerId = 'floorplan-layer';
-
-    if (map.getLayer(layerId)) map.removeLayer(layerId);
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
-
-    if (activeFloorplan && mode === 'admin') {
-      map.addSource(sourceId, {
-        type: 'image',
-        url: activeFloorplan.url,
-        coordinates: activeFloorplan.bounds
-      });
-      map.addLayer({
-        id: layerId,
-        type: 'raster',
-        source: sourceId,
-        paint: { 'raster-fade-duration': 150, 'raster-opacity': 0.85 }
-      });
-    }
-  }, [activeFloorplan, mapLoaded, mode]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
@@ -374,12 +357,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     <div className="map-page-container">
       <div ref={mapContainerRef} className="map-container" />
 
-      {activeFloorplan && mode === 'admin' && (
-        <button className="back-to-campus-button" onClick={() => setActiveFloorplan(null)}>
-          Back to Campus View
-        </button>
-      )}
-
       {mode === 'admin' && (
         <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
           {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
@@ -389,10 +366,10 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       <div className="logo-panel-right">
         <div className="logo-box">
           <div className="mapfluence-title">MAPFLUENCE</div>
-          <img src={config.logos.clarkEnersen} alt="Clark & Enersen Logo" />
+          <img src={`${import.meta.env.BASE_URL}Clark_Enersen_Logo.png`} alt="Clark & Enersen Logo" />
         </div>
         <div className="logo-box">
-          <img src={config.logos.university} alt={`${config.universityName} Logo`} />
+          <img src={`${import.meta.env.BASE_URL}${config.universityName === 'Hastings College' ? 'HC_image.png' : 'RockhurstU_Logo.png'}`} alt={`${config.universityName} Logo`} />
         </div>
       </div>
 
@@ -414,17 +391,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           {selectedBuildingId && !isTechnicalPanelOpen && (
             <BuildingInteractionPanel
               buildingId={selectedBuildingId}
-              buildingName={selectedBuildingData?.properties?.name}
+              buildingName={config?.buildings?.features?.find(f => f.properties.id === selectedBuildingId)?.properties?.name}
               currentCondition={buildingConditions[selectedBuildingId]}
               onSave={handleConditionSave}
               onOpenTechnical={handleOpenTechnical}
               onClose={() => {
                 setSelectedBuildingId(null);
                 setIsTechnicalPanelOpen(false);
-                setActiveFloorplan(null);
               }}
-              floorplans={selectedBuildingData?.properties?.floorplans}
-              onSelectFloorplan={handleSelectFloorplan}
             />
           )}
           {selectedBuildingId && isTechnicalPanelOpen && (
@@ -468,11 +442,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           {mode === 'admin' && (
             <div className="control-section admin-controls">
               <div className="button-row">
-                <button onClick={exportData}>Export Data</button>
-                <button onClick={clearMarkers}>Clear Markers</button>
+                <button onClick={exportData}>Export Map Data</button>
+                {config.enableDrawingEntry && (
+                  <button onClick={exportDrawingEntries}>Export Drawing Entries</button>
+                )}
               </div>
               <div className="button-row">
+                <button onClick={clearMarkers}>Clear Markers</button>
                 <button onClick={clearPaths}>Clear Paths</button>
+              </div>
+              <div className="button-row">
                 <button onClick={clearConditions}>Clear Conditions</button>
               </div>
             </div>
@@ -518,3 +497,4 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 };
 
 export default StakeholderMap;
+
