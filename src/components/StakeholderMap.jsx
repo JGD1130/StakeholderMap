@@ -170,24 +170,45 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [markers, paths, buildingConditions, buildingAssessments, universityId]);
 
   const exportDrawingEntries = useCallback(async () => {
-    const snapshot = await getDocs(drawingEntriesCollection);
-    if (snapshot.empty) return alert("No drawing entries to export.");
-    const rows = [['Email', 'SubmittedAt'].join(',')];
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const email = data.email || '';
-      const date = data.submittedAt?.toDate().toLocaleString() || '';
-      rows.push([`"${email}"`, `"${date}"`].join(','));
-    });
-    const csvContent = rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${universityId}-drawing-entries-${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      console.log("Fetching drawing entries..."); // Added for debugging
+      const snapshot = await getDocs(drawingEntriesCollection);
+
+      if (snapshot.empty) {
+        console.log("No entries found.");
+        return alert("No drawing entries to export.");
+      }
+      
+      console.log(`Found ${snapshot.size} entries.`); // Added for debugging
+
+      const rows = [['Email', 'SubmittedAt'].join(',')];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const email = data.email || '';
+        // Safely format the timestamp
+        const date = data.submittedAt ? data.submittedAt.toDate().toLocaleString() : 'N/A';
+        rows.push([`"${email}"`, `"${date}"`].join(','));
+      });
+
+      const csvContent = rows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${universityId}-drawing-entries-${new Date().toISOString().slice(0, 10)}.csv`);
+      
+      // --- THIS IS THE CRITICAL LINE THAT WAS MISSING ---
+      link.style.visibility = 'hidden';
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error("Failed to export drawing entries:", error);
+      alert("An error occurred while exporting drawing entries. Please check the console for details.");
+    }
   }, [drawingEntriesCollection, universityId]);
 
   useEffect(() => {

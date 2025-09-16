@@ -37,7 +37,7 @@ const EmailEntryForm = ({ universityId, onSuccess, onCancel }) => {
     <div className="email-entry-overlay">
       <div className="email-entry-modal">
         <h3>Enter to Win!</h3>
-        <p>Enter your email address for a chance to win a prize!</p>
+        <p>Please enter your Hastings.edu email address for a chance to win a prize!</p>
         <form onSubmit={handleSubmit}>
           <input
             type="email"
