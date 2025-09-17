@@ -315,23 +315,34 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [markers, showMarkers, markerTypes, mapLoaded]);
 
   useEffect(() => {
+  // This entire effect is for admin-only path drawing and cleanup.
+  // It was causing a crash for public users, so we now prevent it from running for them.
+  if (mode === 'admin') {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
+    
+    // First, clean up any existing path layers from a previous render.
     const existingPathLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('path-'));
     existingPathLayers.forEach(layer => {
       if (map.getLayer(layer.id)) map.removeLayer(layer.id);
-      if (map.getSource(layer.source)) map.removeSource(layer.source);
+      // Add a safety check for the source, just in case
+      if (layer.source && map.getSource(layer.source)) {
+        map.removeSource(layer.source);
+      }
     });
-    if (mode === 'admin' && showPaths) {
+
+    // Then, if paths are visible, draw the new ones.
+    if (showPaths) {
       paths.forEach(path => {
         const sourceId = `path-source-${path.id}`;
         const layerId = `path-layer-${path.id}`;
-        if(map.getSource(sourceId)) return;
+        if(map.getSource(sourceId)) return; // Avoid re-adding
         map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates } } });
         map.addLayer({ id: layerId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
       });
     }
-  }, [paths, showPaths, pathTypes, mapLoaded, mode]);
+  }
+}, [paths, showPaths, pathTypes, mapLoaded, mode]); // The dependency array remains the same
   
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
