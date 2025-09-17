@@ -90,7 +90,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       const docRef = await addDoc(markersCollection, markerData);
       setMarkers(prev => [...prev, { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] }]);
       
-      
+      // This line tells the map to become visible, triggering the drawing effect.
+      setShowMarkers(true);
       
       popup.remove();
     });
