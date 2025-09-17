@@ -5,16 +5,13 @@ import EmailEntryForm from '../components/EmailEntryForm';
 
 const PublicMapPage = ({ config, universityId, persona }) => {
   // Use a state to track if the user has interacted with the form.
-  // Initialize it based on sessionStorage to remember across refreshes.
-  const [formInteracted, setFormInteracted] = React.useState(() => 
-    sessionStorage.getItem('emailSubmittedForMap') === 'true'
-  );
+  
+  const [formInteracted, setFormInteracted] = React.useState(false);
 
   const handleFormCompletion = () => {
-    // When the form is submitted or skipped, update the state and sessionStorage.
-    sessionStorage.setItem('emailSubmittedForMap', 'true');
-    setFormInteracted(true);
-  };
+  // Now, we only update the React state. The browser's session memory is not used.
+  setFormInteracted(true);
+};
 
   // Determine if the email form should be shown.
   // It should only show for the 'student' persona, if the config enables it,
