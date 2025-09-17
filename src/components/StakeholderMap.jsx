@@ -29,7 +29,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
-  const [showMarkers, setShowMarkers] = useState(true);
+  // This will default to TRUE for admins, and FALSE for everyone else ('public').
+  const [showMarkers, setShowMarkers] = useState(mode === 'admin');
   const [showPaths, setShowPaths] = useState(true);
   const [showHelp, setShowHelp] = useState(true);
   const [markers, setMarkers] = useState([]);
