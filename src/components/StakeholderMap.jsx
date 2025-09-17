@@ -42,6 +42,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [mapTheme, setMapTheme] = useState('progress');
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  const [sessionMarkers, setSessionMarkers] = useState([]); // <-- ADD THIS LINE
 
   const markerTypes = useMemo(() => {
     if (mode === 'admin') {
@@ -88,11 +89,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         createdAt: serverTimestamp() 
       };
       const docRef = await addDoc(markersCollection, markerData);
-      setMarkers(prev => [...prev, { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] }]);
+      const newMarker = { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] };
       
-      // This line tells the map to become visible, triggering the drawing effect.
-      setShowMarkers(true);
+      // We still add to the main `markers` list to save the data, but it won't be displayed for public users.
+      setMarkers(prev => [...prev, newMarker]); 
+
+      // --- THIS IS THE KEY CHANGE ---
+      // We add the new marker to our temporary session list, which WILL be displayed.
+      setSessionMarkers(prev => [...prev, newMarker]); 
       
+      // We don't need setShowMarkers(true) anymore, so you can ensure that line is removed.
+
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
@@ -304,16 +311,28 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
+    
+    // This part stays the same: always clear old markers before drawing new ones.
     map.getCanvas().parentElement.querySelectorAll('.custom-mapbox-marker').forEach(markerEl => markerEl.remove());
-    if (showMarkers) {
-      markers.forEach(marker => {
-        const el = document.createElement('div');
-        el.className = 'custom-marker custom-mapbox-marker';
-        el.style.backgroundColor = markerTypes[marker.type] || '#9E9E9E';
-        new mapboxgl.Marker(el).setLngLat(marker.coordinates).setPopup(new mapboxgl.Popup({ offset: 25 }).setText(marker.comment || marker.type)).addTo(map);
-      });
-    }
-  }, [markers, showMarkers, markerTypes, mapLoaded]);
+
+    // --- THIS LOGIC IS NEW ---
+    // Decide which list of markers to draw.
+    // If we're an admin and markers are visible, use the main `markers` list.
+    // Otherwise (for all public users), use the temporary `sessionMarkers` list.
+    const markersToDraw = (mode === 'admin' && showMarkers) ? markers : sessionMarkers;
+    
+    // This drawing loop now works with whichever list we chose above.
+    markersToDraw.forEach(marker => {
+      const el = document.createElement('div');
+      el.className = 'custom-marker custom-mapbox-marker';
+      el.style.backgroundColor = markerTypes[marker.type] || '#9E9E9E';
+      new mapboxgl.Marker(el)
+        .setLngLat(marker.coordinates)
+        .setPopup(new mapboxgl.Popup({ offset: 25 }).setText(marker.comment || marker.type))
+        .addTo(map);
+    });
+    
+  }, [markers, sessionMarkers, showMarkers, markerTypes, mapLoaded, mode]); // Add `sessionMarkers` and `mode` to the dependency array
 
   useEffect(() => {
   // This entire effect is for admin-only path drawing and cleanup.
