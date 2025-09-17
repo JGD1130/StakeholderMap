@@ -419,10 +419,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           <button className="close-button" onClick={() => setShowHelp(false)}>×</button>
           <h4>How to Use This Map</h4>
           <ul>
-            <li>Click on the map to add a marker.</li>
-            {mode === 'admin' && ( <><li>Double-click to finish drawing a path.</li><li>Click on a building to select and update its condition.</li></> )}
-            <li>Use the controls to toggle markers.</li>
-          </ul>
+    <li>Click on the map to add a marker.</li>
+    {mode === 'admin' && (
+      <>
+        <li>Double-click to finish drawing a path.</li>
+        <li>Click on a building to select and update its condition.</li>
+        {/* This instruction will now ONLY render if the mode is 'admin' */}
+        <li>Use the controls to toggle markers.</li>
+      </>
+    )}
+  </ul>
           <button className="close-button-main" onClick={() => setShowHelp(false)}>Close</button>
         </div>
       )}
@@ -474,12 +480,19 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               </button>
             )}
           </div>
-          <div className="control-section">
-            <div className="button-row">
-              <button onClick={() => setShowMarkers(s => !s)}>{showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}</button>
-              {mode === 'admin' && ( <button onClick={() => setShowPaths(s => !s)}>{showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}</button> )}
-            </div>
-          </div>
+          <div className="button-row">
+  {/* This button will now ONLY render if the mode is 'admin' */}
+  {mode === 'admin' && (
+    <button onClick={() => setShowMarkers(s => !s)}>
+      {showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}
+    </button>
+  )}
+  {mode === 'admin' && (
+    <button onClick={() => setShowPaths(s => !s)}>
+      {showPaths ? `Hide Paths (${paths.length})` : `Show Paths (${paths.length})`}
+    </button>
+  )}
+</div>
           {mode === 'admin' && (
             <div className="control-section admin-controls">
               <div className="button-row">
