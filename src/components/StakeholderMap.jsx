@@ -43,6 +43,29 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   const [sessionMarkers, setSessionMarkers] = useState([]); // <-- ADD THIS LINE
+  const [showStudentMarkers, setShowStudentMarkers] = useState(true);
+  const [showStaffMarkers, setShowStaffMarkers] = useState(true);
+
+  const filteredMarkers = useMemo(() => {
+    // If both are turned off, return an empty array quickly.
+    if (!showStudentMarkers && !showStaffMarkers) {
+      return [];
+    }
+    // Filter the main markers list based on the toggle states.
+    return markers.filter(marker => {
+      if (showStudentMarkers && marker.persona === 'student') {
+        return true;
+      }
+      if (showStaffMarkers && marker.persona === 'staff') {
+        return true;
+      }
+      // Include markers that might not have a persona (e.g., from early testing)
+      if (mode === 'admin' && !marker.persona) {
+        return true;
+      }
+      return false;
+    });
+  }, [markers, showStudentMarkers, showStaffMarkers, mode]);
 
   const markerTypes = useMemo(() => {
     if (mode === 'admin') {
@@ -312,16 +335,12 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     
-    // This part stays the same: always clear old markers before drawing new ones.
     map.getCanvas().parentElement.querySelectorAll('.custom-mapbox-marker').forEach(markerEl => markerEl.remove());
 
-    // --- THIS LOGIC IS NEW ---
-    // Decide which list of markers to draw.
-    // If we're an admin and markers are visible, use the main `markers` list.
-    // Otherwise (for all public users), use the temporary `sessionMarkers` list.
-    const markersToDraw = (mode === 'admin' && showMarkers) ? markers : sessionMarkers;
+    // --- UPDATED LOGIC ---
+    // For admins, use our new filtered list. For public users, use the session list.
+    const markersToDraw = mode === 'admin' ? filteredMarkers : sessionMarkers;
     
-    // This drawing loop now works with whichever list we chose above.
     markersToDraw.forEach(marker => {
       const el = document.createElement('div');
       el.className = 'custom-marker custom-mapbox-marker';
@@ -332,7 +351,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         .addTo(map);
     });
     
-  }, [markers, sessionMarkers, showMarkers, markerTypes, mapLoaded, mode]); // Add `sessionMarkers` and `mode` to the dependency array
+  }, [filteredMarkers, sessionMarkers, markerTypes, mapLoaded, mode]); // Use filteredMarkers in dependency array
 
   useEffect(() => {
   // This entire effect is for admin-only path drawing and cleanup.
@@ -402,21 +421,30 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleMapClick = (e) => {
-      if (interactionMode === 'drawPath' && mode === 'admin') {
-        setNewPathCoords(prev => [...prev, e.lngLat.toArray()]);
-        return;
-      }
-      if (interactionMode === 'select' && mode === 'admin') {
-        const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
-        if (features.length > 0) {
-          setSelectedBuildingId(features[0].properties.id);
-          setIsTechnicalPanelOpen(false);
-          return;
-        }
-      }
-      setSelectedBuildingId(null);
-      showMarkerPopup(e.lngLat);
-    };
+  //  ▼▼▼ THIS IS THE ONLY PART YOU NEED TO ADD ▼▼▼
+  // Check if the click was on an existing marker.
+  // If so, do nothing and let the marker's own popup appear.
+  if (e.originalEvent.target.closest('.custom-marker')) {
+    return;
+  }
+  //  ▲▲▲ END OF THE NEW PART ▲▲▲
+
+  // --- The rest of the function remains exactly the same ---
+  if (interactionMode === 'drawPath' && mode === 'admin') {
+    setNewPathCoords(prev => [...prev, e.lngLat.toArray()]);
+    return;
+  }
+  if (interactionMode === 'select' && mode === 'admin') {
+    const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-layer'] });
+    if (features.length > 0) {
+      setSelectedBuildingId(features[0].properties.id);
+      setIsTechnicalPanelOpen(false);
+      return;
+    }
+  }
+  setSelectedBuildingId(null);
+  showMarkerPopup(e.lngLat);
+};
     const handleDblClick = () => { if (interactionMode === 'drawPath' && mode === 'admin') handleFinishPath(); };
     map.on('click', handleMapClick);
     map.on('dblclick', handleDblClick);
@@ -501,6 +529,30 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               </select>
             </div>
           )}
+          {mode === 'admin' && (
+            <div className="control-section data-filters">
+              <h5>Data Filters</h5>
+              <div className="filter-item">
+                <input
+                  type="checkbox"
+                  id="student-filter"
+                  checked={showStudentMarkers}
+                  onChange={() => setShowStudentMarkers(v => !v)}
+                />
+                <label htmlFor="student-filter">Show Student Markers</label>
+              </div>
+              <div className="filter-item">
+                <input
+                  type="checkbox"
+                  id="staff-filter"
+                  checked={showStaffMarkers}
+                  onChange={() => setShowStaffMarkers(v => !v)}
+                />
+                <label htmlFor="staff-filter">Show Staff Markers</label>
+              </div>
+            </div>
+          )}
+          
           <div className="mode-selector">
             <button className={interactionMode === 'select' ? 'active' : ''} onClick={() => setInteractionMode('select')}>
               Select/Marker
@@ -515,7 +567,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   {/* This button will now ONLY render if the mode is 'admin' */}
   {mode === 'admin' && (
     <button onClick={() => setShowMarkers(s => !s)}>
-      {showMarkers ? `Hide Markers (${markers.length})` : `Show Markers (${markers.length})`}
+      {showMarkers ? `Hide Markers (${filteredMarkers.length})` : `Show Markers (${filteredMarkers.length})`}
     </button>
   )}
   {mode === 'admin' && (
