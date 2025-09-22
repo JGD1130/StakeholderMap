@@ -7,6 +7,7 @@ import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
 import { surveyConfigs } from '../surveyConfigs';
+import * as turf from '@turf/turf';
 
 const stakeholderConditionConfig = {
   '5': { label: '5 = Excellent condition', color: '#4CAF50' },
@@ -169,10 +170,32 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0 && Object.keys(buildingAssessments).length === 0) {
       return alert("No data to export.");
     }
+
+    // --- NEW GEOSPATIAL LOGIC STARTS HERE ---
+
+    // 1. Define the buffer distance in meters. You can easily change this value.
+    const bufferDistanceInMeters = 5;
+
+    // 2. Create the buffered building polygons once, for efficiency.
+    const buildingFeatures = config?.buildings?.features || [];
+    const bufferedBuildings = buildingFeatures.map(feature => {
+      // Use Turf.js to create a new polygon that is X meters larger than the original.
+      const bufferedPolygon = turf.buffer(feature, bufferDistanceInMeters, { units: 'meters' });
+      return {
+        id: feature.properties.id, // Store the building's ID/name
+        geometry: bufferedPolygon.geometry // Store the new, larger shape
+      };
+    });
+
+    // --- GEOSPATIAL LOGIC ENDS HERE ---
+
     const escapeCsvField = (field) => `"${String(field || '').replace(/"/g, '""')}"`;
     const rows = [];
+    
+    // Header for Technical Assessments
     rows.push(['DataType', 'BuildingID', 'Category', 'SubCategory', 'Score', 'Notes'].join(','));
     Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
+      // ... (This part remains the same)
       const notes = assessment.notes || '';
       if (assessment.scores) {
         Object.entries(assessment.scores).forEach(([category, subScores]) => {
@@ -182,13 +205,45 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         });
       }
     });
+
+    // Header for Markers, Paths, and Conditions
     rows.push([]);
-    rows.push(['DataType', 'ID', 'Type', 'Persona', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
-    markers.forEach(m => { rows.push([ escapeCsvField('Marker'), escapeCsvField(m.id), escapeCsvField(m.type), escapeCsvField(m.persona), escapeCsvField(m.coordinates[1]), escapeCsvField(m.coordinates[0]), escapeCsvField(m.comment), '' ].join(',')); });
-    paths.forEach(p => { rows.push([ escapeCsvField('Path'), escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
-    Object.entries(buildingConditions).forEach(([id, condition]) => {
-      if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), escapeCsvField(condition), '', '', '', '', '' ].join(',')); }
+    rows.push(['DataType', 'BuildingID', 'ID', 'Type', 'Persona', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
+
+    // --- MODIFIED MARKER EXPORT LOGIC ---
+    markers.forEach(m => {
+      // For each marker, find which buffered building it falls into.
+      const markerPoint = turf.point(m.coordinates);
+      let foundBuildingId = ''; // Default to empty
+
+      for (const building of bufferedBuildings) {
+        if (turf.booleanPointInPolygon(markerPoint, building.geometry)) {
+          foundBuildingId = building.id;
+          break; // Stop checking once we find the first match
+        }
+      }
+      
+      // Now, use the foundBuildingId when creating the CSV row.
+      rows.push([
+        escapeCsvField('Marker'),
+        escapeCsvField(foundBuildingId), // This column is now populated!
+        escapeCsvField(m.id),
+        escapeCsvField(m.type),
+        escapeCsvField(m.persona),
+        escapeCsvField(m.coordinates[1]),
+        escapeCsvField(m.coordinates[0]),
+        escapeCsvField(m.comment),
+        ''
+      ].join(','));
     });
+
+    // Paths and Conditions export (remains the same)
+    paths.forEach(p => { rows.push([ escapeCsvField('Path'), '', escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
+    Object.entries(buildingConditions).forEach(([id, condition]) => {
+      if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), '', escapeCsvField(condition), '', '', '', '', '' ].join(',')); }
+    });
+    
+    // CSV creation and download (remains the same)
     const csvContent = rows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
@@ -199,7 +254,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [markers, paths, buildingConditions, buildingAssessments, universityId]);
+  }, [markers, paths, buildingConditions, buildingAssessments, universityId, config]); // Add 'config' to dependency array
 
   const exportDrawingEntries = useCallback(async () => {
     try {
