@@ -826,6 +826,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               <AssessmentPanel
                 buildingId={selectedBuildingId}
                 assessments={buildingAssessments}
+                universityId={universityId}
                 onClose={() => {
                   setIsTechnicalPanelOpen(false);
                 }}

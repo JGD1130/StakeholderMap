@@ -27,7 +27,7 @@ const assessmentTemplate = {
   }
 };
 
-const AssessmentPanel = ({ buildingId, assessments, onClose, onSave }) => {
+const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId }) => {
   // Local state to manage form changes
   const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
 
@@ -56,7 +56,7 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave }) => {
   const handleSaveChanges = async () => {
     if (!buildingId) return;
     const sanitizedId = buildingId.replace(/\//g, "__");
-    const docRef = doc(db, "buildingAssessments", sanitizedId);
+    const docRef = doc(db, "universities", universityId, "buildingAssessments", sanitizedId);
     const dataToSave = { ...localAssessment, originalId: buildingId };
     try {
       await setDoc(docRef, dataToSave);
