@@ -440,48 +440,25 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           })
           .catch(err => console.warn('Could not fit bounds for gray-center-fl1:', err?.message || err));
 
-        // Rooms (fill, semi-transparent) before first symbol layer
-        if (!map.getLayer('gray-center-rooms')) {
+        // Rooms (fill)
+        if (!map.getLayer('rooms-fill')) {
           map.addLayer({
-            id: 'gray-center-rooms',
+            id: 'rooms-fill',
             type: 'fill',
             source: 'gray-center-fl1',
             filter: ['==', ['get', 'kind'], 'room'],
-            paint: {
-              'fill-color': '#ffcc00',
-              'fill-opacity': 0.4,
-            },
+            paint: { 'fill-color': '#ffcc00', 'fill-opacity': 0.25 },
           }, beforeId);
         }
 
-        // Walls (line, dark) before first symbol layer
-        if (!map.getLayer('gray-center-walls')) {
+        // Walls (line)
+        if (!map.getLayer('walls')) {
           map.addLayer({
-            id: 'gray-center-walls',
+            id: 'walls',
             type: 'line',
             source: 'gray-center-fl1',
             filter: ['==', ['get', 'kind'], 'wall'],
-            paint: {
-              'line-color': '#333',
-              'line-width': 2,
-            },
-          }, beforeId);
-        }
-
-        // Optional: Labels for room IDs or names
-        if (!map.getLayer('gray-center-room-labels')) {
-          map.addLayer({
-            id: 'gray-center-room-labels',
-            type: 'symbol',
-            source: 'gray-center-fl1',
-            filter: ['==', ['get', 'kind'], 'room'],
-            layout: {
-              'text-field': ['get', 'id'],
-              'text-size': 10,
-            },
-            paint: {
-              'text-color': '#000',
-            },
+            paint: { 'line-color': '#333', 'line-width': 1.5 },
           }, beforeId);
         }
       }
@@ -490,7 +467,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     return () => {
       const m = mapRef.current;
       if (!m) return;
-      ['gray-center-room-labels', 'gray-center-walls', 'gray-center-rooms', 'rooms-fill', 'walls']
+      ['rooms-fill', 'walls', 'gray-center-room-labels', 'gray-center-walls', 'gray-center-rooms']
         .forEach((id) => { if (m.getLayer(id)) m.removeLayer(id); });
       if (m.getSource('gray-center-fl1')) m.removeSource('gray-center-fl1');
     };
