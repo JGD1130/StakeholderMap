@@ -303,6 +303,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     const map = new mapboxgl.Map({ container: mapContainerRef.current, style: config.style, center: [config.lng, config.lat], zoom: config.zoom, pitch: config.pitch, bearing: config.bearing });
     mapRef.current = map;
+    console.log('STAKEHOLDERMAP: admin map created');
+    // TEMP: expose map to the browser console for debugging
+    if (typeof window !== 'undefined') window.__MAP__ = map;
     // TEMP: click to log lng/lat for control points
     // Remove after collecting three control points
     let clicks = 0;
@@ -313,7 +316,12 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     });
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.addControl(new mapboxgl.FullscreenControl());
-    map.on('load', () => setMapLoaded(true));
+    map.on('load', () => {
+      console.log('STAKEHOLDERMAP: admin map loaded');
+      setMapLoaded(true);
+      // keep exposed after style reloads
+      if (typeof window !== 'undefined') window.__MAP__ = map;
+    });
     return () => map.remove();
   }, [config]);
 
@@ -374,6 +382,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
     const map = mapRef.current;
+    // TEMP: expose map to the console
+    if (typeof window !== 'undefined' && map) window.__MAP__ = map;
     if (!map.getSource('buildings')) {
       map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
       map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 } });
