@@ -115,6 +115,18 @@ function toNumberOrString(val) {
   return Number.isFinite(n) ? n : String(val);
 }
 
+// Compute polygon area in pixel-space using the shoelace formula
+function polyArea(pts) {
+  if (!Array.isArray(pts) || pts.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area) / 2;
+}
+
 async function main() {
   const [, , inputFile, outputFile] = process.argv;
   if (!inputFile || !outputFile) {
@@ -159,10 +171,18 @@ async function main() {
     });
   }
 
-  const fc = {
-    type: 'FeatureCollection',
-    features,
-  };
+  // keep only "rooms" with area above a threshold; drop tiny label boxes etc.
+  const MIN_ROOM_AREA = 1500; // in SVG pixel^2; tweak as needed
+  const filtered = [];
+  for (const f of features) {
+    if (f?.properties?.kind === 'room' && f?.geometry?.type === 'Polygon') {
+      const ring = (f.geometry.coordinates && f.geometry.coordinates[0]) || [];
+      if (polyArea(ring) < MIN_ROOM_AREA) continue;
+    }
+    filtered.push(f);
+  }
+
+  const fc = { type: 'FeatureCollection', features: filtered };
 
   try {
     const json = JSON.stringify(fc, null, 2);
