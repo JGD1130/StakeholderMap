@@ -18,6 +18,8 @@ const stakeholderConditionConfig = {
 };
 const progressColors = { 0: '#85474b', 1: '#aed6f1', 2: '#5dade2', 3: '#2e86c1' };
 const defaultBuildingColor = '#85474b';
+// Disable legacy Gray Center auto-add to prevent duplicates
+const USE_OLD_AUTOADD = false;
 
 const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const mapContainerRef = useRef(null);
@@ -46,6 +48,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [sessionMarkers, setSessionMarkers] = useState([]); // <-- ADD THIS LINE
   const [showStudentMarkers, setShowStudentMarkers] = useState(true);
   const [showStaffMarkers, setShowStaffMarkers] = useState(true);
+  // Room attributes loaded from Firestore per building/floor (admin)
+  const roomAttrsRef = useRef({});
+  // Floorplans manifest (admin-only)
+  const [fpManifest, setFpManifest] = useState(null);
+  // Floorplans manifest + UI state (admin)
+  const [floorManifest, setFloorManifest] = useState(null);
+  const [selectedBuilding, setSelectedBuilding] = useState('');
+  const [selectedFloor, setSelectedFloor] = useState('');
+  const [loadedFloors, setLoadedFloors] = useState([]); // ['Building-FL1']
+  const loadedFloorsRef = useRef([]); // track loaded srcIds for cleanup
 
   const filteredMarkers = useMemo(() => {
     // If both are turned off, return an empty array quickly.
@@ -304,8 +316,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     const map = new mapboxgl.Map({ container: mapContainerRef.current, style: config.style, center: [config.lng, config.lat], zoom: config.zoom, pitch: config.pitch, bearing: config.bearing });
     mapRef.current = map;
     console.log('STAKEHOLDERMAP: admin map created');
-    // TEMP: expose map to the browser console for debugging
-    if (typeof window !== 'undefined') window.__MAP__ = map;
     // TEMP: click to log lng/lat for control points
     // Remove after collecting three control points
     let clicks = 0;
@@ -319,8 +329,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     map.on('load', () => {
       console.log('STAKEHOLDERMAP: admin map loaded');
       setMapLoaded(true);
-      // keep exposed after style reloads
-      if (typeof window !== 'undefined') window.__MAP__ = map;
     });
     return () => map.remove();
   }, [config]);
@@ -382,8 +390,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
     const map = mapRef.current;
-    // TEMP: expose map to the console
-    if (typeof window !== 'undefined' && map) window.__MAP__ = map;
     if (!map.getSource('buildings')) {
       map.addSource('buildings', { type: 'geojson', data: config.buildings, promoteId: 'id' });
       map.addLayer({ id: 'buildings-layer', type: 'fill-extrusion', source: 'buildings', paint: { 'fill-extrusion-color': defaultBuildingColor, 'fill-extrusion-height': 15, 'fill-extrusion-opacity': 0.7 } });
@@ -396,7 +402,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
     // Add floorplan GeoJSON (rooms and walls) — georeferenced (admin-only)
     const isAdmin = location.pathname.includes('/hastings/admin');
-    const enable = import.meta.env.VITE_ENABLE_FLOORPLANS_ADMIN === 'true';
+    const enable = false; // disable legacy auto-load to avoid duplicates
     if (isAdmin && enable) {
       // Helper to insert before first symbol layer to ensure visibility
       function firstSymbolLayerId(m) {
@@ -405,23 +411,47 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         return undefined;
       }
       const beforeId = firstSymbolLayerId(map);
+      const base = import.meta.env.BASE_URL;
 
-      if (!map.getSource('gray-center-fl1')) {
-        // Use Vite base since app is served under a subpath
-        const url = `${import.meta.env.BASE_URL}Gray_Center_FL_1.simpl.geojson`;
-        map.addSource('gray-center-fl1', { type: 'geojson', data: url });
+      (async () => {
+        // Load manifest
+        let manifest;
+        try {
+          manifest = await fetch(`${base}floorplans/manifest.json`).then((r) => r.json());
+        } catch (err) {
+          console.warn('Failed to load floorplans manifest:', err?.message || err);
+          return;
+        }
 
-        // Confirm source load
-        map.on('sourcedata', (e) => {
-          if (e.sourceId === 'gray-center-fl1' && e.isSourceLoaded) {
-            console.log('✅ gray-center-fl1 loaded');
+        async function loadRoomAttributes(buildingId, floorId) {
+          try {
+            const qRooms = query(
+              collection(db, 'universities', universityId, 'rooms'),
+              where('bldg', '==', buildingId),
+              where('floor', '==', floorId)
+            );
+            const snap = await getDocs(qRooms);
+            const attrs = {};
+            snap.forEach((doc) => { attrs[doc.id] = doc.data(); });
+            return attrs;
+          } catch (err) {
+            console.warn('Failed to load room attributes:', err?.message || err);
+            return {};
           }
-        });
+        }
 
-        // Immediately after adding the source, do a one-time fit to bounds
-        fetch(url)
-          .then(r => r.json())
-          .then(g => {
+        async function loadFloor(buildingId, floorId) {
+          const item = manifest?.[buildingId]?.floors?.[floorId];
+          if (!item) return;
+          const srcId = `${buildingId}-${floorId}`;
+          if (map.getSource(srcId)) return;
+          const url = `${base}${item.url}`;
+          map.addSource(srcId, { type: 'geojson', data: url });
+          loadedFloorsRef.current.push(srcId);
+
+          // Fit to bounds once
+          try {
+            const g = await fetch(url).then((r) => r.json());
             const pts = [];
             for (const f of g.features || []) {
               if (!f.geometry) continue;
@@ -431,47 +461,150 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               for (let i = 0; i < arr.length; i += 2) pts.push([arr[i], arr[i + 1]]);
             }
             if (pts.length) {
-              const xs = pts.map(p => p[0]);
-              const ys = pts.map(p => p[1]);
+              const xs = pts.map((p) => p[0]);
+              const ys = pts.map((p) => p[1]);
               const sw = [Math.min(...xs), Math.min(...ys)];
               const ne = [Math.max(...xs), Math.max(...ys)];
               map.fitBounds([sw, ne], { padding: 40 });
             }
-          })
-          .catch(err => console.warn('Could not fit bounds for gray-center-fl1:', err?.message || err));
+          } catch (err) {
+            console.warn('Could not fit bounds for', srcId, err?.message || err);
+          }
 
-        // Rooms (fill)
-        if (!map.getLayer('rooms-fill')) {
-          map.addLayer({
-            id: 'rooms-fill',
-            type: 'fill',
-            source: 'gray-center-fl1',
-            filter: ['==', ['get', 'kind'], 'room'],
-            paint: { 'fill-color': '#ffcc00', 'fill-opacity': 0.25 },
-          }, beforeId);
+          // Load room attributes for this floor
+          const attrs = await loadRoomAttributes(buildingId, floorId);
+          roomAttrsRef.current[srcId] = attrs;
+
+          // Layers
+          const roomsLayerId = `${srcId}-rooms`;
+          const wallsLayerId = `${srcId}-walls`;
+          if (!map.getLayer(roomsLayerId)) {
+            map.addLayer({ id: roomsLayerId, type: 'fill', source: srcId, filter: ['==', ['get', 'kind'], 'room'], paint: { 'fill-color': '#ffcc00', 'fill-opacity': 0.25 } }, beforeId);
+            map.on('mouseenter', roomsLayerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', roomsLayerId, () => { map.getCanvas().style.cursor = ''; });
+            map.on('click', roomsLayerId, (e) => {
+              const f = e.features && e.features[0];
+              if (!f) return;
+              const id = f.properties?.id || '(no id)';
+              const attrsById = roomAttrsRef.current?.[srcId] || {};
+              const r = attrsById[id] || {};
+              const dept = r.dept ?? f.properties?.dept ?? '—';
+              const type = r.type ?? f.properties?.type ?? '—';
+              const area = r.area ?? '—';
+              const html = `<div><strong>Room</strong> ${id}</div><div>Dept: ${dept}</div><div>Type: ${type}</div><div>Area: ${area}</div>`;
+              new mapboxgl.Popup({ closeButton: true }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+            });
+          }
+          if (!map.getLayer(wallsLayerId)) {
+            map.addLayer({ id: wallsLayerId, type: 'line', source: srcId, filter: ['==', ['get', 'kind'], 'wall'], paint: { 'line-color': '#333', 'line-width': 1.5 } }, beforeId);
+          }
         }
 
-        // Walls (line)
-        if (!map.getLayer('walls')) {
-          map.addLayer({
-            id: 'walls',
-            type: 'line',
-            source: 'gray-center-fl1',
-            filter: ['==', ['get', 'kind'], 'wall'],
-            paint: { 'line-color': '#333', 'line-width': 1.5 },
-          }, beforeId);
-        }
-      }
+        // Initial example load
+        await loadFloor('GrayCenter', 'FL1');
+      })();
+      
+      // end admin block
     }
     // Cleanup: only remove what we added
     return () => {
       const m = mapRef.current;
       if (!m) return;
+      // Remove dynamic floor layers/sources
+      const toRemove = [...(loadedFloorsRef.current || [])];
+      toRemove.forEach((srcId) => {
+        const roomsId = `${srcId}-rooms`;
+        const wallsId = `${srcId}-walls`;
+        if (m.getLayer(roomsId)) m.removeLayer(roomsId);
+        if (m.getLayer(wallsId)) m.removeLayer(wallsId);
+        if (m.getSource(srcId)) m.removeSource(srcId);
+      });
+      // Legacy cleanup
       ['rooms-fill', 'walls', 'gray-center-room-labels', 'gray-center-walls', 'gray-center-rooms']
         .forEach((id) => { if (m.getLayer(id)) m.removeLayer(id); });
       if (m.getSource('gray-center-fl1')) m.removeSource('gray-center-fl1');
     };
   }, [mapLoaded, config]);
+
+  // Fetch floorplan manifest (admin only)
+  useEffect(() => {
+    if (mode !== 'admin') return;
+    const base = import.meta.env.BASE_URL;
+    fetch(`${base}floorplans/manifest.json`)
+      .then(r => r.json())
+      .then(setFpManifest)
+      .catch(() => {});
+  }, [mode]);
+
+  // Generic helpers to load/unload any floor from manifest
+  async function loadFloor(buildingId, floorId) {
+    const map = mapRef.current;
+    if (!map || !fpManifest) return;
+
+    // Clean up any stale legacy artifacts before adding fresh
+    const srcId = `${buildingId}-${floorId}`;
+    [`${srcId}-rooms`, `${srcId}-walls`, 'rooms-fill', 'walls'].forEach(id => {
+      if (map.getLayer(id)) map.removeLayer(id);
+    });
+    if (map.getSource(srcId)) map.removeSource(srcId);
+    if (map.getSource('gray-center-fl1')) map.removeSource('gray-center-fl1');
+
+    const item = fpManifest?.[buildingId]?.floors?.[floorId];
+    if (!item) { console.warn(`${buildingId} ${floorId} not in manifest`); return; }
+    if (map.getSource(srcId)) return;
+
+    const url = `${import.meta.env.BASE_URL}${item.url}`;
+    map.addSource(srcId, { type: 'geojson', data: url });
+
+    const beforeId = (map.getStyle().layers || []).find(l => l.type === 'symbol')?.id;
+
+    map.addLayer({
+      id: `${srcId}-rooms`,
+      type: 'fill',
+      source: srcId,
+      filter: ['==', ['get', 'kind'], 'room'],
+      paint: { 'fill-color': '#ffcc00', 'fill-opacity': 0.25 }
+    }, beforeId);
+
+    map.addLayer({
+      id: `${srcId}-walls`,
+      type: 'line',
+      source: srcId,
+      filter: ['==', ['get', 'kind'], 'wall'],
+      paint: { 'line-color': '#333', 'line-width': 1.5 }
+    }, beforeId);
+
+    // Optional: Fit to bounds once
+    try {
+      const g = await fetch(url).then(r => r.json());
+      const pts = [];
+      for (const ft of g.features || []) {
+        const arr = ft.geometry?.type?.includes('Polygon')
+          ? (ft.geometry.coordinates || []).flat(2)
+          : (ft.geometry?.coordinates || []).flat();
+        for (let i = 0; i < arr.length; i += 2) pts.push([arr[i], arr[i + 1]]);
+      }
+      if (pts.length) {
+        const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+        map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], { padding: 40 });
+      }
+    } catch {}
+  }
+
+  function unloadFloor(buildingId, floorId) {
+    const map = mapRef.current;
+    if (!map) return;
+    const srcId = `${buildingId}-${floorId}`;
+    ['rooms','walls'].forEach(k => {
+      const id = `${srcId}-${k}`;
+      if (map.getLayer(id)) map.removeLayer(id);
+    });
+    if (map.getSource(srcId)) map.removeSource(srcId);
+  }
+
+  // Backward-compat buttons: call generic helpers for GrayCenter-FL1
+  async function loadGrayCenterFL1() { await loadFloor('GrayCenter', 'FL1'); }
+  function unloadGrayCenterFL1() { unloadFloor('GrayCenter', 'FL1'); }
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -744,6 +877,153 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               </div>
             </div>
           )}
+          {mode === 'admin' && (
+            <div className="control-section floorplans-controls">
+              <h5>Floorplans</h5>
+              <div className="button-row">
+                <select
+                  value={selectedBuilding}
+                  onChange={(e) => { setSelectedBuilding(e.target.value); setSelectedFloor(''); }}
+                >
+                  <option value="">Select Building…</option>
+                  {fpManifest && Object.keys(fpManifest).map((b) => (
+                    <option key={b} value={b}>{fpManifest[b]?.display || b}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedFloor}
+                  onChange={(e) => setSelectedFloor(e.target.value)}
+                  disabled={!selectedBuilding}
+                >
+                  <option value="">Select Floor…</option>
+                  {selectedBuilding && fpManifest && Object.keys(fpManifest[selectedBuilding]?.floors || {}).map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={async () => {
+                    if (!selectedBuilding || !selectedFloor) return;
+                    const map = mapRef.current; if (!map) return;
+                    const base = import.meta.env.BASE_URL;
+                    const item = fpManifest?.[selectedBuilding]?.floors?.[selectedFloor];
+                    if (!item) return;
+                    const srcId = `${selectedBuilding}-${selectedFloor}`;
+                    if (!map.getSource(srcId)) {
+                      const url = `${base}${item.url}`;
+                      map.addSource(srcId, { type: 'geojson', data: url });
+                      const beforeId = (map.getStyle().layers || []).find(l => l.type === 'symbol')?.id;
+                      if (!map.getLayer(`${srcId}-rooms`)) {
+                        map.addLayer({ id: `${srcId}-rooms`, type: 'fill', source: srcId, filter: ['==', ['get', 'kind'], 'room'], paint: { 'fill-color': '#ffcc00', 'fill-opacity': 0.25 } }, beforeId);
+                        map.on('mouseenter', `${srcId}-rooms`, () => { map.getCanvas().style.cursor = 'pointer'; });
+                        map.on('mouseleave', `${srcId}-rooms`, () => { map.getCanvas().style.cursor = ''; });
+                        map.on('click', `${srcId}-rooms`, (e) => {
+                          const f = e.features && e.features[0];
+                          if (!f) return;
+                          const id = f.properties?.id || '(no id)';
+                          const attrsById = (roomAttrsRef.current && roomAttrsRef.current[srcId]) || {};
+                          const r = attrsById[id] || {};
+                          const dept = r.dept ?? f.properties?.dept ?? '—';
+                          const type = r.type ?? f.properties?.type ?? '—';
+                          const area = r.area ?? '—';
+                          const html = `<div><strong>Room</strong> ${id}</div><div>Dept: ${dept}</div><div>Type: ${type}</div><div>Area: ${area}</div>`;
+                          new mapboxgl.Popup({ closeButton: true }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+                        });
+                      }
+                      if (!map.getLayer(`${srcId}-walls`)) {
+                        map.addLayer({ id: `${srcId}-walls`, type: 'line', source: srcId, filter: ['==', ['get', 'kind'], 'wall'], paint: { 'line-color': '#333', 'line-width': 1.5 } }, beforeId);
+                      }
+                      setLoadedFloors((prev) => Array.from(new Set([...prev, srcId])));
+                      // load attributes for this floor
+                      try {
+                        const qRooms = query(collection(db, 'universities', universityId, 'rooms'), where('bldg', '==', selectedBuilding), where('floor', '==', selectedFloor));
+                        const snap = await getDocs(qRooms);
+                        const attrs = {}; snap.forEach(d => { attrs[d.id] = d.data(); });
+                        roomAttrsRef.current = { ...(roomAttrsRef.current||{}), [srcId]: attrs };
+                      } catch {}
+                    }
+                  }}
+                >Load</button>
+                <button
+                  onClick={() => {
+                    if (!selectedBuilding || !selectedFloor) return;
+                    const map = mapRef.current; if (!map) return;
+                    const srcId = `${selectedBuilding}-${selectedFloor}`;
+                    if (map.getLayer(`${srcId}-rooms`)) map.removeLayer(`${srcId}-rooms`);
+                    if (map.getLayer(`${srcId}-walls`)) map.removeLayer(`${srcId}-walls`);
+                    if (map.getSource(srcId)) map.removeSource(srcId);
+                    setLoadedFloors((prev) => prev.filter(id => id !== srcId));
+                  }}
+                >Unload</button>
+                <button
+                  onClick={async () => {
+                    if (!selectedBuilding || !selectedFloor) return;
+                    const map = mapRef.current; if (!map) return;
+                    const base = import.meta.env.BASE_URL;
+                    const item = fpManifest?.[selectedBuilding]?.floors?.[selectedFloor];
+                    if (!item) return;
+                    try {
+                      const g = await fetch(`${base}${item.url}`).then(r=>r.json());
+                      const pts = [];
+                      for (const f of g.features || []) {
+                        if (!f.geometry) continue;
+                        const arr = f.geometry.type && f.geometry.type.includes('Polygon') ? (f.geometry.coordinates || []).flat(2) : (f.geometry.coordinates || []).flat();
+                        for (let i=0;i<arr.length;i+=2) pts.push([arr[i], arr[i+1]]);
+                      }
+                      if (pts.length) {
+                        const xs = pts.map(p=>p[0]); const ys = pts.map(p=>p[1]);
+                        map.fitBounds([[Math.min(...xs), Math.min(...ys)],[Math.max(...xs), Math.max(...ys)]], { padding: 40 });
+                      }
+                    } catch {}
+                  }}
+                >Center</button>
+              </div>
+              {loadedFloors.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div><strong>Loaded floors</strong></div>
+                  {loadedFloors.map((id) => (
+                    <div key={id} className="button-row">
+                      <span>{id}</span>
+                      <button onClick={() => {
+                        const map = mapRef.current; if (!map) return;
+                        if (map.getLayer(`${id}-rooms`)) map.removeLayer(`${id}-rooms`);
+                        if (map.getLayer(`${id}-walls`)) map.removeLayer(`${id}-walls`);
+                        if (map.getSource(id)) map.removeSource(id);
+                        setLoadedFloors(prev => prev.filter(x => x !== id));
+                      }}>Remove</button>
+                      <button onClick={async () => {
+                        const [b,f] = id.split('-');
+                        const base = import.meta.env.BASE_URL;
+                        const item = fpManifest?.[b]?.floors?.[f]; if (!item) return;
+                        try {
+                          const g = await fetch(`${base}${item.url}`).then(r=>r.json());
+                          const pts = [];
+                          for (const f of g.features || []) {
+                            if (!f.geometry) continue;
+                            const arr = f.geometry.type && f.geometry.type.includes('Polygon') ? (f.geometry.coordinates || []).flat(2) : (f.geometry.coordinates || []).flat();
+                            for (let i=0;i<arr.length;i+=2) pts.push([arr[i], arr[i+1]]);
+                          }
+                          if (pts.length) {
+                            const xs = pts.map(p=>p[0]); const ys = pts.map(p=>p[1]);
+                            mapRef.current.fitBounds([[Math.min(...xs), Math.min(...ys)],[Math.max(...xs), Math.max(...ys)]], { padding: 40 });
+                          }
+                        } catch {}
+                      }}>Center</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {mode === 'admin' && fpManifest && (
+            <div style={{ margin: '8px 0', padding: 8, background: '#fff', border: '1px solid #ddd', borderRadius: 6 }}>
+              <strong>Floorplan:</strong> Gray Center FL1
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <button onClick={loadGrayCenterFL1}>Load</button>
+                <button onClick={unloadGrayCenterFL1}>Unload</button>
+              </div>
+            </div>
+          )}
+
           <div className="legend">
             <h4>Legend</h4>
             <div className="legend-section">
