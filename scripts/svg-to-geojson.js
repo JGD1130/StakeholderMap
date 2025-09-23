@@ -135,53 +135,28 @@ async function main() {
     die(`Failed to parse SVG XML: ${err?.message || err}`);
   }
 
-  const pathNodes = findPathElements(svgJson);
+  // NEW: grab ALL path elements
+  const allNodes = findPathElements(svgJson);
   const features = [];
 
-  for (const node of pathNodes) {
-    const attrs = node.attributes || {};
-    const cls = attrs.class || attrs.className || '';
-    const d = attrs.d || '';
-    const pts = pathToPoints(d);
-    if (pts.length < 2) continue; // skip empty/degenerate paths
+  for (const n of allNodes) {
+    const pts = pathToPoints(n.attributes?.d);
+    if (!pts.length) continue;
 
-    if (hasClass(cls, 'room')) {
-      // Polygon
-      const ring = ensureClosed([...pts]);
-      if (ring.length < 4) {
-        // A valid linear ring must have 4 or more positions including closure
-        console.warn('Warning: Skipping room with invalid ring (too few points).');
-        continue;
-      }
-      const properties = {
-        kind: 'room',
-      };
-      const roomId = attrs['data-room-id'] ?? attrs['data-roomId'] ?? attrs['room-id'] ?? attrs['roomId'];
-      const roomType = attrs['data-room-type'] ?? attrs['data-roomType'] ?? attrs['room-type'] ?? attrs['roomType'];
-      const dept = attrs['data-dept'] ?? attrs['dept'] ?? attrs['data-department'] ?? attrs['department'];
-      if (roomId != null) properties.roomId = toNumberOrString(roomId);
-      if (roomType != null) properties.roomType = toNumberOrString(roomType);
-      if (dept != null) properties.dept = toNumberOrString(dept);
+    // Guess: closed shapes = rooms, open shapes = walls
+    const isClosed = pts.length > 3 && pointsEqual(pts[0], pts[pts.length - 1]);
 
-      features.push({
-        type: 'Feature',
-        properties,
-        geometry: {
-          type: 'Polygon',
-          coordinates: [ring],
-        },
-      });
-    } else if (hasClass(cls, 'wall')) {
-      // LineString
-      features.push({
-        type: 'Feature',
-        properties: { kind: 'wall' },
-        geometry: {
-          type: 'LineString',
-          coordinates: pts,
-        },
-      });
-    }
+    features.push({
+      type: 'Feature',
+      properties: {
+        kind: isClosed ? 'room' : 'wall',
+        rawClass: n.attributes?.class || null,
+      },
+      geometry: {
+        type: isClosed ? 'Polygon' : 'LineString',
+        coordinates: isClosed ? [pts] : pts,
+      },
+    });
   }
 
   const fc = {

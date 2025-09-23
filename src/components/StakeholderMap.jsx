@@ -303,6 +303,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     const map = new mapboxgl.Map({ container: mapContainerRef.current, style: config.style, center: [config.lng, config.lat], zoom: config.zoom, pitch: config.pitch, bearing: config.bearing });
     mapRef.current = map;
+    // TEMP: click to log lng/lat for control points
+    // Remove after collecting three control points
+    let clicks = 0;
+    map.on('click', (e) => {
+      clicks++;
+      console.log(`P${clicks}:`, e.lngLat.toArray()); // [lng, lat]
+      if (clicks === 3) console.log('Got 3 points. Use these in geojson-affine script.');
+    });
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.addControl(new mapboxgl.FullscreenControl());
     map.on('load', () => setMapLoaded(true));
@@ -376,29 +384,36 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#a9040e', 'line-width': 3, 'line-dasharray': [2, 2] } });
     }
 
-    // Add floorplan GeoJSON (rooms and walls)
+    // Add floorplan GeoJSON (rooms and walls) — georeferenced
     if (!map.getSource('gray-center-fl1')) {
-      map.addSource('gray-center-fl1', {
-        type: 'geojson',
-        // Place the file under `public/` so it is served statically
-        data: '/Gray_Center_Fl_1.local.geojson',
-      });
+      // Use Vite base since app is served under a subpath
+      const url = `${import.meta.env.BASE_URL}Gray_Center_FL_1.geojson`;
+      map.addSource('gray-center-fl1', { type: 'geojson', data: url });
 
-      map.addLayer({
-        id: 'rooms-fill',
-        type: 'fill',
-        source: 'gray-center-fl1',
-        filter: ['==', ['get', 'kind'], 'room'],
-        paint: { 'fill-color': '#66cc66', 'fill-opacity': 0.6 },
-      });
+      map.addLayer({ id: 'rooms-fill', type: 'fill', source: 'gray-center-fl1', filter: ['==', ['get', 'kind'], 'room'], paint: { 'fill-color': '#66cc66', 'fill-opacity': 0.6 } });
+      map.addLayer({ id: 'walls', type: 'line', source: 'gray-center-fl1', filter: ['==', ['get', 'kind'], 'wall'], paint: { 'line-color': '#333', 'line-width': 1 } });
 
-      map.addLayer({
-        id: 'walls',
-        type: 'line',
-        source: 'gray-center-fl1',
-        filter: ['==', ['get', 'kind'], 'wall'],
-        paint: { 'line-color': '#333', 'line-width': 1 },
-      });
+      // One-time fit to bounds (helps confirm)
+      fetch(url)
+        .then(r => r.json())
+        .then(g => {
+          const pts = [];
+          for (const f of g.features || []) {
+            if (!f.geometry) continue;
+            const arr = f.geometry.type && f.geometry.type.includes('Polygon')
+              ? (f.geometry.coordinates || []).flat(2)
+              : (f.geometry.coordinates || []).flat();
+            for (let i = 0; i < arr.length; i += 2) pts.push([arr[i], arr[i + 1]]);
+          }
+          if (pts.length) {
+            const xs = pts.map(p => p[0]);
+            const ys = pts.map(p => p[1]);
+            const sw = [Math.min(...xs), Math.min(...ys)];
+            const ne = [Math.max(...xs), Math.max(...ys)];
+            map.fitBounds([sw, ne], { padding: 40 });
+          }
+        })
+        .catch(err => console.warn('Could not fit bounds for gray-center-fl1:', err?.message || err));
     }
   }, [mapLoaded, config]);
 
