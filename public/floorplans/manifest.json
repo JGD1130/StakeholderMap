@@ -1,0 +1,18 @@
+{
+  "GrayCenter": {
+    "display": "Gray Center",
+    "floors": {
+      "FL1": {
+        "url": "Gray_Center_FL_1.simpl.geojson"
+      }
+    }
+  },
+  "Science": {
+    "display": "Morrison Science",
+    "floors": {
+      "FL1": {
+        "url": "Science/FL1.simpl.geojson"
+      }
+    }
+  }
+}
