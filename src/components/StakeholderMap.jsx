@@ -408,7 +408,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
       if (!map.getSource('gray-center-fl1')) {
         // Use Vite base since app is served under a subpath
-        const url = `${import.meta.env.BASE_URL}Gray_Center_FL_1.geojson`;
+        const url = `${import.meta.env.BASE_URL}Gray_Center_FL_1.simpl.geojson`;
         map.addSource('gray-center-fl1', { type: 'geojson', data: url });
 
         // Confirm source load
@@ -440,35 +440,60 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           })
           .catch(err => console.warn('Could not fit bounds for gray-center-fl1:', err?.message || err));
 
-        // Rooms (fill) before first symbol layer
-        if (!map.getLayer('rooms-fill')) {
+        // Rooms (fill, semi-transparent) before first symbol layer
+        if (!map.getLayer('gray-center-rooms')) {
           map.addLayer({
-            id: 'rooms-fill',
+            id: 'gray-center-rooms',
             type: 'fill',
             source: 'gray-center-fl1',
             filter: ['==', ['get', 'kind'], 'room'],
             paint: {
-              'fill-color': '#66cc66',
+              'fill-color': '#ffcc00',
               'fill-opacity': 0.4,
             },
           }, beforeId);
         }
 
-        // Walls (line) before first symbol layer
-        if (!map.getLayer('walls')) {
+        // Walls (line, dark) before first symbol layer
+        if (!map.getLayer('gray-center-walls')) {
           map.addLayer({
-            id: 'walls',
+            id: 'gray-center-walls',
             type: 'line',
             source: 'gray-center-fl1',
             filter: ['==', ['get', 'kind'], 'wall'],
             paint: {
               'line-color': '#333',
-              'line-width': 1,
+              'line-width': 2,
+            },
+          }, beforeId);
+        }
+
+        // Optional: Labels for room IDs or names
+        if (!map.getLayer('gray-center-room-labels')) {
+          map.addLayer({
+            id: 'gray-center-room-labels',
+            type: 'symbol',
+            source: 'gray-center-fl1',
+            filter: ['==', ['get', 'kind'], 'room'],
+            layout: {
+              'text-field': ['get', 'id'],
+              'text-size': 10,
+            },
+            paint: {
+              'text-color': '#000',
             },
           }, beforeId);
         }
       }
     }
+    // Cleanup: only remove what we added
+    return () => {
+      const m = mapRef.current;
+      if (!m) return;
+      ['gray-center-room-labels', 'gray-center-walls', 'gray-center-rooms', 'rooms-fill', 'walls']
+        .forEach((id) => { if (m.getLayer(id)) m.removeLayer(id); });
+      if (m.getSource('gray-center-fl1')) m.removeSource('gray-center-fl1');
+    };
   }, [mapLoaded, config]);
 
   useEffect(() => {
