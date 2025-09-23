@@ -90,10 +90,11 @@ function solveAffine(src, dst) {
   return [[a[0], a[1], a[2]], [a[3], a[4], a[5]]];
 }
 
+function round6(n) { return Math.round(n * 1e6) / 1e6; }
 function applyAffine(A, [x, y]) {
   const lng = A[0][0] * x + A[0][1] * y + A[0][2];
   const lat = A[1][0] * x + A[1][1] * y + A[1][2];
-  return [lng, lat];
+  return [round6(lng), round6(lat)];
 }
 
 const A = solveAffine(src, dst);
@@ -115,4 +116,3 @@ for (const f of fc.features || []) {
 
 fs.writeFileSync(outFile, JSON.stringify(fc));
 console.log('Wrote georeferenced:', outFile);
-

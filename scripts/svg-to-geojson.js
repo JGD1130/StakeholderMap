@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-
 // Usage: node scripts/svg-to-geojson.js <input.svg> <output.geojson>
+// ESM script
 
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import process from 'process';
-import { parse } from 'svgson';
+import { parse as parseSVGDom } from 'svgson';
 import pkg from 'svg-path-parser';
 const { parseSVG, makeAbsolute } = pkg;
 
@@ -14,27 +14,18 @@ function die(msg) {
   process.exit(1);
 }
 
-function hasClass(attrClass = '', cls) {
-  return String(attrClass)
-    .split(/\s+/)
-    .filter(Boolean)
-    .includes(cls);
-}
-
 function approximatelyEqual(a, b, eps = 1e-6) {
   return Math.abs(a - b) <= eps;
 }
-
 function pointsEqual(p1, p2, eps = 1e-6) {
   if (!p1 || !p2) return false;
   return approximatelyEqual(p1[0], p2[0], eps) && approximatelyEqual(p1[1], p2[1], eps);
 }
 
-// Convert an SVG path 'd' attribute into an array of [x, y] points.
-// Supports straight segments; warns and approximates by sampling skipped for brevity.
+// Convert an SVG path 'd' into an array of [x, y] points.
+// Supports straight segments (M,L,H,V,Z). Curves are ignored (rare in Revit exports).
 function pathToPoints(d) {
   if (!d || typeof d !== 'string') return [];
-
   let commands;
   try {
     commands = makeAbsolute(parseSVG(d));
@@ -42,82 +33,47 @@ function pathToPoints(d) {
     console.warn('Warning: failed to parse path data:', err?.message || err);
     return [];
   }
+  const pts = [];
+  let cx = 0, cy = 0;
+  let sx = null, sy = null; // subpath start for Z
 
-  const points = [];
-  let started = false;
-
-  for (const cmd of commands) {
-    const type = cmd.code || cmd.command || cmd.type;
-    switch (type) {
-      case 'M': // moveto absolute
-        points.push([cmd.x, cmd.y]);
-        started = true;
-        break;
-      case 'L': // lineto
-      case 'H': // horizontal lineto
-      case 'V': // vertical lineto
-        // makeAbsolute ensures x,y are present
-        if (!started) {
-          points.push([cmd.x0 ?? cmd.x, cmd.y0 ?? cmd.y]);
-          started = true;
-        }
-        points.push([cmd.x, cmd.y]);
-        break;
-      case 'Z': // closepath
-        if (points.length && !pointsEqual(points[0], points[points.length - 1])) {
-          points.push(points[0]);
-        }
-        break;
-      case 'C': // cubic bezier
-      case 'S': // smooth cubic
-      case 'Q': // quadratic
-      case 'T': // smooth quadratic
-      case 'A': // arc
-        // Not implementing curve flattening in this script to keep dependencies light.
-        // Warn once and skip control points; we will connect to end point to retain structure.
-        console.warn(`Warning: Path contains '${type}' curve; approximating with end points only.`);
-        if (!started) {
-          points.push([cmd.x0 ?? cmd.x, cmd.y0 ?? cmd.y]);
-          started = true;
-        }
-        points.push([cmd.x, cmd.y]);
-        break;
-      default:
-        console.warn(`Warning: Unsupported path command '${type}', attempting to continue.`);
-        break;
+  for (const c of commands) {
+    const type = (c.code || c.command || c.type || '').toUpperCase();
+    if (type === 'M') {
+      cx = c.x; cy = c.y;
+      sx = cx; sy = cy;
+      pts.push([cx, cy]);
+    } else if (type === 'L') {
+      cx = c.x; cy = c.y;
+      pts.push([cx, cy]);
+    } else if (type === 'H') {
+      cx = c.x;
+      pts.push([cx, cy]);
+    } else if (type === 'V') {
+      cy = c.y;
+      pts.push([cx, cy]);
+    } else if (type === 'Z') {
+      if (sx != null && sy != null && !pointsEqual(pts[pts.length - 1], [sx, sy])) {
+        pts.push([sx, sy]);
+      }
+      // subpath closed; next M will reset sx/sy
+    } else {
+      // Ignore curves (C,Q,S,T,A). Revit exports usually straight segments.
+      // If you encounter curves, consider sampling/flattening here.
     }
   }
-  return points;
-}
 
-function ensureClosed(points) {
-  if (!points || points.length === 0) return points;
-  const first = points[0];
-  const last = points[points.length - 1];
-  if (!pointsEqual(first, last)) points.push(first);
-  return points;
-}
-
-function findPathElements(node, out = []) {
-  if (!node) return out;
-  if (node.name === 'path' && node.attributes && node.attributes.d) {
-    out.push(node);
-  }
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) findPathElements(child, out);
+  // Deduplicate consecutive identical points
+  const out = [];
+  for (const p of pts) {
+    if (!out.length || !pointsEqual(out[out.length - 1], p)) out.push(p);
   }
   return out;
 }
 
-function toNumberOrString(val) {
-  if (val == null) return undefined;
-  const n = Number(val);
-  return Number.isFinite(n) ? n : String(val);
-}
-
-// Compute polygon area in pixel-space using the shoelace formula
+// Polygon area in SVG pixel^2 (shoelace)
 function polyArea(pts) {
-  if (!Array.isArray(pts) || pts.length < 3) return 0;
+  if (!pts || pts.length < 3) return 0;
   let area = 0;
   for (let i = 0; i < pts.length; i++) {
     const [x1, y1] = pts[i];
@@ -127,71 +83,95 @@ function polyArea(pts) {
   return Math.abs(area) / 2;
 }
 
-async function main() {
-  const [, , inputFile, outputFile] = process.argv;
-  if (!inputFile || !outputFile) {
-    die('Usage: node scripts/svg-to-geojson.js <input.svg> <output.geojson>');
+// Total length of a linestring (SVG pixels)
+function lineLength(pts) {
+  if (!pts || pts.length < 2) return 0;
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i][0] - pts[i - 1][0];
+    const dy = pts[i][1] - pts[i - 1][1];
+    len += Math.hypot(dx, dy);
   }
+  return len;
+}
+
+// DFS collect nodes
+function nodesBy(predicate, root) {
+  const out = [];
+  (function walk(n) {
+    if (!n) return;
+    if (predicate(n)) out.push(n);
+    if (n.children && n.children.length) {
+      for (const ch of n.children) walk(ch);
+    }
+  })(root);
+  return out;
+}
+
+async function main() {
+  if (process.argv.length < 4) {
+    console.log('Usage: node scripts/svg-to-geojson.js <input.svg> <output.geojson>');
+    process.exit(1);
+  }
+  const inFile = process.argv[2];
+  const outFile = process.argv[3];
 
   let svgRaw;
   try {
-    svgRaw = await readFile(inputFile, 'utf8');
-  } catch (err) {
-    die(`Failed to read input SVG: ${err?.message || err}`);
+    svgRaw = await readFile(inFile, 'utf8');
+  } catch (e) {
+    die(`Failed to read input SVG: ${e.message}`);
   }
 
-  let svgJson;
+  let svgRoot;
   try {
-    svgJson = await parse(svgRaw);
-  } catch (err) {
-    die(`Failed to parse SVG XML: ${err?.message || err}`);
+    svgRoot = await parseSVGDom(svgRaw);
+  } catch (e) {
+    die(`Failed to parse SVG XML: ${e.message}`);
   }
 
-  // NEW: grab ALL path elements
-  const allNodes = findPathElements(svgJson);
-  const features = [];
+  // Grab ALL <path> elements
+  const pathNodes = nodesBy(n => n.name === 'path' && n.attributes && n.attributes.d, svgRoot);
 
-  for (const n of allNodes) {
-    const pts = pathToPoints(n.attributes?.d);
+  const MIN_ROOM_AREA = 1500;  // drop tiny polys (label boxes, etc.)
+  const MIN_WALL_LEN = 20;     // drop microscopic lines
+  const features = [];
+  let roomIdCounter = 1;
+
+  for (const n of pathNodes) {
+    const d = n.attributes.d;
+    const pts = pathToPoints(d);
     if (!pts.length) continue;
 
-    // Guess: closed shapes = rooms, open shapes = walls
-    const isClosed = pts.length > 3 && pointsEqual(pts[0], pts[pts.length - 1]);
+    // Closed if first == last or path had Z (our pathToPoints closes on Z)
+    const closed = pts.length >= 3 && pointsEqual(pts[0], pts[pts.length - 1]);
 
-    features.push({
-      type: 'Feature',
-      properties: {
-        kind: isClosed ? 'room' : 'wall',
-        rawClass: n.attributes?.class || null,
-      },
-      geometry: {
-        type: isClosed ? 'Polygon' : 'LineString',
-        coordinates: isClosed ? [pts] : pts,
-      },
-    });
-  }
+    if (closed) {
+      // ROOM
+      // Ensure single ring is closed
+      const ring = pointsEqual(pts[0], pts[pts.length - 1]) ? pts : [...pts, pts[0]];
+      const area = polyArea(ring);
+      if (area < MIN_ROOM_AREA) continue; // skip tiny junk
 
-  // keep only "rooms" with area above a threshold; drop tiny label boxes etc.
-  const MIN_ROOM_AREA = 1500; // in SVG pixel^2; tweak as needed
-  const filtered = [];
-  for (const f of features) {
-    if (f?.properties?.kind === 'room' && f?.geometry?.type === 'Polygon') {
-      const ring = (f.geometry.coordinates && f.geometry.coordinates[0]) || [];
-      if (polyArea(ring) < MIN_ROOM_AREA) continue;
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'room', id: `R${roomIdCounter++}`, rawClass: n.attributes.class || null },
+        geometry: { type: 'Polygon', coordinates: [ring] }
+      });
+    } else {
+      // WALL (open path as LineString)
+      if (lineLength(pts) < MIN_WALL_LEN) continue; // skip tiny fragments
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'wall', rawClass: n.attributes.class || null },
+        geometry: { type: 'LineString', coordinates: pts }
+      });
     }
-    filtered.push(f);
   }
 
-  const fc = { type: 'FeatureCollection', features: filtered };
-
-  try {
-    const json = JSON.stringify(fc, null, 2);
-    await writeFile(outputFile, json, 'utf8');
-    const rel = path.normalize(outputFile);
-    console.error(`Wrote GeoJSON to ${rel}`);
-  } catch (err) {
-    die(`Failed to write output: ${err?.message || err}`);
-  }
+  const fc = { type: 'FeatureCollection', features };
+  await writeFile(outFile, JSON.stringify(fc));
+  console.log(`Wrote ${features.length} features → ${path.basename(outFile)}`);
 }
 
-main().catch((err) => die(err?.message || String(err)));
+main().catch(err => die(err?.stack || String(err)));

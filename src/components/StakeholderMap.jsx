@@ -58,6 +58,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [selectedFloor, setSelectedFloor] = useState('');
   const [loadedFloors, setLoadedFloors] = useState([]); // ['Building-FL1']
   const loadedFloorsRef = useRef([]); // track loaded srcIds for cleanup
+  // Anchor for floating panels near click
+  const [panelAnchor, setPanelAnchor] = useState(null); // { x, y } in pixels
 
   const filteredMarkers = useMemo(() => {
     // If both are turned off, return an empty array quickly.
@@ -723,10 +725,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (features.length > 0) {
       setSelectedBuildingId(features[0].properties.id);
       setIsTechnicalPanelOpen(false);
+      // anchor panel near where you clicked (pixel coords)
+      const pt = map.project(e.lngLat);
+      setPanelAnchor({ x: pt.x, y: pt.y });
       return;
     }
   }
   setSelectedBuildingId(null);
+  setPanelAnchor(null);
   showMarkerPopup(e.lngLat);
 };
     const handleDblClick = () => { if (interactionMode === 'drawPath' && mode === 'admin') handleFinishPath(); };
@@ -778,26 +784,54 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
       {mode === 'admin' && (
         <>
-          {selectedBuildingId && !isTechnicalPanelOpen && (
-            <BuildingInteractionPanel
-              buildingId={selectedBuildingId}
-              buildingName={config?.buildings?.features?.find(f => f.properties.id === selectedBuildingId)?.properties?.name}
-              currentCondition={buildingConditions[selectedBuildingId]}
-              onSave={handleConditionSave}
-              onOpenTechnical={handleOpenTechnical}
-              onClose={() => {
-                setSelectedBuildingId(null);
-                setIsTechnicalPanelOpen(false);
+          {selectedBuildingId && !isTechnicalPanelOpen && panelAnchor && (
+            <div
+              className="floating-panel"
+              style={{
+                position: 'absolute',
+                zIndex: 10,
+                left: Math.max(8, Math.min(panelAnchor.x + 12, (mapContainerRef.current?.clientWidth || 1000) - 360)),
+                top: Math.max(8, Math.min(panelAnchor.y + 12, (mapContainerRef.current?.clientHeight || 800) - 260)),
+                width: 340
               }}
-            />
+            >
+              <BuildingInteractionPanel
+                buildingId={selectedBuildingId}
+                buildingName={config?.buildings?.features?.find(f => f.properties.id === selectedBuildingId)?.properties?.name}
+                currentCondition={buildingConditions[selectedBuildingId]}
+                onSave={handleConditionSave}
+                onOpenTechnical={handleOpenTechnical}
+                onClose={() => {
+                  setSelectedBuildingId(null);
+                  setIsTechnicalPanelOpen(false);
+                  setPanelAnchor(null);
+                }}
+              />
+            </div>
           )}
-          {selectedBuildingId && isTechnicalPanelOpen && (
-            <AssessmentPanel
-              buildingId={selectedBuildingId}
-              assessments={buildingAssessments}
-              onClose={() => setIsTechnicalPanelOpen(false)}
-              onSave={handleAssessmentSave}
-            />
+
+          {selectedBuildingId && isTechnicalPanelOpen && panelAnchor && (
+            <div
+              className="floating-panel"
+              style={{
+                position: 'absolute',
+                zIndex: 10,
+                left: Math.max(8, Math.min(panelAnchor.x + 12, (mapContainerRef.current?.clientWidth || 1000) - 560)),
+                top: Math.max(8, Math.min(panelAnchor.y + 12, (mapContainerRef.current?.clientHeight || 800) - 460)),
+                width: 540,
+                maxHeight: 440,
+                overflow: 'auto'
+              }}
+            >
+              <AssessmentPanel
+                buildingId={selectedBuildingId}
+                assessments={buildingAssessments}
+                onClose={() => {
+                  setIsTechnicalPanelOpen(false);
+                }}
+                onSave={handleAssessmentSave}
+              />
+            </div>
           )}
         </>
       )}
@@ -1014,15 +1048,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               )}
             </div>
           )}
-          {mode === 'admin' && fpManifest && (
-            <div style={{ margin: '8px 0', padding: 8, background: '#fff', border: '1px solid #ddd', borderRadius: 6 }}>
-              <strong>Floorplan:</strong> Gray Center FL1
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                <button onClick={loadGrayCenterFL1}>Load</button>
-                <button onClick={unloadGrayCenterFL1}>Unload</button>
-              </div>
-            </div>
-          )}
+          
 
           <div className="legend">
             <h4>Legend</h4>

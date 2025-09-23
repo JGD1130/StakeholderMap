@@ -426,3 +426,10 @@
   color: #888;
   padding: 0 5px;
 }
+/* Contextual floating panel for building/assessment UI */
+.floating-panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
