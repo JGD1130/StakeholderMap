@@ -384,36 +384,80 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#a9040e', 'line-width': 3, 'line-dasharray': [2, 2] } });
     }
 
-    // Add floorplan GeoJSON (rooms and walls) — georeferenced
-    if (!map.getSource('gray-center-fl1')) {
-      // Use Vite base since app is served under a subpath
-      const url = `${import.meta.env.BASE_URL}Gray_Center_FL_1.geojson`;
-      map.addSource('gray-center-fl1', { type: 'geojson', data: url });
+    // Add floorplan GeoJSON (rooms and walls) — georeferenced (admin-only)
+    const isAdmin = location.pathname.includes('/hastings/admin');
+    const enable = import.meta.env.VITE_ENABLE_FLOORPLANS_ADMIN === 'true';
+    if (isAdmin && enable) {
+      // Helper to insert before first symbol layer to ensure visibility
+      function firstSymbolLayerId(m) {
+        const layers = m.getStyle().layers || [];
+        for (const l of layers) if (l.type === 'symbol') return l.id;
+        return undefined;
+      }
+      const beforeId = firstSymbolLayerId(map);
 
-      map.addLayer({ id: 'rooms-fill', type: 'fill', source: 'gray-center-fl1', filter: ['==', ['get', 'kind'], 'room'], paint: { 'fill-color': '#66cc66', 'fill-opacity': 0.6 } });
-      map.addLayer({ id: 'walls', type: 'line', source: 'gray-center-fl1', filter: ['==', ['get', 'kind'], 'wall'], paint: { 'line-color': '#333', 'line-width': 1 } });
+      if (!map.getSource('gray-center-fl1')) {
+        // Use Vite base since app is served under a subpath
+        const url = `${import.meta.env.BASE_URL}Gray_Center_FL_1.geojson`;
+        map.addSource('gray-center-fl1', { type: 'geojson', data: url });
 
-      // One-time fit to bounds (helps confirm)
-      fetch(url)
-        .then(r => r.json())
-        .then(g => {
-          const pts = [];
-          for (const f of g.features || []) {
-            if (!f.geometry) continue;
-            const arr = f.geometry.type && f.geometry.type.includes('Polygon')
-              ? (f.geometry.coordinates || []).flat(2)
-              : (f.geometry.coordinates || []).flat();
-            for (let i = 0; i < arr.length; i += 2) pts.push([arr[i], arr[i + 1]]);
+        // Confirm source load
+        map.on('sourcedata', (e) => {
+          if (e.sourceId === 'gray-center-fl1' && e.isSourceLoaded) {
+            console.log('✅ gray-center-fl1 loaded');
           }
-          if (pts.length) {
-            const xs = pts.map(p => p[0]);
-            const ys = pts.map(p => p[1]);
-            const sw = [Math.min(...xs), Math.min(...ys)];
-            const ne = [Math.max(...xs), Math.max(...ys)];
-            map.fitBounds([sw, ne], { padding: 40 });
-          }
-        })
-        .catch(err => console.warn('Could not fit bounds for gray-center-fl1:', err?.message || err));
+        });
+
+        // Immediately after adding the source, do a one-time fit to bounds
+        fetch(url)
+          .then(r => r.json())
+          .then(g => {
+            const pts = [];
+            for (const f of g.features || []) {
+              if (!f.geometry) continue;
+              const arr = f.geometry.type && f.geometry.type.includes('Polygon')
+                ? (f.geometry.coordinates || []).flat(2)
+                : (f.geometry.coordinates || []).flat();
+              for (let i = 0; i < arr.length; i += 2) pts.push([arr[i], arr[i + 1]]);
+            }
+            if (pts.length) {
+              const xs = pts.map(p => p[0]);
+              const ys = pts.map(p => p[1]);
+              const sw = [Math.min(...xs), Math.min(...ys)];
+              const ne = [Math.max(...xs), Math.max(...ys)];
+              map.fitBounds([sw, ne], { padding: 40 });
+            }
+          })
+          .catch(err => console.warn('Could not fit bounds for gray-center-fl1:', err?.message || err));
+
+        // Rooms (fill) before first symbol layer
+        if (!map.getLayer('rooms-fill')) {
+          map.addLayer({
+            id: 'rooms-fill',
+            type: 'fill',
+            source: 'gray-center-fl1',
+            filter: ['==', ['get', 'kind'], 'room'],
+            paint: {
+              'fill-color': '#66cc66',
+              'fill-opacity': 0.4,
+            },
+          }, beforeId);
+        }
+
+        // Walls (line) before first symbol layer
+        if (!map.getLayer('walls')) {
+          map.addLayer({
+            id: 'walls',
+            type: 'line',
+            source: 'gray-center-fl1',
+            filter: ['==', ['get', 'kind'], 'wall'],
+            paint: {
+              'line-color': '#333',
+              'line-width': 1,
+            },
+          }, beforeId);
+        }
+      }
     }
   }, [mapLoaded, config]);
 
