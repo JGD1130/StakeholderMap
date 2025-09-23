@@ -375,6 +375,31 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       map.addSource('boundary', { type: 'geojson', data: config.boundary });
       map.addLayer({ id: 'boundary-layer', type: 'line', source: 'boundary', paint: { 'line-color': '#a9040e', 'line-width': 3, 'line-dasharray': [2, 2] } });
     }
+
+    // Add floorplan GeoJSON (rooms and walls)
+    if (!map.getSource('gray-center-fl1')) {
+      map.addSource('gray-center-fl1', {
+        type: 'geojson',
+        // Place the file under `public/` so it is served statically
+        data: '/Gray_Center_Fl_1.local.geojson',
+      });
+
+      map.addLayer({
+        id: 'rooms-fill',
+        type: 'fill',
+        source: 'gray-center-fl1',
+        filter: ['==', ['get', 'kind'], 'room'],
+        paint: { 'fill-color': '#66cc66', 'fill-opacity': 0.6 },
+      });
+
+      map.addLayer({
+        id: 'walls',
+        type: 'line',
+        source: 'gray-center-fl1',
+        filter: ['==', ['get', 'kind'], 'wall'],
+        paint: { 'line-color': '#333', 'line-width': 1 },
+      });
+    }
   }, [mapLoaded, config]);
 
   useEffect(() => {

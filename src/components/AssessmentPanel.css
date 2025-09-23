@@ -5,22 +5,26 @@
 .assessment-panel {
   /* Positioning and Layering */
   position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 100; /* This is the key fix: ensures it's on top */
+  top: 80px;             /* keep below any header */
+  left: 12px;
+  z-index: 500;
 
   /* Box Model & Appearance */
   width: 400px;
-  max-height: calc(100vh - 40px);
-  background-color: #ffffff;
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+  background: #fff;
   border-radius: 8px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,.15);
   
   /* Flexbox Layout */
   display: flex;
   flex-direction: column;
   font-family: sans-serif;
 }
+
+/* Ensure dropdowns/popovers are not clipped inside the panel */
+.assessment-panel * { overflow: visible; }
 
 .panel-header {
   display: flex;
