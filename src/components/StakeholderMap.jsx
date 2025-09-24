@@ -1,8 +1,28 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { db, auth, googleProvider, onAuthStateChanged, signInWithPopup, signOut } from '../firebaseConfig';
-import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc, setDoc, query, where, getDoc } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  GeoPoint,
+  writeBatch,
+  setDoc,
+  query,
+  where
+} from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
@@ -45,8 +65,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [mapTheme, setMapTheme] = useState('progress');
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
-  const [user, setUser] = useState(null);
-  const [isAdminRole, setIsAdminRole] = useState(false);
+  // --- Admin auth state (simple) ---
+  const [authUser, setAuthUser] = useState(null);
+  const [isAdminUser, setIsAdminUser] = useState(false);
   const [sessionMarkers, setSessionMarkers] = useState([]); // <-- ADD THIS LINE
   const [showStudentMarkers, setShowStudentMarkers] = useState(true);
   const [showStaffMarkers, setShowStaffMarkers] = useState(true);
@@ -154,16 +175,20 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [newPathCoords, currentPathDrawType, pathsCollection]);
 
   const handleAssessmentSave = useCallback(async (updatedAssessment) => {
+    if (!isAdminUser) {
+      alert('Please sign in as an admin.');
+      return;
+    }
     const id = updatedAssessment.originalId;
     if (!id) { console.error("Cannot save assessment: missing originalId."); return; }
     const docRef = doc(assessmentsCollection, id.replace(/\//g, '__'));
     await setDoc(docRef, updatedAssessment, { merge: true });
     setBuildingAssessments(prev => ({ ...prev, [id]: updatedAssessment }));
-  }, [assessmentsCollection]);
+  }, [assessmentsCollection, isAdminUser]);
 
   const handleConditionSave = async (buildingId, newCondition) => {
-    if (mode === 'admin' && !isAdminRole) {
-      alert('Save failed: you are not signed in as an admin.');
+    if (!isAdminUser) {
+      alert('Please sign in as an admin.');
       return;
     }
     try {
@@ -344,21 +369,20 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [drawingEntriesCollection, universityId]);
 
   useEffect(() => {
-    // Track auth state and admin role (admin mode only)
-    if (mode !== 'admin') return;
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u || null);
-      if (!u) { setIsAdminRole(false); return; }
+    const authInstance = getAuth();
+    getRedirectResult(authInstance).catch(() => {});
+    const unsub = onAuthStateChanged(authInstance, async (user) => {
+      setAuthUser(user || null);
+      if (!user) { setIsAdminUser(false); return; }
       try {
-        const roleRef = doc(db, 'universities', universityId, 'roles', u.uid);
-        const snap = await getDoc(roleRef);
-        setIsAdminRole(snap.exists() && snap.data()?.role === 'admin');
+        const roleSnap = await getDoc(doc(db, 'universities', universityId, 'roles', user.uid));
+        setIsAdminUser(!!roleSnap.exists() && roleSnap.data()?.role === 'admin');
       } catch {
-        setIsAdminRole(false);
+        setIsAdminUser(false);
       }
     });
     return () => unsub();
-  }, [mode, universityId]);
+  }, [universityId]);
 
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
@@ -587,20 +611,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [mode]);
 
   // Auth: sign-in / sign-out handlers (admin tools)
-  async function handleSignIn() {
+  async function handleAdminSignIn() {
+    const authInstance = getAuth();
+    const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (e) {
-      alert('Sign-in failed. See console.');
-      console.error(e);
+      await signInWithPopup(authInstance, provider);
+    } catch {
+      await signInWithRedirect(authInstance, provider);
     }
   }
-  async function handleSignOut() {
-    try {
-      await signOut(auth);
-    } catch (e) {
-      // no-op
-    }
+  function handleAdminSignOut() {
+    signOut(getAuth());
   }
 
   // Generic helpers to load/unload any floor from manifest
@@ -871,7 +892,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
                   setIsTechnicalPanelOpen(false);
                   setPanelAnchor(null);
                 }}
-                canWrite={isAdminRole}
+                canWrite={isAdminUser}
               />
             </div>
           )}
@@ -882,7 +903,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               assessments={buildingAssessments}
               universityId={universityId}
               panelPos={panelAnchor}
-              isAdminRole={isAdminRole}
+              isAdminRole={isAdminUser}
               onClose={() => setIsTechnicalPanelOpen(false)}
               onSave={handleAssessmentSave}
             />
@@ -894,17 +915,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         <div className="map-controls-panel">
           {mode === 'admin' && (
             <div className="control-section" style={{background:'#fff', padding:8, border:'1px solid #ddd', borderRadius:6}}>
-              <strong>Admin access</strong><br/>
-              {user ? (
-                <>
-                  <div style={{fontSize:12, opacity:.8, margin:'4px 0'}}>{user.email}</div>
-                  <div style={{fontSize:12, marginBottom:6}}>
-                    Role: {isAdminRole ? 'admin ✅' : 'not admin ⛔'}
-                  </div>
-                  <button onClick={handleSignOut}>Sign out</button>
-                </>
+              <h5>Admin access</h5>
+              {!authUser ? (
+                <button onClick={handleAdminSignIn}>Sign in with Google</button>
               ) : (
-                <button onClick={handleSignIn}>Sign in with Google</button>
+                <div style={{display:'flex', gap:8, alignItems:'center'}}>
+                  <span style={{fontSize:12}}>
+                    {authUser.email} {isAdminUser ? '(admin)' : '(no admin role)'}
+                  </span>
+                  <button onClick={handleAdminSignOut}>Sign out</button>
+                </div>
               )}
             </div>
           )}
@@ -1161,4 +1181,3 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 };
 
 export default StakeholderMap;
-
