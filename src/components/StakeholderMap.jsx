@@ -160,9 +160,34 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [assessmentsCollection]);
 
   const handleConditionSave = async (buildingId, newCondition) => {
-    const docRef = doc(conditionsCollection, buildingId.replace(/\//g, '__'));
-    await setDoc(docRef, { condition: newCondition, originalId: buildingId }, { merge: true });
-    setBuildingConditions(prev => ({ ...prev, [buildingId]: newCondition }));
+    try {
+      const docRef = doc(conditionsCollection, buildingId.replace(/\//g, '__'));
+      await setDoc(docRef, { condition: newCondition, originalId: buildingId }, { merge: true });
+      // Update local state (drives the normal effect)
+      setBuildingConditions(prev => ({ ...prev, [buildingId]: newCondition }));
+      // Force an immediate recolor for snappy UX
+      const map = mapRef.current;
+      if (map && map.getSource('buildings')) {
+        const matchExpr = ['match', ['get', 'id']];
+        const cfg = {
+          '5': '#4CAF50',
+          '4': '#8BC34A',
+          '3': '#FFEB3B',
+          '2': '#FF9800',
+          '1': '#F44336'
+        };
+        const merged = { ...(buildingConditions || {}) };
+        merged[buildingId] = newCondition;
+        Object.entries(merged).forEach(([id, cond]) => {
+          if (cfg[String(cond)]) matchExpr.push(id, cfg[String(cond)]);
+        });
+        matchExpr.push('#85474b'); // defaultBuildingColor
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
+      }
+    } catch (err) {
+      console.error('Failed to save stakeholder condition:', err);
+      alert('Save failed. Are you signed in as an admin and do rules allow writes?');
+    }
   };
   
   const handleOpenTechnical = () => setIsTechnicalPanelOpen(true);
@@ -810,29 +835,15 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
             </div>
           )}
 
-          {selectedBuildingId && isTechnicalPanelOpen && panelAnchor && (
-            <div
-              className="floating-panel"
-              style={{
-                position: 'absolute',
-                zIndex: 10,
-                left: Math.max(8, Math.min(panelAnchor.x + 12, (mapContainerRef.current?.clientWidth || 1000) - 560)),
-                top: Math.max(8, Math.min(panelAnchor.y + 12, (mapContainerRef.current?.clientHeight || 800) - 460)),
-                width: 540,
-                maxHeight: 440,
-                overflow: 'auto'
-              }}
-            >
-              <AssessmentPanel
-                buildingId={selectedBuildingId}
-                assessments={buildingAssessments}
-                universityId={universityId}
-                onClose={() => {
-                  setIsTechnicalPanelOpen(false);
-                }}
-                onSave={handleAssessmentSave}
-              />
-            </div>
+          {selectedBuildingId && isTechnicalPanelOpen && (
+            <AssessmentPanel
+              buildingId={selectedBuildingId}
+              assessments={buildingAssessments}
+              universityId={universityId}
+              panelPos={panelAnchor}
+              onClose={() => setIsTechnicalPanelOpen(false)}
+              onSave={handleAssessmentSave}
+            />
           )}
         </>
       )}
