@@ -127,3 +127,14 @@
   font-weight: bold;
   cursor: pointer;
 }
+/* Dock the Technical Assessment panel at top-right */
+.assessment-panel {
+  position: fixed !important;       /* dock it, override any inline */
+  top: 88px !important;             /* below your top bar */
+  right: 20px !important;           /* over logos */
+  left: auto !important;            /* ignore any inline left */
+  z-index: 9999 !important;         /* above logos and map */
+  width: 420px;                     /* tweak */
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}

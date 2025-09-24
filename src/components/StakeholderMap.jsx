@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { db } from '../firebaseConfig';
-import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc, setDoc, query, where } from 'firebase/firestore';
+import { db, auth, googleProvider, onAuthStateChanged, signInWithPopup, signOut } from '../firebaseConfig';
+import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, doc, setDoc, query, where, getDoc } from 'firebase/firestore';
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
@@ -45,6 +45,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [mapTheme, setMapTheme] = useState('progress');
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isAdminRole, setIsAdminRole] = useState(false);
   const [sessionMarkers, setSessionMarkers] = useState([]); // <-- ADD THIS LINE
   const [showStudentMarkers, setShowStudentMarkers] = useState(true);
   const [showStaffMarkers, setShowStaffMarkers] = useState(true);
@@ -160,6 +162,10 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [assessmentsCollection]);
 
   const handleConditionSave = async (buildingId, newCondition) => {
+    if (mode === 'admin' && !isAdminRole) {
+      alert('Save failed: you are not signed in as an admin.');
+      return;
+    }
     try {
       const docRef = doc(conditionsCollection, buildingId.replace(/\//g, '__'));
       await setDoc(docRef, { condition: newCondition, originalId: buildingId }, { merge: true });
@@ -336,6 +342,23 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       alert("An error occurred while exporting drawing entries. Please check the console for details.");
     }
   }, [drawingEntriesCollection, universityId]);
+
+  useEffect(() => {
+    // Track auth state and admin role (admin mode only)
+    if (mode !== 'admin') return;
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u || null);
+      if (!u) { setIsAdminRole(false); return; }
+      try {
+        const roleRef = doc(db, 'universities', universityId, 'roles', u.uid);
+        const snap = await getDoc(roleRef);
+        setIsAdminRole(snap.exists() && snap.data()?.role === 'admin');
+      } catch {
+        setIsAdminRole(false);
+      }
+    });
+    return () => unsub();
+  }, [mode, universityId]);
 
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current || !config) return;
@@ -562,6 +585,23 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       .then(setFpManifest)
       .catch(() => {});
   }, [mode]);
+
+  // Auth: sign-in / sign-out handlers (admin tools)
+  async function handleSignIn() {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (e) {
+      alert('Sign-in failed. See console.');
+      console.error(e);
+    }
+  }
+  async function handleSignOut() {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      // no-op
+    }
+  }
 
   // Generic helpers to load/unload any floor from manifest
   async function loadFloor(buildingId, floorId) {
@@ -831,6 +871,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
                   setIsTechnicalPanelOpen(false);
                   setPanelAnchor(null);
                 }}
+                canWrite={isAdminRole}
               />
             </div>
           )}
@@ -841,6 +882,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
               assessments={buildingAssessments}
               universityId={universityId}
               panelPos={panelAnchor}
+              isAdminRole={isAdminRole}
               onClose={() => setIsTechnicalPanelOpen(false)}
               onSave={handleAssessmentSave}
             />
@@ -850,6 +892,22 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
       {isControlsVisible && (
         <div className="map-controls-panel">
+          {mode === 'admin' && (
+            <div className="control-section" style={{background:'#fff', padding:8, border:'1px solid #ddd', borderRadius:6}}>
+              <strong>Admin access</strong><br/>
+              {user ? (
+                <>
+                  <div style={{fontSize:12, opacity:.8, margin:'4px 0'}}>{user.email}</div>
+                  <div style={{fontSize:12, marginBottom:6}}>
+                    Role: {isAdminRole ? 'admin ✅' : 'not admin ⛔'}
+                  </div>
+                  <button onClick={handleSignOut}>Sign out</button>
+                </>
+              ) : (
+                <button onClick={handleSignIn}>Sign in with Google</button>
+              )}
+            </div>
+          )}
           {mode === 'admin' && (
             <div className="control-section theme-selector">
               <label htmlFor="theme-select">Map View:</label>

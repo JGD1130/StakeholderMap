@@ -22,7 +22,7 @@ functionality: { telecomm: 0, fireAlarm: 0, spaceSize: 0, technology: 0 },
 },
 };
 
-const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos }) => {
+const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos, isAdminRole }) => {
 const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
 
 useEffect(() => {
@@ -43,8 +43,12 @@ const handleNotesChange = (e) => {
 setLocalAssessment(prev => ({ ...prev, notes: e.target.value }));
 };
 
-const handleSaveChanges = async () => {
-if (!buildingId || !universityId) return;
+  const handleSaveChanges = async () => {
+    if (!isAdminRole) {
+      alert('Save failed: you are not signed in as an admin.');
+      return;
+    }
+    if (!buildingId || !universityId) return;
 const sanitizedId = buildingId.replace(/\//g, '__');
 const ref = doc(db, 'universities', universityId, 'buildingAssessments', sanitizedId);
 const dataToSave = { ...localAssessment, originalId: buildingId };
