@@ -1,12 +1,9 @@
+// src/components/AssessmentPanel.jsx
 import React, { useState, useEffect } from 'react';
 import './AssessmentPanel.css';
 import { doc, setDoc } from "firebase/firestore"; 
 import { db } from '../firebaseConfig';
-import './AssessmentPanel.css';
 
-
-
-// Define the options for the dropdowns
 const scoreOptions = [
   { value: 5, label: '5 - Excellent' },
   { value: 4, label: '4 - Good' },
@@ -16,7 +13,6 @@ const scoreOptions = [
   { value: 0, label: '0 - Not Set' },
 ];
 
-// Define the structure of an assessment to prevent errors
 const assessmentTemplate = {
   buildingName: '',
   notes: '',
@@ -27,11 +23,10 @@ const assessmentTemplate = {
   }
 };
 
-const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId }) => {
-  // Local state to manage form changes
+// 🔹 Added universityId + panelPos
+const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos }) => {
   const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
 
-  // This effect runs when the selected building changes, loading its data into the form
   useEffect(() => {
     if (buildingId && assessments) {
       const currentAssessment = assessments[buildingId] || { ...assessmentTemplate, buildingName: buildingId };
@@ -39,28 +34,28 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
     }
   }, [buildingId, assessments]);
 
-  // Handler for when a dropdown score is changed
   const handleScoreChange = (category, subCategory, value) => {
     setLocalAssessment(prev => ({
       ...prev,
       scores: { ...prev.scores, [category]: { ...prev.scores[category], [subCategory]: Number(value) } }
     }));
   };
-  
-  // Handler for when the notes text area is changed
+
   const handleNotesChange = (e) => {
     setLocalAssessment(prev => ({ ...prev, notes: e.target.value }));
   };
 
-  // Handler for saving changes to Firestore and updating the parent component
   const handleSaveChanges = async () => {
-    if (!buildingId) return;
+    if (!buildingId || !universityId) return;
     const sanitizedId = buildingId.replace(/\//g, "__");
+
+    // 🔹 Scoped to university
     const docRef = doc(db, "universities", universityId, "buildingAssessments", sanitizedId);
+
     const dataToSave = { ...localAssessment, originalId: buildingId };
     try {
       await setDoc(docRef, dataToSave);
-      onSave(dataToSave); // Report the change back to the parent
+      onSave(dataToSave);
       alert('Assessment saved successfully!');
       onClose();
     } catch (error) {
@@ -69,19 +64,22 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
     }
   };
 
-  // If no building is selected, don't show the panel
   if (!buildingId) return null;
 
-  // The complete and correct JSX for the panel
+  // 🔹 Optional click anchoring
+  const containerStyle = panelPos
+    ? { position: 'absolute', left: (panelPos.x ?? 80), top: (panelPos.y ?? 160), zIndex: 6 }
+    : undefined;
+
   return (
-    <div className="assessment-panel">
+    <div className="assessment-panel" style={containerStyle}>
       <div className="panel-header">
         <h3>Technical Assessment</h3>
         <button onClick={onClose} className="close-button">×</button>
       </div>
       <div className="panel-content">
         <h4>{localAssessment.buildingName || buildingId}</h4>
-        
+
         {localAssessment.scores && Object.entries(localAssessment.scores).map(([category, subScores]) => (
           <div key={category} className="category-section">
             <h5>{category.charAt(0).toUpperCase() + category.slice(1)}</h5>
@@ -108,4 +106,3 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
 };
 
 export default AssessmentPanel;
-
