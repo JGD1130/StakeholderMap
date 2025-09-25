@@ -1,34 +1,27 @@
-// src/configLoader.js --- SIMPLER CORRECT VERSION ---
+// src/configLoader.js --- CORRECTED VERSION ---
 
-// 1. Import the raw config data from src/Configs
 import hastingsConfigData from './Configs/Hastings.json';
 import rockhurstConfigData from './Configs/Rockhurst.json';
 
-// 2. Import the GeoJSON data
-// We assume these files are moved to a folder like src/geojson
-// If they are in /public, this static import method is tricky.
-// Let's assume you move them to src/geojson for simplicity.
-import hastingsBuildings from './geojson/Hastings_College_Buildings.json';
-import hastingsBoundary from './geojson/Hastings_College_Boundary.json';
-import hastingsOutdoorSpaces from './geojson/HC_Outdoor_map.json'; // <-- Import new file
+// Make sure all your geojson files are in a /src/geojson/ folder
+import hastingsBuildings from './geojson/Hastings_College_Buildings.geojson';
+import hastingsBoundary from './geojson/Hastings_College_Boundary.geojson';
+import hastingsOutdoorSpaces from './geojson/HC_Outdoor_map.geojson'; // <-- FIXED .geojson EXTENSION
 
-import rockhurstBuildings from './geojson/RockhurstU_Buildings.json';
-import rockhurstBoundary from './geojson/RockhurstU_Boundary.json';
+import rockhurstBuildings from './geojson/RockhurstU_Buildings.geojson';
+import rockhurstBoundary from './geojson/RockhurstU_Boundary.geojson';
 
-
-// ASSEMBLE THE FINAL CONFIG OBJECTS
 const finalHastingsConfig = {
   ...hastingsConfigData,
   buildings: hastingsBuildings,
   boundary: hastingsBoundary,
-  outdoorSpaces: hastingsOutdoorSpaces, // <-- ADD THIS LINE
+  outdoorSpaces: hastingsOutdoorSpaces,
 };
 
 const finalRockhurstConfig = {
   ...rockhurstConfigData,
   buildings: rockhurstBuildings,
   boundary: rockhurstBoundary,
-  // No outdoor spaces for Rockhurst, so we don't add the property
 };
 
 const universityConfigs = {
