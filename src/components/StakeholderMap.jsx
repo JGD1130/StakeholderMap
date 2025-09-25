@@ -237,94 +237,102 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const clearConditions = () => clearCollection(conditionsCollection, 'building conditions', setBuildingConditions);
 
   const exportData = useCallback(() => {
-    if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0 && Object.keys(buildingAssessments).length === 0) {
-      return alert("No data to export.");
-    }
+  if (markers.length === 0 && paths.length === 0 && Object.keys(buildingConditions).length === 0 && Object.keys(buildingAssessments).length === 0) {
+    return alert("No data to export.");
+  }
 
-    // --- NEW GEOSPATIAL LOGIC STARTS HERE ---
+  // --- NEW GEOSPATIAL LOGIC STARTS HERE ---
+  const bufferDistanceInMeters = 5;
 
-    // 1. Define the buffer distance in meters. You can easily change this value.
-    const bufferDistanceInMeters = 5;
+  // 1. Create buffered building polygons
+  const buildingFeatures = config?.buildings?.features || [];
+  const bufferedBuildings = buildingFeatures.map(feature => {
+    const bufferedPolygon = turf.buffer(feature, bufferDistanceInMeters, { units: 'meters' });
+    return {
+      id: feature.properties.id,
+      geometry: bufferedPolygon.geometry
+    };
+  });
 
-    // 2. Create the buffered building polygons once, for efficiency.
-    const buildingFeatures = config?.buildings?.features || [];
-    const bufferedBuildings = buildingFeatures.map(feature => {
-      // Use Turf.js to create a new polygon that is X meters larger than the original.
-      const bufferedPolygon = turf.buffer(feature, bufferDistanceInMeters, { units: 'meters' });
-      return {
-        id: feature.properties.id, // Store the building's ID/name
-        geometry: bufferedPolygon.geometry // Store the new, larger shape
-      };
-    });
+  // 2. Load the outdoor space polygons (no buffer needed for these)
+  const outdoorSpaceFeatures = config?.outdoorSpaces?.features || [];
 
-    // --- GEOSPATIAL LOGIC ENDS HERE ---
+  // --- GEOSPATIAL LOGIC ENDS HERE ---
 
-    const escapeCsvField = (field) => `"${String(field || '').replace(/"/g, '""')}"`;
-    const rows = [];
-    
-    // Header for Technical Assessments
-    rows.push(['DataType', 'BuildingID', 'Category', 'SubCategory', 'Score', 'Notes'].join(','));
-    Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
-      // ... (This part remains the same)
-      const notes = assessment.notes || '';
-      if (assessment.scores) {
-        Object.entries(assessment.scores).forEach(([category, subScores]) => {
-          Object.entries(subScores).forEach(([subCategory, score]) => {
-            rows.push([ escapeCsvField('TechnicalAssessment'), escapeCsvField(assessment.buildingName || buildingId), escapeCsvField(category), escapeCsvField(subCategory), escapeCsvField(score), escapeCsvField(notes) ].join(','));
-          });
+  const escapeCsvField = (field) => `"${String(field || '').replace(/"/g, '""')}"`;
+  const rows = [];
+  
+  // ... (TechnicalAssessment header and loop remains the same)
+  rows.push(['DataType', 'LocationID', 'Category', 'SubCategory', 'Score', 'Notes'].join(','));
+  Object.entries(buildingAssessments).forEach(([buildingId, assessment]) => {
+    const notes = assessment.notes || '';
+    if (assessment.scores) {
+      Object.entries(assessment.scores).forEach(([category, subScores]) => {
+        Object.entries(subScores).forEach(([subCategory, score]) => {
+          rows.push([ escapeCsvField('TechnicalAssessment'), escapeCsvField(assessment.buildingName || buildingId), escapeCsvField(category), escapeCsvField(subCategory), escapeCsvField(score), escapeCsvField(notes) ].join(','));
         });
+      });
+    }
+  });
+  
+  rows.push([]);
+  rows.push(['DataType', 'LocationID', 'ID', 'Type', 'Persona', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
+
+  // --- MODIFIED MARKER EXPORT LOGIC ---
+  markers.forEach(m => {
+    const markerPoint = turf.point(m.coordinates);
+    let foundLocationId = ''; // Changed variable name for clarity
+
+    // Priority 1: Check if the marker is inside a buffered building
+    for (const building of bufferedBuildings) {
+      if (turf.booleanPointInPolygon(markerPoint, building.geometry)) {
+        foundLocationId = building.id;
+        break;
       }
-    });
-
-    // Header for Markers, Paths, and Conditions
-    rows.push([]);
-    rows.push(['DataType', 'BuildingID', 'ID', 'Type', 'Persona', 'Latitude', 'Longitude', 'Comment', 'PathCoordinatesJSON'].join(','));
-
-    // --- MODIFIED MARKER EXPORT LOGIC ---
-    markers.forEach(m => {
-      // For each marker, find which buffered building it falls into.
-      const markerPoint = turf.point(m.coordinates);
-      let foundBuildingId = ''; // Default to empty
-
-      for (const building of bufferedBuildings) {
-        if (turf.booleanPointInPolygon(markerPoint, building.geometry)) {
-          foundBuildingId = building.id;
-          break; // Stop checking once we find the first match
+    }
+    
+    // Priority 2: If not in a building, check if it's in an outdoor space
+    if (!foundLocationId) {
+      for (const space of outdoorSpaceFeatures) {
+        if (turf.booleanPointInPolygon(markerPoint, space.geometry)) {
+          foundLocationId = space.properties.id; // Get the ID from your GeoJSON
+          break;
         }
       }
-      
-      // Now, use the foundBuildingId when creating the CSV row.
-      rows.push([
-        escapeCsvField('Marker'),
-        escapeCsvField(foundBuildingId), // This column is now populated!
-        escapeCsvField(m.id),
-        escapeCsvField(m.type),
-        escapeCsvField(m.persona),
-        escapeCsvField(m.coordinates[1]),
-        escapeCsvField(m.coordinates[0]),
-        escapeCsvField(m.comment),
-        ''
-      ].join(','));
-    });
-
-    // Paths and Conditions export (remains the same)
-    paths.forEach(p => { rows.push([ escapeCsvField('Path'), '', escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
-    Object.entries(buildingConditions).forEach(([id, condition]) => {
-      if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), '', escapeCsvField(condition), '', '', '', '', '' ].join(',')); }
-    });
+    }
     
-    // CSV creation and download (remains the same)
-    const csvContent = rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${universityId}-map-data-export-${new Date().toISOString().slice(0, 10)}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [markers, paths, buildingConditions, buildingAssessments, universityId, config]); // Add 'config' to dependency array
+    rows.push([
+      escapeCsvField('Marker'),
+      escapeCsvField(foundLocationId), // This column now contains buildings OR outdoor spaces!
+      escapeCsvField(m.id),
+      escapeCsvField(m.type),
+      escapeCsvField(m.persona),
+      escapeCsvField(m.coordinates[1]),
+      escapeCsvField(m.coordinates[0]),
+      escapeCsvField(m.comment),
+      ''
+    ].join(','));
+  });
+
+  paths.forEach(p => { rows.push([ escapeCsvField('Path'), '', escapeCsvField(p.id), escapeCsvField(p.type), '', '', '', '', escapeCsvField(JSON.stringify(p.coordinates)) ].join(',')); });
+  
+  // Use "LocationID" for StakeholderCondition as well for consistency
+  Object.entries(buildingConditions).forEach(([id, condition]) => {
+    if (condition) { rows.push([ escapeCsvField('StakeholderCondition'), escapeCsvField(id), '', escapeCsvField(condition), '', '', '', '', '' ].join(',')); }
+  });
+  
+  // ... (CSV creation and download remains the same)
+  const csvContent = rows.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${universityId}-map-data-export-${new Date().toISOString().slice(0, 10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}, [markers, paths, buildingConditions, buildingAssessments, universityId, config]);
 
   const exportDrawingEntries = useCallback(async () => {
     try {
