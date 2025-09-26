@@ -415,59 +415,68 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     return () => map.remove();
   }, [config]);
 
+  // --- REPLACE YOUR CURRENT DATA-FETCHING useEffect WITH THIS ONE ---
   useEffect(() => {
     if (!universityId) return;
+
     const fetchData = async () => {
       try {
-        // --- MODIFIED SECTION START ---
-
-        let markersQuery;
-
-        // If the mode is 'admin', we fetch all markers.
-        // Otherwise, we create a query to only fetch markers where the 'persona'
-        // field matches the current user's persona ('student' or 'staff').
-        if (mode === 'admin') {
-          markersQuery = query(markersCollection);
-        } else {
-          markersQuery = query(markersCollection, where('persona', '==', persona));
-        }
-
-        // Now we execute the query we just built
-        const markerSnap = await getDocs(markersQuery);
-
-        // --- MODIFIED SECTION END ---
-
-        setMarkers(markerSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] })));
-        
-        // This part remains the same, it only runs for admins
+        // --- PUBLIC USER LOGIC (remains the same) ---
         if (mode !== 'admin') {
-          setPaths([]); setBuildingConditions({}); setBuildingAssessments({});
-          return;
+          const markersQuery = query(markersCollection, where('persona', '==', persona));
+          const markerSnap = await getDocs(markersQuery);
+          setMarkers(markerSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] })));
+          
+          // Clear any admin data for public users
+          setPaths([]);
+          setBuildingConditions({});
+          setBuildingAssessments({});
+        } 
+        
+        // --- ADMIN USER LOGIC (this is the new, corrected part) ---
+        else if (mode === 'admin') {
+          // Check if the user is a confirmed admin before fetching protected data
+          if (isAdminUser) {
+            console.log("Admin is authenticated, fetching all data...");
+            
+            // This is your original admin data-fetching logic, now safely inside the check
+            const [markerSnap, pathSnap, condSnap, assessmentSnap] = await Promise.all([
+              getDocs(markersCollection), // Get ALL markers for admin
+              getDocs(pathsCollection),
+              getDocs(conditionsCollection),
+              getDocs(assessmentsCollection)
+            ]);
+            
+            setMarkers(markerSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] })));
+            setPaths(pathSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude]) })));
+            
+            const condData = {};
+            condSnap.forEach(d => { const id = d.data().originalId || d.id.replace(/__/g, "/"); condData[id] = d.data().condition; });
+            setBuildingConditions(condData);
+            
+            const assessmentData = {};
+            assessmentSnap.forEach(doc => { const key = doc.data().originalId || doc.id.replace(/__/g, "/"); assessmentData[key] = doc.data(); });
+            setBuildingAssessments(assessmentData);
+
+          } else {
+            // If on admin page but not logged in as admin, clear all data.
+            console.log("Admin not yet authenticated, clearing data.");
+            setMarkers([]);
+            setPaths([]);
+            setBuildingConditions({});
+            setBuildingAssessments({});
+          }
         }
-
-        const [pathSnap, condSnap, assessmentSnap] = await Promise.all([
-          getDocs(pathsCollection),
-          getDocs(conditionsCollection),
-          getDocs(assessmentsCollection)
-        ]);
-        
-        setPaths(pathSnap.docs.map(d => ({ id: d.id, ...d.data(), coordinates: d.data().coordinates.map(g => [g.longitude, g.latitude]) })));
-        
-        const condData = {};
-        condSnap.forEach(d => { const id = d.data().originalId || d.id.replace(/__/g, "/"); condData[id] = d.data().condition; });
-        setBuildingConditions(condData);
-        
-        const assessmentData = {};
-        assessmentSnap.forEach(doc => { const key = doc.data().originalId || doc.id.replace(/__/g, "/"); assessmentData[key] = doc.data(); });
-        setBuildingAssessments(assessmentData);
-
       } catch (error) {
         console.error("Failed to fetch data:", error);
-        setPaths([]); setBuildingConditions({}); setBuildingAssessments({});
+        setPaths([]); 
+        setBuildingConditions({}); 
+        setBuildingAssessments({});
       }
     };
+
     fetchData();
-  }, [mode, universityId, persona, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]); // IMPORTANT: 'persona' is added here
+  }, [mode, universityId, persona, isAdminUser, markersCollection, pathsCollection, conditionsCollection, assessmentsCollection]); // Add `isAdminUser` to the dependency array
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !config) return;
@@ -734,34 +743,31 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   }, [filteredMarkers, sessionMarkers, markerTypes, mapLoaded, mode]); // Use filteredMarkers in dependency array
 
   useEffect(() => {
-  // This entire effect is for admin-only path drawing and cleanup.
-  // It was causing a crash for public users, so we now prevent it from running for them.
-  if (mode === 'admin') {
-    if (!mapLoaded || !mapRef.current) return;
-    const map = mapRef.current;
-    
-    // First, clean up any existing path layers from a previous render.
-    const existingPathLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('path-'));
-    existingPathLayers.forEach(layer => {
-      if (map.getLayer(layer.id)) map.removeLayer(layer.id);
-      // Add a safety check for the source, just in case
-      if (layer.source && map.getSource(layer.source)) {
-        map.removeSource(layer.source);
-      }
-    });
-
-    // Then, if paths are visible, draw the new ones.
-    if (showPaths) {
-      paths.forEach(path => {
-        const sourceId = `path-source-${path.id}`;
-        const layerId = `path-layer-${path.id}`;
-        if(map.getSource(sourceId)) return; // Avoid re-adding
-        map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates } } });
-        map.addLayer({ id: layerId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
+    // This entire effect is for admin-only path drawing and cleanup.
+    // It was causing a crash for public users, so we now prevent it from running for them.
+    if (mode === 'admin') {
+      if (!mapLoaded || !mapRef.current) return;
+      const map = mapRef.current;
+      
+      const existingPathLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('path-'));
+      existingPathLayers.forEach(layer => {
+        if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+        if (layer.source && map.getSource(layer.source)) {
+          map.removeSource(layer.source);
+        }
       });
+
+      if (showPaths) {
+        paths.forEach(path => {
+          const sourceId = `path-source-${path.id}`;
+          const layerId = `path-layer-${path.id}`;
+          if(map.getSource(sourceId)) return;
+          map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: path.coordinates } } });
+          map.addLayer({ id: layerId, type: 'line', source: sourceId, paint: { 'line-color': pathTypes[path.type]?.color || '#000', 'line-width': 4 } });
+        });
+      }
     }
-  }
-}, [paths, showPaths, pathTypes, mapLoaded, mode]); // The dependency array remains the same
+  }, [paths, showPaths, pathTypes, mapLoaded, mode]);
   
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
