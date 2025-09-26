@@ -4,12 +4,12 @@ import hastingsConfigData from './Configs/Hastings.json';
 import rockhurstConfigData from './Configs/Rockhurst.json';
 
 // Make sure all your geojson files are in a /src/geojson/ folder
-import hastingsBuildings from './geojson/Hastings_College_Buildings.geojson';
-import hastingsBoundary from './geojson/Hastings_College_Boundary.geojson';
-import hastingsOutdoorSpaces from './geojson/HC_Outdoor_map.geojson'; // <-- FIXED .geojson EXTENSION
+import hastingsBuildings from './geojson/Hastings_College_Buildings.json';
+import hastingsBoundary from './geojson/Hastings_College_Boundary.json';
+import hastingsOutdoorSpaces from './geojson/HC_Outdoor_map.json'; // <-- FIXED .geojson EXTENSION
 
-import rockhurstBuildings from './geojson/RockhurstU_Buildings.geojson';
-import rockhurstBoundary from './geojson/RockhurstU_Boundary.geojson';
+import rockhurstBuildings from './geojson/RockhurstU_Buildings.json';
+import rockhurstBoundary from './geojson/RockhurstU_Boundary.json';
 
 const finalHastingsConfig = {
   ...hastingsConfigData,
