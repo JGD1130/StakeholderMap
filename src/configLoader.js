@@ -1,47 +1,47 @@
-// src/configLoader.js --- CORRECTED VERSION ---
-
 import hastingsConfigData from './Configs/Hastings.json';
 import rockhurstConfigData from './Configs/Rockhurst.json';
 
-// Make sure all your geojson files are in a /src/geojson/ folder
-import hastingsBuildings from './geojson/Hastings_College_Buildings.json';
-import hastingsBoundary from './geojson/Hastings_College_Boundary.json';
-import hastingsOutdoorSpaces from './geojson/HC_Outdoor_map.json';
+// Import raw GeoJSONs and parse them
+import hastingsBuildingsRaw from './Configs/geojson/Hastings_College_Buildings.geojson?raw';
+import hastingsBoundaryRaw from './Configs/geojson/Hastings_College_Boundary.geojson?raw';
+import hastingsOutdoorRaw from './Configs/geojson/HC_Outdoor_map.geojson?raw';
 
-import rockhurstBuildings from './geojson/RockhurstU_Buildings.json';
-import rockhurstBoundary from './geojson/RockhurstU_Boundary.json';
+import rockhurstBuildingsRaw from './Configs/geojson/RockhurstU_Buildings.geojson?raw';
+import rockhurstBoundaryRaw from './Configs/geojson/RockhurstU_Boundary.geojson?raw';
 
-const normalizeConfig = (rawConfig) => {
-  if (!rawConfig) {
-    return {};
+// Parse into JS objects
+const hastingsBuildings = JSON.parse(hastingsBuildingsRaw);
+const hastingsBoundary = JSON.parse(hastingsBoundaryRaw);
+const hastingsOutdoorSpaces = JSON.parse(hastingsOutdoorRaw);
+
+const rockhurstBuildings = JSON.parse(rockhurstBuildingsRaw);
+const rockhurstBoundary = JSON.parse(rockhurstBoundaryRaw);
+
+function asConfig(objOrArray) {
+  if (Array.isArray(objOrArray)) {
+    return objOrArray[0] || {};
   }
-  if (Array.isArray(rawConfig)) {
-    return rawConfig.reduce((acc, entry) => {
-      if (entry && typeof entry === 'object') {
-        return { ...acc, ...entry };
-      }
-      return acc;
-    }, {});
-  }
-  return rawConfig;
-};
+  return objOrArray || {};
+}
 
-const baseHastingsConfig = normalizeConfig(hastingsConfigData);
-const baseRockhurstConfig = normalizeConfig(rockhurstConfigData);
+const hastingsBase = asConfig(hastingsConfigData);
+const rockhurstBase = asConfig(rockhurstConfigData);
 
+// Merge with JSON configs
 const finalHastingsConfig = {
-  ...baseHastingsConfig,
+  ...hastingsBase,
   buildings: hastingsBuildings,
   boundary: hastingsBoundary,
   outdoorSpaces: hastingsOutdoorSpaces,
 };
 
 const finalRockhurstConfig = {
-  ...baseRockhurstConfig,
+  ...rockhurstBase,
   buildings: rockhurstBuildings,
   boundary: rockhurstBoundary,
 };
 
+// Export combined set
 const universityConfigs = {
   hastings: finalHastingsConfig,
   rockhurst: finalRockhurstConfig,

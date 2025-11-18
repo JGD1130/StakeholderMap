@@ -1,0 +1,22 @@
+  // ---------- Map click handlers ----------
+  const showMarkerPopup = useCallback((lngLat) => {
+    if (!mapRef.current) return;
+    const popupNode = document.createElement('div');
+    popupNode.className = 'marker-prompt-popup';
+    popupNode.innerHTML = `
+      <h4>Add a Marker</h4>
+      <select id="marker-type">
+        ${Object.keys(markerTypes).map((t) => `<option value="${t}">${t}</option>`).join(')}
+      </select>
+      <textarea id="marker-comment" placeholder="Optional comment..."></textarea>
+      <div class="button-group">
+        <button id="confirm-marker">Add</button>
+        <button id="cancel-marker">Cancel</button>
+      </div>`;
+
+    const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' })
+      .setDOMContent(popupNode)
+      .setLngLat(lngLat)
+      .addTo(mapRef.current);
+
+    popupNode.querySelector('#confirm-marker').addEventListener('click', async () => {

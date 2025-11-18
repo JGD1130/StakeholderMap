@@ -3,6 +3,7 @@
   "homepage": "https://jgd1130.github.io/StakeholderMap",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "dependencies": {
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
@@ -10,7 +11,10 @@
     "@turf/turf": "^7.2.0",
     "@vitejs/plugin-react": "^5.0.1",
     "firebase": "^10.12.2",
-    "mapbox-gl": "^3.4.0",
+    "firebase-admin": "^13.5.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
+    "mapbox-gl": "^2.15.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.8.0",
@@ -22,7 +26,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:floorplans": "node scripts/generateFloorplansManifest.mjs",
+    "backfill:rooms": "node scripts/backfillRooms.mjs"
   },
   "eslintConfig": {
     "extends": [
@@ -43,6 +49,7 @@
     ]
   },
   "devDependencies": {
-    "gh-pages": "^6.3.0"
+    "gh-pages": "^6.3.0",
+    "prettier": "^3.6.2"
   }
 }

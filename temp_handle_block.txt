@@ -1,0 +1,75 @@
+  const handleLoadFloorplan = useCallback(async () => {
+    if (!mapLoaded || !mapRef.current) return false;
+    if (!selectedFloor || !availableFloors.includes(selectedFloor)) {
+      alert('This floor is not available for this building.');
+      return false;
+    }
+    const url = buildFloorUrl(selectedBuilding, selectedFloor);
+    if (!url) { alert('No file mapped for that floor.'); return false; }
+    try {
+      setPanelStats({ loading: true, mode: 'floor' });
+      const lastSel = floorSelectionRef.current?.[url];
+      let fitBuilding = null;
+      try {
+        const feats = config?.buildings?.features || [];
+        fitBuilding = feats.find(f => String(f.properties?.id) === String(selectedBuildingId || selectedBuilding)) || null;
+      } catch {}
+      const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding }, {
+        buildingId: selectedBuildingId || selectedBuilding,
+        floor: targetFloor,
+        roomPatches,
+        onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
+          if (types) setTypeOptions(types);
+          if (depts) setDeptOptions(depts);
+        }
+      });
+      if (!loadResult) {
+        setPanelStats(formatSummaryForPanel(null, 'floor'));
+        return false;
+      }
+      setLoadedSingleFloor(true);
+      currentFloorUrlRef.current = url;
+      const canonicalBuildingId = bId(selectedBuildingId || selectedBuilding || '');
+      const canonicalFloorId = fId(targetFloor || '');
+      const floorKey = canonicalBuildingId && canonicalFloorId ? `${canonicalBuildingId}/${canonicalFloorId}` : null;
+      if (floorKey && normalizedSummary) {
+        floorSummaryCacheRef.current.set(floorKey, normalizedSummary);
+        floorRoomsRef.current.set(floorKey, loadResult.rooms);
+      }
+      currentFloorContextRef.current = {
+        url,
+        key: floorKey,
+        buildingId: canonicalBuildingId,
+        floorId: canonicalFloorId
+      };
+
+      if (normalizedSummary) {
+        floorStatsCache.current[url] = normalizedSummary;
+        if (currentFloorUrlRef.current === url) {
+          setPanelStats(formatSummaryForPanel(normalizedSummary, 'floor'));
+        }
+        const statsBuildingKey = selectedBuildingId || selectedBuilding;
+        if (statsBuildingKey) {
+          setFloorStatsByBuilding((prev) => ({
+            ...prev,
+            [statsBuildingKey]: {
+              ...(prev[statsBuildingKey] || {}),
+              [targetFloor]: normalizedSummary
+            }
+          }));
+        }
+      } else {
+        setPanelStats(formatSummaryForPanel(null, 'floor'));
+      }
+      if (mapView === MAP_VIEWS.SPACE_DATA) {
+        applyBuildingStyleForSpace(mapRef.current);
+      }
+      return true;
+    } catch (e) {
+      console.error(e);
+      alert('Failed to load floor plan. See console for details.');
+      setLoadedSingleFloor(false);
+      return false;
+    }
+  }, [mapLoaded, selectedBuilding, selectedFloor, config, selectedBuildingId, buildFloorUrl, roomPatches, availableFloors, mapView, setFloorStatsByBuilding]);
+

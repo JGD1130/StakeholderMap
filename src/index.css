@@ -8,6 +8,12 @@ html, body, #root {
 }
 
 
+/* Ensure common app wrappers provide height for full-bleed map */
+.app, .page, .map-wrapper {
+  height: 100%;
+}
+
+
 #map {
   position: absolute;
   top: 0;

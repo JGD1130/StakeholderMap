@@ -1,18 +1,18 @@
 {
-  "GrayCenter": {
-    "display": "Gray Center",
-    "floors": {
-      "FL1": {
-        "url": "Gray_Center_FL_1.simpl.geojson"
-      }
-    }
-  },
-  "Science": {
-    "display": "Morrison Science",
-    "floors": {
-      "FL1": {
-        "url": "Science/FL1.simpl.geojson"
-      }
-    }
+  "buildings": [
+    { "id": "Hurley-McDonald Hall", "name": "Hurley-McDonald Hall" },
+    { "id": "Gray Center", "name": "Gray Center" },
+    { "id": "Morrison-Reeves Science Center", "name": "Morrison-Reeves Science Center" }
+  ],
+  "floorsByBuilding": {
+    "Hurley-McDonald Hall": [
+      { "id": "FL1", "url": "floorplans/Hastings/HurleyMcDonald/fl1.geojson" }
+    ],
+    "Gray Center": [
+      { "id": "FL1", "url": "floorplans/Hastings/GrayCenter/fl1.geojson" }
+    ],
+    "Morrison-Reeves Science Center": [
+      { "id": "FL1", "url": "floorplans/Hastings/MorrisonReeves/fl1.geojson" }
+    ]
   }
 }
