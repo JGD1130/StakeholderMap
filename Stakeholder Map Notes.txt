@@ -4,6 +4,10 @@ GitHub url to share with users = https://jgd1130.github.io/StakeholderMap
 node node_modules/vite/bin/vite.js
 
 cd "C:\Users\jdohrman\Documents\stakeholder-map"
+cd "C:\Users\jdohrman\Documents\stakeholder-map\ai-server"
+
+netstat -ano | findstr :8787
+taskkill /PID 36948 /F
 
 Mapbox URL = mapbox://styles/jack1130/cm9bgf0x6003801s3demo1lt6
 

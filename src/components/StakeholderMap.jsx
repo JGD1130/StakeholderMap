@@ -54,11 +54,7 @@ function summarizeFloorFromFeatures(fc) {
     rooms += 1;
     totalSf += area;
 
-    const dept =
-      (props.department ||
-        props.Department ||
-        props.Dept ||
-        '').toString().trim();
+    const dept = norm(getDeptFromProps(props));
 
     if (dept) {
       const prev = deptMap.get(dept) || { name: dept, sf: 0, rooms: 0 };
@@ -67,13 +63,7 @@ function summarizeFloorFromFeatures(fc) {
       deptMap.set(dept, prev);
     }
 
-    const type =
-      (props.type ||
-        props.roomType ||
-        props.RoomType ||
-        props.RoomTypeName ||
-        props.Type ||
-        '').toString().toUpperCase();
+    const type = String(getTypeFromProps(props) || '').toUpperCase();
 
     if (type.includes('CLASSROOM') || type.includes('LECTURE')) {
       classroomSf += area;
@@ -134,6 +124,28 @@ const colorForDept = (name) => {
   return FALLBACKS[_hash(String(name)) % FALLBACKS.length];
 };
 
+const colorForType = (name) => {
+  if (!name) return '#CCCCCC';
+  return FALLBACKS[_hash(String(name).toLowerCase()) % FALLBACKS.length];
+};
+
+const summarizeProgramCounts = (stats) => {
+  const rt = stats?.roomTypes || {};
+  let offices = 0, classrooms = 0, labs = 0;
+
+  for (const [label, count] of Object.entries(rt)) {
+    const k = String(label || '').toLowerCase();
+    const n = Number(count || 0) || 0;
+
+    // tune these keywords to match your room type naming conventions
+    if (k.includes('office')) offices += n;
+    else if (k.includes('classroom') || k.includes('seminar') || k.includes('lecture')) classrooms += n;
+    else if (k.includes('lab') || k.includes('laboratory')) labs += n;
+  }
+
+  return { offices, classrooms, labs };
+};
+
 function renderDeptListHTML(list) {
   if (!list?.length) return '';
   return list
@@ -152,7 +164,7 @@ function renderDeptListHTML(list) {
 
 // ----- Controlled vocabularies (seed lists) -----
 const ROOM_TYPES = [
-  "Classroom - General",
+  "Classroom - General (111)",
   "Classroom - Lecture Hall",
   "Classroom - Indoor Amphitheater / Auditorium",
   "Classroom - Multipurpose",
@@ -169,8 +181,8 @@ const ROOM_TYPES = [
   "Laboratory - Music Practice (non-scheduled)",
   "Laboratory - Special Nonclass",
   "Special Nonclass Lab Svs",
-  "Office - Prof and Admin",
-  "Office - Staff",
+  "Office - Prof and Admin (310)",
+  "Office - Staff (311)",
   "Office - Faculty",
   "Office - Adjunct Faculty",
   "Office - Graduate / Post Doc Students",
@@ -363,6 +375,85 @@ const DEPARTMENT_NAMES = DEPARTMENTS;
 
 const norm = (s) => (s ?? '').toString().trim();
 
+function getDeptFromProps(props = {}) {
+  return (
+    props.Department ||
+    props.department ||
+    props.Dept ||
+    props.NCES_Department ||
+    props["NCES_Department"] ||
+    props["Department Owner Text"] ||
+    ""
+  );
+}
+
+function getTypeFromProps(props = {}) {
+  return (
+    props["Room Type"] ||
+    props.roomType ||
+    props.RoomType ||
+    props.type ||
+    props.Type ||
+    props.NCES_Type ||
+    props["NCES_Type"] ||
+    props["Room Type Text"] ||
+    props.RoomTypeName ||
+    ""
+  );
+}
+
+function pickFirstDefined(props = {}, keys = []) {
+  if (!props || !Array.isArray(keys)) return null;
+  for (const key of keys) {
+    const value = props[key];
+    if (value != null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+  return null;
+}
+
+function formatTypeOptionLabel(baseLabel, categoryCode, typeCode) {
+  const trimmedLabel = (baseLabel || '').toString().trim();
+  const cat = norm(categoryCode);
+  const type = norm(typeCode);
+  if (cat && type) {
+    return `${cat} - ${type} ${trimmedLabel}`.trim();
+  }
+  if (cat) {
+    return `${cat} ${trimmedLabel}`.trim();
+  }
+  return trimmedLabel || '';
+}
+
+function buildTypeOption(value, meta = {}) {
+  const normalizedValue = norm(value);
+  if (!normalizedValue) return null;
+  const typeDesc = norm(meta.typeDesc ?? meta.typeLabel ?? meta.typeName);
+  const label = formatTypeOptionLabel(typeDesc || normalizedValue, meta.categoryCode, meta.typeCode) || normalizedValue;
+  return { value: normalizedValue, label };
+}
+
+function buildTypeOptionList(list = []) {
+  const map = new Map();
+  (list || []).forEach((item) => {
+    const opt = buildTypeOption(item);
+    if (opt) map.set(opt.value, opt);
+  });
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function mergeTypeOptions(prev = [], next = []) {
+  const map = new Map();
+  (prev || []).forEach((opt) => {
+    if (opt?.value) map.set(opt.value, opt);
+  });
+  (next || []).forEach((opt) => {
+    if (opt?.value) map.set(opt.value, opt);
+  });
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
 function assertCanonicalIds(buildingName, floorLabel, docPath) {
   if (!buildingName || !floorLabel || !docPath) return;
   const nameFragment = String(buildingName).trim();
@@ -391,19 +482,134 @@ function convertHexWithAlpha(hex, alpha = 0.35) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+function getRoomCategoryCode(props = {}) {
+  const raw = pickFirstDefined(props, [
+    'RoomCategory',
+    'Category',
+    'CategoryCode',
+    'rm_cat',
+    'rm_cat_id',
+    'NCES_Category',
+    'NCES Category',
+    'NCES_Category_Code',
+    'NCES Category Code'
+  ]);
+  return raw ? String(raw).trim() : null;
+}
+
+function getSeatCount(props = {}) {
+  const raw =
+    props.SeatCount ??
+    props.Seats ??
+    props.Capacity ??
+    props.rm_seats ??
+    props.SeatingCapacity ??
+    props['NCES_Seat Count'] ??
+    props['NCES_Seat_Count'] ??
+    props['NCES_Seat Count'] ??
+    props['NCES_SeatCount'] ??
+    null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function isOfficeCategory(categoryCode) {
+  if (!categoryCode) return false;
+  const norm = String(categoryCode).trim();
+  return norm.length > 0 && norm.startsWith('3');
+}
+
+function isTeachingCategory(categoryCode) {
+  if (!categoryCode) return false;
+  const norm = String(categoryCode).trim();
+  const prefix = norm.charAt(0);
+  return prefix === '1' || prefix === '2';
+}
+
+function detectRoomTypeFlags(props = {}) {
+  const rawType = pickFirstDefined(props, [
+    'RoomType',
+    'roomType',
+    'Name',
+    'type',
+    'RoomTypeName',
+    'NCES_Type Description_Sh',
+    'NCES_Type Description',
+    'NCES Type Description',
+    'NCES_Type Description_Short'
+  ]) ?? '';
+  const normed = String(rawType).toLowerCase();
+  const isOfficeText = normed.includes('office');
+  const isTeachingText = normed.includes('classroom') || normed.includes('lab') || normed.includes('studio');
+  return { norm: normed, isOfficeText, isTeachingText };
+}
+
+function detectFeatureKind(props = {}) {
+  const kindLabel = pickFirstDefined(props, [
+    'FeatureClass',
+    'featureClass',
+    'Layer',
+    'layer',
+    'Type',
+    'type',
+    'Feature',
+    'feature',
+    'Name',
+    'name'
+  ]) ?? '';
+  const normed = String(kindLabel).toLowerCase();
+  if (normed.includes('door') || normed.includes('entrance')) return 'door';
+  if (normed.includes('stair')) return 'stair';
+  return 'room';
+}
+
 function collectFloorOptions(features) {
-  const types = new Set(ROOM_TYPES.map(norm));
+  const typeMap = new Map();
   const depts = new Set(DEPARTMENTS.map(norm));
+
+  const getCategoryCode = (props) =>
+    pickFirstDefined(props, [
+      'NCES_Category',
+      'NCES Category',
+      'NCES_Category_Code',
+      'NCES Category Code'
+    ]);
+  const getTypeCode = (props) =>
+    pickFirstDefined(props, [
+      'NCES_Type',
+      'NCES Type',
+      'NCES_Type_Code',
+      'NCES Type Code'
+    ]);
+  const getTypeDesc = (props) =>
+    pickFirstDefined(props, [
+      'NCES_Type Description_Sh',
+      'NCES_Type Description',
+      'NCES Type Description',
+      'NCES_Type Description_Short'
+    ]);
+
+  const addTypeOption = (value, meta = {}) => {
+    const opt = buildTypeOption(value, meta);
+    if (!opt) return;
+    typeMap.set(opt.value, opt);
+  };
 
   for (const f of features || []) {
     const p = f.properties || {};
-    const t = norm(p.type ?? p.roomType ?? p.Name ?? p.RoomType ?? p.Type);
-    const d = norm(p.department ?? p.Department ?? p.Dept);
-    if (t) types.add(t);
-    if (d) depts.add(d);
+    const typeName = norm(p.type ?? p.roomType ?? p.Name ?? p.RoomType ?? p.Type);
+    const deptValue = norm(p.department ?? p.Department ?? p.Dept);
+    const categoryCode = getCategoryCode(p);
+    const typeCode = getTypeCode(p);
+    const typeDesc = getTypeDesc(p);
+    if (typeName) {
+      addTypeOption(typeName, { categoryCode, typeCode, typeDesc });
+    }
+    if (deptValue) depts.add(deptValue);
   }
+
   return {
-    typeOptions: Array.from(types).filter(Boolean).sort(),
+    typeOptions: Array.from(typeMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
     deptOptions: Array.from(depts).filter(Boolean).sort(),
   };
 }
@@ -440,10 +646,29 @@ function buildFloorplanCanvas(fc, options = {}) {
     }
     ctx.closePath();
   };
+  const drawLine = (coords) => {
+    if (!Array.isArray(coords)) return;
+    ctx.beginPath();
+    const first = transform(coords[0]);
+    ctx.moveTo(first[0], first[1]);
+    for (let i = 1; i < coords.length; i++) {
+      const pt = transform(coords[i]);
+      ctx.lineTo(pt[0], pt[1]);
+    }
+  };
   const normalizeDept = (props) => {
     const dept = norm(props?.department ?? props?.Department ?? props?.Dept ?? '');
     return dept || '';
   };
+  const normalizeId = (val) => {
+    if (Number.isFinite(val)) return val;
+    const asNum = Number(val);
+    return Number.isFinite(asNum) ? asNum : (val != null ? String(val) : null);
+  };
+  const selectedIdsSet = new Set(
+    (options?.selectedIds || []).map((v) => normalizeId(v)).filter((v) => v != null)
+  );
+  const solidFill = options?.solidFill === true;
   const labelOptions = options?.labelOptions || {};
   const labelsEnabled = labelOptions.enabled !== false;
   const labelSettings = {
@@ -504,6 +729,7 @@ function buildFloorplanCanvas(fc, options = {}) {
 
   for (const feature of fc.features) {
     const props = feature?.properties || {};
+    const kind = detectFeatureKind(props);
     const scenarioDept = norm(
       props?.scenarioDepartment ??
       props?.ScenarioDepartment ??
@@ -512,11 +738,44 @@ function buildFloorplanCanvas(fc, options = {}) {
     );
     const baseDept = normalizeDept(props);
     const deptName = scenarioDept || baseDept;
-    const baseColor = deptName ? getDeptColor(deptName) : null;
-    const fill = baseColor
-      ? convertHexWithAlpha(baseColor, scenarioDept ? 0.9 : 0.4)
+    const typeName = props?.RoomType ?? props?.Type ?? props?.type ?? props?.Name ?? '';
+    const occupantVal = (props?.occupant ?? props?.Occupant ?? '').toString().trim();
+    const colorMode = options?.colorMode || 'department';
+
+    let baseColor = '#f7f7f7';
+    if (colorMode === 'type') {
+      baseColor = colorForType(typeName);
+    } else if (colorMode === 'occupancy') {
+      baseColor = occupantVal ? '#29b6f6' : '#e0e0e0';
+    } else if (colorMode === 'vacancy') {
+      baseColor = occupantVal ? '#29b6f6' : '#ff7043';
+    } else {
+      baseColor = deptName ? getDeptColor(deptName) : '#f7f7f7';
+    }
+
+    let fill = baseColor
+      ? convertHexWithAlpha(baseColor, solidFill ? 1 : (scenarioDept ? 0.9 : 0.4))
       : '#f7f7f7';
-    const outline = baseColor || '#2b2b2b';
+    let outline = '#2b2b2b';
+    let outlineWidth = kind === 'room' ? 2.2 : 1.5;
+    const fidNorm = normalizeId(feature?.id ?? props?.RevitId ?? props?.id);
+    const isSelected = fidNorm != null && selectedIdsSet.has(fidNorm);
+    if (kind === 'door') {
+      fill = '#1d1d1d';
+      outline = '#0d0d0d';
+      outlineWidth = 1.5;
+    } else if (kind === 'stair') {
+      fill = '#6b6b6b';
+      outline = '#3a3a3a';
+      outlineWidth = 1.5;
+    } else if (baseColor) {
+      outline = '#202020';
+    }
+    if (isSelected) {
+      // Keep the original fill; emphasize selection with a cyan stroke only.
+      outline = '#00ffff';
+      outlineWidth = 4;
+    }
     const geom = feature?.geometry;
     if (!geom || !geom.coordinates) continue;
     const drawGeom = (geomCoords, geomType) => {
@@ -524,7 +783,7 @@ function buildFloorplanCanvas(fc, options = {}) {
       if (geomType === 'Polygon') {
         ctx.fillStyle = fill;
         ctx.strokeStyle = outline;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = outlineWidth;
         geomCoords.forEach((ring) => {
           drawPoly(ring);
           ctx.fill();
@@ -532,6 +791,13 @@ function buildFloorplanCanvas(fc, options = {}) {
         });
       } else if (geomType === 'MultiPolygon') {
         geomCoords.forEach((poly) => drawGeom(poly, 'Polygon'));
+      } else if (geomType === 'LineString') {
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = kind === 'door' ? 2 : 1.5;
+        drawLine(geomCoords);
+        ctx.stroke();
+      } else if (geomType === 'MultiLineString') {
+        geomCoords.forEach((line) => drawGeom(line, 'LineString'));
       }
     };
     drawGeom(geom.coordinates, geom.type);
@@ -545,8 +811,10 @@ function buildFloorplanCanvas(fc, options = {}) {
       0
     );
     const normalizedArea = Number.isFinite(areaValue) && areaValue > 0 ? areaValue : 0;
-    const labelLines = buildLabelLines(props, scenarioDept, baseDept, normalizedArea);
-    drawLabelOnFeature(feature, labelLines);
+    if (kind === 'room') {
+      const labelLines = buildLabelLines(props, scenarioDept, baseDept, normalizedArea);
+      drawLabelOnFeature(feature, labelLines);
+    }
   }
   return {
     width: canvas.width,
@@ -581,6 +849,13 @@ const assetUrl = (path) => `${PUBLIC_BASE}${path}`.replace(/\/{2,}/g, '/');
 const FLOORPLAN_MANIFEST_URL = assetUrl('floorplans/manifest.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
 
+function normalizeFloorId(floorId) {
+  return String(floorId || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '_');
+}
+
 async function fetchJSON(url) {
   try {
     const res = await fetch(url, { cache: 'no-store' });
@@ -590,6 +865,412 @@ async function fetchJSON(url) {
   } catch {
     return null;
   }
+}
+
+async function fetchJson(url) {
+  if (!url) return null;
+  try {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) return null;
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    const text = await r.text();
+    if (ct.includes("text/html")) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function ensureFeatureCollection(raw) {
+  if (!raw) return null;
+
+  if (raw.type === "FeatureCollection" && Array.isArray(raw.features)) return raw;
+  if (Array.isArray(raw.features)) return { type: "FeatureCollection", features: raw.features };
+  if (raw.type === "Feature") return { type: "FeatureCollection", features: [raw] };
+
+  return null;
+}
+
+function applyAffineIfPresent(fc, affine) {
+  if (!fc || !affine || fc.__mfAffineApplied) return fc;
+  if (isLikelyLonLat(fc)) return fc;
+  const out = applyAffineTransform(fc, affine);
+  if (out && typeof out === "object") {
+    out.__mfAffineApplied = true;
+  }
+  return out;
+}
+
+async function loadAffineForFloor(basePath, floorId) {
+  if (!basePath || !floorId) return null;
+  const candidates = [
+    `${basePath}/${floorId}_Dept.affine.json`,
+    `${basePath}/affine.json`,
+  ];
+
+  for (const url of candidates) {
+    const data = await fetchJson(url);
+    if (data) return data;
+  }
+
+  return null;
+}
+
+async function loadGeoJsonWithFallbacks(urls) {
+  for (const u of (urls || []).filter(Boolean)) {
+    const data = await fetchJson(u);
+    if (data) return { url: u, data };
+  }
+  return { url: urls?.[0] || "", data: null };
+}
+
+async function loadRoomsFC({ basePath, floorId }) {
+  const candidates = [
+    `${basePath}/${floorId}_Dept.geojson`,
+    `${basePath}/${floorId}_Dept_Rooms.geojson`,
+  ];
+
+  const [{ data: raw }, affine] = await Promise.all([
+    loadGeoJsonWithFallbacks(candidates),
+    loadAffineForFloor(basePath, floorId),
+  ]);
+
+  const rawFC = ensureFeatureCollection(raw);
+  if (!rawFC) return { rawFC: null, patchedFC: null, affine: null };
+
+  const patchedFC = applyAffineIfPresent(rawFC, affine);
+  return { rawFC, patchedFC, affine };
+}
+
+async function loadWallsFC({ basePath, floorId, affine }) {
+  const candidates = [
+    `${basePath}/${floorId}_-_Map_Export_Walls.geojson`,
+    `${basePath}/${floorId}_Walls.geojson`,
+  ];
+
+  const { data: raw } = await loadGeoJsonWithFallbacks(candidates);
+  const rawFC = ensureFeatureCollection(raw);
+  if (!rawFC) return null;
+
+  return applyAffineIfPresent(rawFC, affine);
+}
+
+function applyAffine(fc, M) {
+  function mapCoords(coords) {
+    if (!coords) return coords;
+    if (typeof coords[0] === "number") {
+      const x = coords[0], y = coords[1];
+      return [M.a * x + M.b * y + M.c, M.d * x + M.e * y + M.f];
+    }
+    return coords.map(mapCoords);
+  }
+  return {
+    ...fc,
+    features: fc.features.map((f) => ({
+      ...f,
+      geometry: f.geometry ? { ...f.geometry, coordinates: mapCoords(f.geometry.coordinates) } : f.geometry
+    }))
+  };
+}
+
+function applyAffineTransform(fc, affine) {
+  if (!fc || !affine) return fc;
+  const anchor = affine.anchor_feet || affine.anchorFeet || affine.anchor;
+  if (!Array.isArray(anchor) || anchor.length < 2) return fc;
+  const targetLon = Number(affine.target_lon ?? affine.targetLon);
+  const targetLat = Number(affine.target_lat ?? affine.targetLat);
+  if (!Number.isFinite(targetLon) || !Number.isFinite(targetLat)) return fc;
+  const rotDeg = Number(affine.rotation_deg_cw ?? affine.rotation_deg ?? 0);
+  const hasEffectiveScale = affine.effective_scale_deg_per_foot != null;
+  const baseScale = Number(
+    hasEffectiveScale
+      ? affine.effective_scale_deg_per_foot
+      : (affine.scale_deg_per_foot ?? affine.scale_deg_per_ft ?? affine.scale)
+  );
+  if (!Number.isFinite(baseScale) || baseScale === 0) return fc;
+  const scalePct = Number(affine.scale_percent ?? 100);
+  const scaleLat = hasEffectiveScale
+    ? baseScale
+    : baseScale * (Number.isFinite(scalePct) ? scalePct / 100 : 1);
+  const latRad = (targetLat * Math.PI) / 180;
+  const cosLat = Math.max(1e-9, Math.cos(latRad));
+  const scaleLon = scaleLat / cosLat;
+  const theta = (rotDeg * Math.PI) / 180;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const [ax, ay] = anchor;
+
+  const a = scaleLon * cosT;
+  const b = -scaleLon * sinT;
+  const c = targetLon - (a * ax + b * ay);
+  const d = scaleLat * sinT;
+  const e = scaleLat * cosT;
+  const f = targetLat - (d * ax + e * ay);
+
+  return applyAffine(fc, { a, b, c, d, e, f });
+}
+
+async function fetchFirstOk(urls) {
+  for (const u of (urls || []).filter(Boolean)) {
+    try {
+      const r = await fetch(u, { cache: "no-store" });
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      const text = await r.text();
+
+      // If the server returns HTML (SPA fallback), skip it and try next URL
+      if (!r.ok) continue;
+      if (ct.includes("text/html")) continue;
+
+      // Try to parse JSON; if it fails, skip and try next URL
+      try {
+        const data = JSON.parse(text);
+        return { ok: true, url: u, data };
+      } catch {
+        continue;
+      }
+    } catch (e) {
+      // network error, try next
+      continue;
+    }
+  }
+  return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
+}
+
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine }) {
+  if (!basePath || !floorId || !map) return;
+
+  const cleanFloor = String(floorId).trim();
+  const candidates = [
+    `${basePath}/${cleanFloor}_-_Map_Export_Walls_RAW.geojson`,
+    `${basePath}/${cleanFloor}_Walls_RAW.geojson`,
+    `${basePath}/${cleanFloor}_-_Map_Export_Walls.geojson`,
+    `${basePath}/${cleanFloor}_Walls.geojson`,
+  ];
+
+  const raw = await fetchGeoJSON(candidates);
+  let fc = ensureFeatureCollection(raw);
+  if (!fc?.features?.length) return;
+
+  console.log("[walls] loaded features", fc.features.length);
+
+  function looksLikeLonLat(sampleFC, maxSamples = 20) {
+    let checked = 0;
+
+    const visit = (coords) => {
+      if (!coords || checked >= maxSamples) return true;
+      if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+        const x = coords[0];
+        const y = coords[1];
+        checked += 1;
+        return Math.abs(x) <= 180 && Math.abs(y) <= 90;
+      }
+      for (const c of coords) {
+        const ok = visit(c);
+        if (!ok) return false;
+      }
+      return true;
+    };
+
+    for (const f of sampleFC?.features || []) {
+      const ok = visit(f?.geometry?.coordinates);
+      if (!ok) return false;
+      if (checked >= maxSamples) break;
+    }
+    return checked > 0;
+  }
+
+  const shouldApplyAffine = affine && !looksLikeLonLat(fc);
+  if (shouldApplyAffine) {
+    fc = applyAffineTransform(fc, affine);
+    console.log("[walls] applied affine");
+  } else if (affine) {
+    console.log("[walls] skipped affine (already lon/lat)");
+  }
+
+  const WALLS_SOURCE = "walls-source";
+  const WALLS_LAYER = "walls-layer";
+
+  if (map.getSource(WALLS_SOURCE)) map.getSource(WALLS_SOURCE).setData(fc);
+  else map.addSource(WALLS_SOURCE, { type: "geojson", data: fc });
+  try {
+    const b = turf.bbox(fc);
+    console.log("[walls] bbox", b);
+  } catch {
+    console.log("[walls] first coord", fc.features?.[0]?.geometry?.coordinates?.[0]?.[0]);
+  }
+
+  if (!map.getLayer(WALLS_LAYER)) {
+    const beforeId = map.getLayer(FLOOR_FILL_ID) ? FLOOR_FILL_ID : undefined;
+    map.addLayer({
+      id: WALLS_LAYER,
+      type: "line",
+      source: WALLS_SOURCE,
+      layout: {
+        "line-join": "round",
+        "line-cap": "round"
+      },
+      paint: {
+        "line-color": "#000",
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.15,
+          18, 0.25,
+          20, 0.45
+        ],
+        "line-opacity": 0.25
+      }
+    }, beforeId);
+  }
+}
+
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine }) {
+  if (!basePath || !floorId || !map) return;
+  const cleanFloor = normalizeFloorId(floorId);
+  const candidates = [
+    `${basePath}/Doors/${cleanFloor}_Dept_Doors.geojson`,
+    `${basePath}/Doors/${cleanFloor}_Doors.geojson`,
+    `${basePath}/${cleanFloor}_Dept_Doors.geojson`,
+    `${basePath}/${cleanFloor}_Doors.geojson`
+  ];
+
+  const raw = await fetchGeoJSON(candidates);
+  if (!raw) {
+    console.warn("Doors overlay not found. Tried:", candidates);
+    return;
+  }
+  let fc = ensureFeatureCollection(raw);
+  if (!fc?.features?.length) return;
+
+  if (affine && !isLikelyLonLat(fc)) {
+    fc = applyAffineTransform(fc, affine);
+  }
+
+  if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
+  else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
+
+  if (!map.getLayer(DOORS_LAYER)) {
+    try {
+      if (!map.hasImage('mf-door-swing')) {
+        await loadIcon(map, 'mf-door-swing', 'icons/door-swing.png');
+      }
+    } catch (err) {
+      console.warn('Door icon load failed:', err);
+    }
+    map.addLayer({
+      id: DOORS_LAYER,
+      type: "symbol",
+      source: DOORS_SOURCE,
+      layout: {
+        "icon-image": "mf-door-swing",
+        "icon-size": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.28,
+          18, 0.42,
+          20, 0.65
+        ],
+        "icon-rotate": [
+          "coalesce",
+          ["to-number", ["get", "bearing_deg"]],
+          0
+        ],
+        "icon-rotation-alignment": "map",
+        "icon-keep-upright": false,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true
+      },
+      paint: {
+        "icon-color": "#00a000",
+        "icon-opacity": 0.95
+      }
+    });
+  }
+}
+
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine }) {
+  if (!basePath || !floorId || !map) return;
+  const cleanFloor = normalizeFloorId(floorId);
+  const candidates = [
+    `${basePath}/Stairs/${cleanFloor}_Dept_Stairs.geojson`,
+    `${basePath}/Stairs/${cleanFloor}_DEPT_Stairs.geojson`,
+    `${basePath}/Stairs/${cleanFloor}_Dept_StairsPoints.geojson`,
+    `${basePath}/Stairs/${cleanFloor}_Stairs.geojson`,
+    `${basePath}/Stairs/${cleanFloor}_StairRuns.geojson`,
+    `${basePath}/Stairs/${cleanFloor}_StairsRuns.geojson`,
+    `${basePath}/Stairs/${cleanFloor}_Dept_StairsRuns.geojson`,
+    `${basePath}/${cleanFloor}_Dept_Stairs.geojson`,
+    `${basePath}/${cleanFloor}_Stairs.geojson`
+  ];
+
+  const raw = await fetchGeoJSON(candidates);
+  if (!raw) {
+    console.warn("Stairs overlay not found. Tried:", candidates);
+    return;
+  }
+  let fc = ensureFeatureCollection(raw);
+  if (!fc?.features?.length) return;
+
+  if (affine && !isLikelyLonLat(fc)) {
+    fc = applyAffineTransform(fc, affine);
+  }
+
+  console.log("[stairs] loaded features", fc.features.length);
+
+  if (map.getSource(STAIRS_SOURCE)) map.getSource(STAIRS_SOURCE).setData(fc);
+  else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
+
+  if (!map.getLayer(STAIRS_LAYER)) {
+    try {
+      if (!map.hasImage('mf-stairs-run')) {
+        await loadIcon(map, 'mf-stairs-run', 'icons/stairs-run.png');
+      }
+    } catch (err) {
+      console.warn('Stairs icon load failed:', err);
+    }
+    map.addLayer({
+      id: STAIRS_LAYER,
+      type: "symbol",
+      source: STAIRS_SOURCE,
+      layout: {
+        "icon-image": "mf-stairs-run",
+        "icon-size": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.30,
+          18, 0.50,
+          20, 0.80
+        ],
+        "icon-rotate": [
+          "coalesce",
+          ["to-number", ["get", "bearing_deg"]],
+          0
+        ],
+        "icon-rotation-alignment": "map",
+        "icon-keep-upright": false,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true
+      },
+      paint: {
+        "icon-color": "#0066ff",
+        "icon-opacity": 0.95
+      }
+    });
+  }
+}
+let aiLockUntil = 0;
+async function guardedAiFetch(url, opts) {
+  const now = Date.now();
+  if (now < aiLockUntil) {
+    throw new Error(`Rate limited. Try again in ${Math.ceil((aiLockUntil - now) / 1000)}s`);
+  }
+  const res = await fetch(url, opts);
+  if (res.status === 429) {
+    aiLockUntil = Date.now() + 60_000; // 60s cooldown
+    throw new Error('Rate limited (429). AI paused for 60 seconds.');
+  }
+  return res;
 }
 
 async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS) {
@@ -616,6 +1297,14 @@ const FLOOR_LINE_ID = "floor-line";
 const FLOOR_HL_ID = "floor-highlight";
 const FLOOR_HL_BORDER_ID = "floor-highlight-border";
 const FLOOR_ROOM_LABEL_LAYER = "floor-room-labels";
+const FLOOR_DOOR_LAYER = "floor-doors";
+const FLOOR_STAIR_LAYER = "floor-stairs";
+const WALLS_SOURCE = 'walls-source';
+const WALLS_LAYER = 'walls-layer';
+const DOORS_SOURCE = "doors-source";
+const STAIRS_SOURCE = "stairs-source";
+const DOORS_LAYER = "doors-layer";
+const STAIRS_LAYER = "stairs-layer";
 
 // Cache to avoid double-loading sources
 const floorCache = new Map();
@@ -637,10 +1326,42 @@ const FLOOR_FILL_PAINT = {
   'fill-opacity': 1.0
 };
 
-function applyFloorFillExpression(map) {
+const WALL_PAINT = {
+  "line-color": "#000",
+  "line-width": ["interpolate", ["linear"], ["zoom"], 16, 0.15, 18, 0.25, 20, 0.45],
+  "line-opacity": 0.25
+};
+
+const DOOR_PAINT = {
+  "line-color": "#111",
+  "line-width": ["interpolate", ["linear"], ["zoom"], 16, 0.6, 18, 1.0, 20, 1.6],
+  "line-opacity": 0.95
+};
+
+const STAIR_PAINT = {
+  "line-color": "#111",
+  "line-width": ["interpolate", ["linear"], ["zoom"], 16, 0.6, 18, 1.0, 20, 1.6],
+  "line-opacity": 0.95
+};
+
+function applyFloorFillExpression(map, mode = 'department', options = {}) {
   if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+  const occupantExpr = [
+    '>',
+    ['length', ['coalesce', ['to-string', ['get', 'occupant']], ['to-string', ['get', 'Occupant']], '']],
+    0
+  ];
+  const vacancyExpr = ['!', occupantExpr];
+  const occupancyColorExpr = ['case', occupantExpr, '#29b6f6', '#e0e0e0'];
+  const vacancyColorExpr = ['case', vacancyExpr, '#ff7043', '#cfd8dc'];
   try {
-    map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', deptFillExpression());
+    if (mode === 'occupancy') {
+      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', occupancyColorExpr);
+    } else if (mode === 'vacancy') {
+      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', vacancyColorExpr);
+    } else {
+      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', deptFillExpression());
+    }
     map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
   } catch {}
 }
@@ -683,25 +1404,148 @@ function ensureFloorHighlightLayer(map) {
   } catch {}
 }
 
+function ensureFloorDoorLayer(map) {
+  if (!map || map.getLayer(FLOOR_DOOR_LAYER)) return;
+  try {
+    map.addLayer(
+      {
+        id: FLOOR_DOOR_LAYER,
+        type: 'symbol',
+        source: FLOOR_SOURCE,
+        filter: ['==', ['get', 'Element'], 'Door'],
+        layout: {
+          'icon-image': 'door-16',
+          'icon-size': 1,
+          'icon-allow-overlap': true
+        }
+      },
+      FLOOR_FILL_ID
+    );
+  } catch {}
+}
+
+function ensureFloorStairLayer(map) {
+  if (!map || map.getLayer(FLOOR_STAIR_LAYER)) return;
+  try {
+    map.addLayer(
+      {
+        id: FLOOR_STAIR_LAYER,
+        type: 'line',
+        source: FLOOR_SOURCE,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#555',
+          'line-width': 1.5,
+          'line-opacity': 0.9,
+          'line-dasharray': [2, 2]
+        },
+        filter: ['==', ['id'], '']
+      },
+      FLOOR_FILL_ID
+    );
+  } catch {}
+}
+
+function upsertGeoJsonSource(map, sourceId, fc) {
+  if (!map || !sourceId || !fc) return;
+  if (map.getSource(sourceId)) map.getSource(sourceId).setData(fc);
+  else map.addSource(sourceId, { type: "geojson", data: fc });
+}
+
+function upsertLineLayer(map, layerId, sourceId, paint, filter, beforeId) {
+  if (!map || !layerId || !sourceId) return;
+  if (!map.getLayer(layerId)) {
+    map.addLayer(
+      { id: layerId, type: "line", source: sourceId, paint, ...(filter ? { filter } : {}) },
+      beforeId || undefined
+    );
+  } else {
+    if (paint) Object.entries(paint).forEach(([k, v]) => map.setPaintProperty(layerId, k, v));
+    if (filter) map.setFilter(layerId, filter);
+    if (beforeId) {
+      try { map.moveLayer(layerId, beforeId); } catch {}
+    }
+  }
+}
+
+async function loadIcon(map, name, url) {
+  if (!map || !name || !url) return;
+  try {
+    if (map.hasImage(name)) return;
+  } catch {}
+  const img = await new Promise((resolve, reject) => {
+    map.loadImage(url, (err, image) => (err ? reject(err) : resolve(image)));
+  });
+  try {
+    map.addImage(name, img, { sdf: true });
+  } catch (err) {
+    console.warn('addImage failed for', name, err);
+  }
+}
+
+function ensureLayerOrder(map) {
+  if (!map) return;
+  try {
+    // Make sure walls sit under room fills.
+    if (map.getLayer(WALLS_LAYER) && map.getLayer(FLOOR_FILL_ID)) {
+      map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID);
+    }
+
+    // Keep room outlines above fills.
+    if (map.getLayer(FLOOR_LINE_ID) && map.getLayer(FLOOR_FILL_ID)) {
+      map.moveLayer(FLOOR_LINE_ID);
+    }
+
+    // Doors above room outlines.
+    if (map.getLayer(DOORS_LAYER)) {
+      map.moveLayer(DOORS_LAYER);
+    }
+
+    // Stairs above doors.
+    if (map.getLayer(STAIRS_LAYER)) {
+      map.moveLayer(STAIRS_LAYER);
+    }
+  } catch {}
+}
+
+function makeFeatureFilter(ids = [], revitIds = []) {
+  const clauses = [];
+  if (ids.length) {
+    clauses.push(['in', ['id'], ['literal', ids]]);
+  }
+  if (revitIds.length) {
+    clauses.push(['in', ['get', 'RevitId'], ['literal', revitIds]]);
+  }
+  if (!clauses.length) {
+    return ['==', ['id'], ''];
+  }
+  if (clauses.length === 1) return clauses[0];
+  return ['any', ...clauses];
+}
+
 // Fit-to-building (scale+translate) tuning
 const FIT_MARGIN = 0.90;   // tighter/looser fit inside building bbox
 const EXTRA_SHRINK = 0.85; // additional ?make smaller? factor
 
-async function fetchGeoJSON(url) {
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    const ct = (res.headers.get('content-type') || '').toLowerCase();
-    if (!res.ok || !ct.includes('json')) {
-      console.debug('Floor load: not JSON, skipping', url, ct || res.status);
-      floorCache.delete(url);
-      return null;
-    }
-    return await res.json();
-  } catch (err) {
-    console.debug('Floor load fetch threw:', url, err);
-    floorCache.delete(url);
+async function fetchGeoJSON(urlOrUrls) {
+  const urls = Array.isArray(urlOrUrls)
+    ? urlOrUrls.filter(Boolean)
+    : [urlOrUrls].filter(Boolean);
+  if (!urls.length) return null;
+
+  const result = await fetchFirstOk(urls);
+  if (!result.ok) {
+    console.debug("GeoJSON fetch failed", {
+      tried: urls,
+      lastUrl: result.url,
+      error: result.error
+    });
     return null;
   }
+  return result.data;
 }
 
 function extractFirstCoordinate(geojson) {
@@ -721,11 +1565,14 @@ function extractFirstCoordinate(geojson) {
 
 function isLikelyLonLat(gj) {
   try {
-    const c = gj?.features?.[0]?.geometry?.coordinates;
-    if (!c) return false;
-    const flat = c.flat(3);
-    const [x, y] = flat;
-    return Number.isFinite(x) && Number.isFinite(y) && Math.abs(x) <= 180 && Math.abs(y) <= 90;
+    if (!gj?.features?.length) return false;
+    const bbox = turf.bbox(gj);
+    if (!bbox || bbox.some((v) => !Number.isFinite(v))) return false;
+    const [minX, minY, maxX, maxY] = bbox;
+    if (minX < -180 || maxX > 180 || minY < -90 || maxY > 90) return false;
+    const spanX = Math.abs(maxX - minX);
+    const spanY = Math.abs(maxY - minY);
+    return spanX <= 0.25 && spanY <= 0.25;
   } catch { return false; }
 }
 
@@ -733,15 +1580,37 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   if (!map || !url) return;
   const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef } = options;
 
+  const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
+  const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
+
   let data = floorCache.get(url);
+  let affine = null;
+  let fc = null;
   if (!data) {
-    data = await fetchGeoJSON(url);
-    if (!data) return;
+    if (floorBasePath && floorId) {
+      const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId });
+      if (!roomsLoad.rawFC) {
+        console.warn('Floor summary: no data returned', `${floorBasePath}/${floorId}_Dept.geojson`);
+        return;
+      }
+      data = roomsLoad.rawFC;
+      fc = roomsLoad.patchedFC;
+      affine = roomsLoad.affine;
+    } else {
+      data = await fetchGeoJSON(url);
+      if (!data) return;
+    }
     floorCache.set(url, data);
   }
 
-  let fc = toFeatureCollection(data);
-  if (!fc?.features?.length) return;
+  if (!fc) {
+    fc = ensureFeatureCollection(data) || toFeatureCollection(data);
+    if (!fc?.features?.length) return;
+    if (!affine && floorBasePath && floorId) {
+      affine = await loadAffineForFloor(floorBasePath, floorId);
+    }
+    fc = applyAffineIfPresent(fc, affine);
+  }
 
   if (fc && Array.isArray(fc.features) && currentFloorContextRef && typeof currentFloorContextRef === 'object') {
     currentFloorContextRef.current = { url, buildingId, floor, fc };
@@ -753,12 +1622,30 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     }
   });
 
+  const doorFeatureIds = [];
+  const doorRevitIds = [];
+  const stairFeatureIds = [];
+  const stairRevitIds = [];
+  fc.features.forEach((feature) => {
+    if (!feature) return;
+    const id = feature.id ?? feature.properties?.RevitId ?? feature.properties?.id;
+    if (id == null) return;
+    const kind = detectFeatureKind(feature.properties);
+    if (kind === 'door') {
+      doorFeatureIds.push(id);
+      if (feature.properties?.RevitId != null) doorRevitIds.push(feature.properties.RevitId);
+    } else if (kind === 'stair') {
+      stairFeatureIds.push(id);
+      if (feature.properties?.RevitId != null) stairRevitIds.push(feature.properties.RevitId);
+    }
+  });
+
   const cacheFloorSummary = (stats, featureCollection) => {
     if (!stats) return;
     const features = featureCollection?.features;
     if (!Array.isArray(features) || features.length === 0) return;
     try {
-      const bldg =
+    const bldg =
         (selectedBuildingIdRef.current) ||
         selectedBuilding ||
         affineParams?.fitBuilding?.properties?.id;
@@ -786,7 +1673,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   try {
     const fitBuilding = affineParams?.fitBuilding || null;
-    if (fitBuilding) {
+    if (fitBuilding && shouldFitFloorplanToBuilding(fc, fitBuilding)) {
       const fitted = fitFloorplanToBuilding(fc, fitBuilding);
       if (fitted?.features?.length) {
         fc = fitted;
@@ -854,10 +1741,55 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   // outline
   if (!map.getLayer(FLOOR_LINE_ID)) {
-    map.addLayer({ id: FLOOR_LINE_ID, type: 'line', source: FLOOR_SOURCE, paint: { 'line-color': '#444', 'line-width': 1.25 } });
+    map.addLayer({
+      id: FLOOR_LINE_ID,
+      type: 'line',
+      source: FLOOR_SOURCE,
+      paint: {
+        'line-color': '#444',
+        'line-width': [
+          'interpolate', ['linear'], ['zoom'],
+          16, 0.4,
+          18, 0.8,
+          20, 1.2
+        ],
+        'line-opacity': 0.7
+      }
+    });
   }
 
   ensureFloorRoomLabelLayer(map);
+  // ---- WALLS OVERLAY (NEW) ----
+  if (options?.wallsBasePath) {
+    const floorId = options.wallsFloorId || floor || (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) || null;
+    await tryLoadWallsOverlay({ basePath: options.wallsBasePath, floorId, map, roomsFC: patchedFC, affine });
+    try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
+  }
+  // ---- end walls overlay ----
+
+  // ---- DOORS + STAIRS OVERLAY (optional) ----
+  const overlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
+  if (overlayBasePath) {
+    const overlayFloorId =
+      options?.roomsFloorId ||
+      options?.wallsFloorId ||
+      floor ||
+      (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) ||
+      null;
+    if (overlayFloorId) {
+      await tryLoadDoorsOverlay({ basePath: overlayBasePath, floorId: overlayFloorId, map, affine });
+      await tryLoadStairsOverlay({ basePath: overlayBasePath, floorId: overlayFloorId, map, affine });
+    }
+  }
+  // ---- end doors + stairs overlay ----
+  ensureLayerOrder(map);
+
+  const doorFilter = makeFeatureFilter(doorFeatureIds, doorRevitIds);
+  const stairFilter = makeFeatureFilter(stairFeatureIds, stairRevitIds);
+  try {
+    if (map.getLayer(FLOOR_DOOR_LAYER)) map.setFilter(FLOOR_DOOR_LAYER, doorFilter);
+    if (map.getLayer(FLOOR_STAIR_LAYER)) map.setFilter(FLOOR_STAIR_LAYER, stairFilter);
+  } catch {}
 
   // Ensure highlight layer draws above the fill (but under outline)
   try {
@@ -870,11 +1802,13 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   // re-apply selection if any (normalize to string id)
   if (rehighlightId != null && map.getLayer(FLOOR_HL_ID)) {
-    const hlFilter = [
-      'any',
-      ['==', ['id'], rehighlightId],
-      ['==', ['get', 'RevitId'], rehighlightId]
-    ];
+    const ids = Array.isArray(rehighlightId) ? rehighlightId.filter((v) => v != null) : [rehighlightId];
+    const hlFilter = ids.length
+      ? ['any',
+          ['in', ['id'], ['literal', ids]],
+          ['in', ['get', 'RevitId'], ['literal', ids]]
+        ]
+      : ['==', ['id'], ''];
     map.setFilter(FLOOR_HL_ID, hlFilter);
     if (map.getLayer(FLOOR_HL_BORDER_ID)) {
       map.setFilter(FLOOR_HL_BORDER_ID, hlFilter);
@@ -923,60 +1857,337 @@ function resolvePatchedArea(props = {}) {
   return parseAreaValue(source);
 }
 
-function summarizeFeatures(features = []) {
-  let totalSf = 0;
-  let classroomSf = 0;
-  let rooms = 0;
-  let classroomCount = 0;
-  const deptCounts = new Map();
-
-  features.forEach((feature) => {
-    const props = feature?.properties || {};
-    const area = resolvePatchedArea(props);
-    const numericArea = Number.isFinite(area) ? area : 0;
-    totalSf += numericArea;
-    rooms += 1;
-
-    const dept = norm(props.department ?? props.Department ?? props.Dept);
-    if (dept) {
-      deptCounts.set(dept, (deptCounts.get(dept) || 0) + numericArea);
-    }
-
-    const typeStr = norm(props.type ?? props.roomType ?? props.Name ?? props.RoomType ?? props.Type).toLowerCase();
-    if (typeStr.includes('class') || typeStr.includes('lecture')) {
-      classroomSf += numericArea;
-      classroomCount += 1;
-    }
-  });
-
-  const sorted = Array.from(deptCounts.entries()).sort((a, b) => b[1] - a[1]);
-  const totalsByDept = Object.fromEntries(sorted);
-  const keyDepts = sorted.slice(0, 6).map(([name]) => name);
-
+function createEmptySummaryAccumulator() {
   return {
-    totalSf,
-    classroomSf,
-    rooms,
-    classroomCount,
-    deptCounts: totalsByDept,
-    totalsByDept,
-    keyDepts
+    totalSf: 0,
+    rooms: 0,
+    classroomSf: 0,
+    classroomCount: 0,
+    labSf: 0,
+    labCount: 0,
+    officeSf: 0,
+    officeCount: 0,
+    deptCounts: new Map()
   };
 }
 
+function deriveRoomUsage(props = {}) {
+  const categoryCode = getRoomCategoryCode(props) || '';
+  const categoryPrefix = String(categoryCode).trim().charAt(0);
+  const typeCode = pickFirstDefined(props, [
+    'NCES_Type',
+    'NCES Type',
+    'NCES_Type_Code',
+    'NCES Type Code'
+  ]);
+  const typeCodePrefix = String(typeCode || '').trim().charAt(0);
+  const typeFlags = detectRoomTypeFlags(props);
+  const typeText = (typeFlags?.norm || '').toLowerCase();
+
+  const isClassroom =
+    typeText.includes('classroom') ||
+    typeText.includes('lecture') ||
+    categoryPrefix === '1' ||
+    typeCodePrefix === '1';
+
+  const isLab =
+    typeText.includes('lab') ||
+    typeText.includes('laboratory') ||
+    typeText.includes('studio') ||
+    categoryPrefix === '2' ||
+    typeCodePrefix === '2';
+
+  const isOffice = typeFlags?.isOfficeText || isOfficeCategory(categoryCode);
+
+  if (isClassroom) return 'classroom';
+  if (isLab) return 'lab';
+  if (isOffice) return 'office';
+  return 'other';
+}
+
+function accumulateSummaryFromProps(accumulator, props = {}) {
+  if (!accumulator) return;
+  const area = resolvePatchedArea(props);
+  const numericArea = Number.isFinite(area) ? area : 0;
+  accumulator.totalSf += numericArea;
+  accumulator.rooms += 1;
+
+  const usage = deriveRoomUsage(props);
+  if (usage === 'classroom') {
+    accumulator.classroomSf += numericArea;
+    accumulator.classroomCount += 1;
+  } else if (usage === 'lab') {
+    accumulator.labSf += numericArea;
+    accumulator.labCount += 1;
+  } else if (usage === 'office') {
+    accumulator.officeSf += numericArea;
+    accumulator.officeCount += 1;
+  }
+
+  const dept = norm(getDeptFromProps(props));
+  if (dept) {
+    accumulator.deptCounts.set(dept, (accumulator.deptCounts.get(dept) || 0) + numericArea);
+  }
+}
+
+function summarizeFeatures(features = []) {
+  const acc = createEmptySummaryAccumulator();
+  features.forEach((feature) => accumulateSummaryFromProps(acc, feature?.properties));
+  return finalizeCombinedSummary(acc);
+}
+
 function finalizeCombinedSummary(combined) {
-  const sorted = Array.from(combined.deptCounts.entries()).sort((a, b) => b[1] - a[1]);
+  if (!combined) return null;
+  const deptEntries = Array.from((combined.deptCounts || new Map()).entries());
+  const sorted = deptEntries.sort((a, b) => b[1] - a[1]);
   const totalsByDept = Object.fromEntries(sorted);
   return {
-    totalSf: combined.totalSf,
-    classroomSf: combined.classroomSf,
-    rooms: combined.rooms,
-    classroomCount: combined.classroomCount,
+    totalSf: combined.totalSf || 0,
+    classroomSf: combined.classroomSf || 0,
+    labSf: combined.labSf || 0,
+    officeSf: combined.officeSf || 0,
+    rooms: combined.rooms || 0,
+    classroomCount: combined.classroomCount || 0,
+    labCount: combined.labCount || 0,
+    officeCount: combined.officeCount || 0,
     deptCounts: totalsByDept,
     totalsByDept,
     keyDepts: sorted.slice(0, 6).map(([name]) => name)
   };
 }
+
+function toScenarioShape(stats) {
+  if (!stats) return null;
+
+  if (stats.roomTypes && stats.sfByRoomType) {
+    return {
+      totalSF: Number(stats.totalSF ?? 0),
+      rooms: Number(stats.rooms ?? 0),
+      roomTypes: stats.roomTypes || {},
+      sfByRoomType: stats.sfByRoomType || {}
+    };
+  }
+
+  const totalSF = Number(stats.totalSF ?? stats.totalSqFt ?? stats.sf ?? stats.squareFeet ?? 0);
+  const rooms = Number(stats.rooms ?? stats.roomCount ?? stats.totalRooms ?? 0);
+
+  return {
+    totalSF,
+    rooms,
+    roomTypes: stats.roomTypes || stats.countsByRoomType || {},
+    sfByRoomType: stats.sfByRoomType || stats.sfByType || {}
+  };
+}
+
+function computeDeptTotalsFromFeatures(features, deptName) {
+  const dept = (deptName || '').trim().toLowerCase();
+  if (!dept || !Array.isArray(features)) return null;
+
+  let totalSF = 0;
+  let rooms = 0;
+  const roomTypes = {};
+  const sfByRoomType = {};
+
+  for (const f of features) {
+    const p = f?.properties || {};
+    const dep = String(getDeptFromProps(p) || '').trim().toLowerCase();
+    if (dep !== dept) continue;
+
+    const type = String(
+      getTypeFromProps(p) ??
+      p.Type ??
+      p.RoomType ??
+      p.Room_Type ??
+      p.Name ??
+      p.Room ??
+      p.SpaceType ??
+      p.Space_Type ??
+      p.Use ??
+      p.Usage ??
+      p.Category ??
+      'Unspecified'
+    ).trim() || 'Unspecified';
+    const resolvedArea = resolvePatchedArea(p);
+    const sf = Number.isFinite(resolvedArea)
+      ? resolvedArea
+      : Number(p.sf ?? p.SF ?? p.AreaSF ?? p.Area ?? p.area ?? p.areaSF ?? p['Area SF'] ?? 0) || 0;
+
+    rooms += 1;
+    totalSF += sf;
+    roomTypes[type] = (roomTypes[type] || 0) + 1;
+    sfByRoomType[type] = (sfByRoomType[type] || 0) + sf;
+  }
+
+  return { totalSF, rooms, roomTypes, sfByRoomType };
+}
+
+function buildInventoryFromRoomRows(roomRows, limit = 1200) {
+  if (!Array.isArray(roomRows)) return null;
+  const trimmed = roomRows.slice(0, limit).map((r, idx) => {
+    const buildingLabel = String(r.buildingName ?? r.buildingLabel ?? r.building ?? '').trim();
+    const floorId = String(r.floor ?? r.floorId ?? '').trim();
+    const roomLabel = String(r.roomNumber ?? r.roomLabel ?? r.name ?? '').trim();
+    const idCandidate = String(r.roomId ?? r.revitId ?? r.id ?? '').trim();
+    const fallbackId = [buildingLabel, floorId, roomLabel].filter(Boolean).join('|') || `room-${idx}`;
+    const id = idCandidate || fallbackId;
+    return {
+      id,
+      revitId: r.revitId ?? null,
+      roomId: idCandidate || fallbackId,
+      buildingLabel,
+      floorId,
+      roomLabel,
+      type: String(r.type ?? r.roomType ?? '').trim(),
+      sf: Number(r.sf ?? r.areaSF ?? r.area ?? 0) || 0,
+      department: String(r.department ?? '').trim(),
+      occupant: String(r.occupant ?? '').trim(),
+      vacancy: String(r.vacancy ?? (r.occupant ? 'Occupied' : 'Unknown')).trim()
+    };
+  });
+  return trimmed.filter((x) => x.id);
+}
+
+function buildInventoryFromFeatures(features, buildingLabel = '', floorId = '', limit = 1200) {
+  if (!Array.isArray(features)) return null;
+  return features.slice(0, limit).map((f, idx) => {
+    const p = f?.properties || {};
+    const idCandidate = f?.id ?? p.RevitId ?? p.id ?? p.roomId ?? p.RoomId;
+    const roomLabel = String(
+      p.roomNumber ?? p.RoomNumber ?? p.Number ?? p.Room ?? p.Name ?? ''
+    ).trim();
+    const type = String(
+      p.RoomType ?? p.Type ?? p.type ?? p.Name ?? p.SpaceType ?? p.Use ?? ''
+    ).trim();
+    const dept = String(p.department ?? p.Department ?? p.Dept ?? '').trim();
+    const occupant = String(p.occupant ?? p.Occupant ?? '').trim();
+    const resolvedArea = resolvePatchedArea(p);
+    const sf = Number.isFinite(resolvedArea)
+      ? resolvedArea
+      : Number(p.sf ?? p.SF ?? p.AreaSF ?? p.Area ?? p.area ?? 0) || 0;
+    const fallbackId = [buildingLabel, floorId || p.Floor, roomLabel || idx].filter(Boolean).join('|') || `feat-${idx}`;
+    const id = String(idCandidate ?? '').trim() || fallbackId;
+    return {
+      id,
+      revitId: p.RevitId ?? idCandidate ?? null,
+      roomId: id,
+      buildingLabel: buildingLabel || String(p.buildingLabel ?? p.Building ?? p.building ?? '').trim(),
+      floorId: floorId || String(p.floorId ?? p.floor ?? p.Floor ?? '').trim(),
+      roomLabel,
+      type,
+      sf,
+      department: dept,
+      occupant,
+      vacancy: occupant ? 'Occupied' : 'Unknown'
+    };
+  }).filter((x) => x.id);
+}
+
+const computeDeptTotalsAcrossCampus = async (deptName, opts) => {
+  const { ensureFloorsForBuilding, buildFloorUrl, floorCache, fetchGeoJSON } = opts || {};
+  const dept = (deptName || '').trim();
+  if (!dept) return null;
+  const deptLower = dept.toLowerCase();
+
+  const totals = { totalSF: 0, rooms: 0, roomTypes: {}, sfByRoomType: {} };
+
+  for (const b of BUILDINGS_LIST) {
+    const buildingName = b?.name;
+    if (!buildingName) continue;
+    let floors = await ensureFloorsForBuilding(buildingName);
+    if (!floors?.length) continue;
+
+    for (const fl of floors) {
+      const url = buildFloorUrl(buildingName, fl);
+      if (!url) continue;
+
+      let data = floorCache.get(url);
+      if (!data) {
+        try {
+          data = await fetchGeoJSON(url);
+          if (data) floorCache.set(url, data);
+        } catch {
+          continue;
+        }
+      }
+      const fc = toFeatureCollection(data);
+      const partial = computeDeptTotalsFromFeatures(fc?.features || [], deptLower);
+      if (!partial) continue;
+
+      totals.totalSF += partial.totalSF || 0;
+      totals.rooms += partial.rooms || 0;
+      Object.entries(partial.roomTypes || {}).forEach(([type, count]) => {
+        totals.roomTypes[type] = (totals.roomTypes[type] || 0) + count;
+      });
+      Object.entries(partial.sfByRoomType || {}).forEach(([type, sf]) => {
+        totals.sfByRoomType[type] = (totals.sfByRoomType[type] || 0) + sf;
+      });
+    }
+  }
+
+  if (!totals.rooms && !totals.totalSF) return null;
+  return totals;
+};
+
+const computeDeptTotalsByBuildingAcrossCampus = async (deptName, opts) => {
+  const { ensureFloorsForBuilding, buildFloorUrl, floorCache, fetchGeoJSON } = opts || {};
+  const dept = (deptName || '').trim();
+  if (!dept) return { perBuilding: {}, campusTotals: null };
+  const deptLower = dept.toLowerCase();
+
+  const perBuilding = {};
+  const campusTotals = { totalSF: 0, rooms: 0, roomTypes: {}, sfByRoomType: {} };
+
+  for (const b of BUILDINGS_LIST) {
+    const buildingName = b?.name;
+    if (!buildingName) continue;
+    let floors = await ensureFloorsForBuilding(buildingName);
+    if (!floors?.length) continue;
+
+    const buildingTotals = { totalSF: 0, rooms: 0, roomTypes: {}, sfByRoomType: {} };
+
+    for (const fl of floors) {
+      const url = buildFloorUrl(buildingName, fl);
+      if (!url) continue;
+
+      let data = floorCache.get(url);
+      if (!data) {
+        try {
+          data = await fetchGeoJSON(url);
+          if (data) floorCache.set(url, data);
+        } catch {
+          continue;
+        }
+      }
+      const fc = toFeatureCollection(data);
+      const partial = computeDeptTotalsFromFeatures(fc?.features || [], deptLower);
+      if (!partial) continue;
+
+      buildingTotals.totalSF += partial.totalSF || 0;
+      buildingTotals.rooms += partial.rooms || 0;
+      Object.entries(partial.roomTypes || {}).forEach(([type, count]) => {
+        buildingTotals.roomTypes[type] = (buildingTotals.roomTypes[type] || 0) + count;
+      });
+      Object.entries(partial.sfByRoomType || {}).forEach(([type, sf]) => {
+        buildingTotals.sfByRoomType[type] = (buildingTotals.sfByRoomType[type] || 0) + sf;
+      });
+    }
+
+    if (buildingTotals.rooms || buildingTotals.totalSF) {
+      perBuilding[buildingName] = buildingTotals;
+      campusTotals.totalSF += buildingTotals.totalSF;
+      campusTotals.rooms += buildingTotals.rooms;
+      Object.entries(buildingTotals.roomTypes || {}).forEach(([type, count]) => {
+        campusTotals.roomTypes[type] = (campusTotals.roomTypes[type] || 0) + count;
+      });
+      Object.entries(buildingTotals.sfByRoomType || {}).forEach(([type, sf]) => {
+        campusTotals.sfByRoomType[type] = (campusTotals.sfByRoomType[type] || 0) + sf;
+      });
+    }
+  }
+
+  if (!campusTotals.rooms && !campusTotals.totalSF) return { perBuilding: {}, campusTotals: null };
+  return { perBuilding, campusTotals };
+};
 
 function formatSummaryForPanel(summary, mode) {
   if (!summary) {
@@ -986,6 +2197,11 @@ function formatSummaryForPanel(summary, mode) {
       totalSf: '-',
       classroomSf: '-',
       rooms: '-',
+      classroomCount: '-',
+      labSf: '-',
+      officeSf: '-',
+      labCount: '-',
+      officeCount: '-',
       deptCount: '-',
       keyDepts: []
     };
@@ -999,8 +2215,12 @@ function formatSummaryForPanel(summary, mode) {
     mode,
     totalSf: fmt(summary.totalSf),
     classroomSf: fmt(summary.classroomSf),
+    labSf: fmt(summary.labSf),
+    officeSf: fmt(summary.officeSf),
     rooms: fmtCount(summary.rooms),
     classroomCount: fmtCount(summary.classroomCount),
+    labCount: fmtCount(summary.labCount),
+    officeCount: fmtCount(summary.officeCount),
     deptCount: deptCount ? deptCount.toString() : '-',
     keyDepts: summary.keyDepts || []
   };
@@ -1039,8 +2259,17 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
 
     if (!building) return roomsFC;
 
-    const cRooms = turf.centroid(roomsFC);
+    let cRooms = turf.centroid(roomsFC);
     const cBldg = turf.centroid(building);
+
+    const rotationDelta = getOrientationDeltaDeg(roomsFC, building);
+    if (Number.isFinite(rotationDelta) && Math.abs(rotationDelta) > 1.5) {
+      const rotated = turf.transformRotate(roomsFC, rotationDelta, { pivot: cRooms });
+      if (rotated?.features?.length) {
+        roomsFC = rotated;
+        cRooms = turf.centroid(roomsFC);
+      }
+    }
 
     const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(roomsFC);
     const [bxMin, byMin, bxMax, byMax] = turf.bbox(building);
@@ -1092,23 +2321,262 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
       }
     }
 
-    return fitted;
+    const buildingPivot = cBldg?.geometry?.coordinates || buildingCenter;
+    const refined = refineRotationToBuilding(fitted, building, buildingPivot, {
+      maxDeg: 6,
+      stepDeg: 0.4,
+      fineStep: 0.1,
+      fineWindow: 1.5,
+      hullLimit: 1200
+    });
+
+    if (refined && typeof refined === 'object') {
+      refined.__mfFitted = true;
+      refined.__mfFittedBuilding = building?.properties?.id || building?.properties?.name || '';
+    }
+    return refined;
   } catch {
     return roomsFC;
   }
 }
 
 // Extract all [lng, lat] pairs from any geometry (handles deep nesting)
-function extractLngLatPairs(geom) {
+function extractLngLatPairs(geom, limit = Infinity) {
   const out = [];
   function collect(c) {
-    if (!c) return;
-    if (typeof c[0] === 'number') out.push([c[0], c[1]]);
-    else c.forEach(collect);
+    if (!c || out.length >= limit) return;
+    if (typeof c[0] === 'number') {
+      out.push([c[0], c[1]]);
+      return;
+    }
+    for (const child of c) {
+      if (out.length >= limit) break;
+      collect(child);
+    }
   }
   if (geom?.type === 'GeometryCollection') (geom.geometries || []).forEach((g) => collect(g.coordinates));
   else collect(geom?.coordinates);
   return out;
+}
+
+function orientationFromPoints(points) {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  let meanX = 0;
+  let meanY = 0;
+  points.forEach(([x, y]) => {
+    meanX += x;
+    meanY += y;
+  });
+  meanX /= points.length;
+  meanY /= points.length;
+  let xx = 0;
+  let yy = 0;
+  let xy = 0;
+  points.forEach(([x, y]) => {
+    const dx = x - meanX;
+    const dy = y - meanY;
+    xx += dx * dx;
+    yy += dy * dy;
+    xy += dx * dy;
+  });
+  if (!Number.isFinite(xx) || !Number.isFinite(yy) || !Number.isFinite(xy)) return 0;
+  const angle = 0.5 * Math.atan2(2 * xy, xx - yy);
+  return (angle * 180) / Math.PI;
+}
+
+function isPositionArray(node) {
+  return Array.isArray(node) && node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number';
+}
+
+function collectRings(node, rings) {
+  if (!Array.isArray(node)) return;
+  if (node.length && isPositionArray(node[0])) {
+    rings.push(node);
+    return;
+  }
+  node.forEach((child) => collectRings(child, rings));
+}
+
+function getDominantEdgeAngleDeg(geom) {
+  if (!geom?.coordinates) return null;
+  const rings = [];
+  collectRings(geom.coordinates, rings);
+  let bestLen = 0;
+  let bestAngle = null;
+  const samePoint = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+  rings.forEach((ring) => {
+    if (!Array.isArray(ring) || ring.length < 2) return;
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const a = ring[i];
+      const b = ring[i + 1];
+      if (!isPositionArray(a) || !isPositionArray(b)) continue;
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len > bestLen) {
+        bestLen = len;
+        bestAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      }
+    }
+    const last = ring[ring.length - 1];
+    const first = ring[0];
+    if (isPositionArray(last) && isPositionArray(first) && !samePoint(last, first)) {
+      const dx = first[0] - last[0];
+      const dy = first[1] - last[1];
+      const len = Math.hypot(dx, dy);
+      if (len > bestLen) {
+        bestLen = len;
+        bestAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      }
+    }
+  });
+  return bestAngle;
+}
+
+function getEdgeWeightedOrientationDeg(geom) {
+  if (!geom?.coordinates) return null;
+  const rings = [];
+  collectRings(geom.coordinates, rings);
+  let sumSin = 0;
+  let sumCos = 0;
+  let total = 0;
+  rings.forEach((ring) => {
+    if (!Array.isArray(ring) || ring.length < 2) return;
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const a = ring[i];
+      const b = ring[i + 1];
+      if (!isPositionArray(a) || !isPositionArray(b)) continue;
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len <= 0) continue;
+      const angle = Math.atan2(dy, dx);
+      sumCos += len * Math.cos(2 * angle);
+      sumSin += len * Math.sin(2 * angle);
+      total += len;
+    }
+  });
+  if (total <= 0) return null;
+  const angle = 0.5 * Math.atan2(sumSin, sumCos);
+  return (angle * 180) / Math.PI;
+}
+
+function normalizeAngleDelta(deg) {
+  let a = ((deg + 180) % 360) - 180;
+  if (a > 90) a -= 180;
+  if (a < -90) a += 180;
+  return a;
+}
+
+function getFeatureOrientationDeg(feature, limit = 2000) {
+  if (!feature?.geometry) return 0;
+  const pts = extractLngLatPairs(feature.geometry, limit);
+  return orientationFromPoints(pts);
+}
+
+function getFeatureCollectionOrientationDeg(fc, limit = 4000) {
+  if (!fc?.features?.length) return 0;
+  const pts = [];
+  for (const f of fc.features) {
+    if (pts.length >= limit) break;
+    const next = extractLngLatPairs(f.geometry, limit - pts.length);
+    if (next?.length) pts.push(...next);
+  }
+  return orientationFromPoints(pts);
+}
+
+function buildHullFeature(fc, limit = 3000) {
+  if (!fc?.features?.length) return null;
+  const pts = [];
+  for (const f of fc.features) {
+    if (pts.length >= limit) break;
+    const next = extractLngLatPairs(f.geometry, limit - pts.length);
+    if (next?.length) pts.push(...next);
+  }
+  if (pts.length < 3) return null;
+  const ptFeatures = pts.map((c) => turf.point(c));
+  const hull = turf.convex(turf.featureCollection(ptFeatures));
+  return hull || null;
+}
+
+function getOrientationDeltaDeg(roomsFC, buildingFeature) {
+  const hull = buildHullFeature(roomsFC);
+  const roomsDominant = getDominantEdgeAngleDeg(hull?.geometry);
+  const buildingDominant = getDominantEdgeAngleDeg(buildingFeature?.geometry);
+  const roomsPca = getFeatureCollectionOrientationDeg(roomsFC);
+  const buildingPca = getFeatureOrientationDeg(buildingFeature);
+  const roomsWeighted = getEdgeWeightedOrientationDeg(hull?.geometry);
+  const buildingWeighted = getEdgeWeightedOrientationDeg(buildingFeature?.geometry);
+
+  const candidates = [];
+  if (Number.isFinite(roomsDominant) && Number.isFinite(buildingDominant)) {
+    candidates.push(normalizeAngleDelta(buildingDominant - roomsDominant));
+  }
+  if (Number.isFinite(roomsPca) && Number.isFinite(buildingPca)) {
+    candidates.push(normalizeAngleDelta(buildingPca - roomsPca));
+  }
+  if (Number.isFinite(roomsWeighted) && Number.isFinite(buildingWeighted)) {
+    candidates.push(normalizeAngleDelta(buildingWeighted - roomsWeighted));
+  }
+
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0];
+  candidates.sort((a, b) => a - b);
+  return candidates[Math.floor(candidates.length / 2)];
+}
+
+function overlapScore(hull, buildingFeature) {
+  try {
+    const inter = turf.intersect(turf.featureCollection([hull, buildingFeature]));
+    if (!inter) return 0;
+    const interArea = turf.area(inter);
+    const hullArea = turf.area(hull);
+    if (!Number.isFinite(interArea) || !Number.isFinite(hullArea) || hullArea <= 0) return 0;
+    return interArea / hullArea;
+  } catch {
+    return 0;
+  }
+}
+
+function refineRotationToBuilding(roomsFC, buildingFeature, pivot, options = {}) {
+  if (!roomsFC || !buildingFeature || !pivot) return roomsFC;
+  const maxDeg = Number.isFinite(options.maxDeg) ? options.maxDeg : 5;
+  const stepDeg = Number.isFinite(options.stepDeg) ? options.stepDeg : 0.5;
+  const fineStep = Number.isFinite(options.fineStep) ? options.fineStep : 0.1;
+  const fineWindow = Number.isFinite(options.fineWindow) ? options.fineWindow : 1.2;
+  const hull = buildHullFeature(roomsFC, options.hullLimit || 1200);
+  if (!hull) return roomsFC;
+  const baseScore = overlapScore(hull, buildingFeature);
+  let bestAngle = 0;
+  let bestScore = baseScore;
+
+  for (let angle = -maxDeg; angle <= maxDeg; angle += stepDeg) {
+    if (Math.abs(angle) < 1e-6) continue;
+    const rotatedHull = turf.transformRotate(hull, angle, { pivot });
+    const score = overlapScore(rotatedHull, buildingFeature);
+    if (score > bestScore + 1e-4) {
+      bestScore = score;
+      bestAngle = angle;
+    }
+  }
+
+  if (fineStep > 0 && fineWindow > 0) {
+    const start = bestAngle - fineWindow;
+    const end = bestAngle + fineWindow;
+    for (let angle = start; angle <= end; angle += fineStep) {
+      if (Math.abs(angle) < 1e-6) continue;
+      const rotatedHull = turf.transformRotate(hull, angle, { pivot });
+      const score = overlapScore(rotatedHull, buildingFeature);
+      if (score > bestScore + 1e-4) {
+        bestScore = score;
+        bestAngle = angle;
+      }
+    }
+  }
+
+  if (Math.abs(bestAngle) < 1e-3) return roomsFC;
+  const rotated = turf.transformRotate(roomsFC, bestAngle, { pivot });
+  return rotated?.features?.length ? rotated : roomsFC;
 }
 
 // Compute bbox [minX, minY, maxX, maxY] from a FeatureCollection using extractLngLatPairs
@@ -1125,6 +2593,41 @@ function bboxFromFC(fc) {
   return [minX, minY, maxX, maxY];
 }
 
+function shouldFitFloorplanToBuilding(roomsFC, buildingFeature) {
+  try {
+    if (roomsFC?.__mfFitted) return false;
+    if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
+    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(roomsFC);
+    const [bxMin, byMin, bxMax, byMax] = turf.bbox(buildingFeature);
+    if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) return false;
+
+    const rW = Math.max(1e-9, rxMax - rxMin);
+    const rH = Math.max(1e-9, ryMax - ryMin);
+    const bW = Math.max(1e-9, bxMax - bxMin);
+    const bH = Math.max(1e-9, byMax - byMin);
+    const scale = Math.min(bW / rW, bH / rH);
+    const scaleMismatch = scale < 0.75 || scale > 1.35;
+
+    const roomsCenter = turf.centroid(roomsFC);
+    const buildingCenter = turf.centroid(buildingFeature);
+    const distKm = turf.distance(roomsCenter, buildingCenter, { units: 'kilometers' });
+    const farApart = Number.isFinite(distKm) && distKm > 0.06;
+
+    const noOverlap =
+      rxMax < bxMin ||
+      rxMin > bxMax ||
+      ryMax < byMin ||
+      ryMin > byMax;
+
+    const rotationDelta = getOrientationDeltaDeg(roomsFC, buildingFeature);
+    const needsRotation = Number.isFinite(rotationDelta) && Math.abs(rotationDelta) > 1.5;
+
+    return scaleMismatch || farApart || noOverlap || needsRotation;
+  } catch {
+    return false;
+  }
+}
+
 // --- Floorplan config (file-based, no manifest, no affine) ---
 const BUILDINGS_LIST = [
   // name shown in dropdown            folder name under /floorplans/Hastings
@@ -1138,7 +2641,7 @@ const BUILDINGS_LIST = [
   { name: 'Batchelder Services Bldg', folder: 'Batchelder' },
   { name: 'Bronc Hall', folder: 'Bronc Hall' },
   { name: 'Calvin H. French Chapel', folder: 'Calvin French Chapel' },
-  { name: 'Dougherty Center', folder: 'Dougherty' },
+  { name: 'Daugherty Student Engagement Center', folder: 'Daugherty' },
   { name: 'Farrell-Fleharty', folder: 'Fleharty' },
   { name: 'Hazzelrig Student Union', folder: 'Hazzelrig' },
   { name: 'Jackson Dinsdale Art Center', folder: 'Jackson Dinsdale' },
@@ -1188,8 +2691,16 @@ function unloadFloorplan(map, currentFloorUrlRef) {
     if (map.getLayer(FLOOR_HL_BORDER_ID)) map.removeLayer(FLOOR_HL_BORDER_ID);
     if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) map.removeLayer(FLOOR_ROOM_LABEL_LAYER);
     if (map.getLayer(FLOOR_LINE_ID)) map.removeLayer(FLOOR_LINE_ID);
+    if (map.getLayer(FLOOR_DOOR_LAYER)) map.removeLayer(FLOOR_DOOR_LAYER);
+    if (map.getLayer(FLOOR_STAIR_LAYER)) map.removeLayer(FLOOR_STAIR_LAYER);
     if (map.getLayer(FLOOR_FILL_ID)) map.removeLayer(FLOOR_FILL_ID);
     if (map.getSource(FLOOR_SOURCE)) map.removeSource(FLOOR_SOURCE);
+  if (map.getLayer(WALLS_LAYER)) map.removeLayer(WALLS_LAYER);
+  if (map.getSource(WALLS_SOURCE)) map.removeSource(WALLS_SOURCE);
+  if (map.getLayer(DOORS_LAYER)) map.removeLayer(DOORS_LAYER);
+  if (map.getSource(DOORS_SOURCE)) map.removeSource(DOORS_SOURCE);
+  if (map.getLayer(STAIRS_LAYER)) map.removeLayer(STAIRS_LAYER);
+  if (map.getSource(STAIRS_SOURCE)) map.removeSource(STAIRS_SOURCE);
   } catch {}
   if (currentFloorUrlRef) currentFloorUrlRef.current = null;
 }
@@ -1212,47 +2723,66 @@ function centerOnCurrentFloor(map) {
 
 function ensureFloorRoomLabelLayer(map) {
   if (!map) return;
+  const scenarioDeptField = [
+    'coalesce',
+    ['get', 'scenarioDepartment'],
+    ['get', 'department'],
+    ['get', 'Department'],
+    ['literal', '-']
+  ];
+  const typeField = [
+    'coalesce',
+    ['get', 'RoomType'],
+    ['get', 'Type'],
+    ['get', 'type'],
+    ['get', 'Name'],
+    ['literal', '-']
+  ];
+  const textField = [
+    'concat',
+    ['coalesce', ['get', 'Number'], ['get', 'RoomNumber'], ['get', 'name'], ['literal', '-']],
+    '\n',
+    typeField,
+    '\n',
+    scenarioDeptField,
+    '\n',
+    ['concat', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ' SF']
+  ];
+  const textSizeExpr = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    14, 0,
+    15, 0,
+    16, 3,
+    17, 5,
+    18, 7,
+    19, 10
+  ];
   if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) {
+    try {
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-field', textField);
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-size', textSizeExpr);
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'symbol-placement', 'point');
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-allow-overlap', false);
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-ignore-placement', false);
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-max-width', 6);
+      map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'visibility', 'visible');
+    } catch {}
     bringFloorRoomLabelsToFront(map);
     return;
   }
   try {
-    const scenarioDeptField = [
-      'coalesce',
-      ['get', 'scenarioDepartment'],
-      ['get', 'department'],
-      ['get', 'Department'],
-      ['literal', '-']
-    ];
     map.addLayer(
       {
         id: FLOOR_ROOM_LABEL_LAYER,
         type: 'symbol',
         source: FLOOR_SOURCE,
         layout: {
-          'text-field': [
-            'format',
-            ['coalesce', ['get', 'Number'], ['get', 'RoomNumber'], ['get', 'name'], ['literal', '-']],
-            '\n',
-            ['coalesce', ['get', 'RoomType'], ['get', 'Type'], ['get', 'type'], ['get', 'Name'], ['literal', '-']],
-            '\n',
-            scenarioDeptField,
-            '\n',
-            ['concat', ['coalesce', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ['literal', '0']], ' SF']
-          ],
+          'text-field': textField,
           'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          14, 0,
-          15, 0,
-          16, 0,
-          17, 0,
-          18, 0,
-          19, 9,
-        ],
-            'text-line-height': 1.0,
+          'text-size': textSizeExpr,
+          'text-line-height': 1.0,
           'text-variable-anchor': ['center'],
           'text-radial-offset': 0,
           'text-anchor': 'center',
@@ -1260,7 +2790,8 @@ function ensureFloorRoomLabelLayer(map) {
           'symbol-placement': 'point',
           'text-allow-overlap': false,
           'text-ignore-placement': false,
-          'text-max-width': 5
+          'text-max-width': 6,
+          'visibility': 'visible'
       },
       paint: {
         'text-color': '#0b0b0b',
@@ -1331,6 +2862,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [buildingAssessments, setBuildingAssessments] = useState({});
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [selectedBuilding, setSelectedBuilding] = useState(BUILDINGS_LIST[0]?.name || '');
+  const universityName = config?.universityName || config?.name || '';
+  const activeUniversityName = universityName || universityId || 'Campus';
   // ---- Map view modes ----
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
@@ -1345,19 +2878,79 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   ];
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
-  const [isBuildingPanelCollapsed, setIsBuildingPanelCollapsed] = useState(false);
+  useEffect(() => {
+    const target = mapContainerRef.current;
+    if (!target) return () => {};
+    const scrub = () => {
+      const buttons = target.querySelectorAll('.mapboxgl-popup-close-button[aria-hidden="true"]');
+      buttons.forEach((btn) => btn.removeAttribute('aria-hidden'));
+    };
+    scrub();
+    const observer = new MutationObserver(scrub);
+    observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-hidden'] });
+    return () => observer.disconnect();
+  }, []);
+  const [isBuildingPanelCollapsed, setIsBuildingPanelCollapsed] = useState(true);
 
-  const baseTypeOptions = useMemo(() => Array.from(new Set(ROOM_TYPES)).sort(), []);
+  const baseTypeOptions = useMemo(() => buildTypeOptionList(ROOM_TYPES), []);
   const baseDeptOptions = useMemo(() => Array.from(new Set([...Object.keys(DEPT_COLORS), ...DEPARTMENTS])).sort(), []);
 
   // ===== STATS STATE + REFS =====
   const [buildingStats, setBuildingStats] = useState(null); // { totalSf, rooms, classroomSf, classroomCount, totalsByDept }
   const [floorStats, setFloorStats] = useState(null);       // same shape for current floor
+  const [campusStats, setCampusStats] = useState(null);
+  const [campusPanelStats, setCampusPanelStats] = useState(null);
   const [popupMode, setPopupMode] = useState('building');
   const [panelStats, setPanelStats] = useState(null); // legacy stats for existing UI panels
   const [floorStatsByBuilding, setFloorStatsByBuilding] = useState({});
+  const [floorLegendItems, setFloorLegendItems] = useState([]);
+  const [floorLegendLookup, setFloorLegendLookup] = useState(new Map());
+  const [floorLegendSelection, setFloorLegendSelection] = useState(null);
+  const floorHighlightIdsRef = useRef([]);
   const [typeOptions, setTypeOptions] = useState(baseTypeOptions);
   const [deptOptions, setDeptOptions] = useState(baseDeptOptions);
+  const [roomEditIncluded, setRoomEditIncluded] = useState(new Set());
+  const [exportBuildingFilter, setExportBuildingFilter] = useState('__all__');
+  const [exportDeptFilter, setExportDeptFilter] = useState('');
+  const [exportSpaceMode, setExportSpaceMode] = useState('rooms');
+  const [exportingSpaceData, setExportingSpaceData] = useState(false);
+  const [exportSpaceMessage, setExportSpaceMessage] = useState('');
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiErr, setAiErr] = useState('');
+  const [aiResult, setAiResult] = useState(null);
+  const [aiBuildingOpen, setAiBuildingOpen] = useState(false);
+  const [aiBuildingLoading, setAiBuildingLoading] = useState(false);
+  const [aiBuildingErr, setAiBuildingErr] = useState('');
+  const [aiBuildingResult, setAiBuildingResult] = useState(null);
+  const [aiCampusOpen, setAiCampusOpen] = useState(false);
+  const [aiCampusLoading, setAiCampusLoading] = useState(false);
+  const [aiCampusErr, setAiCampusErr] = useState('');
+  const [aiCampusResult, setAiCampusResult] = useState(null);
+  const [aiScenarioOpen, setAiScenarioOpen] = useState(false);
+  const [aiScenarioLoading, setAiScenarioLoading] = useState(false);
+  const [aiScenarioErr, setAiScenarioErr] = useState('');
+  const [aiScenarioResult, setAiScenarioResult] = useState(null);
+  const [aiCreateScenarioOpen, setAiCreateScenarioOpen] = useState(false);
+  const [aiCreateScenarioText, setAiCreateScenarioText] = useState('');
+  const [aiCreateScenarioLoading, setAiCreateScenarioLoading] = useState(false);
+  const [aiCreateScenarioErr, setAiCreateScenarioErr] = useState('');
+  const [aiCreateScenarioResult, setAiCreateScenarioResult] = useState(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askText, setAskText] = useState('');
+  const [askLoading, setAskLoading] = useState(false);
+  const [askErr, setAskErr] = useState('');
+  const [askResult, setAskResult] = useState(null);
+  const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
+  const [aiInfoOpen, setAiInfoOpen] = useState(false);
+  const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
+  const FLOOR_COLOR_MODES = useMemo(() => ({
+    DEPARTMENT: 'department',
+    TYPE: 'type',
+    OCCUPANCY: 'occupancy',
+    VACANCY: 'vacancy'
+  }), []);
+  const [floorColorMode, setFloorColorMode] = useState('department');
   const mergeOptionsList = (prev, next) => {
     const seen = new Set(prev);
     (next || []).forEach((item) => {
@@ -1366,13 +2959,223 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     return Array.from(seen).sort();
   };
 
+  const setFloorHighlight = useCallback((idOrIds) => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(FLOOR_HL_ID)) return;
+    const ids = Array.isArray(idOrIds)
+      ? idOrIds.filter((v) => v != null)
+      : (idOrIds != null ? [idOrIds] : []);
+    floorHighlightIdsRef.current = ids;
+    const filter = ids.length
+      ? ['any',
+          ['in', ['id'], ['literal', ids]],
+          ['in', ['get', 'RevitId'], ['literal', ids]]
+        ]
+      : ['==', ['id'], ''];
+    try {
+      map.setFilter(FLOOR_HL_ID, filter);
+      if (map.getLayer(FLOOR_HL_BORDER_ID)) {
+        map.setFilter(FLOOR_HL_BORDER_ID, filter);
+      }
+    } catch {}
+  }, []);
+
   const [roomPatches, setRoomPatches] = useState(new Map());
   const [roomEditOpen, setRoomEditOpen] = useState(false);
   const [roomEditData, setRoomEditData] = useState(null);
+  const [roomEditSelection, setRoomEditSelection] = useState([]);
+  const roomEditSelectionRef = useRef([]);
+  const getHighlightIdsForSelection = useCallback((selection = []) => {
+    return (selection || [])
+      .map((t) => t?.highlightId ?? t?.revitId ?? t?.roomId ?? null)
+      .filter((v) => v != null);
+  }, []);
+  const applySelectionHighlight = useCallback((selection = []) => {
+    const ids = getHighlightIdsForSelection(selection);
+    setFloorHighlight(ids.length ? ids : null);
+  }, [getHighlightIdsForSelection, setFloorHighlight]);
+  const clearRoomEditSelection = useCallback(() => {
+    roomEditSelectionRef.current = [];
+    setRoomEditSelection([]);
+    applySelectionHighlight([]);
+  }, [applySelectionHighlight]);
+
+  const buildLegendForMode = useCallback((mode) => {
+    const map = mapRef.current;
+    const src = map?.getSource(FLOOR_SOURCE);
+    if (!src) return;
+    const data = src._data || src.serialize?.()?.data || null;
+    const fc = toFeatureCollection(data);
+    if (!fc?.features?.length) return;
+    const sums = new Map();
+    const idsByKey = new Map();
+
+    const normalizeId = (val) => {
+      if (Number.isFinite(val)) return val;
+      const asNum = Number(val);
+      return Number.isFinite(asNum) ? asNum : String(val);
+    };
+
+    fc.features.forEach((f) => {
+      const p = f.properties || {};
+      const areaVal = resolvePatchedArea(p);
+      if (!Number.isFinite(areaVal) || areaVal <= 0) return;
+      let key = '';
+      let color = '#e6e6e6';
+      if (mode === FLOOR_COLOR_MODES.TYPE) {
+        key = p.RoomType || p.Type || p.type || p.Name || 'Unspecified';
+        color = colorForType(key);
+      } else if (mode === FLOOR_COLOR_MODES.OCCUPANCY) {
+        const occ = (p.occupant ?? p.Occupant ?? '').toString().trim();
+        key = occ ? 'Occupied' : 'Unoccupied';
+        color = occ ? '#29b6f6' : '#cfd8dc';
+      } else if (mode === FLOOR_COLOR_MODES.VACANCY) {
+        const occ = (p.occupant ?? p.Occupant ?? '').toString().trim();
+        key = occ ? 'Occupied' : 'Vacant';
+        color = occ ? '#29b6f6' : '#ff7043';
+      } else {
+        key = getDeptFromProps(p) || 'Unspecified';
+        color = getDeptColor(key) || '#e6e6e6';
+      }
+      const prev = sums.get(key) || { name: key, areaSf: 0, color };
+      prev.areaSf += areaVal;
+      prev.color = color;
+      sums.set(key, prev);
+      const fid = normalizeId(f.id ?? p.RevitId ?? p.id);
+      if (fid != null) {
+        const list = idsByKey.get(key) || [];
+        list.push(fid);
+        idsByKey.set(key, list);
+      }
+    });
+
+    const items = Array.from(sums.values()).map((item) => ({
+      ...item,
+      ids: idsByKey.get(item.name) || []
+    })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+    setFloorLegendItems(items);
+    setFloorLegendLookup(new Map(items.map((item) => [item.name, item.ids || []])));
+  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY]);
+
+  const applyFloorColorMode = useCallback((mode) => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+    const src = map.getSource(FLOOR_SOURCE);
+    const data = src ? (src._data || src.serialize?.().data || null) : null;
+    const fc = toFeatureCollection(data);
+
+    if (mode === FLOOR_COLOR_MODES.TYPE && fc?.features?.length) {
+      const typeColorMap = new Map();
+      const areaSums = new Map();
+      const idsByType = new Map();
+      const normalizeId = (val) => {
+        if (Number.isFinite(val)) return val;
+        const asNum = Number(val);
+        return Number.isFinite(asNum) ? asNum : (val != null ? String(val) : null);
+      };
+      fc.features.forEach((f) => {
+        const p = f.properties || {};
+        const typeVal = p.RoomType || p.Type || p.type || p.Name || 'Unspecified';
+        const color = colorForType(typeVal);
+        typeColorMap.set(typeVal, color);
+        const areaVal = resolvePatchedArea(p);
+        if (Number.isFinite(areaVal) && areaVal > 0) {
+          const prev = areaSums.get(typeVal) || 0;
+          areaSums.set(typeVal, prev + areaVal);
+        }
+        const fid = normalizeId(f.id ?? p.RevitId ?? p.id);
+        if (fid != null) {
+          const list = idsByType.get(typeVal) || [];
+          list.push(fid);
+          idsByType.set(typeVal, list);
+        }
+      });
+      const pairs = [];
+      typeColorMap.forEach((color, typeVal) => {
+        pairs.push(typeVal, color);
+      });
+      const typeExpr = [
+        'match',
+        ['coalesce', ['get', 'RoomType'], ['get', 'Type'], ['get', 'type'], ['get', 'Name']],
+        ...pairs,
+        '#e6e6e6'
+      ];
+      try {
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', typeExpr);
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        const legend = Array.from(typeColorMap.entries()).map(([name, color]) => ({
+          name,
+          color,
+          areaSf: areaSums.get(name) || 0,
+          ids: idsByType.get(name) || []
+        })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+        setFloorLegendItems(legend);
+        setFloorLegendLookup(new Map(legend.map((item) => [item.name, item.ids || []])));
+        return;
+      } catch {}
+    }
+
+    applyFloorFillExpression(map, mode);
+    buildLegendForMode(mode);
+    setFloorColorMode(mode);
+  }, [FLOOR_COLOR_MODES.TYPE, applyFloorFillExpression, buildLegendForMode]);
+  useEffect(() => {
+    roomEditSelectionRef.current = roomEditSelection;
+  }, [roomEditSelection]);
   const closeRoomEdit = useCallback(() => {
     setRoomEditOpen(false);
     setRoomEditData(null);
-  }, []);
+    clearRoomEditSelection();
+    setFloorHighlight(null);
+    setRoomEditIncluded(new Set());
+  }, [clearRoomEditSelection, setFloorHighlight]);
+  const roomEditTargets = roomEditData?.targets?.length
+    ? roomEditData.targets
+    : roomEditData
+      ? [roomEditData]
+      : [];
+  const primaryRoomEditTarget = roomEditTargets[0] || null;
+  const roomEditFeatureProps = primaryRoomEditTarget?.feature?.properties || {};
+  const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
+  const editHasOffice = roomEditTargets.some((t) => {
+    const merged = { ...(t?.feature?.properties || {}), ...(t?.properties || {}), ...(roomEditData?.properties || {}) };
+    const cat = getRoomCategoryCode(merged);
+    const flags = detectRoomTypeFlags(merged);
+    return (isOfficeCategory(cat) || flags.isOfficeText || t?.flags?.isOffice);
+  });
+  const editHasTeaching = roomEditTargets.some((t) => {
+    const merged = { ...(t?.feature?.properties || {}), ...(t?.properties || {}), ...(roomEditData?.properties || {}) };
+    const cat = getRoomCategoryCode(merged);
+    const flags = detectRoomTypeFlags(merged);
+    return (isTeachingCategory(cat) || flags.isTeachingText || t?.flags?.isTeaching);
+  });
+  const editSeatCounts = roomEditTargets
+    .map((t) => getSeatCount({ ...(t?.feature?.properties || {}), ...(t?.properties || {}) }))
+    .filter((n) => Number.isFinite(n));
+  const editSeatCountDisplay = editSeatCounts.length
+    ? (editSeatCounts.every((n) => n === editSeatCounts[0]) ? editSeatCounts[0].toLocaleString() : 'varies')
+    : '-';
+  const ncesCategoryCode = pickFirstDefined(roomEditMergedProps, [
+    'NCES_Category',
+    'NCES Category',
+    'NCES_Category_Code',
+    'NCES Category Code'
+  ]);
+  const ncesTypeCode = pickFirstDefined(roomEditMergedProps, [
+    'NCES_Type',
+    'NCES Type',
+    'NCES_Type_Code',
+    'NCES Type Code'
+  ]);
+  const ncesTypeDesc = pickFirstDefined(roomEditMergedProps, [
+    'NCES_Type Description_Sh',
+    'NCES_Type Description',
+    'NCES Type Description',
+    'NCES_Type Description_Short'
+  ]);
+  const ncesTypeDisplay = ncesTypeCode
+    ? `${ncesTypeCode}${ncesTypeDesc ? ` - ${ncesTypeDesc}` : ''}`
+    : ncesTypeDesc || '-';
   const selectedBuildingIdRef = useRef(null);
   const selectedBuildingFeatureRef = useRef(null);
   const currentFloorUrlRef = useRef(null);
@@ -1435,6 +3238,37 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   useEffect(() => {
     floorUrlRef.current = floorUrl;
   }, [floorUrl]);
+  useEffect(() => {
+    if (!mapLoaded || !floorUrl) return;
+    applyFloorColorMode(floorColorMode);
+  }, [mapLoaded, floorUrl, floorColorMode, applyFloorColorMode]);
+  useEffect(() => {
+    if (!mapLoaded || !floorUrl) return;
+    buildLegendForMode(floorColorMode);
+  }, [mapLoaded, floorUrl, floorColorMode, buildLegendForMode]);
+  useEffect(() => {
+    // clear legend selection on mode change or floor change
+    setFloorLegendSelection(null);
+    setFloorHighlight(null);
+  }, [floorColorMode, floorUrl, setFloorHighlight]);
+  useEffect(() => {
+    clearRoomEditSelection();
+  }, [selectedBuildingId, floorUrl, clearRoomEditSelection]);
+
+  useEffect(() => {
+    setAiOpen(false);
+    setAiLoading(false);
+    setAiResult(null);
+    setAiErr('');
+    setAiBuildingOpen(false);
+    setAiBuildingLoading(false);
+    setAiBuildingResult(null);
+    setAiBuildingErr('');
+    setAiCreateScenarioOpen(false);
+    setAiCreateScenarioLoading(false);
+    setAiCreateScenarioResult(null);
+    setAiCreateScenarioErr('');
+  }, [selectedBuildingId, selectedBuilding, selectedFloor]);
 
   const [moveScenarioMode, setMoveScenarioMode] = useState(false);
   const [scenarioSelection, setScenarioSelection] = useState(new Set());
@@ -1447,6 +3281,19 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     roomTypes: {},
     sfByRoomType: {}
   });
+  const baselineAvailable = Boolean(floorStats || buildingStats || campusStats);
+  const scenarioAvailable = Boolean(scenarioTotals);
+  const combinedScenarioRoomStats = useMemo(() => {
+    const types = new Set([
+      ...Object.keys(scenarioTotals.roomTypes || {}),
+      ...Object.keys(scenarioTotals.sfByRoomType || {})
+    ]);
+    return Array.from(types).map((type) => ({
+      type,
+      count: scenarioTotals.roomTypes?.[type] ?? 0,
+      sf: scenarioTotals.sfByRoomType?.[type] ?? 0
+    }));
+  }, [scenarioTotals]);
   const [scenarioPanelVisible, setScenarioPanelVisible] = useState(false);
   const scenarioRoomInfoRef = useRef(new Map());
   const previousScenarioSelectionRef = useRef(new Set());
@@ -1708,14 +3555,23 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [pendingMove, setPendingMove] = useState(null);
   const [moveConfirmData, setMoveConfirmData] = useState(null);
 
+  useEffect(() => {
+    if (moveMode || moveScenarioMode) return;
+    applySelectionHighlight(roomEditSelection);
+  }, [roomEditSelection, applySelectionHighlight, moveMode, moveScenarioMode]);
+
   const estimatePanelAnchor = (pt) => {
     const width = mapContainerRef.current?.clientWidth ?? 0;
     const height = mapContainerRef.current?.clientHeight ?? 0;
+    const containerWidth = width || 1000;
+    const containerHeight = height || 800;
     const x = pt.x + 110;
-    const y = pt.y - 60;
+    const defaultY = pt.y - 160;
+    const minY = Math.max(8, containerHeight * 0.15);
+    const maxY = Math.max(minY, Math.min(containerHeight - 220, containerHeight * 0.65));
     return {
-      x: Math.min(Math.max(x, 8), (width || 1000) - 260),
-      y: Math.min(Math.max(y, 8), (height || 800) - 220)
+      x: Math.min(Math.max(x, 8), containerWidth - 260),
+      y: Math.min(Math.max(defaultY, minY), maxY)
     };
   };
 
@@ -1737,20 +3593,6 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       const maxTop = Math.max(8, (height || 800) - panelHeight - 40);
       return Math.max(8, Math.min(prev - 40, maxTop));
     });
-  }, []);
-
-  const setFloorHighlight = useCallback((id) => {
-    const map = mapRef.current;
-    if (!map || !map.getLayer(FLOOR_HL_ID)) return;
-    const filter = id != null
-      ? ['any', ['==', ['id'], id], ['==', ['get', 'RevitId'], id]]
-      : ['==', ['id'], ''];
-    try {
-      map.setFilter(FLOOR_HL_ID, filter);
-      if (map.getLayer(FLOOR_HL_BORDER_ID)) {
-        map.setFilter(FLOOR_HL_BORDER_ID, filter);
-      }
-    } catch {}
   }, []);
 
   // Auth / role
@@ -1778,26 +3620,50 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
   const fetchFloorSummaryByUrl = useCallback(async (url) => {
     if (!url) return null;
-    if (floorStatsCache.current[url]) return floorStatsCache.current[url];
 
-    let data = floorCache.get(url);
-    if (!data) {
-      data = await fetchGeoJSON(url);
+    // Try original URL first, then fall back to new py export naming
+    const candidates = [url];
+    if (typeof url === "string" && url.endsWith("_Dept.geojson")) {
+      candidates.push(url.replace("_Dept.geojson", "_Dept_Rooms.geojson"));
+    }
+
+    // Return cached summary if we already computed it for any candidate
+    for (const u of candidates) {
+      if (floorStatsCache.current[u]) return floorStatsCache.current[u];
+    }
+
+    let data = null;
+    let usedUrl = null;
+
+    // Try cache + fetch for each candidate
+    for (const u of candidates) {
+      data = floorCache.get(u);
       if (!data) {
-        console.warn('Floor summary: no data returned', url);
-        return null;
+        data = await fetchGeoJSON(u);
+        if (data) floorCache.set(u, data);
       }
-      floorCache.set(url, data);
+      if (data) {
+        usedUrl = u;
+        break;
+      }
+    }
+
+    if (!data) {
+      console.warn("Floor summary: no data returned", url);
+      return null;
     }
 
     const fc = toFeatureCollection(data);
     if (!Array.isArray(fc?.features)) {
-      console.warn('Floor summary: no features, skipping', url);
+      console.warn("Floor summary: no features, skipping", usedUrl || url);
       return null;
     }
 
     const sum = summarizeFeatures(fc.features);
-    floorStatsCache.current[url] = sum;
+
+    // Cache summary under BOTH URLs so future callers hit cache regardless of which name they request
+    for (const u of candidates) floorStatsCache.current[u] = sum;
+
     return sum;
   }, []);
 
@@ -1820,7 +3686,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     }
     if (!available.length) return null;
     const canonicalBuildingId = bId(buildingId);
-    const combined = { totalSf: 0, classroomSf: 0, rooms: 0, classroomCount: 0, deptCounts: new Map() };
+    const combined = {
+      totalSf: 0,
+      classroomSf: 0,
+      labSf: 0,
+      officeSf: 0,
+      rooms: 0,
+      classroomCount: 0,
+      labCount: 0,
+      officeCount: 0,
+      deptCounts: new Map()
+    };
 
     for (const floorLabel of available) {
       const url = buildFloorUrl(resolvedKey, floorLabel);
@@ -1836,8 +3712,12 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       if (!stats) continue;
       combined.totalSf += stats.totalSf || 0;
       combined.classroomSf += stats.classroomSf || 0;
+      combined.labSf += stats.labSf || 0;
+      combined.officeSf += stats.officeSf || 0;
       combined.rooms += stats.rooms || 0;
       combined.classroomCount += stats.classroomCount || 0;
+      combined.labCount += stats.labCount || 0;
+      combined.officeCount += stats.officeCount || 0;
       Object.entries(stats.deptCounts || {}).forEach(([dept, area]) => {
         combined.deptCounts.set(dept, (combined.deptCounts.get(dept) || 0) + area);
       });
@@ -1855,6 +3735,10 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         rooms: undefined,
         classroomSf: undefined,
         classroomCount: undefined,
+        labSf: undefined,
+        labCount: undefined,
+        officeSf: undefined,
+        officeCount: undefined,
         totalsByDept: {}
       };
     }
@@ -1864,9 +3748,67 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       rooms: undefined,
       classroomSf: undefined,
       classroomCount: undefined,
+      labSf: undefined,
+      labCount: undefined,
+      officeSf: undefined,
+      officeCount: undefined,
       totalsByDept: {}
     };
   }, [fetchBuildingSummary]);
+
+  const computeCampusTotals = useCallback(async () => {
+    const campusAcc = createEmptySummaryAccumulator();
+
+    const summaries = await Promise.all(
+      BUILDINGS_LIST.map(async (b) => {
+        if (!b?.name) return null;
+        try {
+          return await computeBuildingTotals(b.name);
+        } catch (err) {
+          console.warn('Campus summary: failed to load building stats for', b.name, err);
+          return null;
+        }
+      })
+    );
+
+    summaries.forEach((sum) => {
+      if (!sum) return;
+      campusAcc.totalSf += sum.totalSf || 0;
+      campusAcc.classroomSf += sum.classroomSf || 0;
+      campusAcc.labSf += sum.labSf || 0;
+      campusAcc.officeSf += sum.officeSf || 0;
+      campusAcc.rooms += sum.rooms || 0;
+      campusAcc.classroomCount += sum.classroomCount || 0;
+      campusAcc.labCount += sum.labCount || 0;
+      campusAcc.officeCount += sum.officeCount || 0;
+      const deptCounts = sum.deptCounts || sum.totalsByDept || {};
+      Object.entries(deptCounts).forEach(([dept, area]) => {
+        const val = Number(area) || 0;
+        campusAcc.deptCounts.set(dept, (campusAcc.deptCounts.get(dept) || 0) + val);
+      });
+    });
+
+    return finalizeCombinedSummary(campusAcc);
+  }, [computeBuildingTotals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadCampusStats = async () => {
+      try {
+        const summary = await computeCampusTotals();
+        if (cancelled) return;
+        setCampusStats(summary);
+        setCampusPanelStats(formatSummaryForPanel(summary, 'campus'));
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('Campus summary load failed', err);
+        setCampusStats(null);
+        setCampusPanelStats(formatSummaryForPanel(null, 'campus'));
+      }
+    };
+    loadCampusStats();
+    return () => { cancelled = true; };
+  }, [computeCampusTotals]);
 
   const prefetchFloorSummaries = useCallback(async (buildingKeyOrName) => {
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
@@ -2032,7 +3974,48 @@ useEffect(() => {
   setSelectedFloor('LEVEL_1');
 }, []);
 
-  const handleLoadFloorplan = useCallback(async () => {
+  const activeBuildingFeature = useMemo(() => {
+    const feats = config?.buildings?.features || [];
+    const byId = feats.find((f) => String(f?.properties?.id) === String(selectedBuildingId));
+    if (byId) return byId;
+    const byName = feats.find((f) => (f?.properties?.name || '') === (selectedBuilding || ''));
+    return byName || null;
+  }, [config, selectedBuildingId, selectedBuilding]);
+  const activeBuildingName =
+    activeBuildingFeature?.properties?.name ||
+    selectedBuilding ||
+    selectedBuildingId ||
+    'Building';
+  const activeBuildingId = selectedBuildingId || selectedBuilding || '';
+  const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
+
+  const computePanelAnchorFromFeature = useCallback((feature) => {
+    const map = mapRef.current;
+    const containerWidth = mapContainerRef.current?.clientWidth || 1000;
+    const containerHeight = mapContainerRef.current?.clientHeight || 800;
+    if (!map || !feature?.geometry) return null;
+    const bbox = turf.bbox(feature);
+    if (!bbox || bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))) return null;
+    const centerLat = (bbox[1] + bbox[3]) / 2;
+    const anchorPoint = map.project({ lng: bbox[2], lat: centerLat });
+    const left = Math.min(Math.max(anchorPoint.x + 12, 8), containerWidth - 360);
+    const top = Math.min(Math.max(anchorPoint.y - 120, 8), containerHeight - 260);
+    return { x: left, y: top };
+  }, []);
+
+  const handlePanelLoadFloor = useCallback(async (floorId) => {
+    await handleLoadFloorplan(floorId);
+  }, [handleLoadFloorplan]);
+
+  const loadSelectedFloor = useCallback(() => {
+    if (!panelSelectedFloor) return;
+    if (panelSelectedFloor !== selectedFloor) {
+      setSelectedFloor(panelSelectedFloor);
+    }
+    handlePanelLoadFloor(panelSelectedFloor);
+  }, [panelSelectedFloor, handlePanelLoadFloor, selectedFloor]);
+
+  async function handleLoadFloorplan() {
     if (!mapLoaded || !mapRef.current) return false;
     if (!selectedFloor || !availableFloors.includes(selectedFloor)) {
       alert('This floor is not available for this building.');
@@ -2045,6 +4028,10 @@ useEffect(() => {
       setFloorStats(null);
       setPanelStats({ loading: true, mode: 'floor' });
       const lastSel = floorSelectionRef.current?.[url];
+      const buildingFolder = getBuildingFolderKey(selectedBuildingId || selectedBuilding);
+      const basePath = buildingFolder
+        ? `/stakeholder-map/floorplans/Hastings/${buildingFolder}`
+        : null;
       let fitBuilding = selectedBuildingFeatureRef.current || null;
       if (!fitBuilding) {
         try {
@@ -2057,8 +4044,12 @@ useEffect(() => {
         floor: selectedFloor,
         roomPatches,
         currentFloorContextRef,
+        roomsBasePath: basePath,
+        roomsFloorId: selectedFloor,
+        wallsBasePath: basePath,
+        wallsFloorId: selectedFloor,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
-          if (types) setTypeOptions((prev) => mergeOptionsList(prev, types));
+          if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
         }
       });
@@ -2090,6 +4081,7 @@ useEffect(() => {
         floorSummaryCacheRef.current.set(url, loadResult.summary);
         const summaryWithLabel = { ...loadResult.summary, floorLabel: selectedFloor };
         setFloorStats(summaryWithLabel);
+        setFloorLegendItems(toKeyDeptList(loadResult.summary.totalsByDept));
         if (currentFloorUrlRef.current === url) {
           setPanelStats(formatSummaryForPanel(loadResult.summary, 'floor'));
         }
@@ -2097,6 +4089,14 @@ useEffect(() => {
         setFloorStats(null);
         setPanelStats(formatSummaryForPanel(null, 'floor'));
       }
+      try {
+        applyFloorColorMode(floorColorMode);
+        buildLegendForMode(floorColorMode);
+      } catch {}
+      setIsBuildingPanelCollapsed(false);
+      setPopupMode('floor');
+      // Anchor floor panel to top-left to keep it fully visible when launched from controls
+      setPanelAnchor({ x: 12, y: 12 });
       if (mapView === MAP_VIEWS.SPACE_DATA) {
         applyBuildingStyleForSpace(mapRef.current);
       }
@@ -2107,10 +4107,429 @@ useEffect(() => {
       setLoadedSingleFloor(false);
       return false;
     }
-  }, [mapLoaded, selectedBuilding, selectedFloor, config, selectedBuildingId, buildFloorUrl, roomPatches, availableFloors, mapView]);
+  }
 
+  const drawSummaryAndLegend = (doc, stats, keyDepts, areaX, areaWidth, label, legendTitle = 'Key Departments') => {
+    if (!stats && !label && !keyDepts?.length) return;
+    const lineHeight = 14;
+    const textX = areaX + 6;
+    const textYStart = 24;
+    const title = label || 'Totals';
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(title, textX, textYStart);
+    let cursorY = textYStart + lineHeight;
+    doc.setFont(undefined, 'normal');
+    if (stats) {
+      const lines = [
+        stats.totalSF != null ? `Total SF: ${Math.round(stats.totalSF).toLocaleString()}` : null,
+        stats.rooms != null ? `Rooms: ${stats.rooms}` : null,
+        stats.classroomSf != null ? `Classroom SF: ${Math.round(stats.classroomSf).toLocaleString()}` : null,
+        stats.classroomCount != null ? `Classrooms: ${stats.classroomCount}` : null,
+        stats.levels != null ? `Levels: ${stats.levels}` : null
+      ].filter(Boolean);
+      lines.forEach((line) => {
+        doc.text(line, textX, cursorY);
+        cursorY += lineHeight;
+      });
+    }
+    if (keyDepts?.length) {
+      cursorY += lineHeight / 2;
+      doc.setFont(undefined, 'bold');
+      doc.text(legendTitle, textX, cursorY);
+      cursorY += lineHeight;
+      doc.setFont(undefined, 'normal');
+      const boxSize = 10;
+      keyDepts.slice(0, 8).forEach((dept) => {
+        const color = dept.color || getDeptColor(dept.name);
+        doc.setFillColor(color);
+        doc.rect(areaX + 6, cursorY - 8, boxSize, boxSize, 'F');
+        doc.setTextColor('#000');
+        const labelText = dept.areaSf ? `${dept.name} (${Math.round(dept.areaSf).toLocaleString()} SF)` : dept.name;
+        doc.text(labelText, areaX + 6 + boxSize + 4, cursorY);
+        cursorY += lineHeight;
+      });
+    }
+  };
+
+  const exportFloorplanDocument = useCallback((pages, options = {}) => {
+    if (!Array.isArray(pages) || !pages.length) {
+      alert('No floorplan data to export.');
+      return;
+    }
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 24;
+      const stats = options.stats || null;
+      const keyDepts = options.keyDepts || [];
+      const summaryLabel = options.summaryLabel || '';
+      const legendTitle = options.legendTitle || 'Key Departments';
+      const filenameBase = options.filenameBase || 'floorplan';
+      const hasSummary = Boolean(stats || (keyDepts && keyDepts.length));
+      const summaryWidth = hasSummary ? 130 : 0;
+      const summaryAreaWidth = hasSummary ? summaryWidth - 12 : 0;
+      pages.forEach((page, idx) => {
+        const img = page?.img;
+        if (!img?.data) return;
+        if (idx > 0) doc.addPage();
+        const aspect = img.height && img.width ? img.height / img.width : 1;
+        const imgAvailableWidth = hasSummary ? pageWidth - margin * 2 - summaryWidth - margin : pageWidth - margin * 2;
+        let imgWidth = Math.min(imgAvailableWidth, img.width);
+        let imgHeight = imgWidth * aspect;
+        const maxHeight = pageHeight - margin * 2 - 40;
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
+          imgWidth = imgHeight / (aspect || 1);
+        }
+        const imgX = margin;
+        doc.addImage(img.data, 'PNG', imgX, margin + 20, imgWidth, imgHeight);
+        doc.setFontSize(12);
+        const label = page.label || '';
+        if (label) {
+          doc.text(label, margin, margin);
+        }
+        if (hasSummary) {
+          const summaryX = Math.min(pageWidth - summaryWidth - margin, imgX + imgWidth + margin * 0.75);
+          drawSummaryAndLegend(doc, stats, keyDepts, summaryX, summaryAreaWidth, summaryLabel || label, legendTitle);
+        }
+      });
+      const filename = `${filenameBase.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      doc.save(filename);
+    } catch (err) {
+      console.error('Floor export failed', err);
+      alert('Export failed - see console for details.');
+    }
+  }, []);
+
+  const explainFloor = useCallback(async ({ context, floorStats, panelStats }) => {
+    const res = await guardedAiFetch('http://localhost:8787/explain-floor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, floorStats, panelStats })
+    });
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch {}
+
+    if (!res.ok) throw new Error(data?.error || raw || `HTTP ${res.status}`);
+    return data;
+  }, []);
+
+  const explainCampus = useCallback(async ({ context, campusStats, panelStats }) => {
+    const res = await guardedAiFetch('http://localhost:8787/explain-campus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, campusStats, panelStats })
+    });
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch {}
+
+    if (!res.ok) throw new Error(data?.error || raw || `HTTP ${res.status}`);
+    return data;
+  }, []);
+
+  const compareScenario = useCallback(async ({ context, baselineStats, scenarioStats, deltas }) => {
+    const res = await guardedAiFetch('http://localhost:8787/compare-scenario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, baselineStats, scenarioStats, deltas })
+    });
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch {}
+    if (!res.ok) throw new Error(data?.error || raw || `HTTP ${res.status}`);
+    return data;
+  }, []);
+
+  const createMoveScenario = useCallback(async ({ request, context, inventory, constraints }) => {
+    const res = await guardedAiFetch('http://localhost:8787/create-move-scenario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request, context, inventory, constraints })
+    });
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch {}
+    if (!res.ok) throw new Error(data?.error || raw || `HTTP ${res.status}`);
+    return data;
+  }, []);
+
+  const askMapfluence = useCallback(async ({ question, context, data }) => {
+    const res = await guardedAiFetch('http://localhost:8787/ask-mapfluence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, context, data })
+    });
+
+    const raw = await res.text();
+    let json = null;
+    try { json = JSON.parse(raw); } catch {}
+    if (!res.ok) throw new Error(json?.error || raw || `HTTP ${res.status}`);
+    return json;
+  }, []);
+
+  const explainBuilding = useCallback(async ({ context, buildingStats, panelStats }) => {
+    const res = await guardedAiFetch('http://localhost:8787/explain-building', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, buildingStats, panelStats })
+    });
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch {}
+
+    if (!res.ok) throw new Error(data?.error || raw || `HTTP ${res.status}`);
+    return data;
+  }, []);
+
+  const onExplain = useCallback(async () => {
+    setAiErr('');
+    setAiLoading(true);
+    setAiResult(null);
+
+    try {
+      const ctx = currentFloorContextRef.current;
+
+      const context = {
+        universityId,
+        buildingId: ctx?.buildingId || selectedBuildingId || selectedBuilding || '',
+        buildingLabel: ctx?.buildingLabel || '',
+        floorId: ctx?.floorId || selectedFloor || '',
+        floorLabel: ctx?.floorLabel || floorStats?.floorLabel || selectedFloor || '',
+        url: ctx?.url || ''
+      };
+
+      const out = await explainFloor({ context, floorStats, panelStats });
+      setAiResult(out);
+      setAiOpen(true);
+    } catch (e) {
+      setAiErr(String(e?.message || e));
+    } finally {
+      setAiLoading(false);
+    }
+  }, [explainFloor, floorStats, panelStats, selectedBuildingId, selectedBuilding, selectedFloor, universityId]);
+
+  const onExplainCampus = useCallback(async () => {
+    setAiCampusErr('');
+    setAiCampusLoading(true);
+    setAiCampusResult(null);
+
+    try {
+      const context = {
+        universityId,
+        campusLabel: activeUniversityName || universityId || 'Campus',
+        buildingId: '',
+        buildingLabel: '',
+        floorId: '',
+        floorLabel: '',
+        url: ''
+      };
+
+      const out = await explainCampus({
+        context,
+        campusStats,
+        panelStats: campusPanelStats
+      });
+
+      setAiCampusResult(out);
+      setAiCampusOpen(true);
+    } catch (e) {
+      setAiCampusErr(String(e?.message || e));
+    } finally {
+      setAiCampusLoading(false);
+    }
+  }, [activeUniversityName, campusPanelStats, campusStats, explainCampus, universityId]);
+
+  const onCompareScenario = useCallback(async () => {
+    setAiScenarioErr('');
+    setAiScenarioLoading(true);
+    setAiScenarioResult(null);
+
+    try {
+      if (!scenarioTotals) throw new Error('No scenario totals available. Turn on Move Scenario Mode and make changes.');
+      if (!scenarioAssignedDept) throw new Error('Select a department for the scenario before comparing.');
+
+      const { perBuilding, campusTotals } = await computeDeptTotalsByBuildingAcrossCampus(scenarioAssignedDept, {
+        ensureFloorsForBuilding,
+        buildFloorUrl,
+        floorCache,
+        fetchGeoJSON
+      });
+      if (!campusTotals) throw new Error('No baseline stats for the selected department on this campus.');
+
+      const scenarioBuildingName = activeBuildingName || selectedBuilding || selectedBuildingId || '';
+      const scenarioBuildingLower = scenarioBuildingName.trim().toLowerCase();
+
+      const candidates = Object.entries(perBuilding || {}).sort(
+        (a, b) => (b[1]?.totalSF || 0) - (a[1]?.totalSF || 0) || (b[1]?.rooms || 0) - (a[1]?.rooms || 0)
+      );
+      const baselineEntry =
+        candidates.find(([name]) => name.trim().toLowerCase() !== scenarioBuildingLower) ||
+        candidates[0] ||
+        null;
+      const baselineBuildingName = baselineEntry ? baselineEntry[0] : 'campus';
+      const baselineDeptTotals = baselineEntry ? baselineEntry[1] : campusTotals;
+      if (baselineDeptTotals) baselineDeptTotals.__label = baselineBuildingName || "campus";
+
+      const baselineScope = 'campus';
+
+      const buildingIdVal = selectedBuildingId || selectedBuilding || '';
+
+      const context = {
+        universityId,
+        baselineScope,
+        buildingId: buildingIdVal,
+        buildingLabel: activeBuildingName || '',
+        floorId: selectedFloor || '',
+        scenarioDepartment: scenarioAssignedDept,
+        baselineLabel: `Current allocation for ${scenarioAssignedDept} (${baselineBuildingName})`
+      };
+
+      console.log('Scenario compare baseline (dept campus-wide):', baselineDeptTotals);
+      console.log('Scenario compare scenario (selection totals):', scenarioTotals);
+      setScenarioBaselineTotals(baselineDeptTotals);
+
+      const deltas = {
+        totalSF: (scenarioTotals?.totalSF || 0) - (baselineDeptTotals?.totalSF || 0),
+        rooms: (scenarioTotals?.rooms || 0) - (baselineDeptTotals?.rooms || 0)
+      };
+
+      const out = await compareScenario({
+        context,
+        baselineStats: baselineDeptTotals,
+        scenarioStats: scenarioTotals,
+        deltas,
+        scenarioDept: scenarioAssignedDept || ''
+        // deltas: optional if you compute them
+      });
+
+      setAiScenarioResult(out);
+      setAiScenarioOpen(true);
+    } catch (e) {
+      setAiScenarioErr(String(e?.message || e));
+    } finally {
+      setAiScenarioLoading(false);
+    }
+  }, [
+    activeBuildingName,
+    compareScenario,
+    scenarioAssignedDept,
+    scenarioTotals,
+    activeBuildingName,
+    ensureFloorsForBuilding,
+    buildFloorUrl,
+    floorCache,
+    fetchGeoJSON,
+    selectedBuilding,
+    selectedBuildingId,
+    selectedFloor,
+    universityId
+  ]);
+
+  const onExplainBuilding = useCallback(async () => {
+    setAiBuildingErr('');
+    setAiBuildingLoading(true);
+    setAiBuildingResult(null);
+
+    try {
+      const buildingIdVal = selectedBuildingId || selectedBuilding || '';
+      const context = {
+        universityId,
+        buildingId: buildingIdVal,
+        buildingLabel: activeBuildingName || '',
+        floorId: '',
+        floorLabel: '',
+        url: ''
+      };
+      const out = await explainBuilding({
+        context,
+        buildingStats,
+        panelStats
+      });
+      setAiBuildingResult(out);
+      setAiBuildingOpen(true);
+    } catch (e) {
+      setAiBuildingErr(String(e?.message || e));
+    } finally {
+      setAiBuildingLoading(false);
+    }
+  }, [activeBuildingName, buildingStats, explainBuilding, panelStats, selectedBuilding, selectedBuildingId, universityId]);
+
+  useEffect(() => {
+    const ping = async () => {
+      try {
+        const r = await fetch('http://localhost:8787/health', { cache: 'no-store' });
+        setAiStatus(r.ok ? 'ok' : 'down');
+      } catch {
+        setAiStatus('down');
+      }
+    };
+    ping();
+    const t = setInterval(ping, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const handleExportFloor = useCallback(() => {
+    const ctx = currentFloorContextRef?.current;
+    if (!ctx?.fc) {
+      alert('No floor loaded.');
+      return;
+    }
+    const selectedIdsForExport = floorLegendSelection ? (floorLegendLookup.get(floorLegendSelection) || []) : [];
+    const selectionIdsFromHighlight = getHighlightIdsForSelection(roomEditSelectionRef.current || []);
+    const highlightIds = floorHighlightIdsRef.current || [];
+    const combinedSelectedIds = Array.from(new Set([
+      ...(selectedIdsForExport || []),
+      ...(selectionIdsFromHighlight || []),
+      ...(highlightIds || [])
+    ]));
+    const img = generateFloorplanImageData({
+      ...ctx,
+      colorMode: floorColorMode,
+      selectedIds: combinedSelectedIds,
+      solidFill: true
+    });
+    if (!img) {
+      alert('Unable to render floorplan.');
+      return;
+    }
+    const label = `${activeBuildingName} - ${ctx.floorLabel || selectedFloor || ''}`.trim() || 'Floor';
+    const cachedStats = ctx?.url ? floorStatsCache.current[ctx.url] : null;
+    const statsForExport = floorStats ?? (cachedStats ? { ...cachedStats, floorLabel: ctx.floorLabel || selectedFloor } : null);
+    const floorLegend = floorLegendItems && floorLegendItems.length ? floorLegendItems : toKeyDeptList(statsForExport?.totalsByDept);
+    const legendTitle =
+      {
+        department: 'Key Departments',
+        type: 'Key Types',
+        occupancy: 'Occupancy',
+        vacancy: 'Vacancy'
+      }[floorColorMode] || 'Legend';
+    exportFloorplanDocument(
+      [{ img, label }],
+      {
+        filenameBase: `${activeBuildingName || 'floor'}-${ctx.floorLabel || selectedFloor || 'floor'}`,
+        stats: statsForExport,
+        keyDepts: floorLegend,
+        summaryLabel: `${activeBuildingName} - ${ctx.floorLabel || selectedFloor || ''} (${floorColorMode || 'department'})`,
+        legendTitle
+      }
+    );
+  }, [activeBuildingName, selectedFloor, exportFloorplanDocument, floorColorMode, floorLegendItems]);
   const handleUnloadFloorplan = useCallback(() => {
     unloadFloorplan(mapRef.current, currentFloorUrlRef);
+    try {
+      const map = mapRef.current;
+      if (map?.getLayer(WALLS_LAYER)) map.removeLayer(WALLS_LAYER);
+      if (map?.getSource(WALLS_SOURCE)) map.removeSource(WALLS_SOURCE);
+    } catch {}
     setLoadedSingleFloor(false);
     currentFloorUrlRef.current = null;
     lastFloorUrlRef.current = null;
@@ -2125,10 +4544,17 @@ useEffect(() => {
     centerOnCurrentFloor(mapRef.current);
   }, []);
 
-  // Alias wrapper used by BuildingPanel "Load" button
-  const onPanelLoadFloor = useCallback(async (floorId) => {
-    await handleLoadFloorplan(floorId);
-  }, [handleLoadFloorplan]);  // ---------- Minimal admin actions to avoid runtime errors ----------
+  const handleToggleMoveScenarioMode = useCallback(() => {
+    const enabled = !moveScenarioMode;
+    setMoveScenarioMode(enabled);
+    if (!enabled) {
+      clearScenario();
+    } else {
+      setScenarioPanelVisible(true);
+    }
+  }, [clearScenario, moveScenarioMode, setScenarioPanelVisible]);
+
+  // ---------- Minimal admin actions to avoid runtime errors ----------
   const exportData = useCallback(() => {
     try {
       const payload = {
@@ -2152,6 +4578,374 @@ useEffect(() => {
   const exportDrawingEntries = useCallback(() => {
     alert('Export Drawing Entries not implemented in this build.');
   }, []);
+
+const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilterRaw = '') => {
+  const targetBuildings = buildingFilter && buildingFilter !== '__all__'
+    ? [buildingFilter]
+    : BUILDINGS_LIST.map((b) => b.name).filter(Boolean);
+
+    const deptFilter = deptFilterRaw.toLowerCase().trim();
+    const rows = [];
+
+    for (const buildingName of targetBuildings) {
+      if (!buildingName) continue;
+      const floors = await ensureFloorsForBuilding(buildingName);
+      if (!floors?.length) continue;
+
+      for (const fl of floors) {
+        const url = buildFloorUrl(buildingName, fl);
+        if (!url) continue;
+        let fc;
+        try {
+          const data = await fetchGeoJSON(url);
+          fc = toFeatureCollection(data);
+        } catch (err) {
+          console.warn('Space export: failed to load', url, err);
+          continue;
+        }
+        if (!fc?.features?.length) continue;
+
+        for (const feat of fc.features) {
+          const props = feat?.properties || {};
+          const revitId = feat?.id ?? props.RevitId ?? props.id;
+        const roomIdKey = (buildingName && fl && revitId != null) ? rId(buildingName, fl, revitId) : null;
+        const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
+        const merged = patch ? { ...props, ...patch } : props;
+        const roomNum = merged.Number ?? merged.RoomNumber ?? merged.number ?? merged.Room ?? '';
+        const typeVal = merged.RoomType ?? merged.Type ?? merged.type ?? merged.Name ?? '';
+        const deptVal = (merged.department ?? merged.Department ?? merged.Dept ?? '').toString().trim();
+        if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
+        const areaVal = resolvePatchedArea(merged);
+        const seatCountVal = getSeatCount(merged);
+        const occupantVal = merged.occupant ?? merged.Occupant ?? '';
+        rows.push({
+          building: buildingName,
+          floor: fl,
+          roomNumber: roomNum || '',
+          type: typeVal || '',
+          department: deptVal || '',
+          area: Number.isFinite(areaVal) ? areaVal : '',
+          seatCount: seatCountVal ?? '',
+          occupant: occupantVal || '',
+          roomId: roomIdKey || '',
+          revitId: revitId ?? null
+        });
+      }
+    }
+  }
+  return rows;
+  }, [buildFloorUrl, ensureFloorsForBuilding, roomPatches]);
+
+  const buildMoveScenarioInventory = useCallback(async () => {
+    const rows = await collectSpaceRows('__all__', '');
+    const inventory = buildInventoryFromRoomRows(rows, 250);
+    return inventory || [];
+  }, [collectSpaceRows]);
+
+  const collectSpaceSummaryRows = useCallback(async (buildingFilter = '__all__', deptFilterRaw = '') => {
+    const targetBuildings = buildingFilter && buildingFilter !== '__all__'
+      ? [buildingFilter]
+      : BUILDINGS_LIST.map((b) => b.name).filter(Boolean);
+
+    const deptFilter = deptFilterRaw.toLowerCase().trim();
+    const buildingRows = [];
+    const campusAcc = createEmptySummaryAccumulator();
+
+    const toSummaryRow = (summary, buildingName, buildingIdOverride) => {
+      if (!summary) return null;
+      const asNumber = (val) => (Number.isFinite(val) ? Math.round(val) : '');
+      const asCount = (val) => (Number.isFinite(val) ? Number(val) : 0);
+      return {
+        buildingId: buildingIdOverride || bId(buildingName || ''),
+        buildingName: buildingName || '',
+        totalSf: asNumber(summary.totalSf),
+        rooms: asCount(summary.rooms),
+        classroomSf: asNumber(summary.classroomSf),
+        classrooms: asCount(summary.classroomCount),
+        labSf: asNumber(summary.labSf),
+        labs: asCount(summary.labCount),
+        officeSf: asNumber(summary.officeSf),
+        offices: asCount(summary.officeCount),
+        keyDepts: (summary.keyDepts || []).join('; ')
+      };
+    };
+
+    for (const buildingName of targetBuildings) {
+      if (!buildingName) continue;
+      const floors = await ensureFloorsForBuilding(buildingName);
+      if (!floors?.length) continue;
+
+      const buildingAcc = createEmptySummaryAccumulator();
+
+      for (const fl of floors) {
+        const url = buildFloorUrl(buildingName, fl);
+        if (!url) continue;
+
+        let data = floorCache.get(url);
+        if (!data) {
+          data = await fetchGeoJSON(url);
+          if (data) floorCache.set(url, data);
+        }
+        const fc = toFeatureCollection(data);
+        if (!fc?.features?.length) continue;
+
+        for (const feat of fc.features) {
+          const props = feat?.properties || {};
+          const revitId = feat?.id ?? props.RevitId ?? props.id;
+          const roomIdKey = (buildingName && fl && revitId != null) ? rId(buildingName, fl, revitId) : null;
+          const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
+          const merged = patch ? { ...props, ...patch } : props;
+          const deptVal = (merged.department ?? merged.Department ?? merged.Dept ?? '').toString().trim();
+          if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
+          accumulateSummaryFromProps(buildingAcc, merged);
+          accumulateSummaryFromProps(campusAcc, merged);
+        }
+      }
+
+      const buildingSummary = finalizeCombinedSummary(buildingAcc);
+      const row = buildingSummary ? toSummaryRow(buildingSummary, buildingName) : null;
+      if (row && (row.rooms || row.totalSf)) {
+        buildingRows.push(row);
+      }
+    }
+
+    const campusSummary = finalizeCombinedSummary(campusAcc);
+    const includeCampusRow = !buildingFilter || buildingFilter === '__all__';
+    const campusRow = includeCampusRow && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
+      ? toSummaryRow(campusSummary, 'Campus Total', 'campus')
+      : null;
+
+    return { campusRow, buildingRows };
+  }, [buildFloorUrl, ensureFloorsForBuilding, roomPatches]);
+
+  const onCreateMoveScenario = useCallback(async () => {
+    setAiCreateScenarioErr('');
+    setAiCreateScenarioLoading(true);
+    setAiCreateScenarioResult(null);
+
+    try {
+      if (aiStatus !== 'ok') throw new Error('AI server is offline.');
+      const request = (aiCreateScenarioText || '').trim();
+      if (!request) throw new Error('Enter a short request for the move scenario.');
+
+      const buildingLabel = activeBuildingName || selectedBuilding || '';
+      const floorId = ''; // avoid biasing to a single floor; inventory is campus-wide
+
+      let inventory = [];
+      try {
+        const rows = await collectSpaceRows('__all__', '');
+        inventory = buildInventoryFromRoomRows(rows, 250) || [];
+      } catch {}
+
+      if (!inventory.length) {
+        const featureList =
+          currentFloorContextRef?.current?.fc?.features ||
+          [];
+        inventory = buildInventoryFromFeatures(featureList, buildingLabel, floorId, 250) || [];
+      }
+
+      if (!inventory.length) {
+        throw new Error('No room inventory loaded yet. Load Space Data or a floorplan first.');
+      }
+
+      const context = {
+        universityId,
+        campusLabel: activeUniversityName || universityId || 'Campus',
+        buildingLabel,
+        floorId,
+        moveScenarioMode: true,
+        scenarioDepartment: scenarioAssignedDept || '',
+        scenarioLabel: (scenarioLabel || '').trim(),
+        scope: 'campus'
+      };
+
+      const out = await createMoveScenario({ request, context, inventory });
+      setAiCreateScenarioResult(out);
+      setAiCreateScenarioOpen(false);
+    } catch (e) {
+      setAiCreateScenarioErr(String(e?.message || e));
+    } finally {
+      setAiCreateScenarioLoading(false);
+    }
+  }, [
+    activeBuildingName,
+    activeUniversityName,
+    aiCreateScenarioText,
+    aiStatus,
+    collectSpaceRows,
+    createMoveScenario,
+    scenarioAssignedDept,
+    scenarioLabel,
+    selectedBuilding,
+    selectedFloor,
+    universityId
+  ]);
+
+  const onAskRun = useCallback(async () => {
+    setAskErr('');
+    setAskLoading(true);
+    setAskResult(null);
+
+    try {
+      const q = (askText || '').trim();
+      if (!q) throw new Error('Type a question first.');
+
+      const buildingIdVal = selectedBuildingId || selectedBuilding || '';
+      let roomRowsPayload = null;
+      try {
+        const rows = await collectSpaceRows('__all__', '');
+        roomRowsPayload = Array.isArray(rows) ? rows.slice(0, 250) : null;
+      } catch {
+        roomRowsPayload = null;
+      }
+
+      const context = {
+        universityId,
+        buildingId: buildingIdVal,
+        buildingLabel: activeUniversityName || activeBuildingName || '',
+        floorId: selectedFloor || ''
+      };
+
+      const data = {
+        campusStats,
+        buildingStats,
+        floorStats,
+        roomRows: roomRowsPayload || undefined
+      };
+
+      const out = await askMapfluence({ question: q, context, data });
+      setAskResult(out);
+    } catch (e) {
+      setAskErr(String(e?.message || e));
+    } finally {
+      setAskLoading(false);
+    }
+  }, [
+    activeBuildingName,
+    activeUniversityName,
+    askText,
+    selectedBuildingId,
+    selectedBuilding,
+    selectedFloor,
+    universityId,
+    campusStats,
+    buildingStats,
+    floorStats,
+    askMapfluence,
+    collectSpaceRows
+  ]);
+
+  const applyAiMoveCandidatesToScenario = useCallback(() => {
+    const candidates = aiCreateScenarioResult?.recommendedCandidates || [];
+    if (!candidates.length) return;
+    setMoveScenarioMode(true);
+    candidates.forEach((c, idx) => {
+      const roomId = c.roomId || c.id || [c.buildingLabel, c.floorId, c.roomLabel, idx].filter(Boolean).join('|') || `cand-${idx}`;
+      toggleScenarioRoom({
+        roomId,
+        buildingId: c.buildingLabel || '',
+        buildingName: c.buildingLabel || '',
+        floorName: c.floorId || '',
+        revitId: c.revitId ?? null,
+        roomNumber: c.roomLabel || '',
+        roomType: c.type || 'Unspecified',
+        department: c.department || '',
+        area: Number(c.sf || 0) || 0
+      });
+    });
+  }, [aiCreateScenarioResult?.recommendedCandidates, setMoveScenarioMode, toggleScenarioRoom]);
+
+  const exportSpaceCsv = useCallback(async (explicitBuilding, modeOverride) => {
+    const buildingArg = (explicitBuilding && typeof explicitBuilding === 'object') ? null : explicitBuilding;
+    const mode = modeOverride || exportSpaceMode || 'rooms';
+    setExportingSpaceData(true);
+    setExportSpaceMessage(mode === 'summary' ? 'Preparing summary export...' : 'Building export data...');
+    try {
+      const esc = (v) => {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+
+      if (mode === 'summary') {
+        const { campusRow, buildingRows } = await collectSpaceSummaryRows(buildingArg || exportBuildingFilter, exportDeptFilter);
+        const summaryRows = [...(campusRow ? [campusRow] : []), ...buildingRows];
+        if (!summaryRows.length) {
+          setExportSpaceMessage('No matching rooms found.');
+          setExportingSpaceData(false);
+          return;
+        }
+        const headers = ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'ClassroomSF', 'Classrooms', 'LabSF', 'Labs', 'OfficeSF', 'Offices', 'KeyDepts'];
+        const csvLines = [headers.join(',')];
+        summaryRows.forEach((r) => {
+          csvLines.push([
+            esc(r.buildingId),
+            esc(r.buildingName),
+            esc(r.totalSf),
+            esc(r.rooms),
+            esc(r.classroomSf),
+            esc(r.classrooms),
+            esc(r.labSf),
+            esc(r.labs),
+            esc(r.officeSf),
+            esc(r.offices),
+            esc(r.keyDepts)
+          ].join(','));
+        });
+        const csvBlob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(csvBlob);
+        const buildingNameForFile = buildingArg || exportBuildingFilter;
+        const namePart = buildingNameForFile && buildingNameForFile !== '__all__'
+          ? buildingNameForFile.replace(/\s+/g, '-').toLowerCase()
+          : 'campus';
+        a.download = `${namePart}-space-summary.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setExportSpaceMessage(`Exported ${summaryRows.length} summary rows`);
+        return;
+      }
+
+      const rows = await collectSpaceRows(buildingArg || exportBuildingFilter, exportDeptFilter);
+      if (!rows.length) {
+        setExportSpaceMessage('No matching rooms found.');
+        setExportingSpaceData(false);
+        return;
+      }
+      const headers = ['Building', 'Floor', 'Room', 'Type', 'Department', 'AreaSF', 'SeatCount', 'Occupant'];
+      const csvLines = [headers.join(',')];
+      rows.forEach((r) => {
+        csvLines.push([
+          esc(r.building),
+          esc(r.floor),
+          esc(r.roomNumber),
+          esc(r.type),
+          esc(r.department),
+          esc(r.area),
+          esc(r.seatCount),
+          esc(r.occupant)
+        ].join(','));
+      });
+      const csvBlob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(csvBlob);
+      const buildingNameForFile = buildingArg || exportBuildingFilter;
+      const namePart = buildingNameForFile && buildingNameForFile !== '__all__'
+        ? buildingNameForFile.replace(/\s+/g, '-').toLowerCase()
+        : 'campus';
+      a.download = `${namePart}-space-data.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setExportSpaceMessage(`Exported ${rows.length} rows`);
+    } catch (err) {
+      console.warn('Space export failed', err);
+      setExportSpaceMessage('Export failed. See console.');
+    } finally {
+      setExportingSpaceData(false);
+    }
+  }, [collectSpaceRows, collectSpaceSummaryRows, exportBuildingFilter, exportDeptFilter, exportSpaceMode]);
 
   const clearMarkers = useCallback(() => {
     try {
@@ -2418,6 +5212,9 @@ useEffect(() => {
     }
 
     mapRef.current = mapInstance;
+    if (typeof window !== "undefined") {
+      window.__map = mapInstance;
+    }
 
     try {
       mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -2428,34 +5225,48 @@ useEffect(() => {
 
     // 4) Load/resize safely
     mapInstance.once('load', () => {
-      setMapLoaded(true);
-
-      try {
-        mapInstance.resize();
-      } catch (err) {
-        console.warn('resize() failed:', err);
-      }
-
-      // Optional fitBounds from boundary
-      try {
-        const boundaryFC = toFeatureCollection(config?.boundary);
-        if (boundaryFC?.features?.length) {
-          const [minX, minY, maxX, maxY] = bboxFromFC(boundaryFC);
-          if (
-            Number.isFinite(minX) &&
-            Number.isFinite(minY) &&
-            Number.isFinite(maxX) &&
-            Number.isFinite(maxY)
-          ) {
-            mapInstance.fitBounds([[minX, minY], [maxX, maxY]], {
-              padding: 40,
-              duration: 0
-            });
-          }
+      (async () => {
+        try {
+          await loadIcon(mapInstance, 'mf-door-swing', 'icons/door-swing.png');
+        } catch (err) {
+          console.warn('Door icon load failed:', err);
         }
-      } catch (e) {
-        console.warn('fitBounds from boundary failed:', e);
-      }
+        try {
+          await loadIcon(mapInstance, 'mf-stairs-run', 'icons/stairs-run.png');
+        } catch (err) {
+          console.warn('Stairs icon load failed:', err);
+        }
+
+        setMapLoaded(true);
+
+        try {
+          mapInstance.resize();
+        } catch (err) {
+          console.warn('resize() failed:', err);
+        }
+
+        // Optional fitBounds from boundary
+        try {
+          const boundaryFC = toFeatureCollection(config?.boundary);
+          if (boundaryFC?.features?.length) {
+            const [minX, minY, maxX, maxY] = bboxFromFC(boundaryFC);
+            if (
+              Number.isFinite(minX) &&
+              Number.isFinite(minY) &&
+              Number.isFinite(maxX) &&
+              Number.isFinite(maxY)
+            ) {
+              mapInstance.fitBounds([[minX, minY], [maxX, maxY]], {
+                padding: 40,
+                duration: 0
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('fitBounds from boundary failed:', e);
+        }
+      })();
+
     }); // closes once('load', ...)
   }; // closes init()
 
@@ -2772,7 +5583,7 @@ useEffect(() => {
     let clickedRoom = null;
     try {
       if (map.getLayer(FLOOR_FILL_ID)) {
-        const floorHits = map.queryRenderedFeatures(e.point, { layers: [FLOOR_FILL_ID] });
+        const floorHits = map.queryRenderedFeatures(e.point, { layers: [FLOOR_FILL_ID, DOORS_LAYER, STAIRS_LAYER] });
         clickedRoom = floorHits && floorHits[0];
       }
     } catch {}
@@ -3170,6 +5981,11 @@ useEffect(() => {
       let displayDept = initialDept;
       let displayAreaValue = Number.isFinite(resolvedArea) ? resolvedArea : null;
       let displayOccupant = initialOccupant;
+      const categoryCode = getRoomCategoryCode(pp);
+      const seatCount = getSeatCount(pp);
+      const typeFlags = detectRoomTypeFlags(pp);
+      const isOffice = isOfficeCategory(categoryCode) || typeFlags.isOfficeText;
+      const isTeaching = isTeachingCategory(categoryCode) || typeFlags.isTeachingText;
       const canonicalRoomId = (buildingId && derivedFloorDefault && revitId != null)
         ? rId(buildingId, derivedFloorDefault, revitId)
         : null;
@@ -3232,19 +6048,75 @@ useEffect(() => {
 
       const canEditRoom = Boolean(isAdmin && buildingId && floorName && revitId != null && universityId);
       const roomId = canEditRoom ? rId(buildingId, floorName, revitId) : null;
+      const editTarget = canEditRoom
+        ? {
+            roomId,
+            buildingId,
+            floorName,
+            revitId,
+            roomLabel,
+            feature: f,
+            flags: { isOffice, isTeaching },
+            highlightId: selId,
+            properties: {
+              type: displayRoomType || '',
+              department: displayDept || '',
+              area: Number.isFinite(displayAreaValue) ? displayAreaValue : '',
+              occupant: displayOccupant || '',
+              comments: initialComments || ''
+            }
+          }
+        : null;
+      let selectionAfterClick = roomEditSelectionRef.current || [];
+      if (editTarget) {
+        const current = roomEditSelectionRef.current || [];
+        const idx = current.findIndex((t) => t.roomId === editTarget.roomId);
+        if (idx >= 0) {
+          selectionAfterClick = current.filter((t) => t.roomId !== editTarget.roomId);
+        } else {
+          selectionAfterClick = [...current, editTarget];
+        }
+        roomEditSelectionRef.current = selectionAfterClick;
+        setRoomEditSelection(selectionAfterClick);
+        applySelectionHighlight(selectionAfterClick);
+      }
 
       const renderReadOnlyPopup = () => {
-        const areaText = Number.isFinite(displayAreaValue) && displayAreaValue !== 0
-          ? Math.round(displayAreaValue).toLocaleString()
-          : '';
+        const areaText =
+          Number.isFinite(displayAreaValue) && displayAreaValue !== 0
+            ? Math.round(displayAreaValue).toLocaleString()
+            : '';
+
+        const selectionFromState = roomEditSelectionRef.current || [];
+        const selectionCount = selectionFromState.length;
+        const showClearSelection = selectionCount > 0;
+        const editLabel = selectionCount > 1 ? `Edit ${selectionCount} Rooms` : 'Edit';
+
         const editButtonHtml = canEditRoom
-          ? `<div style="margin-top:8px">
-              <button id="mf-room-edit-btn" class="mf-btn tiny">Edit</button>
-            </div>`
+          ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+               <button id="mf-room-edit-btn" class="mf-btn tiny">${editLabel}</button>
+               ${showClearSelection ? `<button id="mf-clear-edit-selection" class="mf-btn tiny" style="background:#f4f4f4;color:#333;">Clear Selection</button>` : ''}
+             </div>`
           : '';
-        const occupantText = (displayOccupant && String(displayOccupant).trim().length)
-          ? displayOccupant
-          : '-';
+
+        // Decide what to show in the "occupancy" row
+        const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
+        const occupantTrimmed = (displayOccupant ?? '').toString().trim();
+
+        const seatCountValue = hasSeatCount ? seatCount.toLocaleString() : '-';
+        const seatCountRowHtml = isTeaching
+          ? `<div><b>Seat Count:</b> ${seatCountValue}</div>`
+          : '';
+
+        const occupancyValue = occupantTrimmed.length ? occupantTrimmed : '-';
+        const occupancyRowHtml = isTeaching
+          ? ''
+          : `<div><b>Occupant:</b> ${occupancyValue}</div>`;
+
+        const selectionCountHtml = canEditRoom && selectionCount
+          ? `<div style="font-size:11px;color:#555;margin-top:6px;">Rooms selected: ${selectionCount}</div>`
+          : '';
+
         return `
           <div class="mf-popup">
             <div class="mf-popup-body">
@@ -3253,7 +6125,9 @@ useEffect(() => {
               <div><b>Department:</b> ${displayDept || '-'}</div>
               <div><b>Area (SF):</b> ${areaText || '-'}</div>
               <div><b>Floor:</b> ${floorName}</div>
-              <div><b>Occupant:</b> ${occupantText}</div>
+              ${seatCountRowHtml}
+              ${occupancyRowHtml}
+              ${selectionCountHtml}
             </div>
 
             <div style="margin-top:8px">
@@ -3264,14 +6138,36 @@ useEffect(() => {
           </div>`;
       };
 
+      const clickPoint = map.project(e.lngLat);
+      const containerWidth = mapContainerRef.current?.clientWidth || 1000;
+      const anchorSide = clickPoint.x > containerWidth * 0.56 ? 'right' : 'left';
+      const offsetX = anchorSide === 'left' ? 240 : -240;
+      const popupOffsets = {
+        top: [offsetX, 12],
+        'top-left': [offsetX, 12],
+        'top-right': [offsetX, 12],
+        bottom: [offsetX, -12],
+        'bottom-left': [offsetX, -12],
+        'bottom-right': [offsetX, -12],
+        left: [offsetX, 0],
+        right: [offsetX, 0]
+      };
       const popup = new mapboxgl.Popup({
         closeButton: true,
-        offset: 12,
+        offset: popupOffsets,
+        anchor: anchorSide,
         maxWidth: '380px'
       })
         .setLngLat(e.lngLat)
         .setHTML(renderReadOnlyPopup())
         .addTo(map);
+
+      popup.on('close', () => {
+        if (!moveMode && !pendingMove) {
+          const ids = getHighlightIdsForSelection(roomEditSelectionRef.current || []);
+          setFloorHighlight(ids.length ? ids : null);
+        }
+      });
 
   const handleShowFloor = async () => {
         try { popup.remove(); } catch {}
@@ -3300,16 +6196,36 @@ useEffect(() => {
       };
       const handleEdit = () => {
         if (!canEditRoom) return;
+        const ensureTargets = () => {
+          if (roomEditSelection.length) {
+            const hasCurrent = roomId && roomEditSelection.some((t) => t.roomId === roomId);
+            if (hasCurrent || !editTarget) return roomEditSelection;
+            return [...roomEditSelection, editTarget];
+          }
+          return editTarget ? [editTarget] : [];
+        };
+        const targets = ensureTargets();
+        if (!targets.length) return;
+
+        const deriveSharedValue = (field) => {
+          const vals = targets.map((t) => (t?.properties?.[field] ?? ''));
+          const first = vals[0];
+          return vals.every((v) => v === first) ? first : '';
+        };
+        const sharedProperties = {
+          type: deriveSharedValue('type'),
+          department: deriveSharedValue('department'),
+          occupant: deriveSharedValue('occupant'),
+          comments: deriveSharedValue('comments'),
+          area: deriveSharedValue('area')
+        };
+
         setRoomEditData({
-          roomId, buildingId, floorName, revitId, feature: f,
-          roomLabel: roomNum2 || '-',
-          properties: {
-            type: displayRoomType || '',
-            department: displayDept || '',
-            area: Number.isFinite(displayAreaValue) ? displayAreaValue : '',
-            occupant: displayOccupant || '',
-            comments: initialComments || ''
-          },
+          ...targets[0],
+          targets,
+          roomLabel: targets.length === 1 ? (targets[0]?.roomLabel || '-') : `${targets.length} rooms`,
+          properties: sharedProperties,
+          includedKeys: new Set(targets.map((t) => t.roomId || String(t.revitId ?? ''))),
           refreshPopup: () => {
             popup.setHTML(renderReadOnlyPopup());
             attachReadOnlyEvents();
@@ -3320,7 +6236,16 @@ useEffect(() => {
             if ('occupant' in payload) displayOccupant = payload.occupant;
           }
         });
+        setRoomEditIncluded(new Set(targets.map((t) => t.roomId || String(t.revitId ?? ''))));
         setRoomEditOpen(true);
+      };
+      const handleClearSelection = () => {
+        roomEditSelectionRef.current = [];
+        setRoomEditSelection([]);
+        applySelectionHighlight([]);
+        try {
+          popup.remove();
+        } catch {}
       };
 
       function attachReadOnlyEvents() {
@@ -3329,10 +6254,66 @@ useEffect(() => {
         el.querySelector('#mf-show-floor')?.addEventListener('click', handleShowFloor);
         if (canEditRoom) {
           el.querySelector('#mf-room-edit-btn')?.addEventListener('click', handleEdit);
+          el.querySelector('#mf-clear-edit-selection')?.addEventListener('click', handleClearSelection);
         }
       }
 
       attachReadOnlyEvents();
+    };
+
+    const onStairsClick = (e) => {
+      try {
+        e.preventDefault?.();
+        if (e.originalEvent) {
+          e.originalEvent.preventDefault?.();
+          e.originalEvent.stopPropagation?.();
+          e.originalEvent.cancelBubble = true;
+        }
+      } catch {}
+
+      const f = e.features?.[0];
+      if (!f) return;
+
+      const p = f.properties || {};
+      new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' })
+        .setLngLat(e.lngLat)
+        .setHTML(`
+          <div class="mf-popup">
+            <div style="font-weight:700;margin-bottom:4px;">Stairs</div>
+            <div><b>Level:</b> ${p.Level || '-'}</div>
+            <div><b>Type:</b> ${p.Type || '-'}</div>
+            <div><b>RevitId:</b> ${p.RevitId || '-'}</div>
+          </div>
+        `)
+        .addTo(map);
+    };
+
+    const onDoorsClick = (e) => {
+      try {
+        e.preventDefault?.();
+        if (e.originalEvent) {
+          e.originalEvent.preventDefault?.();
+          e.originalEvent.stopPropagation?.();
+          e.originalEvent.cancelBubble = true;
+        }
+      } catch {}
+
+      const f = e.features?.[0];
+      if (!f) return;
+
+      const p = f.properties || {};
+      new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' })
+        .setLngLat(e.lngLat)
+        .setHTML(`
+          <div class="mf-popup">
+            <div style="font-weight:700;margin-bottom:4px;">Door</div>
+            <div><b>Level:</b> ${p.Level || '-'}</div>
+            <div><b>Mark:</b> ${p.Mark || p.mark || '-'}</div>
+            <div><b>Type:</b> ${p.Type || '-'}</div>
+            <div><b>RevitId:</b> ${p.RevitId || '-'}</div>
+          </div>
+        `)
+        .addTo(map);
     };
 
     const onEnter = () => { try { map.getCanvas().style.cursor = 'pointer'; } catch {} };
@@ -3341,16 +6322,28 @@ useEffect(() => {
     map.on('click', FLOOR_FILL_ID, onFloorClick);
     map.on('mouseenter', FLOOR_FILL_ID, onEnter);
     map.on('mouseleave', FLOOR_FILL_ID, onLeave);
+    map.on('click', DOORS_LAYER, onDoorsClick);
+    map.on('mouseenter', DOORS_LAYER, onEnter);
+    map.on('mouseleave', DOORS_LAYER, onLeave);
+    map.on('click', STAIRS_LAYER, onStairsClick);
+    map.on('mouseenter', STAIRS_LAYER, onEnter);
+    map.on('mouseleave', STAIRS_LAYER, onLeave);
 
     return () => {
       try {
         map.off('click', FLOOR_FILL_ID, onFloorClick);
         map.off('mouseenter', FLOOR_FILL_ID, onEnter);
         map.off('mouseleave', FLOOR_FILL_ID, onLeave);
+        map.off('click', DOORS_LAYER, onDoorsClick);
+        map.off('mouseenter', DOORS_LAYER, onEnter);
+        map.off('mouseleave', DOORS_LAYER, onLeave);
+        map.off('click', STAIRS_LAYER, onStairsClick);
+        map.off('mouseenter', STAIRS_LAYER, onEnter);
+        map.off('mouseleave', STAIRS_LAYER, onLeave);
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -3371,7 +6364,7 @@ useEffect(() => {
     }
 
     const pt = e.point;
-    const floorHits = mapInstance.queryRenderedFeatures(pt, { layers: [FLOOR_FILL_ID] });
+    const floorHits = mapInstance.queryRenderedFeatures(pt, { layers: [FLOOR_FILL_ID, DOORS_LAYER, STAIRS_LAYER] });
     if (floorHits && floorHits.length) return;
 
     const hasBuildingsLayer = !!mapInstance.getLayer('buildings-fill');
@@ -3396,24 +6389,47 @@ useEffect(() => {
     // no-op for now
   }, []);
 
-  const activeBuildingFeature = useMemo(() => {
-    const feats = config?.buildings?.features || [];
-    return feats.find((f) => String(f?.properties?.id) === String(selectedBuildingId)) || null;
-  }, [config, selectedBuildingId]);
-  const activeBuildingName =
-    activeBuildingFeature?.properties?.name ||
-    selectedBuilding ||
-    selectedBuildingId ||
-    'Building';
-  const activeBuildingId = selectedBuildingId || selectedBuilding || '';
-  const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
-  const loadSelectedFloor = useCallback(() => {
-    if (!panelSelectedFloor) return;
-    if (panelSelectedFloor !== selectedFloor) {
-      setSelectedFloor(panelSelectedFloor);
+  const handleExportBuilding = useCallback(async () => {
+    const buildingKey = panelBuildingKeyRef.current || selectedBuildingId || selectedBuilding;
+    if (!buildingKey) {
+      alert('No building selected for export.');
+      return;
     }
-    onPanelLoadFloor(panelSelectedFloor);
-  }, [panelSelectedFloor, onPanelLoadFloor, selectedFloor]);
+    if (!availableFloors.length) {
+      alert('No floors available for export.');
+      return;
+    }
+    const pages = [];
+    for (const floorId of availableFloors) {
+      const url = buildFloorUrl(buildingKey, floorId);
+      if (!url) continue;
+      const data = await fetchGeoJSON(url);
+      const fc = toFeatureCollection(data);
+      if (!fc?.features?.length) continue;
+      const img = generateFloorplanImageData({ fc, colorMode: floorColorMode, solidFill: true });
+      if (!img) continue;
+      pages.push({ img, label: `${activeBuildingName} - ${floorId}` });
+    }
+    if (!pages.length) {
+      alert('No floorplans could be rendered for export.');
+      return;
+    }
+    const buildingKeyDepts = toKeyDeptList(buildingStats?.totalsByDept);
+    const statsForExport = {
+      totalSF: buildingStats?.totalSf,
+      rooms: buildingStats?.rooms,
+      classroomSf: buildingStats?.classroomSf,
+      classroomCount: buildingStats?.classroomCount,
+      levels: availableFloors.length
+    };
+    const filenameBase = `${(activeBuildingName || buildingKey).replace(/\s+/g, '-').toLowerCase()}-floors`;
+    exportFloorplanDocument(pages, {
+      filenameBase,
+      stats: statsForExport,
+      keyDepts: buildingKeyDepts,
+      summaryLabel: `${activeBuildingName} Floors`
+    });
+  }, [availableFloors, activeBuildingName, buildFloorUrl, exportFloorplanDocument, selectedBuilding, selectedBuildingId]);
 
   return (
   <div className="map-page-container">
@@ -3429,6 +6445,132 @@ useEffect(() => {
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
       </button>
+    )}
+    {askOpen && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10002,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(520px, 92vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
+            lineHeight: 1.4
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Ask Mapfluence</div>
+              <div style={{ fontSize: 12, color: '#555' }}>Ask questions about loaded campus data.</div>
+            </div>
+            <button className="btn" onClick={() => setAskOpen(false)}>Close</button>
+          </div>
+
+
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontWeight: 600, fontSize: 12 }}>Question</label>
+            <textarea
+              value={askText}
+              onChange={(e) => setAskText(e.target.value)}
+              rows={3}
+              placeholder="e.g. How many vacant offices are on campus?"
+              style={{ width: '100%', resize: 'vertical', padding: 8, borderRadius: 8, border: '1px solid #d0d0d0', marginTop: 4 }}
+            />
+          </div>
+
+          {askErr ? (
+            <div style={{ color: 'crimson', marginTop: 6, fontSize: 12 }}>
+              {askErr}
+            </div>
+          ) : null}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <button
+              className="btn"
+              disabled={askLoading || !askText.trim() || aiStatus !== 'ok'}
+              onClick={onAskRun}
+            >
+              {askLoading ? 'Asking...' : 'Ask'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {askResult && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10001,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(720px, 94vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
+            lineHeight: 1.45
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>Ask Mapfluence</div>
+            <button className="btn" onClick={() => setAskResult(null)}>Close</button>
+          </div>
+
+          <p style={{ marginTop: 10 }}>{askResult.answer}</p>
+
+          {askResult.bullets?.length ? (
+            <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
+              {askResult.bullets.map((b, i) => <li key={i}>{b}</li>)}
+            </ul>
+          ) : null}
+
+          {askResult.resultType === 'table' && askResult.columns?.length && askResult.rows?.length ? (
+            <div style={{ marginTop: 10, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ background: '#f8f9fb' }}>
+                  <tr>
+                    {askResult.columns.map((col) => (
+                      <th key={col} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid #e0e0e0' }}>{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {askResult.rows.map((row, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      {askResult.columns.map((col) => (
+                        <td key={col} style={{ padding: '6px 8px' }}>
+                          {row && row[col] != null ? String(row[col]) : ''}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {askResult.missingData?.length ? (
+            <div style={{ marginTop: 10, fontSize: 12, color: '#555' }}>
+              Missing data: {askResult.missingData.join(', ')}
+            </div>
+          ) : null}
+        </div>
+      </div>
     )}
 
     <div className="logo-panel-right">
@@ -3500,65 +6642,147 @@ useEffect(() => {
       </>
     )}
 
-    {mode === 'admin' && mapView === MAP_VIEWS.SPACE_DATA && selectedBuildingId && panelAnchor && !isBuildingPanelCollapsed && (
-      <div
-        className="floating-panel"
-        style={{
+    {mode === 'admin' && mapView === MAP_VIEWS.SPACE_DATA && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+      const containerWidth = mapContainerRef.current?.clientWidth || 1000;
+      const containerHeight = mapContainerRef.current?.clientHeight || 800;
+      const PANEL_WIDTH = 360;
+      const PANEL_HEIGHT = 420;
+      const margin = 16;
+      const clamp = (val, min, max) => Math.max(min, Math.min(val, max));
+      const panelWidth = Math.max(300, Math.min(PANEL_WIDTH, containerWidth - margin * 2));
+      const sideMargin = margin + 40;
+      const leftAligned = clamp(containerWidth - panelWidth - sideMargin, 12, containerWidth - panelWidth - 12);
+      const anchoredTop = 12; // park the panel at the top-right over the logo area
+      const anchor = panelAnchor || { x: leftAligned, y: containerHeight * 0.65 };
+      const defaultTop = clamp(anchor.y, 8, containerHeight - PANEL_HEIGHT - 8);
+      const safeLeft = leftAligned;
+      const safeTop = defaultTop;
+      const buildingFeature = selectedBuildingFeatureRef.current;
+      let floorAnchor = null;
+      if (buildingFeature && buildingFeature.geometry) {
+        try {
+          const bbox = turf.bbox(buildingFeature);
+          if (bbox && bbox.length === 4 && bbox.every((v) => Number.isFinite(v))) {
+            const centerY = (bbox[1] + bbox[3]) / 2;
+            const screenPoint = mapRef.current?.project ? mapRef.current.project({ lng: bbox[2], lat: centerY }) : null;
+            if (screenPoint) {
+              const left = leftAligned;
+              const top = clamp(screenPoint.y - PANEL_HEIGHT * 0.35, 8, containerHeight - PANEL_HEIGHT - 8);
+              floorAnchor = { left, top };
+            }
+          }
+        } catch {}
+      }
+      const buildingPanelStyle = {
+        position: 'absolute',
+        zIndex: 10,
+        left: safeLeft,
+        top: safeTop,
+        width: panelWidth,
+        maxHeight: '75vh',
+        overflow: 'auto'
+      };
+      const floorPanelStyle = floorAnchor
+        ? {
           position: 'absolute',
           zIndex: 10,
-          left: Math.max(8, Math.min(panelAnchor.x + 12, (mapContainerRef.current?.clientWidth || 1000) - 360)),
-          top: Math.max(8, Math.min(panelAnchor.y + 12, (mapContainerRef.current?.clientHeight || 800) - 260)),
-        }}
-      >
-        {popupMode === 'building' && (
-          <BuildingPanel
-            buildingName={activeBuildingName}
-            stats={buildingStats}
-            keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
-            floors={availableFloors}
-            selectedFloor={panelSelectedFloor}
-            onChangeFloor={(fl) => setSelectedFloor(fl)}
-            onLoadFloorplan={loadSelectedFloor}
-            onClose={() => {
-              setIsBuildingPanelCollapsed(true);
-              setSelectedBuildingId(null);
-              setPanelAnchor(null);
-              currentFloorUrlRef.current = null;
-              panelBuildingKeyRef.current = null;
-              selectedBuildingFeatureRef.current = null;
-              setBuildingStats(null);
-              setFloorStats(null);
-              setPanelStats(null);
-              setPopupMode('building');
-            }}
-          />
-        )}
-        {popupMode === 'floor' && (
-          <FloorPanel
-            buildingName={activeBuildingName}
-            floorLabel={floorStats?.floorLabel || panelSelectedFloor}
-            stats={floorStats}
-            keyDepts={toKeyDeptList(floorStats?.totalsByDept)}
-            floors={availableFloors}
-            selectedFloor={panelSelectedFloor}
-            onChangeFloor={(fl) => setSelectedFloor(fl)}
-            onLoadFloorplan={loadSelectedFloor}
-            onClose={() => {
-              setIsBuildingPanelCollapsed(true);
-              setSelectedBuildingId(null);
-              setPanelAnchor(null);
-              currentFloorUrlRef.current = null;
-              panelBuildingKeyRef.current = null;
-              selectedBuildingFeatureRef.current = null;
-              setBuildingStats(null);
-              setFloorStats(null);
-              setPanelStats(null);
-              setPopupMode('building');
-            }}
-          />
-        )}
-      </div>
-    )}
+          left: Math.max(12, Math.min(floorAnchor.left, containerWidth - panelWidth - margin)),
+          top: anchoredTop,
+          width: panelWidth,
+          maxHeight: '80vh',
+          overflow: 'auto'
+        }
+        : buildingPanelStyle;
+      const panelStyle = popupMode === 'floor' ? floorPanelStyle : buildingPanelStyle;
+      return (
+        <div className="floating-panel" style={panelStyle}>
+          {popupMode === 'building' && (
+            <BuildingPanel
+              buildingName={activeBuildingName}
+              stats={buildingStats}
+              keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
+              floors={availableFloors}
+              selectedFloor={panelSelectedFloor}
+              onChangeFloor={(fl) => setSelectedFloor(fl)}
+              onLoadFloorplan={loadSelectedFloor}
+              onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onClose={() => {
+                setIsBuildingPanelCollapsed(true);
+                setSelectedBuildingId(null);
+                setPanelAnchor(null);
+                currentFloorUrlRef.current = null;
+                panelBuildingKeyRef.current = null;
+                selectedBuildingFeatureRef.current = null;
+                setBuildingStats(null);
+                setFloorStats(null);
+                setPanelStats(null);
+                setPopupMode('building');
+              }}
+              onExportPDF={handleExportBuilding}
+              onExplainBuilding={onExplainBuilding}
+              explainBuildingLoading={aiBuildingLoading}
+              explainBuildingDisabled={aiStatus !== 'ok' || !buildingStats}
+              explainBuildingError={aiBuildingErr}
+            />
+          )}
+          {popupMode === 'floor' && (
+            <FloorPanel
+              buildingName={activeBuildingName}
+              floorLabel={floorStats?.floorLabel || panelSelectedFloor}
+              stats={floorStats}
+              legendItems={floorLegendItems}
+              legendTitle={
+                {
+                  department: 'Key Departments',
+                  type: 'Key Types',
+                  occupancy: 'Occupancy',
+                  vacancy: 'Vacancy'
+                }[floorColorMode] || 'Legend'
+              }
+              floors={availableFloors}
+              selectedFloor={panelSelectedFloor}
+              onChangeFloor={(fl) => setSelectedFloor(fl)}
+              onLoadFloorplan={loadSelectedFloor}
+              onUnloadFloorplan={handleUnloadFloorplan}
+              onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              colorMode={floorColorMode}
+              onChangeColorMode={(mode) => {
+                setFloorColorMode(mode);
+                applyFloorColorMode(mode);
+              }}
+              legendSelection={floorLegendSelection}
+              onLegendClick={(name) => {
+                const ids = floorLegendLookup.get(name) || [];
+                setFloorLegendSelection((prev) => {
+                  const next = prev === name ? null : name;
+                  setFloorHighlight(next ? ids : null);
+                  return next;
+                });
+              }}
+              onClose={() => {
+                setIsBuildingPanelCollapsed(true);
+                setSelectedBuildingId(null);
+                setPanelAnchor(null);
+                currentFloorUrlRef.current = null;
+                panelBuildingKeyRef.current = null;
+                selectedBuildingFeatureRef.current = null;
+                setBuildingStats(null);
+                setFloorStats(null);
+                setPanelStats(null);
+                setPopupMode('building');
+              }}
+              onExportPDF={handleExportFloor}
+              onExplainFloor={onExplain}
+              explainLoading={aiLoading}
+              explainDisabled={aiStatus !== 'ok' || !floorStats}
+              explainError={aiErr}
+              moveScenarioMode={moveScenarioMode}
+              onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
+            />
+          )}
+        </div>
+      );
+    })()}
 
     {/* Move Scenario Summary Panel */}
     {moveScenarioMode && scenarioPanelVisible && (
@@ -3596,7 +6820,7 @@ useEffect(() => {
             className="mf-input"
             value={scenarioLabel}
             onChange={(e) => setScenarioLabel(e.target.value)}
-            placeholder="e.g. Art Dept to Hurley – Option A"
+            placeholder="e.g. Art Dept to Hurley - Option A"
             style={{ width: '100%' }}
           />
         </div>
@@ -3607,15 +6831,23 @@ useEffect(() => {
         </div>
 
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 2 }}>SF by Room Type</div>
-          {Object.keys(scenarioTotals.sfByRoomType).length === 0 ? (
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>Rooms by Type</div>
+          {combinedScenarioRoomStats.length === 0 ? (
             <div style={{ fontSize: 12, fontStyle: 'italic', color: '#666' }}>No rooms selected.</div>
           ) : (
             <table style={{ width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Type</th>
+                  <th style={{ textAlign: 'right' }}>Qty</th>
+                  <th style={{ textAlign: 'right' }}>SF</th>
+                </tr>
+              </thead>
               <tbody>
-                {Object.entries(scenarioTotals.sfByRoomType).map(([type, sf]) => (
+                {combinedScenarioRoomStats.map(({ type, count, sf }) => (
                   <tr key={type}>
                     <td>{type}</td>
+                    <td style={{ textAlign: 'right' }}>{count}</td>
                     <td style={{ textAlign: 'right' }}>{Math.round(sf).toLocaleString()}</td>
                   </tr>
                 ))}
@@ -3624,25 +6856,7 @@ useEffect(() => {
           )}
         </div>
 
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 2 }}>Room Type Counts</div>
-          {Object.keys(scenarioTotals.roomTypes).length === 0 ? (
-            <div style={{ fontSize: 12, fontStyle: 'italic', color: '#666' }}>No rooms selected.</div>
-          ) : (
-            <table style={{ width: '100%', fontSize: 12 }}>
-              <tbody>
-                {Object.entries(scenarioTotals.roomTypes).map(([type, count]) => (
-                  <tr key={type}>
-                    <td>{type}</td>
-                    <td style={{ textAlign: 'right' }}>{count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div style={{ marginTop: 4 }}>
+       <div style={{ marginTop: 4 }}>
           <label style={{ fontSize: 12 }}>Scenario Department</label>
           <select
             className="mf-input"
@@ -3657,6 +6871,24 @@ useEffect(() => {
           <button className="btn" style={{ marginTop: 6 }} onClick={assignDepartmentToSelection} disabled={!scenarioAssignedDept || scenarioSelection.size === 0}>
             Commit
           </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+          <button
+            className="btn"
+            onClick={onCompareScenario}
+            disabled={aiStatus !== 'ok' || aiScenarioLoading || !scenarioAssignedDept || !scenarioTotals}
+            title={
+              !scenarioAssignedDept
+                ? 'Select a department for the scenario before comparing.'
+                : !scenarioTotals
+                  ? 'Enable Move Scenario Mode and create a scenario to compare.'
+                  : 'Compare scenario vs current allocation for this department.'
+            }
+          >
+            {aiScenarioLoading ? 'Comparing...' : '\u2728 Compare scenario vs current'}
+          </button>
+          {aiScenarioErr ? <div style={{ color: 'crimson', fontSize: 12 }}>{aiScenarioErr}</div> : null}
         </div>
 
         <button
@@ -3686,34 +6918,70 @@ useEffect(() => {
                 imageAdded = true;
               }
 
+              const scenarioTitle = 'Move Scenario';
               const summaryLabel = scenarioLabel || 'Move Scenario';
+              const labelText = scenarioLabel?.trim() ? scenarioLabel.trim() : '';
               const textX = imageAdded ? imgWidth + margin * 2 : margin;
               const textWidth = pageWidth - textX - margin;
               const lineHeight = 16;
               let y = margin;
               doc.setFontSize(14);
-              const summaryLines = doc.splitTextToSize(summaryLabel, textWidth);
-              doc.text(summaryLines, textX, y);
-              y += lineHeight * summaryLines.length;
+              doc.text(scenarioTitle, textX, y);
+              if (labelText) {
+                doc.text(labelText, textX + textWidth, y, { align: 'right' });
+              }
+              y += lineHeight;
               doc.setFontSize(12);
               const addLine = (txt) => {
                 doc.text(txt, textX, y, { maxWidth: textWidth });
                 y += lineHeight;
               };
+              const deptName = scenarioAssignedDept || 'None selected';
+              const deptColor = getDeptColor(scenarioAssignedDept) || '#AAAAAA';
+              const badgeSize = 14;
+              doc.setDrawColor(0);
+              doc.setFillColor(deptColor);
+              doc.rect(textX, y, badgeSize, badgeSize, 'FD');
+              const deptText = `Scenario Dept: ${deptName}`;
+              doc.setTextColor('#000000');
+              doc.setFont(undefined, 'bold');
+              doc.text(deptText, textX + badgeSize + 6, y + badgeSize - 4, { maxWidth: textWidth - badgeSize - 6 });
+              doc.setFont(undefined, 'normal');
+              y += badgeSize + lineHeight / 2;
+              doc.setFontSize(12);
               addLine(`Total SF: ${Math.round(scenarioTotals.totalSF).toLocaleString()}`);
               addLine(`Rooms: ${scenarioTotals.rooms}`);
               y += lineHeight / 2;
-              addLine('SF by Room Type:');
+              doc.setFont(undefined, 'bold');
+              doc.text('Rooms by Type', textX, y);
+              y += lineHeight;
+              const colQtyX = textX + textWidth * 0.65;
+              const colSfX = textX + textWidth;
+              doc.setFontSize(11);
+              doc.text('Type', textX, y);
+              doc.text('Qty', colQtyX, y, { align: 'right' });
+              doc.text('SF', colSfX, y, { align: 'right' });
+              y += lineHeight;
               doc.setFont(undefined, 'normal');
-              Object.entries(scenarioTotals.sfByRoomType).forEach(([type, sf]) => {
-                const line = `${type}: ${Math.round(sf).toLocaleString()} SF`;
-                addLine(line);
+              if (!combinedScenarioRoomStats.length) {
+                doc.text('No rooms selected.', textX, y);
+                y += lineHeight;
+              } else {
+              const typeColWidth = Math.max(textWidth - 120, 100);
+              combinedScenarioRoomStats.forEach(({ type, count, sf }) => {
+                const roundedSf = Math.round(sf).toLocaleString();
+                const typeLines = doc.splitTextToSize(type, typeColWidth);
+                typeLines.forEach((line, idx) => {
+                  doc.text(line, textX, y + idx * (lineHeight * 0.9));
+                });
+                doc.text(String(count), colQtyX, y, { align: 'right' });
+                doc.text(roundedSf, colSfX, y, { align: 'right' });
+                y += lineHeight * Math.max(1, typeLines.length * 0.9);
               });
-              y += lineHeight / 2;
-              addLine('Room Type Counts:');
-              Object.entries(scenarioTotals.roomTypes).forEach(([type, count]) => {
-                addLine(`${type}: ${count}`);
-              });
+              }
+              doc.setFont(undefined, 'normal');
+              doc.setFontSize(12);
+              y += lineHeight / 4;
               const filename = `${(summaryLabel || 'move-scenario').replace(/\s+/g, '-').toLowerCase()}.pdf`;
               doc.save(filename);
             } catch (err) {
@@ -3728,18 +6996,18 @@ useEffect(() => {
     )}
 
     {isControlsVisible && (
-      <div className="map-controls-panel">
+      <div className="map-controls-panel" style={{ width: 270, fontSize: 12.5, lineHeight: 1.25 }}>
         <div className="map-controls">
 
           {/* Admin access - compact header layout */}
           {mode === 'admin' && (
-            <div className="control-section" style={{ background: '#fff', padding: 8, border: '1px solid #ddd', borderRadius: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-                <h5 style={{ margin: 0 }}>Admin access</h5>
+            <div className="control-section" style={{ background: '#fff', padding: 6, border: '1px solid #ddd', borderRadius: 6, marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
+                <h5 style={{ margin: 0, fontSize: 13 }}>Admin access</h5>
                 {!authUser ? (
                   <button onClick={handleAdminSignIn}>Sign in with Google</button>
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                       {authUser.email} {isAdminUser ? '(admin)' : '(no admin)'}
                     </span>
@@ -3752,7 +7020,7 @@ useEffect(() => {
 
           {/* Map View */}
           {mode === 'admin' && (
-            <div className="control-section theme-selector" style={{ marginTop: 8 }}>
+            <div className="control-section theme-selector" style={{ marginTop: 6 }}>
               <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
               <select id="theme-select" value={mapView} onChange={(e) => setMapView(e.target.value)}>
                 {MAP_VIEW_OPTIONS.map(opt => (
@@ -3762,82 +7030,24 @@ useEffect(() => {
             </div>
           )}
 
-          {/* Data Filters */}
           {mode === 'admin' && (
-            <div className="control-section data-filters" style={{ marginTop: 8 }}>
-              <h4 style={{ margin: '0 0 6px 0' }}>Data Filters</h4>
-              <div className="filter-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={showStudentMarkers}
-                    onChange={() => setShowStudentMarkers(v => !v)}
-                  />
-                  Show Student Markers
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={showStaffMarkers}
-                    onChange={() => setShowStaffMarkers(v => !v)}
-                  />
-                  Show Staff Markers
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={moveScenarioMode}
-                    onChange={(e) => {
-                      const enabled = e.target.checked;
-                      setMoveScenarioMode(enabled);
-                      if (!enabled) {
-                        clearScenario();
-                      } else {
-                        setScenarioPanelVisible(true);
-                      }
-                    }}
-                  />
-                  Move Scenario Mode
-                </label>
-              </div>
-              {moveScenarioMode && (
-                <div style={{ marginTop: 6, fontSize: 11, color: '#555' }}>
-                  Click rooms to add/remove them from a what-if scenario. Real data is not changed.
-                </div>
-              )}
-            </div>
-          )}
+            <>
+              <div
+                className="floorplans-section"
+                style={{
+                  marginTop: 8,
+                  padding: 6,
+                  borderRadius: 8,
+                  border: '1px solid rgba(0,0,0,0.25)',
+                  background: 'linear-gradient(180deg, rgba(235,250,240,0.9), rgba(220,242,230,0.9))'
+                }}
+              >
+                <h4 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Floorplans</h4>
 
-          {/* Mode */}
-          <div className="mode-selector" style={{ marginTop: 8 }}>
-            <button
-              className={interactionMode === 'select' ? 'active' : ''}
-              onClick={() => setInteractionMode('select')}
-            >
-              Select/Marker
-            </button>
-          </div>
-
-          {/* Admin actions */}
-          {mode === 'admin' && (
-            <div className="control-section admin-controls" style={{ marginTop: 8 }}>
-              <div className="actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <button className="btn span-2" onClick={exportData}>Export Map Data</button>
-                {config.enableDrawingEntry && (
-                  <button className="btn span-2" onClick={exportDrawingEntries}>Export Drawing Entries</button>
-                )}
-                <button className="btn" onClick={clearMarkers}>Clear Markers</button>
-                <button className="btn span-2" onClick={clearConditions}>Clear Conditions</button>
-              </div>
-
-              {/* Floorplans (simple file-based loader) */}
-              <div className="floorplans-section" style={{ marginTop: 10 }}>
-                <h4 style={{ margin: '0 0 6px 0' }}>Floorplans</h4>
-
-                <div className="floorplans" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {/* Building select from BUILDINGS_LIST */}
+                <div className="floorplans" style={{ display: 'grid', gap: 6 }}>
                   <select
                     id="fp-building"
+                    style={{ width: '100%' }}
                     value={selectedBuilding}
                     onChange={(e) => {
                       const newBldg = e.target.value;
@@ -3850,9 +7060,9 @@ useEffect(() => {
                     ))}
                   </select>
 
-                  {/* Floor select FROM the selected building's floors */}
                   <select
                     id="fp-floor"
+                    style={{ width: '100%' }}
                     value={selectedFloor ?? ''}
                     onChange={(e) => setSelectedFloor(e.target.value)}
                     disabled={!availableFloors.length}
@@ -3862,19 +7072,282 @@ useEffect(() => {
                     ))}
                   </select>
 
-                  <button className="btn" onClick={handleLoadFloorplan} disabled={!availableFloors.length}>Load</button>
-                  <button className="btn" onClick={handleUnloadFloorplan}>Unload</button>
-                  <button className="btn" onClick={() => centerOnCurrentFloor(mapRef.current)}>Center</button>
+                  <button className="btn" style={{ width: '100%' }} onClick={handleLoadFloorplan} disabled={!availableFloors.length}>Load</button>
+                  <button className="btn" style={{ width: '100%' }} onClick={handleUnloadFloorplan}>Unload</button>
+                  <button className="btn" style={{ width: '100%' }} onClick={() => centerOnCurrentFloor(mapRef.current)}>Center</button>
                 </div>
 
-                <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-                  Files must be named like <code>LEVEL_1_Dept.geojson</code> in
-                  <br />
-                  <code>public/floorplans/Hastings/&lt;BuildingFolder&gt;/</code>
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    className="mf-btn"
+                    style={{ width: '100%', fontWeight: 600 }}
+                    onClick={handleToggleMoveScenarioMode}
+                  >
+                    Move Scenario Mode {moveScenarioMode ? 'ON' : 'OFF'}
+                  </button>
+                  {moveScenarioMode && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#555', textAlign: 'center' }}>
+                      Click rooms to add/remove them from a what-if scenario. Real data is not changed.
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+
+              <div
+                className="floorplans-section"
+                style={{
+                  marginTop: 8,
+                  padding: 6,
+                  borderRadius: 8,
+                  border: '1px solid rgba(0,0,0,0.25)',
+                  background: 'linear-gradient(180deg, rgba(255,247,235,0.9), rgba(255,239,219,0.9))'
+                }}
+              >
+                <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Space Data Export (beta)</h4>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <select
+                    style={{ width: '100%' }}
+                    value={exportBuildingFilter}
+                    onChange={(e) => setExportBuildingFilter(e.target.value)}
+                  >
+                    <option value="__all__">All buildings</option>
+                    {BUILDINGS_LIST.map((b) => (
+                      <option key={b.name} value={b.name}>{b.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="mf-input"
+                    style={{ width: '100%' }}
+                    placeholder="Filter department (optional)"
+                    value={exportDeptFilter}
+                    onChange={(e) => setExportDeptFilter(e.target.value)}
+                  />
+                  <select
+                    style={{ width: '100%' }}
+                    value={exportSpaceMode}
+                    onChange={(e) => setExportSpaceMode(e.target.value)}
+                  >
+                    <option value="rooms">Room rows</option>
+                    <option value="summary">Building summary</option>
+                  </select>
+                  <button
+                    className="btn"
+                    style={{ width: '100%' }}
+                    onClick={() => exportSpaceCsv()}
+                    disabled={exportingSpaceData}
+                  >
+                    {exportingSpaceData
+                      ? 'Exporting...'
+                      : exportSpaceMode === 'summary'
+                        ? 'Export Summary CSV'
+                        : 'Export Space CSV'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: '#555', marginTop: 2, minHeight: 0 }}>
+                  {exportSpaceMessage || (exportSpaceMode === 'summary'
+                    ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
+                    : '')}
+                </div>
+              </div>
+            </>
           )}
+          {/* Mode */}
+          {/*
+          <div className="mode-selector" style={{ marginTop: 8 }}>
+            <button
+              className={interactionMode === 'select' ? 'active' : ''}
+              onClick={() => setInteractionMode('select')}
+            >
+              Select/Marker
+            </button>
+          </div>
+          */}
+
+
+            <div
+              style={{
+                marginTop: 4,
+                padding: 6,
+                borderRadius: 8,
+                border: '1px solid rgba(0,0,0,0.25)',
+                background: 'linear-gradient(180deg, rgba(240,246,255,0.94), rgba(228,238,255,0.94))',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
+              }}
+            >
+            <style>{`@keyframes aiSparklePulse { 0% { transform: translateY(0); } 50% { transform: translateY(-1px); } 100% { transform: translateY(0); } }`}</style>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 800, letterSpacing: 0.2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
+                  <span style={{ color: '#c62828', fontFamily: '\'Trebuchet MS\', \'Gill Sans\', \'Helvetica Neue\', Arial, sans-serif', fontWeight: 700 }}>
+                    MAPFLUENCE
+                  </span>
+                  <span>AI</span>
+                  <span
+                    title="AI-generated summaries based on currently loaded space data."
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      marginLeft: 'auto',
+                      padding: '2px 6px',
+                      borderRadius: 999,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      border: '1px solid rgba(0,0,0,0.15)',
+                      background: 'rgba(255,255,255,0.9)',
+                      animation: aiStatus === 'ok' ? 'aiSparklePulse 2.8s ease-in-out infinite' : 'none'
+                    }}
+                  >
+                    {"\u2728 AI Summary"}
+                  </span>
+                </div>
+                <div style={{ marginTop: 4, fontSize: 11, opacity: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <span>Summaries from loaded space data</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '2px 6px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(0,0,0,0.15)',
+                        background: aiStatus === 'ok' ? 'rgba(0,255,0,0.10)' : 'rgba(255,0,0,0.08)'
+                      }}
+                      title={aiStatus === 'ok' ? 'AI server available' : 'AI server not reachable'}
+                    >
+                      {aiStatus === 'ok' ? 'Online' : 'Unavailable'}
+                    </span>
+                    <button
+                      onClick={() => setAiInfoOpen(true)}
+                      title="What Mapfluence AI is doing"
+                      style={{
+                        border: '1px solid rgba(0,0,0,0.15)',
+                        borderRadius: 999,
+                        background: 'white',
+                        width: 18,
+                        height: 18,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: 10
+                      }}
+                      aria-label="What Mapfluence AI is doing"
+                    >
+                      ?
+                    </button>
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'none', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: '2px 6px',
+                    borderRadius: 999,
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    background: aiStatus === 'ok' ? 'rgba(0,255,0,0.10)' : 'rgba(255,0,0,0.08)'
+                  }}
+                  title={aiStatus === 'ok' ? 'AI server available' : 'AI server not reachable'}
+                >
+                  {aiStatus === 'ok' ? 'Online' : 'Unavailable'}
+                </span>
+                <button
+                  onClick={() => setAiInfoOpen(true)}
+                  title="What Mapfluence AI is doing"
+                  style={{
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    borderRadius: 999,
+                    background: 'white',
+                    width: 20,
+                    height: 20,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    marginTop: 2
+                  }}
+                  aria-label="What Mapfluence AI is doing"
+                >
+                  i
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+              <button
+                style={{ padding: '5px 7px', fontSize: 11 }}
+                disabled={aiStatus !== 'ok' || !floorStats || aiLoading}
+                onClick={onExplain}
+              >
+                {aiLoading ? 'Explaining...' : '\u2728 Explain this floor'}
+              </button>
+
+              <button
+                style={{ padding: '5px 7px', fontSize: 11 }}
+                disabled={aiStatus !== 'ok' || !buildingStats || aiBuildingLoading}
+                onClick={onExplainBuilding}
+              >
+                {aiBuildingLoading ? 'Explaining...' : '\u2728 Explain this building'}
+              </button>
+
+              <button
+                style={{ padding: '5px 7px', fontSize: 11 }}
+                disabled={aiStatus !== 'ok' || !campusStats || aiCampusLoading}
+                onClick={onExplainCampus}
+              >
+                {aiCampusLoading ? 'Explaining...' : '\u2728 Explain campus'}
+              </button>
+            </div>
+
+            <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+              <button style={{ padding: '5px 7px', fontSize: 11 }} onClick={() => setAskOpen(true)}>
+                {"\u2728 Ask Mapfluence"}
+              </button>
+            </div>
+
+            <div style={{ marginTop: 6 }}>
+              <button
+                disabled={aiStatus !== 'ok'}
+                onClick={() => setAiCreateScenarioOpen(true)}
+                style={{ width: '100%', padding: '5px 7px', fontSize: 11 }}
+              >
+                {"\u2728 Create move scenario"}
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 11, opacity: 0.75, lineHeight: 1.35 }}>
+              Results are descriptive and do not modify project data.
+            </div>
+
+            {(aiErr || aiBuildingErr || aiCampusErr) ? (
+              <div style={{ marginTop: 8, color: 'crimson', fontSize: 12 }}>
+                {aiErr || aiBuildingErr || aiCampusErr}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {mode === 'admin' && isControlsVisible && (
+      <div
+        style={{
+          position: 'absolute',
+          left: 20,
+          bottom: 20,
+          width: 270,
+          borderRadius: 8,
+          border: '1px solid rgba(0,0,0,0.25)',
+          background: 'linear-gradient(180deg, rgba(245,245,245,0.96), rgba(230,230,230,0.96))',
+          padding: 8,
+          boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
+        }}
+      >
+        <h4 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Data Filters</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+          <button className="btn" onClick={exportData}>Export Map Data</button>
+          <button className="btn" onClick={clearConditions}>Clear Conditions</button>
         </div>
       </div>
     )}
@@ -3900,7 +7373,72 @@ useEffect(() => {
             boxShadow: '0 18px 36px rgba(0,0,0,0.2)'
           }}
         >
-          <h4 style={{ margin: '0 0 12px 0' }}>Edit Room {roomEditData.feature?.properties?.name || roomEditData.roomLabel || ''}</h4>
+                <h4 style={{ margin: '0 0 12px 0' }}>
+                  {roomEditTargets.length > 1
+                    ? `Edit ${roomEditTargets.length} Rooms`
+                    : `Edit Room ${roomEditData.feature?.properties?.name || roomEditData.roomLabel || ''}`}
+                </h4>
+
+          {roomEditTargets.length > 1 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Selected Rooms</div>
+              <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #e5e5e5', borderRadius: 6 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f9f9f9', position: 'sticky', top: 0 }}>
+                    <tr>
+                      <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={roomEditIncluded.size === roomEditTargets.length}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? new Set(roomEditTargets.map((t) => t.roomId || String(t.revitId ?? '')))
+                              : new Set();
+                            setRoomEditIncluded(next);
+                          }}
+                        />
+                      </th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Room</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Area (SF)</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Department</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roomEditTargets.map((t) => {
+                      const key = t.roomId || String(t.revitId ?? '');
+                      const checked = roomEditIncluded.has(key);
+                      const areaVal = Number.isFinite(t.properties?.area) ? Math.round(t.properties.area) : '';
+                      return (
+                        <tr key={key} style={{ borderTop: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setRoomEditIncluded((prev) => {
+                                  const next = new Set(prev || []);
+                                  if (e.target.checked) next.add(key);
+                                  else next.delete(key);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: '6px 8px', fontWeight: 600 }}>{t.roomLabel || t.feature?.properties?.name || key}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {areaVal ? areaVal.toLocaleString() : ''}
+                          </td>
+                          <td style={{ padding: '6px 8px' }}>{t.properties?.department || t.feature?.properties?.department || ''}</td>
+                          <td style={{ padding: '6px 8px' }}>{t.properties?.type || t.feature?.properties?.type || ''}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <ComboInput
             label="Type"
@@ -3932,16 +7470,30 @@ useEffect(() => {
             />
           </div>
 
-          <div className="mf-form-row">
-            <label>Occupant</label>
-            <input
-              className="mf-input"
-              value={roomEditData.properties?.occupant ?? ''}
-              onChange={(e) =>
-                setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, occupant: e.target.value } }) : prev))
-              }
-            />
-          </div>
+          {editHasTeaching && (
+            <div className="mf-form-row">
+              <label>Seat Count</label>
+              <input
+                className="mf-input"
+                value={editSeatCountDisplay}
+                readOnly
+                disabled
+              />
+            </div>
+          )}
+
+          {editHasOffice && (
+            <div className="mf-form-row">
+              <label>Occupant</label>
+              <input
+                className="mf-input"
+                value={roomEditData.properties?.occupant ?? ''}
+                onChange={(e) =>
+                  setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, occupant: e.target.value } }) : prev))
+                }
+              />
+            </div>
+          )}
 
           <div className="mf-form-row">
             <label>Comments</label>
@@ -3955,27 +7507,626 @@ useEffect(() => {
             />
           </div>
 
-          <div className="mf-actions">
-            <button className="btn" onClick={closeRoomEdit}>Cancel</button>
-            <button
-              className="btn"
-              onClick={async () => {
-                const saved = await saveRoomEdits({
-                  roomId: roomEditData.roomId,
-                  buildingId: roomEditData.buildingId,
-                  floorName: roomEditData.floorName,
-                  revitId: roomEditData.revitId,
-                  properties: roomEditData.properties
-                });
-                if (saved) {
-                  roomEditData.onApply?.(saved);
+        <div className="mf-actions">
+          <button className="btn" onClick={closeRoomEdit}>Cancel</button>
+          <button
+            className="btn"
+            onClick={async () => {
+                const includedKeys = roomEditIncluded;
+                const targets = roomEditTargets.length
+                  ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
+                  : [];
+                if (!targets.length) return;
+                let savedCount = 0;
+                const sharedProps = roomEditData.properties || {};
+                const mapRefCurrent = mapRef.current;
+                const src = mapRefCurrent?.getSource(FLOOR_SOURCE);
+                const sourceData = src ? (src._data || src.serialize?.().data || null) : null;
+                const patchedFeatures = sourceData ? (toFeatureCollection(sourceData)?.features || []) : [];
+                for (const tgt of targets) {
+                  const fallbackProps = {
+                    type: tgt.properties?.type ?? tgt.feature?.properties?.type ?? '',
+                    department: tgt.properties?.department ?? tgt.feature?.properties?.department ?? '',
+                    occupant: tgt.properties?.occupant ?? tgt.feature?.properties?.occupant ?? '',
+                    comments: tgt.properties?.comments ?? tgt.feature?.properties?.comments ?? ''
+                  };
+                  const propsForTarget = {
+                    ...tgt.properties,
+                    ...sharedProps,
+                    type:
+                      sharedProps.type != null && String(sharedProps.type).trim() !== ''
+                        ? sharedProps.type
+                        : fallbackProps.type,
+                    department:
+                      sharedProps.department != null && String(sharedProps.department).trim() !== ''
+                        ? sharedProps.department
+                        : fallbackProps.department
+                  };
+                  const saved = await saveRoomEdits({
+                    roomId: tgt.roomId,
+                    buildingId: tgt.buildingId,
+                    floorName: tgt.floorName,
+                    revitId: tgt.revitId,
+                    properties: propsForTarget
+                  });
+                  if (saved) {
+                    savedCount += 1;
+                    if (patchedFeatures.length) {
+                      const fid = tgt.revitId ?? tgt.feature?.id ?? tgt.feature?.properties?.RevitId ?? null;
+                      if (fid != null) {
+                        const feat = patchedFeatures.find((f) => (f.id ?? f.properties?.RevitId) === fid);
+                        if (feat && feat.properties) {
+                          feat.properties.department = propsForTarget.department ?? feat.properties.department;
+                          feat.properties.department = feat.properties.department || propsForTarget.department || '';
+                          feat.properties.Department = feat.properties.department;
+                          feat.properties.type = propsForTarget.type ?? feat.properties.type;
+                          feat.properties.Type = feat.properties.type;
+                          feat.properties.RoomType = feat.properties.type;
+                          feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
+                          feat.properties.occupant = feat.properties.Occupant;
+                        }
+                      }
+                    }
+                  }
+                }
+                if (savedCount > 0) {
+                  try {
+                    if (src && patchedFeatures.length) {
+                      const updatedFc = toFeatureCollection(sourceData) || { type: 'FeatureCollection', features: [] };
+                      updatedFc.features = patchedFeatures;
+                      src.setData(updatedFc);
+                    }
+                  } catch {}
                   roomEditData.refreshPopup?.();
+                  clearRoomEditSelection();
                   closeRoomEdit();
                 }
-              }}
+            }}
+          >
+            {roomEditTargets.length > 1 ? `Save ${roomEditTargets.length} Rooms` : 'Save'}
+          </button>
+        </div>
+        </div>
+      </div>
+    )}
+    {aiOpen && aiResult && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10001,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+          <div
+            style={{
+            width: 'min(760px, 92vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+          }}
+          >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>
+                  {aiResult.title && aiResult.title.includes('Summary')
+                    ? aiResult.title
+                    : `${aiResult.title || 'Level'} - Summary`}
+                </div>
+                <span
+                  title="AI-generated summary based on currently loaded space data."
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    background: '#f7f7ff'
+                  }}
+                >
+                  {"\u2728 AI Summary"}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>AI-assisted overview</div>
+            </div>
+            <button className="btn" onClick={() => setAiOpen(false)}>Close</button>
+          </div>
+          <div style={{ marginTop: 10, lineHeight: 1.45 }}>
+            {aiResult.summary ? <p style={{ margin: '6px 0 10px 0' }}>{aiResult.summary}</p> : null}
+            <div>
+              <h4 style={{ margin: '8px 0 4px 0' }}>Insights</h4>
+              <ul style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                {(aiResult.insights || []).map((x, i) => <li key={i}>{x}</li>)}
+              </ul>
+            </div>
+            {Array.isArray(aiResult.watchouts) && aiResult.watchouts.length ? (
+              <div>
+                <h4 style={{ margin: '8px 0 4px 0' }}>Watchouts</h4>
+                <ul style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                  {aiResult.watchouts.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {Array.isArray(aiResult.data_used) && aiResult.data_used.length ? (
+              <small style={{ color: '#555' }}>Data used: {aiResult.data_used.join(', ')}</small>
+            ) : null}
+            <div style={{ marginTop: 12, fontSize: 11, color: '#666' }}>
+              AI summaries reflect available data at the time of generation.
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {aiBuildingOpen && aiBuildingResult && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10001,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(760px, 92vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>
+                  {aiBuildingResult.title && aiBuildingResult.title.includes('Summary')
+                    ? aiBuildingResult.title
+                    : `${aiBuildingResult.title || 'Building'} - Summary`}
+                </div>
+                <span
+                  title="AI-generated summary based on currently loaded space data."
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    background: '#f7f7ff'
+                  }}
+                >
+                  {"\u2728 AI Summary"}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>AI-assisted overview</div>
+            </div>
+            <button className="btn" onClick={() => setAiBuildingOpen(false)}>Close</button>
+          </div>
+          <div style={{ marginTop: 10, lineHeight: 1.45 }}>
+            {aiBuildingResult.summary ? <p style={{ margin: '6px 0 10px 0' }}>{aiBuildingResult.summary}</p> : null}
+            <div>
+              <h4 style={{ margin: '8px 0 4px 0' }}>Insights</h4>
+              <ul style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                {(aiBuildingResult.insights || []).map((x, i) => <li key={i}>{x}</li>)}
+              </ul>
+            </div>
+            {Array.isArray(aiBuildingResult.watchouts) && aiBuildingResult.watchouts.length ? (
+              <div>
+                <h4 style={{ margin: '8px 0 4px 0' }}>Watchouts</h4>
+                <ul style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                  {aiBuildingResult.watchouts.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {Array.isArray(aiBuildingResult.data_used) && aiBuildingResult.data_used.length ? (
+              <small style={{ color: '#555' }}>Data used: {aiBuildingResult.data_used.join(', ')}</small>
+            ) : null}
+            <div style={{ marginTop: 12, fontSize: 11, color: '#666' }}>
+              AI summaries reflect available data at the time of generation.
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {aiCampusOpen && aiCampusResult && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10001,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(760px, 92vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>
+                  {aiCampusResult.title && aiCampusResult.title.includes('Summary')
+                    ? aiCampusResult.title
+                    : `${aiCampusResult.title || activeUniversityName || 'Campus'} - Summary`}
+                </div>
+                <span
+                  title="AI-generated summary based on currently loaded space data."
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    background: '#f7f7ff'
+                  }}
+                >
+                  {"\u2728 AI Summary"}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>AI-assisted overview</div>
+            </div>
+            <button className="btn" onClick={() => setAiCampusOpen(false)}>Close</button>
+          </div>
+          <div style={{ marginTop: 10, lineHeight: 1.45 }}>
+            {aiCampusResult.summary ? <p style={{ margin: '6px 0 10px 0' }}>{aiCampusResult.summary}</p> : null}
+            <div>
+              <h4 style={{ margin: '8px 0 4px 0' }}>Insights</h4>
+              <ul style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                {(aiCampusResult.insights || []).map((x, i) => <li key={i}>{x}</li>)}
+              </ul>
+            </div>
+            {Array.isArray(aiCampusResult.watchouts) && aiCampusResult.watchouts.length ? (
+              <div>
+                <h4 style={{ margin: '8px 0 4px 0' }}>Watchouts</h4>
+                <ul style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                  {aiCampusResult.watchouts.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {Array.isArray(aiCampusResult.data_used) && aiCampusResult.data_used.length ? (
+              <small style={{ color: '#555' }}>Data used: {aiCampusResult.data_used.join(', ')}</small>
+            ) : null}
+            <div style={{ marginTop: 12, fontSize: 11, color: '#666' }}>
+              AI summaries reflect available data at the time of generation.
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {aiScenarioOpen && aiScenarioResult && (() => {
+      const rollupRoomTypeCounts = (roomTypes = {}) => {
+        let offices = 0, classrooms = 0, labs = 0;
+
+        for (const [label, qty] of Object.entries(roomTypes || {})) {
+          const s = String(label || "").toLowerCase();
+          const n = Number(qty || 0) || 0;
+
+          if (s.includes("office")) offices += n;
+          else if (s.includes("class")) classrooms += n;
+          else if (s.includes("lab")) labs += n;
+        }
+
+        return { offices, classrooms, labs };
+      };
+
+      const b = scenarioBaselineTotals || {};
+      const s = scenarioTotals || {};
+
+      const bCounts = rollupRoomTypeCounts(b.roomTypes);
+      const sCounts = rollupRoomTypeCounts(s.roomTypes);
+
+      return (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10001,
+            display: 'grid',
+            placeItems: 'center',
+            background: 'rgba(0,0,0,0.45)'
+          }}
+        >
+          <div
+            style={{
+              width: 'min(760px, 92vw)',
+              background: '#fff',
+              borderRadius: 12,
+              padding: 16,
+              boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <b>
+                {`${scenarioAssignedDept || 'Scenario'} - ${scenarioBaselineTotals?.__label || 'baseline'} to ${activeBuildingName || 'scenario'}${selectedFloor ? ` (${selectedFloor})` : ''}`}
+              </b>
+              <button onClick={() => setAiScenarioOpen(false)}>Close</button>
+            </div>
+
+            <p style={{ marginTop: 10 }}>{aiScenarioResult.summary}</p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                  Baseline (Current)
+                </div>
+                <div style={{ fontSize: 13 }}>SF: {Math.round(scenarioBaselineTotals?.totalSF || 0).toLocaleString()}</div>
+                <div style={{ fontSize: 13 }}>Rooms: {Math.round(scenarioBaselineTotals?.rooms || 0).toLocaleString()}</div>
+                {(bCounts.offices || bCounts.classrooms || bCounts.labs) ? (
+                  <>
+                    <div style={{ fontSize: 13 }}>Offices: {bCounts.offices}</div>
+                    <div style={{ fontSize: 13 }}>Classrooms: {bCounts.classrooms}</div>
+                    <div style={{ fontSize: 13 }}>Labs: {bCounts.labs}</div>
+                  </>
+                ) : null}
+              </div>
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                  Scenario ({aiScenarioResult?.scenarioDept || scenarioAssignedDept || 'Selected Dept'})
+                </div>
+                <div style={{ fontSize: 13 }}>SF: {Math.round(scenarioTotals?.totalSF || 0).toLocaleString()}</div>
+                <div style={{ fontSize: 13 }}>Rooms: {Math.round(scenarioTotals?.rooms || 0).toLocaleString()}</div>
+                {(sCounts.offices || sCounts.classrooms || sCounts.labs) ? (
+                  <>
+                    <div style={{ fontSize: 13 }}>Offices: {sCounts.offices}</div>
+                    <div style={{ fontSize: 13 }}>Classrooms: {sCounts.classrooms}</div>
+                    <div style={{ fontSize: 13 }}>Labs: {sCounts.labs}</div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            <b>{`Scenario - ${aiScenarioResult?.scenarioDept || scenarioAssignedDept || 'Selected Dept'}`}</b>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Pluses</div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {(aiScenarioResult?.scenarioPros || []).map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Minuses</div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {(aiScenarioResult?.scenarioCons || []).map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+            </div>
+
+            {(aiScenarioResult.risks?.length) ? (
+              <>
+                <b>Risks / watchouts</b>
+                <ul>
+                  {aiScenarioResult.risks.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </>
+            ) : null}
+
+            {(aiScenarioResult.notes?.length) ? (
+              <>
+                <b>Notes</b>
+                <ul>
+                  {aiScenarioResult.notes.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        </div>
+      );
+    })()}
+    {aiCreateScenarioOpen && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10002,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(560px, 92vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
+            lineHeight: 1.4
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Create move scenario (AI)</div>
+              <div style={{ fontSize: 12, color: '#555' }}>Uses campus-wide room inventory to suggest candidates.</div>
+            </div>
+            <button className="btn" onClick={() => setAiCreateScenarioOpen(false)}>Close</button>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontWeight: 600, fontSize: 12 }}>Request</label>
+              <textarea
+                value={aiCreateScenarioText}
+                onChange={(e) => setAiCreateScenarioText(e.target.value)}
+                rows={3}
+                placeholder="e.g. Find a new home for Physics; move the Art department to the Gray Center."
+                style={{ width: '100%', resize: 'vertical', padding: 8, borderRadius: 8, border: '1px solid #d0d0d0', marginTop: 4 }}
+              />
+          </div>
+
+          {aiCreateScenarioErr ? (
+            <div style={{ color: 'crimson', marginTop: 6, fontSize: 12 }}>
+              {aiCreateScenarioErr}
+            </div>
+          ) : null}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <button
+              className="btn"
+              disabled={aiCreateScenarioLoading || !aiCreateScenarioText.trim() || aiStatus !== 'ok'}
+              onClick={onCreateMoveScenario}
             >
-              Save
+              {aiCreateScenarioLoading ? 'Planning...' : 'Create move scenario'}
             </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {aiCreateScenarioResult && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10001,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(820px, 94vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
+            lineHeight: 1.45
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{aiCreateScenarioResult.title || 'Move scenario plan'}</div>
+              {aiCreateScenarioResult.interpretedIntent ? (
+                <div style={{ fontSize: 12, color: '#555' }}>{aiCreateScenarioResult.interpretedIntent}</div>
+              ) : null}
+            </div>
+            <button className="btn" onClick={() => setAiCreateScenarioResult(null)}>Close</button>
+          </div>
+
+          {aiCreateScenarioResult.selectionCriteria?.length ? (
+            <div style={{ marginTop: 10 }}>
+              <b>Selection criteria</b>
+              <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
+                {aiCreateScenarioResult.selectionCriteria.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          <div style={{ marginTop: 10 }}>
+            <b>Recommended candidates</b>
+            {aiCreateScenarioResult.recommendedCandidates?.length ? (
+              <div style={{ marginTop: 6, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px', background: '#f8f9fb' }}>
+                  <button className="btn" onClick={applyAiMoveCandidatesToScenario}>
+                    Select these rooms in Move Scenario
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 3fr', background: '#f8f9fb', padding: '6px 8px', fontWeight: 600, fontSize: 12 }}>
+                  <div>Location</div>
+                  <div>Room</div>
+                  <div style={{ textAlign: 'right' }}>SF</div>
+                  <div style={{ textAlign: 'right' }}>Vacancy</div>
+                  <div>Rationale</div>
+                </div>
+                <div>
+                  {aiCreateScenarioResult.recommendedCandidates.map((c, i) => (
+                    <div
+                      key={c.id || i}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '2fr 1fr 1fr 1fr 3fr',
+                        padding: '6px 8px',
+                        borderTop: '1px solid #f0f0f0',
+                        fontSize: 12
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{c.buildingLabel || 'Building'}</div>
+                        <div style={{ opacity: 0.75 }}>{c.floorId || ''}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{c.roomLabel || 'Room'}</div>
+                        <div style={{ opacity: 0.75 }}>{c.type || 'Unspecified'}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>{Math.round(Number(c.sf || 0)).toLocaleString()}</div>
+                      <div style={{ textAlign: 'right' }}>{c.vacancy || (c.occupant ? 'Occupied' : 'Vacant')}</div>
+                      <div>{c.rationale || ''}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#666' }}>No candidates returned.</div>
+            )}
+          </div>
+
+          {aiCreateScenarioResult.assumptions?.length ? (
+            <div style={{ marginTop: 10 }}>
+              <b>Assumptions</b>
+              <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
+                {aiCreateScenarioResult.assumptions.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          {aiCreateScenarioResult.nextSteps?.length ? (
+            <div style={{ marginTop: 10 }}>
+              <b>Next steps</b>
+              <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
+                {aiCreateScenarioResult.nextSteps.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )}
+    {aiInfoOpen && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10002,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          style={{
+            width: 'min(520px, 92vw)',
+            background: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
+            lineHeight: 1.5,
+            fontSize: 13
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>What Mapfluence AI is doing</div>
+            <button className="btn" onClick={() => setAiInfoOpen(false)}>Close</button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>What Mapfluence AI is doing</div>
+            <ul style={{ paddingLeft: 18, margin: '0 0 10px 0' }}>
+              <li>Generates summaries and comparisons from the statistics currently loaded in this session.</li>
+              <li>Uses your selected scope (campus / building / floor) and scenario totals when available.</li>
+              <li>Produces descriptive output and does not modify project data.</li>
+            </ul>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>What Mapfluence AI is not doing</div>
+            <ul style={{ paddingLeft: 18, margin: 0 }}>
+              <li>Not writing to the database automatically.</li>
+              <li>Not making final planning decisions.</li>
+              <li>Not inventing missing data; it will note what's unavailable.</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -4054,26 +8205,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

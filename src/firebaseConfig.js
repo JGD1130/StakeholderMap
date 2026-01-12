@@ -10,7 +10,7 @@ const firebaseConfig = {
   authDomain: "stakeholder-map-a4bdc.firebaseapp.com", // Keep your actual domain here
   projectId: "stakeholder-map-a4bdc",   // Keep your actual project ID here
   storageBucket: "stakeholder-map-a4bdc.firebasestorage.app",
-  messagingSenderId: "201968932417D",
+  messagingSenderId: "201968932417",
   appId: "1:201968932417:web:c6053a304f5dc5f2ffd8c0",
   measurementId: "G-BEB17GFMBJ"
 };

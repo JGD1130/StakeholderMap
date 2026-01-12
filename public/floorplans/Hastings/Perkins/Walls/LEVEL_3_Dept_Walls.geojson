@@ -1,0 +1,1501 @@
+{
+  "type": "FeatureCollection", 
+  "features": [
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5154943, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ea87f", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373905487217115, 
+            40.594575833333330
+          ], 
+          [
+            -98.373051676234567, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155018, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ea8ca", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373051676234567, 
+            40.594575833333330
+          ], 
+          [
+            -98.373051676234567, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155068, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ea8fc", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373051676234567, 
+            40.594772499999998
+          ], 
+          [
+            -98.372944126779174, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155116, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ea92c", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372944126779174, 
+            40.594772499999998
+          ], 
+          [
+            -98.372944126779174, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155356, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaa1c", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372944126779174, 
+            40.594575833333330
+          ], 
+          [
+            -98.372770730718457, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155428, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaa64", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372770730718457, 
+            40.594575833333330
+          ], 
+          [
+            -98.372770730718457, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155491, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaaa3", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372770730718457, 
+            40.594772499999998
+          ], 
+          [
+            -98.372663181263064, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155571, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaaf3", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372663181263064, 
+            40.594772499999998
+          ], 
+          [
+            -98.372663181263064, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155796, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eabd4", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372663181263064, 
+            40.594575833333330
+          ], 
+          [
+            -98.372581053818450, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155878, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac26", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372481005654961, 
+            40.594458333333328
+          ], 
+          [
+            -98.372481005654961, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155879, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac27", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372481005654961, 
+            40.594772499999998
+          ], 
+          [
+            -98.372373456199568, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155880, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac28", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372373456199568, 
+            40.594772499999998
+          ], 
+          [
+            -98.372373456199568, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155881, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac29", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372373456199568, 
+            40.594575833333330
+          ], 
+          [
+            -98.372191280591466, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155882, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac2a", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372191280591466, 
+            40.594575833333330
+          ], 
+          [
+            -98.372191280591466, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155883, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac2b", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372191280591466, 
+            40.594772499999998
+          ], 
+          [
+            -98.372083731136087, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5155884, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eac2c", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372083731136087, 
+            40.594772499999998
+          ], 
+          [
+            -98.372083731136087, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156106, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead0a", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371901555527984, 
+            40.594575833333330
+          ], 
+          [
+            -98.371901555527984, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156107, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead0b", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371901555527984, 
+            40.594772499999998
+          ], 
+          [
+            -98.371794006072591, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156108, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead0c", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371794006072591, 
+            40.594772499999998
+          ], 
+          [
+            -98.371794006072591, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156109, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead0d", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371794006072591, 
+            40.594575833333330
+          ], 
+          [
+            -98.371620610011874, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156110, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead0e", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371620610011874, 
+            40.594575833333330
+          ], 
+          [
+            -98.371620610011874, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156111, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead0f", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371620610011874, 
+            40.594772499999998
+          ], 
+          [
+            -98.371513060556481, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156112, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004ead10", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371513060556481, 
+            40.594772499999998
+          ], 
+          [
+            -98.371513060556481, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156277, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eadb5", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372083731136087, 
+            40.594575833333330
+          ], 
+          [
+            -98.371901555527984, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156447, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eae5f", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371513060556481, 
+            40.594575833333330
+          ], 
+          [
+            -98.370657054687086, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156528, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaeb0", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.370657054687086, 
+            40.594575833333330
+          ], 
+          [
+            -98.370657054687086, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156750, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf8e", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373905487217115, 
+            40.593895833333335
+          ], 
+          [
+            -98.373051676234567, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156751, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf8f", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373051676234567, 
+            40.593895833333335
+          ], 
+          [
+            -98.373051676234567, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156752, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf90", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373051676234567, 
+            40.593699166666667
+          ], 
+          [
+            -98.372944126779174, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156753, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf91", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372944126779174, 
+            40.593699166666667
+          ], 
+          [
+            -98.372944126779174, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156754, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf92", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372944126779174, 
+            40.593895833333335
+          ], 
+          [
+            -98.372770730718457, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156755, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf93", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372770730718457, 
+            40.593895833333335
+          ], 
+          [
+            -98.372770730718457, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156756, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf94", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372770730718457, 
+            40.593699166666667
+          ], 
+          [
+            -98.372663181263064, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156757, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf95", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372663181263064, 
+            40.593699166666667
+          ], 
+          [
+            -98.372663181263064, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156758, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf96", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372663181263064, 
+            40.593895833333335
+          ], 
+          [
+            -98.372481005654961, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156759, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf97", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372481005654961, 
+            40.593895833333335
+          ], 
+          [
+            -98.372481005654961, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156760, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf98", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372481005654961, 
+            40.593699166666667
+          ], 
+          [
+            -98.372373456199568, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156761, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf99", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372373456199568, 
+            40.593699166666667
+          ], 
+          [
+            -98.372373456199568, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156762, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf9a", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372373456199568, 
+            40.593895833333335
+          ], 
+          [
+            -98.372191280591466, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156763, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf9b", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372191280591466, 
+            40.593895833333335
+          ], 
+          [
+            -98.372191280591466, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156764, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf9c", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372191280591466, 
+            40.593699166666667
+          ], 
+          [
+            -98.372083731136087, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156765, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf9d", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372083731136087, 
+            40.593699166666667
+          ], 
+          [
+            -98.372083731136087, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156766, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf9e", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371901555527984, 
+            40.593895833333335
+          ], 
+          [
+            -98.371901555527984, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156767, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eaf9f", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371901555527984, 
+            40.593699166666667
+          ], 
+          [
+            -98.371794006072591, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156768, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa0", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371794006072591, 
+            40.593699166666667
+          ], 
+          [
+            -98.371794006072591, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156769, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa1", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371794006072591, 
+            40.593895833333335
+          ], 
+          [
+            -98.371620610011874, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156770, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa2", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371620610011874, 
+            40.593895833333335
+          ], 
+          [
+            -98.371620610011874, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156771, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa3", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371620610011874, 
+            40.593699166666667
+          ], 
+          [
+            -98.371513060556481, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156772, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa4", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371513060556481, 
+            40.593699166666667
+          ], 
+          [
+            -98.371513060556481, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156773, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa5", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372083731136087, 
+            40.593895833333335
+          ], 
+          [
+            -98.371901555527984, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5156774, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eafa6", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371513060556481, 
+            40.593895833333335
+          ], 
+          [
+            -98.370657054687086, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157015, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb097", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373905487217115, 
+            40.593895833333335
+          ], 
+          [
+            -98.373905487217115, 
+            40.594575833333330
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157119, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb0ff", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373510407585087, 
+            40.594575833333330
+          ], 
+          [
+            -98.373510407585087, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157210, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb15a", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371049939432268, 
+            40.594575833333330
+          ], 
+          [
+            -98.371049939432268, 
+            40.593895833333335
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157302, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb1b6", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373037409470072, 
+            40.594772499999998
+          ], 
+          [
+            -98.372958393543669, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157458, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb252", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372756463953962, 
+            40.594772499999998
+          ], 
+          [
+            -98.372677448027559, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157474, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb262", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372466738890466, 
+            40.594772499999998
+          ], 
+          [
+            -98.372387722964064, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157488, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb270", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372177013826985, 
+            40.594772499999998
+          ], 
+          [
+            -98.372097997900582, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157502, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb27e", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371887288763489, 
+            40.594772499999998
+          ], 
+          [
+            -98.371808272837086, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157771, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb38b", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371606343247379, 
+            40.594772499999998
+          ], 
+          [
+            -98.371527327320976, 
+            40.594772499999998
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157978, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb45a", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.373037409470072, 
+            40.593699166666667
+          ], 
+          [
+            -98.372958393543669, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157984, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb460", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372756463953962, 
+            40.593699166666667
+          ], 
+          [
+            -98.372677448027559, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157990, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb466", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372466738890466, 
+            40.593699166666667
+          ], 
+          [
+            -98.372387722964064, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5157996, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb46c", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372177013826985, 
+            40.593699166666667
+          ], 
+          [
+            -98.372097997900582, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5158002, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb472", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371887288763489, 
+            40.593699166666667
+          ], 
+          [
+            -98.371808272837086, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5158008, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "a1457b1f-30ed-4a33-ac68-3a91216142f1-004eb478", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.371606343247379, 
+            40.593699166666667
+          ], 
+          [
+            -98.371527327320976, 
+            40.593699166666667
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5158547, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "b7d595b7-6253-4efb-867d-0bffce1e732e-004eb693", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372581053818450, 
+            40.594734569237517
+          ], 
+          [
+            -98.372581053818450, 
+            40.594458333333328
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5158588, 
+        "Level": "LEVEL 3", 
+        "Revit_UniqueId": "b7d595b7-6253-4efb-867d-0bffce1e732e-004eb6bc", 
+        "Element": "Wall"
+      }, 
+      "geometry": {
+        "type": "LineString", 
+        "coordinates": [
+          [
+            -98.372581053818450, 
+            40.594458333333328
+          ], 
+          [
+            -98.372481005654961, 
+            40.594458333333328
+          ]
+        ]
+      }
+    }
+  ]
+}

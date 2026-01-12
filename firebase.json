@@ -21,6 +21,14 @@
     ],
     "rewrites": [
       {
+        "source": "/api/ai/explain-floor",
+        "function": "explainFloor"
+      },
+      {
+        "source": "/api/explainFloor",
+        "function": "explainFloor"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

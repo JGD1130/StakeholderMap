@@ -2,17 +2,35 @@
   "buildings": [
     { "id": "Hurley-McDonald Hall", "name": "Hurley-McDonald Hall" },
     { "id": "Gray Center", "name": "Gray Center" },
-    { "id": "Morrison-Reeves Science Center", "name": "Morrison-Reeves Science Center" }
+    { "id": "Morrison-Reeves Science Center", "name": "Morrison-Reeves Science Center" },
+    { "id": "Daugherty Student Engagement Center", "name": "Daugherty Student Engagement Center" }
   ],
   "floorsByBuilding": {
     "Hurley-McDonald Hall": [
-      { "id": "FL1", "url": "floorplans/Hastings/HurleyMcDonald/fl1.geojson" }
+      {
+        "id": "FL1",
+        "url": "floorplans/Hastings/HurleyMcDonald/fl1.geojson"
+      }
     ],
     "Gray Center": [
-      { "id": "FL1", "url": "floorplans/Hastings/GrayCenter/fl1.geojson" }
+      {
+        "id": "FL1",
+        "url": "floorplans/Hastings/GrayCenter/fl1.geojson"
+      }
     ],
     "Morrison-Reeves Science Center": [
-      { "id": "FL1", "url": "floorplans/Hastings/MorrisonReeves/fl1.geojson" }
+      {
+        "id": "LEVEL_1",
+        "url": "floorplans/Hastings/MorrisonReeves/LEVEL_1_Dept.geojson"
+      },
+      {
+        "id": "LEVEL_2",
+        "url": "floorplans/Hastings/MorrisonReeves/LEVEL_2_Dept.geojson"
+      }
+    ],
+      "Daugherty Student Engagement Center": [
+      { "id": "BASEMENT", "url": "/stakeholder-map/floorplans/Hastings/Daugherty/BASEMENT_Dept.geojson" },
+      { "id": "LEVEL_1", "url": "/stakeholder-map/floorplans/Hastings/Daugherty/LEVEL_1_Dept.geojson" }
     ]
   }
 }

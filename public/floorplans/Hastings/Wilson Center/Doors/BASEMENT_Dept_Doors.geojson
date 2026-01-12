@@ -1,0 +1,404 @@
+{
+  "features": [
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145173, 
+        "bearing_deg": 1.1368683772161603e-13, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e8255", 
+        "Mark": "97", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373043994130612, 
+          40.595277499999995
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145265, 
+        "bearing_deg": 1.1368683772161603e-13, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e82b1", 
+        "Mark": "98", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372738904859204, 
+          40.595227500000000
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145324, 
+        "bearing_deg": 0.0, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e82ec", 
+        "Mark": "99", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373043994130612, 
+          40.595049166666662
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145416, 
+        "bearing_deg": 180.00000000000009, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e8348", 
+        "Mark": "100", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373708605867151, 
+          40.594689166666662
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145498, 
+        "bearing_deg": 1.1368683772161603e-13, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e839a", 
+        "Mark": "101", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373276652136141, 
+          40.594560833333333
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145540, 
+        "bearing_deg": 270.00000000000023, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e83c4", 
+        "Mark": "102", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373106548405673, 
+          40.594648333333332
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145646, 
+        "bearing_deg": 270.00000000000023, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e842e", 
+        "Mark": "103", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373106548405673, 
+          40.594503333333328
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145770, 
+        "bearing_deg": 90.000000000000227, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e84aa", 
+        "Mark": "104", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372909008589659, 
+          40.594278333333328
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145808, 
+        "bearing_deg": 180.00000000000009, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e84d0", 
+        "Mark": "105", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372732320198665, 
+          40.594022500000001
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5145902, 
+        "bearing_deg": 90.0, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e852e", 
+        "Mark": "106", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372676350584129, 
+          40.594156666666663
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146074, 
+        "bearing_deg": 270.0, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e85da", 
+        "Mark": "107", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372597334657726, 
+          40.594600000000000
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146214, 
+        "bearing_deg": 5.6843418860808015e-14, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e8666", 
+        "Mark": "108", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.371525132434130, 
+          40.595057499999996
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146289, 
+        "bearing_deg": 180.00000000000017, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e86b1", 
+        "Mark": "109", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.371525132434130, 
+          40.594192499999998
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146393, 
+        "bearing_deg": 270.00000000000023, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e8719", 
+        "Mark": "110", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.373106548405673, 
+          40.594729999999998
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 6.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146545, 
+        "bearing_deg": 270.00000000000017, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e87b1", 
+        "Mark": "111", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372516123844477, 
+          40.594293333333333
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 6.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146599, 
+        "bearing_deg": 270.00000000000017, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e87e7", 
+        "Mark": "112", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372516123844477, 
+          40.594956666666661
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146830, 
+        "bearing_deg": 90.000000000000171, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e88ce", 
+        "Mark": "113", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.371471357706440, 
+          40.594346666666667
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 3.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5146972, 
+        "bearing_deg": 90.000000000000227, 
+        "Revit_UniqueId": "5d6906ea-7176-41d2-a087-ac38e5279ed8-004e895c", 
+        "Mark": "114", 
+        "Type": "", 
+        "Height_ft": 7.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372676350584129, 
+          40.595093333333331
+        ], 
+        "type": "Point"
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "Width_ft": 0.0, 
+        "Level": "BASEMENT", 
+        "Element": "Door", 
+        "RevitId": 5155295, 
+        "bearing_deg": 90.0, 
+        "Revit_UniqueId": "3cf2a297-ee4b-459b-bb09-a0f88beafe00-004ea9df", 
+        "Mark": "140", 
+        "Type": "", 
+        "Height_ft": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -98.372909008589659, 
+          40.594966666666664
+        ], 
+        "type": "Point"
+      }
+    }
+  ], 
+  "type": "FeatureCollection"
+}

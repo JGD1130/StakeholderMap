@@ -5,12 +5,40 @@ export default function ComboInput({ label, value, onChange, options, placeholde
   const [query, setQuery] = React.useState('');
   const inputRef = React.useRef(null);
 
-  const list = React.useMemo(() => {
-    const uniq = Array.from(new Set((options || []).map(String))).sort();
-    if (!query) return uniq;
-    const q = query.toLowerCase();
-    return uniq.filter((o) => o.toLowerCase().includes(q));
-  }, [options, query]);
+  const normalizedOptions = React.useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    (options || []).forEach((opt) => {
+      const normalized = typeof opt === 'string'
+        ? { value: opt, label: opt }
+        : opt;
+      if (!normalized || !normalized.value) return;
+      if (seen.has(normalized.value)) return;
+      seen.add(normalized.value);
+      list.push({
+        value: normalized.value,
+        label: normalized.label ?? normalized.value
+      });
+    });
+    return list;
+  }, [options]);
+
+  const displayLabel = React.useMemo(() => {
+    const match = normalizedOptions.find((opt) => opt.value === value);
+    return match?.label ?? (value ?? '');
+  }, [normalizedOptions, value]);
+
+  const filteredOptions = React.useMemo(() => {
+    const search = (query || '').toLowerCase();
+    if (!search) return normalizedOptions;
+    return normalizedOptions.filter((opt) => {
+      const label = (opt.label ?? '').toLowerCase();
+      const val = (opt.value ?? '').toLowerCase();
+      return label.includes(search) || val.includes(search);
+    });
+  }, [normalizedOptions, query]);
+
+  const inputValue = query || displayLabel || '';
 
   return (
     <div className="mf-form-row" style={{ position: 'relative' }}>
@@ -20,10 +48,11 @@ export default function ComboInput({ label, value, onChange, options, placeholde
           ref={inputRef}
           className="mf-input"
           placeholder={placeholder}
-          value={value}
+          value={inputValue}
           onChange={(e) => {
-            setQuery(e.target.value);
-            onChange?.(e.target.value);
+            const nextValue = e.target.value;
+            setQuery(nextValue);
+            onChange?.(nextValue);
           }}
           onFocus={() => setOpen(true)}
         />
@@ -42,7 +71,7 @@ export default function ComboInput({ label, value, onChange, options, placeholde
           }}
           title="Toggle options"
         >
-          ▾
+          ▼
         </button>
       </div>
 
@@ -64,20 +93,20 @@ export default function ComboInput({ label, value, onChange, options, placeholde
           }}
           onMouseDown={(e) => e.preventDefault()}
         >
-          {list.length === 0 ? (
+          {filteredOptions.length === 0 ? (
             <div style={{ padding: 10, color: '#777' }}>No matches</div>
           ) : (
-            list.map((opt) => (
+            filteredOptions.map((opt) => (
               <div
-                key={opt}
+                key={opt.value}
                 style={{ padding: '8px 10px', cursor: 'pointer' }}
                 onClick={() => {
-                  onChange?.(opt);
+                  onChange?.(opt.value);
                   setQuery('');
                   setOpen(false);
                 }}
               >
-                {opt}
+                {opt.label}
               </div>
             ))
           )}

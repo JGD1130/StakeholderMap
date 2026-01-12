@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- stair treads -->
+  <g stroke="currentColor" stroke-width="3.2" stroke-linecap="round">
+    <line x1="14" y1="48" x2="46" y2="48"/>
+    <line x1="18" y1="42" x2="46" y2="42"/>
+    <line x1="22" y1="36" x2="46" y2="36"/>
+    <line x1="26" y1="30" x2="46" y2="30"/>
+    <line x1="30" y1="24" x2="46" y2="24"/>
+  </g>
+
+  <!-- run direction arrow -->
+  <path d="M12 52 L12 18" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M12 18 L18 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 18 L6 24"  fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

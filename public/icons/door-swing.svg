@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- hinge dot -->
+  <circle cx="16" cy="48" r="2.3" fill="currentColor"/>
+  <!-- jamb line -->
+  <line x1="16" y1="48" x2="16" y2="16" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- door leaf (open) -->
+  <line x1="16" y1="48" x2="44" y2="32" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- swing arc -->
+  <path d="M16 48 A32 32 0 0 1 48 16" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>
+</svg>
