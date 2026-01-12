@@ -46,7 +46,7 @@ function UniversityLandingPage() {
 function App() {
   return (
     // This basename is CRITICAL for GitHub Pages deployment in a subdirectory
-    <Router basename="/stakeholder-map">
+    <Router basename="/StakeholderMap">
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
         {/* THIS IS THE LINE TO FIX */}
