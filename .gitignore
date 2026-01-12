@@ -25,3 +25,7 @@ yarn-error.log*
 /admin-scripts/
 
 /dist
+# secrets
+.env
+**/.env
+ai-server/.env
