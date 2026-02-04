@@ -1,4 +1,4 @@
-{
+﻿{
     "buildings":  [
                       {
                           "id":  "1882",
@@ -312,7 +312,7 @@
                              "Gray Center":  [
                                                  {
                                                      "id":  "LEVEL_1",
-                                                     "url":  "floorplans/Hastings/Gray Center/LEVEL_1_Dept.geojson"
+                                                     "url":  "floorplans/Hastings/Gray Center/Rooms/LEVEL_1_Dept_Rooms.geojson"
                                                  }
                                              ],
                              "Hazzelrig":  [
@@ -463,3 +463,4 @@
                                               ]
                          }
 }
+
