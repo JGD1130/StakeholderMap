@@ -1,0 +1,5206 @@
+{
+  "type": "FeatureCollection", 
+  "features": [
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5163228, 
+        "NCES_Type": "Stairway", 
+        "NCES_Department": "", 
+        "Name": "STAIRWELL", 
+        "Area_SF": 153.0, 
+        "Revit_UniqueId": "84c522d8-f1b8-454a-aabb-838c9979e7f5-004ec8dc", 
+        "Element": "Room", 
+        "Number": "3ST1", 
+        "Level": "LEVEL 3"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              42.097724936362425, 
+              12.361320260946378
+            ], 
+            [
+              42.264391603029090, 
+              12.361320260946385
+            ], 
+            [
+              42.264391603029054, 
+              30.527986927613046
+            ], 
+            [
+              39.972724936362376, 
+              30.527986927613046
+            ], 
+            [
+              32.097724936362440, 
+              30.527986927613043
+            ], 
+            [
+              32.097724936362440, 
+              30.361320260946371
+            ], 
+            [
+              32.097724936362411, 
+              12.361320260946378
+            ], 
+            [
+              42.097724936362425, 
+              12.361320260946378
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5163236, 
+        "NCES_Type": "Library - Study / Collaborative Area", 
+        "NCES_Department": "Unknown", 
+        "Name": "STUDY ROOM", 
+        "Area_SF": 156.52000000000001, 
+        "Revit_UniqueId": "84c522d8-f1b8-454a-aabb-838c9979e7f5-004ec8e4", 
+        "Element": "Room", 
+        "Number": "300", 
+        "Level": "LEVEL 3"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              29.264391603029054, 
+              30.361320260946385
+            ], 
+            [
+              32.097724936362440, 
+              30.361320260946378
+            ], 
+            [
+              32.097724936362432, 
+              30.527986927613046
+            ], 
+            [
+              39.972724936362376, 
+              30.527986927613046
+            ], 
+            [
+              39.972724936362383, 
+              32.736320260946322
+            ], 
+            [
+              42.264391603029054, 
+              32.736320260946322
+            ], 
+            [
+              42.264391603029047, 
+              33.861320260946329
+            ], 
+            [
+              42.139391603029047, 
+              33.861320260946336
+            ], 
+            [
+              42.139391603029068, 
+              44.652986927613050
+            ], 
+            [
+              32.516391603029071, 
+              44.652986927613043
+            ], 
+            [
+              32.014391603029068, 
+              44.652986927613043
+            ], 
+            [
+              32.014391603029068, 
+              45.027986927613050
+            ], 
+            [
+              29.264391603029082, 
+              45.027986927613043
+            ], 
+            [
+              29.264391603029054, 
+              30.361320260946385
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              87.264391603029154, 
+              62.361320260946464
+            ], 
+            [
+              87.264391603029082, 
+              13.027986927613076
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              88.597724936362411, 
+              11.694653594279750
+            ], 
+            [
+              88.597724936362496, 
+              63.694653594279799
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              87.264391603029082, 
+              13.027986927613076
+            ], 
+            [
+              77.181058269695782, 
+              13.027986927613059
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.514391603029125, 
+              11.694653594279727
+            ], 
+            [
+              88.597724936362411, 
+              11.694653594279750
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "91", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              77.181058269695782, 
+              13.027986927613059
+            ], 
+            [
+              77.181058269695811, 
+              6.3613202609463331
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "92", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.514391603029139, 
+              5.0279869276130036
+            ], 
+            [
+              78.514391603029139, 
+              11.694653594279727
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "94", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              77.181058269695811, 
+              6.3613202609463331
+            ], 
+            [
+              64.362424477715038, 
+              6.3613202609463118
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "95", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              65.695757811048352, 
+              5.0279869276129814
+            ], 
+            [
+              78.514391603029139, 
+              5.0279869276130036
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "96", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              64.362424477715038, 
+              6.3613202609463118
+            ], 
+            [
+              64.362424477715038, 
+              5.0279869276129778
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "97", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              65.695757811048352, 
+              3.6946535942796466
+            ], 
+            [
+              65.695757811048352, 
+              5.0279869276129814
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "99", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              64.362424477715038, 
+              5.0279869276129778
+            ], 
+            [
+              51.029091144381688, 
+              5.0279869276129547
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              49.695757811048360, 
+              3.6946535942796195
+            ], 
+            [
+              65.695757811048352, 
+              3.6946535942796466
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              51.029091144381688, 
+              6.3613202609463313
+            ], 
+            [
+              42.764391603029104, 
+              6.3613202609463295
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.431058269695768, 
+              5.0279869276129956
+            ], 
+            [
+              49.695757811048360, 
+              5.0279869276129974
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.431058269695747, 
+              11.694653594279709
+            ], 
+            [
+              41.431058269695768, 
+              5.0279869276129956
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029082, 
+              13.027986927613043
+            ], 
+            [
+              32.764391603029075, 
+              13.027986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              31.431058269695740, 
+              11.694653594279709
+            ], 
+            [
+              41.431058269695747, 
+              11.694653594279709
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.764391603029075, 
+              13.027986927613043
+            ], 
+            [
+              32.764391603029104, 
+              30.027986927613053
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              31.431058269695768, 
+              29.694653594279718
+            ], 
+            [
+              31.431058269695740, 
+              11.694653594279709
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362372, 
+              29.694653594279718
+            ], 
+            [
+              31.431058269695772, 
+              29.694653594279711
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695715, 
+              31.027986927613043
+            ], 
+            [
+              29.931058269695715, 
+              34.653282853844566
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695715, 
+              34.653282853844566
+            ], 
+            [
+              28.597724936362393, 
+              34.653282853844566
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362393, 
+              34.653282853844566
+            ], 
+            [
+              28.597724936362372, 
+              29.694653594279718
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695736, 
+              37.319949520511237
+            ], 
+            [
+              29.931058269695736, 
+              38.194653594279721
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695736, 
+              38.194653594279721
+            ], 
+            [
+              28.597724936362400, 
+              38.194653594279721
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362400, 
+              38.194653594279721
+            ], 
+            [
+              28.597724936362400, 
+              37.319949520511237
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362400, 
+              37.319949520511237
+            ], 
+            [
+              29.931058269695736, 
+              37.319949520511237
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695736, 
+              40.861320260946393
+            ], 
+            [
+              29.931058269695750, 
+              44.361320260946378
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362415, 
+              45.694653594279707
+            ], 
+            [
+              28.597724936362400, 
+              40.861320260946393
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362400, 
+              40.861320260946393
+            ], 
+            [
+              29.931058269695736, 
+              40.861320260946393
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695736, 
+              40.861320260946393
+            ], 
+            [
+              29.931058269695736, 
+              38.194653594279721
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695736, 
+              37.319949520511237
+            ], 
+            [
+              29.931058269695715, 
+              34.653282853844566
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362393, 
+              34.653282853844566
+            ], 
+            [
+              28.597724936362400, 
+              37.319949520511237
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              28.597724936362400, 
+              38.194653594279721
+            ], 
+            [
+              28.597724936362400, 
+              40.861320260946393
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.681058269695725, 
+              44.861320260946364
+            ], 
+            [
+              32.681058269695747, 
+              62.361320260946364
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              31.347724936362415, 
+              63.694653594279707
+            ], 
+            [
+              31.347724936362400, 
+              45.694653594279714
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.681058269695747, 
+              62.361320260946364
+            ], 
+            [
+              42.347724936362418, 
+              62.361320260946371
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.014391603029075, 
+              63.694653594279707
+            ], 
+            [
+              31.347724936362415, 
+              63.694653594279707
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.347724936362418, 
+              62.361320260946371
+            ], 
+            [
+              42.347724936362404, 
+              70.194653594279657
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.014391603029061, 
+              71.527986927612986
+            ], 
+            [
+              41.014391603029075, 
+              63.694653594279707
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.347724936362404, 
+              70.194653594279657
+            ], 
+            [
+              51.029091144381738, 
+              70.194653594279657
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              49.695757811048402, 
+              71.527986927612986
+            ], 
+            [
+              41.014391603029061, 
+              71.527986927612986
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              51.029091144381738, 
+              70.194653594279657
+            ], 
+            [
+              51.029091144381738, 
+              71.527986927612986
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              49.695757811048402, 
+              72.861320260946329
+            ], 
+            [
+              49.695757811048402, 
+              71.527986927612986
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              51.029091144381738, 
+              71.527986927612986
+            ], 
+            [
+              64.362424477715066, 
+              71.527986927612986
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.514391603029054, 
+              71.527986927613043
+            ], 
+            [
+              65.695757811048395, 
+              71.527986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "CD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              77.181058269695725, 
+              70.194653594279714
+            ], 
+            [
+              77.181058269695711, 
+              62.361320260946449
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "CE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.514391603029040, 
+              63.694653594279792
+            ], 
+            [
+              78.514391603029054, 
+              71.527986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              77.181058269695711, 
+              62.361320260946449
+            ], 
+            [
+              87.264391603029154, 
+              62.361320260946457
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              88.597724936362496, 
+              63.694653594279799
+            ], 
+            [
+              78.514391603029040, 
+              63.694653594279792
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              49.695757811048374, 
+              5.0279869276129974
+            ], 
+            [
+              49.695757811048360, 
+              3.6946535942796195
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              51.029091144381688, 
+              5.0279869276129547
+            ], 
+            [
+              51.029091144381688, 
+              6.3613202609463313
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              31.347724936362393, 
+              45.694653594279707
+            ], 
+            [
+              28.597724936362415, 
+              45.694653594279707
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695750, 
+              44.361320260946371
+            ], 
+            [
+              32.681058269695725, 
+              44.361320260946378
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.681058269695725, 
+              44.361320260946378
+            ], 
+            [
+              32.681058269695725, 
+              44.444653594279707
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "DA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              64.362424477715066, 
+              71.527986927612986
+            ], 
+            [
+              64.362424477715066, 
+              70.194653594279714
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "DC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              64.362424477715066, 
+              70.194653594279714
+            ], 
+            [
+              77.181058269695725, 
+              70.194653594279714
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "DD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              65.695757811048395, 
+              71.527986927613043
+            ], 
+            [
+              65.695757811048395, 
+              72.861320260946329
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "DE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              65.695757811048395, 
+              72.861320260946329
+            ], 
+            [
+              49.695757811048402, 
+              72.861320260946329
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "E1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.347724936362368, 
+              33.861320260946322
+            ], 
+            [
+              42.347724936362368, 
+              36.277986927613064
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.347724936362368, 
+              36.277986927613064
+            ], 
+            [
+              41.931058269695704, 
+              36.277986927613064
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.931058269695704, 
+              36.277986927613064
+            ], 
+            [
+              41.931058269695704, 
+              33.861320260946322
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.347724936362376, 
+              40.611320260946400
+            ], 
+            [
+              42.347724936362376, 
+              44.861320260946371
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.931058269695704, 
+              44.444653594279707
+            ], 
+            [
+              41.931058269695704, 
+              40.611320260946400
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.931058269695704, 
+              40.611320260946400
+            ], 
+            [
+              42.347724936362376, 
+              40.611320260946400
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.347724936362376, 
+              44.861320260946371
+            ], 
+            [
+              32.681058269695725, 
+              44.861320260946364
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.681058269695725, 
+              44.444653594279707
+            ], 
+            [
+              41.931058269695704, 
+              44.444653594279707
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.764391603029104, 
+              30.027986927613043
+            ], 
+            [
+              41.764391603029040, 
+              30.027986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "ED", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029040, 
+              31.027986927613043
+            ], 
+            [
+              40.181058269695718, 
+              31.027986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "EE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              39.764391603029047, 
+              31.027986927613043
+            ], 
+            [
+              29.931058269695715, 
+              31.027986927613053
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "EF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029040, 
+              33.861320260946322
+            ], 
+            [
+              41.764391603029040, 
+              32.944653594279643
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "F0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029040, 
+              32.527986927612979
+            ], 
+            [
+              41.764391603029040, 
+              31.027986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "F1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029047, 
+              30.027986927613053
+            ], 
+            [
+              41.764391603029082, 
+              13.027986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "F2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.764391603029104, 
+              6.3613202609463295
+            ], 
+            [
+              42.764391603029047, 
+              33.861320260946322
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "F3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.764391603029047, 
+              33.861320260946322
+            ], 
+            [
+              42.347724936362368, 
+              33.861320260946322
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "F4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.931058269695704, 
+              33.861320260946322
+            ], 
+            [
+              41.764391603029040, 
+              33.861320260946322
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "F5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029040, 
+              32.944653594279643
+            ], 
+            [
+              39.764391603029040, 
+              32.944653594279643
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              40.181058269695704, 
+              32.527986927612979
+            ], 
+            [
+              41.764391603029040, 
+              32.527986927612979
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              39.764391603029040, 
+              32.944653594279643
+            ], 
+            [
+              39.764391603029040, 
+              31.027986927613043
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              40.181058269695704, 
+              31.027986927613043
+            ], 
+            [
+              40.181058269695704, 
+              32.527986927612979
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "FA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.431058269695704, 
+              26.653282853844559
+            ], 
+            [
+              41.264391603029033, 
+              26.653282853844559
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "FB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.431058269695669, 
+              16.762673714572458
+            ], 
+            [
+              41.431058269695704, 
+              26.653282853844559
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "FC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.264391603029040, 
+              26.653282853844569
+            ], 
+            [
+              38.097724936362376, 
+              26.653282853844569
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "FD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.097724936362340, 
+              17.653282853844576
+            ], 
+            [
+              38.097724936362376, 
+              26.653282853844569
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "FE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.431058269695640, 
+              14.319949520511225
+            ], 
+            [
+              41.431058269695662, 
+              16.762673714572458
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "FF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.764391603029047, 
+              14.319949520511267
+            ], 
+            [
+              41.431058269695640, 
+              14.319949520511225
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "100", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.097724936362347, 
+              17.653282853844576
+            ], 
+            [
+              36.097724936362376, 
+              17.653282853844583
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "101", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              32.931058269695725, 
+              25.736616187177916
+            ], 
+            [
+              32.764391603029068, 
+              25.736616187177916
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "102", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              36.097724936362390, 
+              25.736616187177905
+            ], 
+            [
+              35.931058269695725, 
+              25.736616187177905
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "103", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              36.097724936362390, 
+              25.736616187177905
+            ], 
+            [
+              36.097724936362376, 
+              17.653282853844583
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "104", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695704, 
+              26.653282853844573
+            ], 
+            [
+              41.097724936362376, 
+              26.653282853844548
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "105", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695676, 
+              17.486616187177898
+            ], 
+            [
+              41.097724936362333, 
+              17.486616187177898
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "106", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029040, 
+              17.486616187177916
+            ], 
+            [
+              33.097724936362383, 
+              17.486616187177916
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "107", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029061, 
+              25.736616187177905
+            ], 
+            [
+              33.097724936362404, 
+              25.736616187177905
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "108", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695704, 
+              25.736616187177901
+            ], 
+            [
+              41.097724936362368, 
+              25.736616187177901
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "109", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695704, 
+              24.819949520511233
+            ], 
+            [
+              41.097724936362368, 
+              24.819949520511233
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "10A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695704, 
+              23.903282853844573
+            ], 
+            [
+              41.097724936362368, 
+              23.903282853844559
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "10B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695690, 
+              22.986616187177891
+            ], 
+            [
+              41.097724936362347, 
+              22.986616187177891
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "10C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695690, 
+              22.069949520511241
+            ], 
+            [
+              41.097724936362347, 
+              22.069949520511216
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "10D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695683, 
+              21.153282853844566
+            ], 
+            [
+              41.097724936362347, 
+              21.153282853844566
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "10E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695683, 
+              20.236616187177908
+            ], 
+            [
+              41.097724936362347, 
+              20.236616187177884
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "10F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695683, 
+              19.319949520511233
+            ], 
+            [
+              41.097724936362333, 
+              19.319949520511233
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "110", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.431058269695683, 
+              18.403282853844576
+            ], 
+            [
+              41.097724936362333, 
+              18.403282853844559
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "111", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029040, 
+              18.403282853844576
+            ], 
+            [
+              33.097724936362383, 
+              18.403282853844576
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "112", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029047, 
+              19.319949520511233
+            ], 
+            [
+              33.097724936362390, 
+              19.319949520511258
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "113", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029047, 
+              20.236616187177916
+            ], 
+            [
+              33.097724936362390, 
+              20.236616187177916
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "114", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029047, 
+              21.153282853844576
+            ], 
+            [
+              33.097724936362390, 
+              21.153282853844576
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "115", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029047, 
+              22.069949520511241
+            ], 
+            [
+              33.097724936362390, 
+              22.069949520511241
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "116", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029047, 
+              22.986616187177905
+            ], 
+            [
+              33.097724936362390, 
+              22.986616187177905
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "117", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029047, 
+              23.903282853844569
+            ], 
+            [
+              33.097724936362404, 
+              23.903282853844591
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "118", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              35.764391603029061, 
+              24.819949520511248
+            ], 
+            [
+              33.097724936362404, 
+              24.819949520511248
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "119", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.097724936362368, 
+              26.653282853844548
+            ], 
+            [
+              41.264391603029033, 
+              26.653282853844548
+            ]
+          ], 
+          [
+            [
+              41.097724936362333, 
+              17.486616187177898
+            ], 
+            [
+              41.097724936362368, 
+              26.653282853844548
+            ]
+          ], 
+          [
+            [
+              41.097724936362305, 
+              14.653282853844559
+            ], 
+            [
+              41.097724936362333, 
+              17.486616187177884
+            ]
+          ], 
+          [
+            [
+              33.097724936362383, 
+              14.653282853844601
+            ], 
+            [
+              41.097724936362305, 
+              14.653282853844559
+            ]
+          ], 
+          [
+            [
+              33.097724936362383, 
+              17.486616187177916
+            ], 
+            [
+              33.097724936362383, 
+              14.653282853844601
+            ]
+          ], 
+          [
+            [
+              33.097724936362404, 
+              25.736616187177905
+            ], 
+            [
+              33.097724936362383, 
+              17.486616187177916
+            ]
+          ], 
+          [
+            [
+              32.931058269695725, 
+              25.736616187177905
+            ], 
+            [
+              33.097724936362404, 
+              25.736616187177905
+            ]
+          ], 
+          [
+            [
+              41.264391603029004, 
+              17.486616187177898
+            ], 
+            [
+              41.264391603029033, 
+              26.653282853844548
+            ]
+          ], 
+          [
+            [
+              41.264391603028983, 
+              14.486616187177892
+            ], 
+            [
+              41.264391603029004, 
+              17.486616187177884
+            ]
+          ], 
+          [
+            [
+              32.931058269695704, 
+              14.486616187177935
+            ], 
+            [
+              41.264391603028983, 
+              14.486616187177892
+            ]
+          ], 
+          [
+            [
+              32.931058269695704, 
+              17.486616187177916
+            ], 
+            [
+              32.931058269695704, 
+              14.486616187177935
+            ]
+          ], 
+          [
+            [
+              32.931058269695725, 
+              25.736616187177905
+            ], 
+            [
+              32.931058269695704, 
+              17.486616187177916
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-FLOR-HRAL", 
+        "EntityHandle": "129", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              38.264391603029040, 
+              26.653282853844573
+            ], 
+            [
+              38.431058269695704, 
+              26.653282853844573
+            ]
+          ], 
+          [
+            [
+              38.264391603029004, 
+              17.486616187177908
+            ], 
+            [
+              38.264391603029040, 
+              26.653282853844573
+            ]
+          ], 
+          [
+            [
+              35.931058269695704, 
+              17.486616187177916
+            ], 
+            [
+              38.264391603029004, 
+              17.486616187177908
+            ]
+          ], 
+          [
+            [
+              35.931058269695725, 
+              25.736616187177905
+            ], 
+            [
+              35.931058269695704, 
+              17.486616187177916
+            ]
+          ], 
+          [
+            [
+              35.764391603029047, 
+              25.736616187177905
+            ], 
+            [
+              35.931058269695725, 
+              25.736616187177905
+            ]
+          ], 
+          [
+            [
+              38.431058269695676, 
+              17.319949520511241
+            ], 
+            [
+              38.431058269695704, 
+              26.653282853844573
+            ]
+          ], 
+          [
+            [
+              35.764391603029040, 
+              17.319949520511248
+            ], 
+            [
+              38.431058269695676, 
+              17.319949520511241
+            ]
+          ], 
+          [
+            [
+              35.764391603029040, 
+              17.486616187177916
+            ], 
+            [
+              35.764391603029040, 
+              17.319949520511248
+            ]
+          ], 
+          [
+            [
+              35.764391603029047, 
+              25.736616187177905
+            ], 
+            [
+              35.764391603029040, 
+              17.486616187177916
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-FLOR-HRAL", 
+        "EntityHandle": "136", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              42.181058269695697, 
+              40.444653594279735
+            ], 
+            [
+              42.181058269695704, 
+              36.444653594279735
+            ]
+          ], 
+          [
+            [
+              42.181058269695704, 
+              36.444653594279735
+            ], 
+            [
+              42.264391603029040, 
+              36.444653594279735
+            ]
+          ], 
+          [
+            [
+              42.264391603029040, 
+              36.444653594279735
+            ], 
+            [
+              42.264391603029033, 
+              40.444653594279742
+            ]
+          ], 
+          [
+            [
+              42.264391603029033, 
+              40.444653594279742
+            ], 
+            [
+              42.181058269695697, 
+              40.444653594279735
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CURT", 
+        "EntityHandle": "13E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.951891603029040, 
+              36.444653594279721
+            ], 
+            [
+              41.951891603029033, 
+              40.444653594279735
+            ]
+          ], 
+          [
+            [
+              42.326891603029033, 
+              36.444653594279721
+            ], 
+            [
+              42.326891603029033, 
+              40.444653594279735
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "144", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.951891603029033, 
+              36.444653594279728
+            ], 
+            [
+              41.951891603029033, 
+              36.277986927613064
+            ]
+          ], 
+          [
+            [
+              41.951891603029033, 
+              36.277986927613064
+            ], 
+            [
+              42.326891603029033, 
+              36.277986927613064
+            ]
+          ], 
+          [
+            [
+              42.326891603029033, 
+              36.277986927613064
+            ], 
+            [
+              42.326891603029033, 
+              36.444653594279735
+            ]
+          ], 
+          [
+            [
+              42.326891603029033, 
+              36.444653594279735
+            ], 
+            [
+              41.951891603029033, 
+              36.444653594279728
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "14C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.951891603029033, 
+              40.611320260946400
+            ], 
+            [
+              41.951891603029033, 
+              40.444653594279735
+            ]
+          ], 
+          [
+            [
+              41.951891603029033, 
+              40.444653594279735
+            ], 
+            [
+              42.326891603029033, 
+              40.444653594279735
+            ]
+          ], 
+          [
+            [
+              42.326891603029033, 
+              40.444653594279735
+            ], 
+            [
+              42.326891603029033, 
+              40.611320260946400
+            ]
+          ], 
+          [
+            [
+              42.326891603029033, 
+              40.611320260946400
+            ], 
+            [
+              41.951891603029033, 
+              40.611320260946400
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "154", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.222724936362365, 
+              34.819949520511237
+            ], 
+            [
+              29.222724936362368, 
+              37.153282853844566
+            ]
+          ], 
+          [
+            [
+              29.222724936362368, 
+              37.153282853844566
+            ], 
+            [
+              29.139391603029036, 
+              37.153282853844566
+            ]
+          ], 
+          [
+            [
+              29.139391603029036, 
+              37.153282853844566
+            ], 
+            [
+              29.139391603029036, 
+              34.819949520511237
+            ]
+          ], 
+          [
+            [
+              29.139391603029036, 
+              34.819949520511237
+            ], 
+            [
+              29.222724936362365, 
+              34.819949520511237
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CURT", 
+        "EntityHandle": "15C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.576891603029040, 
+              37.153282853844566
+            ], 
+            [
+              29.576891603029036, 
+              34.819949520511223
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              37.153282853844566
+            ], 
+            [
+              29.076891603029036, 
+              34.819949520511223
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "162", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.576891603029040, 
+              37.153282853844566
+            ], 
+            [
+              29.576891603029040, 
+              37.319949520511237
+            ]
+          ], 
+          [
+            [
+              29.576891603029040, 
+              37.319949520511237
+            ], 
+            [
+              29.076891603029040, 
+              37.319949520511237
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              37.319949520511237
+            ], 
+            [
+              29.076891603029040, 
+              37.153282853844573
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              37.153282853844573
+            ], 
+            [
+              29.576891603029040, 
+              37.153282853844566
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "16A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.576891603029036, 
+              34.653282853844566
+            ], 
+            [
+              29.576891603029036, 
+              34.819949520511230
+            ]
+          ], 
+          [
+            [
+              29.576891603029036, 
+              34.819949520511230
+            ], 
+            [
+              29.076891603029036, 
+              34.819949520511237
+            ]
+          ], 
+          [
+            [
+              29.076891603029036, 
+              34.819949520511237
+            ], 
+            [
+              29.076891603029036, 
+              34.653282853844566
+            ]
+          ], 
+          [
+            [
+              29.076891603029036, 
+              34.653282853844566
+            ], 
+            [
+              29.576891603029036, 
+              34.653282853844566
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "172", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.222724936362368, 
+              38.361320260946393
+            ], 
+            [
+              29.222724936362372, 
+              40.694653594279714
+            ]
+          ], 
+          [
+            [
+              29.222724936362372, 
+              40.694653594279714
+            ], 
+            [
+              29.139391603029040, 
+              40.694653594279714
+            ]
+          ], 
+          [
+            [
+              29.139391603029040, 
+              40.694653594279714
+            ], 
+            [
+              29.139391603029040, 
+              38.361320260946393
+            ]
+          ], 
+          [
+            [
+              29.139391603029040, 
+              38.361320260946393
+            ], 
+            [
+              29.222724936362368, 
+              38.361320260946393
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CURT", 
+        "EntityHandle": "173", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.576891603029040, 
+              40.694653594279721
+            ], 
+            [
+              29.576891603029036, 
+              38.361320260946378
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              40.694653594279721
+            ], 
+            [
+              29.076891603029036, 
+              38.361320260946378
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "174", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.576891603029040, 
+              40.694653594279721
+            ], 
+            [
+              29.576891603029040, 
+              40.861320260946393
+            ]
+          ], 
+          [
+            [
+              29.576891603029040, 
+              40.861320260946393
+            ], 
+            [
+              29.076891603029040, 
+              40.861320260946393
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              40.861320260946393
+            ], 
+            [
+              29.076891603029040, 
+              40.694653594279728
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              40.694653594279728
+            ], 
+            [
+              29.576891603029040, 
+              40.694653594279721
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "175", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.576891603029040, 
+              38.194653594279721
+            ], 
+            [
+              29.576891603029040, 
+              38.361320260946378
+            ]
+          ], 
+          [
+            [
+              29.576891603029040, 
+              38.361320260946378
+            ], 
+            [
+              29.076891603029040, 
+              38.361320260946385
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              38.361320260946385
+            ], 
+            [
+              29.076891603029040, 
+              38.194653594279721
+            ]
+          ], 
+          [
+            [
+              29.076891603029040, 
+              38.194653594279721
+            ], 
+            [
+              29.576891603029040, 
+              38.194653594279721
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-GLAZ-CWMG", 
+        "EntityHandle": "176", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              87.264391603029082, 
+              27.027986927613075
+            ], 
+            [
+              87.097724936362411, 
+              27.027986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "177", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.097724936362411, 
+              27.027986927613075
+            ], 
+            [
+              83.931058269695754, 
+              27.027986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "178", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              83.931058269695754, 
+              17.111320260946410
+            ], 
+            [
+              83.931058269695754, 
+              27.027986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "179", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.181058269695754, 
+              13.777986927613059
+            ], 
+            [
+              87.264391603029082, 
+              13.777986927613076
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "17A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.181058269695754, 
+              16.918596066885083
+            ], 
+            [
+              78.181058269695754, 
+              13.777986927613059
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "17B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              83.931058269695754, 
+              17.111320260946410
+            ], 
+            [
+              81.514391603029097, 
+              17.111320260946410
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "17C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.347724936362440, 
+              24.444653594279657
+            ], 
+            [
+              78.181058269695782, 
+              24.444653594279657
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "17D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              78.181058269695782, 
+              24.444653594279657
+            ], 
+            [
+              78.181058269695754, 
+              16.918596066885083
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "17E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.514391603029111, 
+              24.444653594279647
+            ], 
+            [
+              81.347724936362440, 
+              24.444653594279647
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "17F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.514391603029111, 
+              24.444653594279647
+            ], 
+            [
+              81.514391603029097, 
+              17.111320260946400
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "180", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              27.027986927613075
+            ], 
+            [
+              86.931058269695754, 
+              27.027986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "181", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              16.944653594279742
+            ], 
+            [
+              86.931058269695754, 
+              16.944653594279742
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "182", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695768, 
+              17.111320260946318
+            ], 
+            [
+              78.514391603029082, 
+              17.111320260946318
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "183", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695797, 
+              24.444653594279647
+            ], 
+            [
+              78.514391603029097, 
+              24.444653594279647
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "184", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              26.111320260946410
+            ], 
+            [
+              86.931058269695754, 
+              26.111320260946410
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "185", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              25.194653594279757
+            ], 
+            [
+              86.931058269695754, 
+              25.194653594279718
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "186", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              24.277986927613075
+            ], 
+            [
+              86.931058269695754, 
+              24.277986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "187", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              23.361320260946410
+            ], 
+            [
+              86.931058269695754, 
+              23.361320260946410
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "188", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              22.444653594279742
+            ], 
+            [
+              86.931058269695754, 
+              22.444653594279742
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "189", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              21.527986927613075
+            ], 
+            [
+              86.931058269695754, 
+              21.527986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "18A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              20.611320260946410
+            ], 
+            [
+              86.931058269695754, 
+              20.611320260946410
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "18B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              19.694653594279767
+            ], 
+            [
+              86.931058269695754, 
+              19.694653594279718
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "18C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              18.777986927613075
+            ], 
+            [
+              86.931058269695754, 
+              18.777986927613075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "18D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.264391603029082, 
+              17.861320260946410
+            ], 
+            [
+              86.931058269695754, 
+              17.861320260946410
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "18E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695768, 
+              18.027986927612989
+            ], 
+            [
+              78.514391603029082, 
+              18.027986927612989
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "18F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695768, 
+              18.944653594279657
+            ], 
+            [
+              78.514391603029082, 
+              18.944653594279657
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "190", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695782, 
+              19.861320260946318
+            ], 
+            [
+              78.514391603029097, 
+              19.861320260946318
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "191", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695782, 
+              20.777986927612968
+            ], 
+            [
+              78.514391603029097, 
+              20.777986927613011
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "192", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695782, 
+              21.694653594279647
+            ], 
+            [
+              78.514391603029097, 
+              21.694653594279647
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "193", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695782, 
+              22.611320260946325
+            ], 
+            [
+              78.514391603029097, 
+              22.611320260946325
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "194", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              81.181058269695797, 
+              23.527986927612982
+            ], 
+            [
+              78.514391603029097, 
+              23.527986927612982
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "195", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              86.931058269695754, 
+              27.027986927613075
+            ], 
+            [
+              87.097724936362411, 
+              27.027986927613075
+            ]
+          ], 
+          [
+            [
+              86.931058269695754, 
+              16.944653594279742
+            ], 
+            [
+              86.931058269695754, 
+              27.027986927613075
+            ]
+          ], 
+          [
+            [
+              86.931058269695754, 
+              14.111320260946409
+            ], 
+            [
+              86.931058269695754, 
+              16.944653594279742
+            ]
+          ], 
+          [
+            [
+              78.514391603029082, 
+              14.111320260946393
+            ], 
+            [
+              86.931058269695754, 
+              14.111320260946409
+            ]
+          ], 
+          [
+            [
+              78.514391603029082, 
+              17.111320260946318
+            ], 
+            [
+              78.514391603029082, 
+              14.111320260946393
+            ]
+          ], 
+          [
+            [
+              78.514391603029097, 
+              24.444653594279647
+            ], 
+            [
+              78.514391603029082, 
+              17.111320260946318
+            ]
+          ], 
+          [
+            [
+              78.347724936362440, 
+              24.444653594279647
+            ], 
+            [
+              78.514391603029097, 
+              24.444653594279647
+            ]
+          ], 
+          [
+            [
+              87.097724936362411, 
+              16.944653594279742
+            ], 
+            [
+              87.097724936362411, 
+              27.027986927613075
+            ]
+          ], 
+          [
+            [
+              87.097724936362411, 
+              13.944653594279742
+            ], 
+            [
+              87.097724936362411, 
+              16.944653594279742
+            ]
+          ], 
+          [
+            [
+              78.347724936362411, 
+              13.944653594279727
+            ], 
+            [
+              87.097724936362411, 
+              13.944653594279742
+            ]
+          ], 
+          [
+            [
+              78.347724936362411, 
+              17.111320260946318
+            ], 
+            [
+              78.347724936362411, 
+              13.944653594279727
+            ]
+          ], 
+          [
+            [
+              78.347724936362440, 
+              24.444653594279647
+            ], 
+            [
+              78.347724936362411, 
+              17.111320260946318
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-FLOR-HRAL", 
+        "EntityHandle": "1A5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              84.097724936362411, 
+              27.027986927613075
+            ], 
+            [
+              84.264391603029082, 
+              27.027986927613075
+            ]
+          ], 
+          [
+            [
+              84.097724936362411, 
+              16.944653594279742
+            ], 
+            [
+              84.097724936362411, 
+              27.027986927613075
+            ]
+          ], 
+          [
+            [
+              81.347724936362411, 
+              16.944653594279732
+            ], 
+            [
+              84.097724936362411, 
+              16.944653594279742
+            ]
+          ], 
+          [
+            [
+              81.347724936362411, 
+              17.111320260946318
+            ], 
+            [
+              81.347724936362411, 
+              16.944653594279732
+            ]
+          ], 
+          [
+            [
+              81.347724936362440, 
+              24.444653594279647
+            ], 
+            [
+              81.347724936362411, 
+              17.111320260946318
+            ]
+          ], 
+          [
+            [
+              81.181058269695782, 
+              24.444653594279647
+            ], 
+            [
+              81.347724936362440, 
+              24.444653594279647
+            ]
+          ], 
+          [
+            [
+              84.264391603029082, 
+              16.777986927613075
+            ], 
+            [
+              84.264391603029082, 
+              27.027986927613075
+            ]
+          ], 
+          [
+            [
+              81.181058269695768, 
+              16.777986927613075
+            ], 
+            [
+              84.264391603029082, 
+              16.777986927613075
+            ]
+          ], 
+          [
+            [
+              81.181058269695768, 
+              17.111320260946318
+            ], 
+            [
+              81.181058269695768, 
+              16.777986927613075
+            ]
+          ], 
+          [
+            [
+              81.181058269695782, 
+              24.444653594279647
+            ], 
+            [
+              81.181058269695768, 
+              17.111320260946318
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-FLOR-HRAL", 
+        "EntityHandle": "1B3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              41.764391603029104, 
+              13.027986927613050
+            ], 
+            [
+              41.764391603029075, 
+              30.027986927613075
+            ], 
+            [
+              39.972724936362404, 
+              30.027986927613075
+            ], 
+            [
+              32.764391603029125, 
+              30.027986927613075
+            ], 
+            [
+              32.764391603029090, 
+              13.027986927613050
+            ], 
+            [
+              41.764391603029104, 
+              13.027986927613050
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1B5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              29.931058269695736, 
+              31.027986927613085
+            ], 
+            [
+              32.097724936362447, 
+              31.027986927613075
+            ], 
+            [
+              39.764391603029061, 
+              31.027986927613075
+            ], 
+            [
+              39.764391603029075, 
+              32.944653594279686
+            ], 
+            [
+              41.764391603029075, 
+              32.944653594279686
+            ], 
+            [
+              41.764391603029075, 
+              33.861320260946350
+            ], 
+            [
+              41.931058269695733, 
+              33.861320260946364
+            ], 
+            [
+              41.931058269695740, 
+              44.444653594279750
+            ], 
+            [
+              32.516391603029092, 
+              44.444653594279742
+            ], 
+            [
+              32.014391603029082, 
+              44.444653594279742
+            ], 
+            [
+              32.014391603029082, 
+              44.361320260946421
+            ], 
+            [
+              29.931058269695768, 
+              44.361320260946421
+            ], 
+            [
+              29.931058269695736, 
+              31.027986927613085
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "LEVEL 3", 
+        "source": "LEVEL_3_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1B6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "name": "686001_HCMFP-McCormick_A25 - LEVEL 3"
+}
