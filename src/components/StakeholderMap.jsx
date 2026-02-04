@@ -21,6 +21,17 @@ import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import { computeSpaceDashboard } from '../dashboard/spaceDashboard';
 
+const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
+
+function getAiBaseUrl() {
+  const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
+  if (envBase) return envBase;
+  if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
+    return DEFAULT_PUBLIC_AI_BASE_URL;
+  }
+  return '';
+}
+
 function summarizeFloorFromFeatures(fc) {
   if (!fc || !Array.isArray(fc.features)) {
     return {
@@ -2772,12 +2783,22 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   }
 }
 let aiLockUntil = 0;
+function resolveAiUrl(url) {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  const aiBase = getAiBaseUrl();
+  if (!aiBase) return url;
+  const base = aiBase.replace(/\/$/, '');
+  const rawPath = url.startsWith('/') ? url : `/${url}`;
+  const path = rawPath.startsWith('/ai/') ? rawPath.replace(/^\/ai/, '') : rawPath;
+  return `${base}${path}`;
+}
 async function guardedAiFetch(url, opts) {
   const now = Date.now();
   if (now < aiLockUntil) {
     throw new Error(`Rate limited. Try again in ${Math.ceil((aiLockUntil - now) / 1000)}s`);
   }
-  const res = await fetch(url, opts);
+  const res = await fetch(resolveAiUrl(url), opts);
   if (res.status === 429) {
     aiLockUntil = Date.now() + 60_000; // 60s cooldown
     throw new Error('Rate limited (429). AI paused for 60 seconds.');
@@ -8705,6 +8726,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
   const saveRoomEdits = useCallback(
     async (edit) => {
+      if (mode !== 'admin' || !isAdminUser) return null;
       if (!edit || !universityId) return null;
 
       const { buildingId, buildingName, floorName, revitId, roomId, roomLabel, roomNumber, roomGuid, properties = {} } = edit;
@@ -9036,7 +9058,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         return null;
       }
     },
-    [db, universityId, scheduleCampusRoomsRefresh]
+    [db, universityId, scheduleCampusRoomsRefresh, mode, isAdminUser]
   );
 
   // Initialize defaults on mount: first building + LEVEL_1 (or fallback)
@@ -9921,14 +9943,14 @@ useEffect(() => {
   }, [activeBuildingName, buildingStats, explainBuilding, panelStats, selectedBuilding, selectedBuildingId, universityId]);
 
   useEffect(() => {
-    const aiBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
+    const aiBase = getAiBaseUrl();
     const isStaticHost = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
     if (isStaticHost && !aiBase) {
       setAiStatus('down');
       return () => {};
     }
 
-    const healthUrl = aiBase ? `${aiBase.replace(/\/$/, '')}/ai/health` : '/ai/health';
+    const healthUrl = resolveAiUrl('/ai/health');
     const ping = async () => {
       try {
         const r = await fetch(healthUrl, { cache: 'no-store' });
@@ -11592,6 +11614,15 @@ useEffect(() => {
 
   // ---------- Load data (markers/assessments/conditions) ----------
   useEffect(() => {
+    if (mode === 'admin') return;
+    if (!roomEditOpen && !roomEditData && roomEditSelection.length === 0) return;
+    setRoomEditOpen(false);
+    setRoomEditData(null);
+    setRoomEditSelection([]);
+    roomEditSelectionRef.current = [];
+  }, [mode, roomEditOpen, roomEditData, roomEditSelection.length]);
+
+  useEffect(() => {
     (async () => {
       try {
         // Markers
@@ -11599,6 +11630,10 @@ useEffect(() => {
         if (mode === 'admin') {
           markersQuery = query(markersCollection);
         } else {
+          if (!persona) {
+            setMarkers([]);
+            return;
+          }
           markersQuery = query(markersCollection, where('persona', '==', persona));
         }
         const markerSnap = await getDocs(markersQuery);
@@ -12727,7 +12762,7 @@ useEffect(() => {
       const isAdmin = isAdminUser;
       const floorName = pp.Floor || derivedFloorDefault;
 
-      const canEditRoom = Boolean(isAdmin && buildingId && floorName && revitId != null && universityId);
+      const canEditRoom = Boolean(mode === 'admin' && isAdmin && buildingId && floorName && revitId != null && universityId);
       const roomId = canEditRoom ? rId(buildingId, floorName, revitId) : null;
       const editTarget = canEditRoom
         ? {
@@ -13538,18 +13573,18 @@ useEffect(() => {
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
-              rotateActive={floorAdjustMode === 'rotate'}
-              moveActive={floorAdjustMode === 'move'}
-              rotateValue={floorRotateValue}
-              scaleValue={floorScaleValue}
-              rotateNotice={floorAdjustNotice}
-              rotateStored={floorAdjustStored}
-              adjustDebugInfo={floorAdjustDebugInfo}
-              onStartRotate={startFloorRotate}
-              onStartMove={startFloorMove}
-              onCancelRotate={cancelFloorAdjust}
-              onClearRotate={clearFloorAdjustForFloor}
-              onSaveAdjust={async () => {
+              rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
+              moveActive={mode === 'admin' && floorAdjustMode === 'move'}
+              rotateValue={mode === 'admin' ? floorRotateValue : 0}
+              scaleValue={mode === 'admin' ? floorScaleValue : 1}
+              rotateNotice={mode === 'admin' ? floorAdjustNotice : ''}
+              rotateStored={mode === 'admin' ? floorAdjustStored : false}
+              adjustDebugInfo={mode === 'admin' ? floorAdjustDebugInfo : null}
+              onStartRotate={mode === 'admin' ? startFloorRotate : undefined}
+              onStartMove={mode === 'admin' ? startFloorMove : undefined}
+              onCancelRotate={mode === 'admin' ? cancelFloorAdjust : undefined}
+              onClearRotate={mode === 'admin' ? clearFloorAdjustForFloor : undefined}
+              onSaveAdjust={mode === 'admin' ? async () => {
                 const ctx = getFloorAdjustContext();
                 if (!ctx?.buildingLabel || !ctx?.floorId) return;
                 const adjustLabel =
@@ -13579,9 +13614,9 @@ useEffect(() => {
                   floorCache.delete(adjustUrl);
                   floorTransformCache.delete(adjustUrl);
                 }
-              }}
-              saveAdjustDisabled={!floorAdjustStored}
-              onScaleChange={(delta) => {
+              } : undefined}
+              saveAdjustDisabled={mode === 'admin' ? !floorAdjustStored : true}
+              onScaleChange={mode === 'admin' ? (delta) => {
                 const ctx = getFloorAdjustContext();
                 if (!ctx?.buildingLabel || !ctx?.floorId) return;
                 const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
@@ -13638,7 +13673,7 @@ useEffect(() => {
                   floorCache.delete(url);
                   floorTransformCache.delete(url);
                 }
-              }}
+              } : undefined}
               dragHandleProps={spacePanelDragHandleProps}
             />
           )}
