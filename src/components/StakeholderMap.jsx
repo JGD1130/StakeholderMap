@@ -6949,6 +6949,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment Progress' },
     { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
   ];
+  const visibleMapViewOptions = mode === 'admin'
+    ? MAP_VIEW_OPTIONS
+    : MAP_VIEW_OPTIONS.filter((opt) => opt.value === MAP_VIEWS.SPACE_DATA);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
@@ -9918,9 +9921,17 @@ useEffect(() => {
   }, [activeBuildingName, buildingStats, explainBuilding, panelStats, selectedBuilding, selectedBuildingId, universityId]);
 
   useEffect(() => {
+    const aiBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
+    const isStaticHost = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
+    if (isStaticHost && !aiBase) {
+      setAiStatus('down');
+      return () => {};
+    }
+
+    const healthUrl = aiBase ? `${aiBase.replace(/\/$/, '')}/ai/health` : '/ai/health';
     const ping = async () => {
       try {
-        const r = await fetch('/ai/health', { cache: 'no-store' });
+        const r = await fetch(healthUrl, { cache: 'no-store' });
         setAiStatus(r.ok ? 'ok' : 'down');
       } catch {
         setAiStatus('down');
@@ -13378,7 +13389,7 @@ useEffect(() => {
       </>
     )}
 
-    {mode === 'admin' && mapView === MAP_VIEWS.SPACE_DATA && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+    {mapView === MAP_VIEWS.SPACE_DATA && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
       const containerWidth = mapContainerRef.current?.clientWidth || 1000;
       const containerHeight = mapContainerRef.current?.clientHeight || 800;
       const PANEL_WIDTH = 360;
@@ -13883,19 +13894,20 @@ useEffect(() => {
           )}
 
           {/* Map View */}
-          {mode === 'admin' && (
-            <div className="control-section theme-selector" style={{ marginTop: 6 }}>
-              <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
-              <select id="theme-select" value={mapView} onChange={(e) => setMapView(e.target.value)}>
-                {MAP_VIEW_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="control-section theme-selector" style={{ marginTop: 6 }}>
+            <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
+            <select
+              id="theme-select"
+              value={mapView}
+              onChange={(e) => setMapView(e.target.value)}
+              disabled={visibleMapViewOptions.length <= 1}
+            >
+              {visibleMapViewOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
 
-          {mode === 'admin' && (
-            <>
               <div
                 className="floorplans-section"
                 style={{
@@ -14006,33 +14018,36 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  <button
-                    className="btn"
-                    style={{ width: '100%' }}
-                    onClick={handleRefreshAirtable}
-                    disabled={airtableRefreshPending}
-                  >
-                    {airtableRefreshPending ? 'Refreshing Airtable...' : 'Refresh Airtable Data'}
-                  </button>
+                  {mode === 'admin' && (
+                    <button
+                      className="btn"
+                      style={{ width: '100%' }}
+                      onClick={handleRefreshAirtable}
+                      disabled={airtableRefreshPending}
+                    >
+                      {airtableRefreshPending ? 'Refreshing Airtable...' : 'Refresh Airtable Data'}
+                    </button>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: '#555', marginTop: 2, minHeight: 0 }}>
                   {exportSpaceMessage || (exportSpaceMode === 'summary'
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {airtableRefreshMessage && (
+                {mode === 'admin' && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
-                  Last synced: {airtableLastSyncedAt
-                    ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
-                    : 'Not yet'}
-                </div>
+                {mode === 'admin' && (
+                  <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                    Last synced: {airtableLastSyncedAt
+                      ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
+                      : 'Not yet'}
+                  </div>
+                )}
               </div>
-            </>
-          )}
+
           {/* Mode */}
           {/*
           <div className="mode-selector" style={{ marginTop: 8 }}>
