@@ -12019,12 +12019,10 @@ useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
 
-    if (mode !== 'admin' && selectedBuildingId) setSelectedBuildingId(null);
-
     if (previousSelectedBuildingId.current) {
       map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
     }
-    if (selectedBuildingId && mode === 'admin') {
+    if (selectedBuildingId) {
       map.setFeatureState({ source: 'buildings', id: selectedBuildingId }, { selected: true });
     }
     previousSelectedBuildingId.current = selectedBuildingId;
@@ -14203,15 +14201,17 @@ useEffect(() => {
               </button>
             </div>
 
-            <div style={{ marginTop: 6 }}>
-              <button
-                disabled={aiStatus !== 'ok'}
-                onClick={() => setAiCreateScenarioOpen(true)}
-                style={{ width: '100%', padding: '5px 7px', fontSize: 11 }}
-              >
-                {"\u2728 Create move scenario"}
-              </button>
-            </div>
+            {mode === 'admin' && (
+              <div style={{ marginTop: 6 }}>
+                <button
+                  disabled={aiStatus !== 'ok'}
+                  onClick={() => setAiCreateScenarioOpen(true)}
+                  style={{ width: '100%', padding: '5px 7px', fontSize: 11 }}
+                >
+                  {"\u2728 Create move scenario"}
+                </button>
+              </div>
+            )}
 
             <div style={{ marginTop: 10, fontSize: 11, opacity: 0.75, lineHeight: 1.35 }}>
               Results are descriptive and do not modify project data.
