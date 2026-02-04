@@ -1,11 +1,11 @@
 {
-  "rotation_deg_cw": 0.0, 
-  "anchor_feet": [
-    -70.157335258614324, 
-    43.645021635791515
-  ], 
-  "units": "feet", 
+  "target_lat": 40.593899999999998, 
   "target_lon": -98.373900000000006, 
+  "rotation_deg_cw": 0.0, 
   "scale_deg_per_foot": 2.0000000000000002e-05, 
-  "target_lat": 40.593899999999998
+  "anchor_feet": [
+    88.710062756929943, 
+    -95.230254774323413
+  ], 
+  "units": "feet"
 }

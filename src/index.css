@@ -3,8 +3,7 @@ html, body, #root {
   padding: 0;
   height: 100%;
   width: 100%;
-  /* Remove or comment out overflow: hidden; */
-  /* overflow: hidden; */
+  overflow: hidden;
 }
 
 
@@ -28,4 +27,5 @@ body,
   height: 100%;
   margin: 0;
 }
+
 

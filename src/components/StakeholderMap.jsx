@@ -1,4 +1,4 @@
-﻿import * as React from 'react';
+import * as React from 'react';
 const { useRef, useEffect, useState, useCallback, useMemo, useLayoutEffect } = React;
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -18,6 +18,8 @@ import BuildingPanel from './panels/BuildingPanel';
 import FloorPanel from './panels/FloorPanel';
 import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
+import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
+import { computeSpaceDashboard } from '../dashboard/spaceDashboard';
 
 function summarizeFloorFromFeatures(fc) {
   if (!fc || !Array.isArray(fc.features)) {
@@ -96,7 +98,15 @@ function deptFillExpression() {
   }
   return [
     'match',
-    ['coalesce', ['feature-state', 'department'], ['get', 'department'], ['get', 'Department'], ['get', 'Dept']],
+    [
+      'coalesce',
+      ['feature-state', 'department'],
+      ['get', 'department'],
+      ['get', 'Department'],
+      ['get', 'Dept'],
+      ['get', 'NCES_Department'],
+      ['get', 'NCES_Dept']
+    ],
     ...pairs,
     '#e6e6e6'
   ];
@@ -126,6 +136,7 @@ const colorForDept = (name) => {
 
 const colorForType = (name) => {
   if (!name) return '#CCCCCC';
+  if (String(name).trim().toLowerCase() === 'public corridor') return '#D9D9D9';
   return FALLBACKS[_hash(String(name).toLowerCase()) % FALLBACKS.length];
 };
 
@@ -161,6 +172,59 @@ function renderDeptListHTML(list) {
     .filter(Boolean)
     .join('');
 }
+
+const clampValue = (value, min, max) => Math.max(min, Math.min(value, max));
+
+const isInteractiveTarget = (target) => {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('button, a, input, select, textarea, [role="button"]'));
+};
+
+const beginPanelDrag = (event, panelRef, setPos, boundsProvider) => {
+  if (event.button !== 0) return;
+  if (isInteractiveTarget(event.target)) return;
+  const panelEl = panelRef.current;
+  if (!panelEl || !boundsProvider) return;
+
+  const bounds = boundsProvider();
+  if (!bounds) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const panelRect = panelEl.getBoundingClientRect();
+  const offsetX = event.clientX - panelRect.left;
+  const offsetY = event.clientY - panelRect.top;
+  const margin = 8;
+  const prevUserSelect = document.body.style.userSelect;
+
+  const updatePosition = (clientX, clientY) => {
+    const rawLeft = clientX - bounds.left - offsetX;
+    const rawTop = clientY - bounds.top - offsetY;
+    const maxLeft = Math.max(margin, bounds.width - panelRect.width - margin);
+    const maxTop = Math.max(margin, bounds.height - panelRect.height - margin);
+    setPos({
+      x: clampValue(rawLeft, margin, maxLeft),
+      y: clampValue(rawTop, margin, maxTop)
+    });
+  };
+
+  const handleMove = (moveEvent) => {
+    updatePosition(moveEvent.clientX, moveEvent.clientY);
+  };
+
+  const handleUp = () => {
+    window.removeEventListener('pointermove', handleMove);
+    window.removeEventListener('pointerup', handleUp);
+    window.removeEventListener('pointercancel', handleUp);
+    document.body.style.userSelect = prevUserSelect;
+  };
+
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', handleMove);
+  window.addEventListener('pointerup', handleUp);
+  window.addEventListener('pointercancel', handleUp);
+};
 
 // ----- Controlled vocabularies (seed lists) -----
 const ROOM_TYPES = [
@@ -389,6 +453,9 @@ function getDeptFromProps(props = {}) {
 
 function getTypeFromProps(props = {}) {
   return (
+    props["Room Type Description"] ||
+    props.RoomTypeDescription ||
+    props.roomTypeDescription ||
     props["Room Type"] ||
     props.roomType ||
     props.RoomType ||
@@ -499,7 +566,9 @@ function getRoomCategoryCode(props = {}) {
 
 function getSeatCount(props = {}) {
   const raw =
+    props.seatCount ??
     props.SeatCount ??
+    props['Seat Count'] ??
     props.Seats ??
     props.Capacity ??
     props.rm_seats ??
@@ -597,7 +666,7 @@ function collectFloorOptions(features) {
 
   for (const f of features || []) {
     const p = f.properties || {};
-    const typeName = norm(p.type ?? p.roomType ?? p.Name ?? p.RoomType ?? p.Type);
+    const typeName = norm(getRoomTypeLabelFromProps(p));
     const deptValue = norm(p.department ?? p.Department ?? p.Dept);
     const categoryCode = getCategoryCode(p);
     const typeCode = getTypeCode(p);
@@ -671,6 +740,7 @@ function buildFloorplanCanvas(fc, options = {}) {
   const solidFill = options?.solidFill === true;
   const labelOptions = options?.labelOptions || {};
   const labelsEnabled = labelOptions.enabled !== false;
+  const hideDrawingLabel = labelOptions.hideDrawing === true;
   const labelSettings = {
     font: labelOptions.font || 'bold 10px "Open Sans", Arial, sans-serif',
     lineHeight: labelOptions.lineHeight || 12,
@@ -684,11 +754,12 @@ function buildFloorplanCanvas(fc, options = {}) {
     const pushLine = (value) => {
       const text = norm(value);
       if (!text) return;
+      if (hideDrawingLabel && text.toLowerCase() === 'drawing') return;
       if (lines.length >= labelSettings.maxLines) return;
       lines.push(text);
     };
     pushLine(props?.Number ?? props?.RoomNumber ?? props?.number);
-    pushLine(props?.RoomType ?? props?.Type ?? props?.type ?? props?.Name);
+    pushLine(getRoomTypeLabelFromProps(props) || props?.Name);
     if (scenarioDept) pushLine(scenarioDept);
     else pushLine(fallbackDept);
     if (areaValue > 0) {
@@ -738,7 +809,11 @@ function buildFloorplanCanvas(fc, options = {}) {
     );
     const baseDept = normalizeDept(props);
     const deptName = scenarioDept || baseDept;
-    const typeName = props?.RoomType ?? props?.Type ?? props?.type ?? props?.Name ?? '';
+    const typeName =
+      props?.__roomType ||
+      getRoomTypeLabelFromProps(props) ||
+      props?.Name ||
+      '';
     const occupantVal = (props?.occupant ?? props?.Occupant ?? '').toString().trim();
     const colorMode = options?.colorMode || 'department';
 
@@ -758,7 +833,17 @@ function buildFloorplanCanvas(fc, options = {}) {
       : '#f7f7f7';
     let outline = '#2b2b2b';
     let outlineWidth = kind === 'room' ? 2.2 : 1.5;
-    const fidNorm = normalizeId(feature?.id ?? props?.RevitId ?? props?.id);
+    const fidNorm = normalizeId(
+      feature?.id ??
+      props?.RevitId ??
+      props?.Revit_UniqueId ??
+      props?.RevitUniqueId ??
+      props?.Revit_UniqueID ??
+      props?.['Revit Unique Id'] ??
+      props?.['Room GUID'] ??
+      props?.roomGuid ??
+      props?.id
+    );
     const isSelected = fidNorm != null && selectedIdsSet.has(fidNorm);
     if (kind === 'door') {
       fill = '#1d1d1d';
@@ -830,38 +915,841 @@ function generateFloorplanImageData(context = {}) {
 }
 
 const getRoomTypeLabelFromProps = (props = {}) => {
-  const typeValue = norm(
-    props.type ??
-    props.roomType ??
-    props.Name ??
-    props.RoomType ??
-    props['Room Type'] ??
-    props.Type ??
-    props.RoomTypeName ??
+  const roomTypeDesc =
+    props['Room Type Description'] ??
+    props.RoomTypeDescription ??
+    props.roomTypeDescription;
+  if (roomTypeDesc && String(roomTypeDesc).trim()) return String(roomTypeDesc).trim();
+  const nces =
+    props.NCES_Type ??
+    props['NCES Type'] ??
+    props['NCES Types'] ??
+    props.NCES_Types ??
+    props.nces_type ??
+    props.ncesType;
+  if (nces && String(nces).trim()) return String(nces).trim();
+  const ncesDesc =
+    props['NCES_Type Description_Sh'] ??
+    props['NCES_Type Description'] ??
+    props['NCES Type Description'] ??
+    props['NCES_Type Description_Short'] ??
+    props['NCES Type Description Short'];
+  if (ncesDesc && String(ncesDesc).trim()) return String(ncesDesc).trim();
+  return (
+    props['Room Type'] ||
+    props.RoomType ||
+    props.RoomTypeName ||
+    props.Type ||
+    props.type ||
+    props.Category ||
+    props.category ||
+    props.Name ||
+    props['Room Name'] ||
     ''
-  );
-  return typeValue || 'Unknown';
+  ).toString().trim();
 };
+
+function resolveNcesType(p = {}) {
+  return (
+    p.NCES_Type ??
+    p['NCES Types'] ??
+    p.NCES_Types ??
+    p.nces_type ??
+    p.ncesType ??
+    ''
+  ).toString().trim();
+}
+
+function resolveNcesDept(p = {}) {
+  return (
+    p.NCES_Department ??
+    p['NCES_Department'] ??
+    p.NCES_Dept ??
+    p['NCES Dept'] ??
+    p.department ??
+    p.Department ??
+    p.Dept ??
+    ''
+  ).toString().trim();
+}
+
+function resolveAreaSf(p = {}) {
+  const v =
+    p.Area_SF ??
+    p['Area_SF'] ??
+    p.area ??
+    p.Area ??
+    p.SF ??
+    p['Area (SF)'] ??
+    p.NetArea ??
+    0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function applyRoomTypeLabel(fc) {
+  if (!fc?.features?.length) return fc;
+  const nextFeatures = fc.features.map((f) => {
+    const props = f?.properties || {};
+    if ('__roomType' in props) return f;
+    const ncesType = resolveNcesType(props);
+    const normalized = ncesType && String(ncesType).trim();
+    if (!normalized) return f;
+    return {
+      ...f,
+      properties: {
+        ...props,
+        __roomType: normalized
+      }
+    };
+  });
+  return { ...fc, features: nextFeatures };
+}
+
+function getAffineSignature(affine) {
+  if (!affine) return null;
+  const anchor = affine.anchor_feet || affine.anchorFeet || affine.anchor;
+  const parts = [
+    affine.target_lon ?? affine.targetLon,
+    affine.target_lat ?? affine.targetLat,
+    affine.rotation_deg_cw ?? affine.rotation_deg,
+    affine.scale_deg_per_foot ?? affine.scale_deg_per_ft ?? affine.scale,
+    Array.isArray(anchor) ? anchor.join(',') : ''
+  ];
+  return parts.map((v) => (v == null ? '' : String(v))).join('|');
+}
+
+const DRAWING_ALIGN_STORAGE_PREFIX = 'mfDrawingAlign:';
+const drawingAlignCache = new Map();
+const FLOORPLAN_ADJUST_STORAGE_PREFIX = 'mfFloorAdjust:';
+const FLOORPLAN_ADJUST_URL_PREFIX = 'mfFloorAdjustUrl:';
+const FLOORPLAN_ADJUST_FLOOR_PREFIX = 'mfFloorAdjustFloor:';
+const floorAdjustCache = new Map();
+const floorAdjustUrlCache = new Map();
+const floorAdjustFloorCache = new Map();
+
+function buildDrawingAlignKey(buildingLabel, floorId) {
+  const key = canon(buildingLabel || '');
+  const floorKey = fId(floorId || '');
+  if (!key || !floorKey) return null;
+  return `${DRAWING_ALIGN_STORAGE_PREFIX}${key}/${floorKey}`;
+}
+
+function buildFloorAdjustKey(buildingLabel, floorId) {
+  const key = canon(buildingLabel || '');
+  const floorKey = fId(floorId || '');
+  if (!key || !floorKey) return null;
+  return `${FLOORPLAN_ADJUST_STORAGE_PREFIX}${key}/${floorKey}`;
+}
+
+function buildFloorAdjustUrlKey(url) {
+  const key = canon(url || '');
+  if (!key) return null;
+  return `${FLOORPLAN_ADJUST_URL_PREFIX}${key}`;
+}
+
+function buildFloorAdjustFloorKey(basePath, floorId) {
+  const folder = basePath ? getBuildingFolderFromBasePath(basePath) : '';
+  const key = canon(folder || basePath || '');
+  const floorKey = fId(floorId || '');
+  if (!key || !floorKey) return null;
+  return `${FLOORPLAN_ADJUST_FLOOR_PREFIX}${key}/${floorKey}`;
+}
+
+function getDrawingAlignSignature(align) {
+  if (!align) return null;
+  const parts = [
+    align.rotationDeg,
+    align.scale,
+    Array.isArray(align.pivot) ? align.pivot.join(',') : '',
+    Array.isArray(align.target) ? align.target.join(',') : ''
+  ];
+  return parts.map((v) => (v == null ? '' : String(v))).join('|');
+}
+
+function loadDrawingAlign(buildingLabel, floorId) {
+  const key = buildDrawingAlignKey(buildingLabel, floorId);
+  if (!key) return null;
+  if (drawingAlignCache.has(key)) return drawingAlignCache.get(key);
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.pivot) || !Array.isArray(parsed.target)) return null;
+    drawingAlignCache.set(key, parsed);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function loadFloorAdjust(buildingLabel, floorId) {
+  const key = buildFloorAdjustKey(buildingLabel, floorId);
+  if (!key) return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  if (floorAdjustCache.has(key)) return floorAdjustCache.get(key);
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+    const parsed = JSON.parse(raw);
+    const rotationDeg = Number(parsed?.rotationDeg);
+    const scale = Number(parsed?.scale);
+    const translateMeters = Array.isArray(parsed?.translateMeters) ? parsed.translateMeters : [0, 0];
+    const translateLngLat = Array.isArray(parsed?.translateLngLat) ? parsed.translateLngLat : null;
+    const savedAt = Number(parsed?.savedAt);
+    const pivot = Array.isArray(parsed?.pivot) ? parsed.pivot : null;
+    const anchorLngLat = Array.isArray(parsed?.anchorLngLat) ? parsed.anchorLngLat : null;
+    const safe = {
+      rotationDeg: Number.isFinite(rotationDeg) ? rotationDeg : 0,
+      scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
+      translateMeters: [
+        Number.isFinite(translateMeters[0]) ? translateMeters[0] : 0,
+        Number.isFinite(translateMeters[1]) ? translateMeters[1] : 0
+      ],
+      translateLngLat: Array.isArray(translateLngLat)
+        ? [
+            Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+            Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+          ]
+        : null,
+      anchorLngLat: Array.isArray(anchorLngLat)
+        ? [
+            Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+            Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+          ]
+        : null,
+      savedAt: Number.isFinite(savedAt) ? savedAt : 0,
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    };
+    floorAdjustCache.set(key, safe);
+    return safe;
+  } catch {
+    return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  }
+}
+
+function loadFloorAdjustByUrl(url) {
+  const key = buildFloorAdjustUrlKey(url);
+  if (!key) return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  if (floorAdjustUrlCache.has(key)) return floorAdjustUrlCache.get(key);
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+    const parsed = JSON.parse(raw);
+    const rotationDeg = Number(parsed?.rotationDeg);
+    const scale = Number(parsed?.scale);
+    const translateMeters = Array.isArray(parsed?.translateMeters) ? parsed.translateMeters : [0, 0];
+    const translateLngLat = Array.isArray(parsed?.translateLngLat) ? parsed.translateLngLat : null;
+    const savedAt = Number(parsed?.savedAt);
+    const pivot = Array.isArray(parsed?.pivot) ? parsed.pivot : null;
+    const anchorLngLat = Array.isArray(parsed?.anchorLngLat) ? parsed.anchorLngLat : null;
+    const safe = {
+      rotationDeg: Number.isFinite(rotationDeg) ? rotationDeg : 0,
+      scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
+      translateMeters: [
+        Number.isFinite(translateMeters[0]) ? translateMeters[0] : 0,
+        Number.isFinite(translateMeters[1]) ? translateMeters[1] : 0
+      ],
+      translateLngLat: Array.isArray(translateLngLat)
+        ? [
+            Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+            Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+          ]
+        : null,
+      anchorLngLat: Array.isArray(anchorLngLat)
+        ? [
+            Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+            Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+          ]
+        : null,
+      savedAt: Number.isFinite(savedAt) ? savedAt : 0,
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    };
+    floorAdjustUrlCache.set(key, safe);
+    return safe;
+  } catch {
+    return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  }
+}
+
+function loadFloorAdjustByBasePath(basePath, floorId) {
+  const key = buildFloorAdjustFloorKey(basePath, floorId);
+  if (!key) return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  if (floorAdjustFloorCache.has(key)) return floorAdjustFloorCache.get(key);
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+    const parsed = JSON.parse(raw);
+    const rotationDeg = Number(parsed?.rotationDeg);
+    const scale = Number(parsed?.scale);
+    const translateMeters = Array.isArray(parsed?.translateMeters) ? parsed.translateMeters : [0, 0];
+    const translateLngLat = Array.isArray(parsed?.translateLngLat) ? parsed.translateLngLat : null;
+    const savedAt = Number(parsed?.savedAt);
+    const pivot = Array.isArray(parsed?.pivot) ? parsed.pivot : null;
+    const anchorLngLat = Array.isArray(parsed?.anchorLngLat) ? parsed.anchorLngLat : null;
+    const safe = {
+      rotationDeg: Number.isFinite(rotationDeg) ? rotationDeg : 0,
+      scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
+      translateMeters: [
+        Number.isFinite(translateMeters[0]) ? translateMeters[0] : 0,
+        Number.isFinite(translateMeters[1]) ? translateMeters[1] : 0
+      ],
+      translateLngLat: Array.isArray(translateLngLat)
+        ? [
+            Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+            Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+          ]
+        : null,
+      anchorLngLat: Array.isArray(anchorLngLat)
+        ? [
+            Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+            Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+          ]
+        : null,
+      savedAt: Number.isFinite(savedAt) ? savedAt : 0,
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    };
+    floorAdjustFloorCache.set(key, safe);
+    return safe;
+  } catch {
+    return { rotationDeg: 0, scale: 1, translateMeters: [0, 0], savedAt: 0 };
+  }
+}
+
+function saveDrawingAlign(buildingLabel, floorId, align) {
+  const key = buildDrawingAlignKey(buildingLabel, floorId);
+  if (!key || !align) return false;
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(align));
+    drawingAlignCache.set(key, align);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function saveFloorAdjust(buildingLabel, floorId, adjust) {
+  const key = buildFloorAdjustKey(buildingLabel, floorId);
+  if (!key || !adjust) return false;
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  const pivot = Array.isArray(adjust.pivot) ? adjust.pivot : null;
+  const translateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null;
+  const anchorLngLat = Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null;
+  const safe = {
+    rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
+    scale: Number.isFinite(adjust.scale) && adjust.scale > 0 ? adjust.scale : 1,
+    translateMeters: Array.isArray(adjust.translateMeters)
+      ? [
+          Number.isFinite(adjust.translateMeters[0]) ? adjust.translateMeters[0] : 0,
+          Number.isFinite(adjust.translateMeters[1]) ? adjust.translateMeters[1] : 0
+        ]
+      : [0, 0],
+    translateLngLat: Array.isArray(translateLngLat)
+      ? [
+          Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+          Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+        ]
+      : null,
+    anchorLngLat: Array.isArray(anchorLngLat)
+      ? [
+          Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+          Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+        ]
+      : null,
+    savedAt: Date.now(),
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+  };
+  try {
+    window.localStorage.setItem(key, JSON.stringify(safe));
+    floorAdjustCache.set(key, safe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function saveFloorAdjustByUrl(url, adjust) {
+  const key = buildFloorAdjustUrlKey(url);
+  if (!key || !adjust) return false;
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  const pivot = Array.isArray(adjust.pivot) ? adjust.pivot : null;
+  const translateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null;
+  const anchorLngLat = Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null;
+  const safe = {
+    rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
+    scale: Number.isFinite(adjust.scale) && adjust.scale > 0 ? adjust.scale : 1,
+    translateMeters: Array.isArray(adjust.translateMeters)
+      ? [
+          Number.isFinite(adjust.translateMeters[0]) ? adjust.translateMeters[0] : 0,
+          Number.isFinite(adjust.translateMeters[1]) ? adjust.translateMeters[1] : 0
+        ]
+      : [0, 0],
+    translateLngLat: Array.isArray(translateLngLat)
+      ? [
+          Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+          Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+        ]
+      : null,
+    anchorLngLat: Array.isArray(anchorLngLat)
+      ? [
+          Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+          Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+        ]
+      : null,
+    savedAt: Date.now(),
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+  };
+  try {
+    window.localStorage.setItem(key, JSON.stringify(safe));
+    floorAdjustUrlCache.set(key, safe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function saveFloorAdjustByBasePath(basePath, floorId, adjust) {
+  const key = buildFloorAdjustFloorKey(basePath, floorId);
+  if (!key || !adjust) return false;
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  const pivot = Array.isArray(adjust.pivot) ? adjust.pivot : null;
+  const translateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null;
+  const anchorLngLat = Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null;
+  const safe = {
+    rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
+    scale: Number.isFinite(adjust.scale) && adjust.scale > 0 ? adjust.scale : 1,
+    translateMeters: Array.isArray(adjust.translateMeters)
+      ? [
+          Number.isFinite(adjust.translateMeters[0]) ? adjust.translateMeters[0] : 0,
+          Number.isFinite(adjust.translateMeters[1]) ? adjust.translateMeters[1] : 0
+        ]
+      : [0, 0],
+    translateLngLat: Array.isArray(translateLngLat)
+      ? [
+          Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+          Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+        ]
+      : null,
+    anchorLngLat: Array.isArray(anchorLngLat)
+      ? [
+          Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+          Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+        ]
+      : null,
+    savedAt: Date.now(),
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+  };
+  try {
+    window.localStorage.setItem(key, JSON.stringify(safe));
+    floorAdjustFloorCache.set(key, safe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearDrawingAlign(buildingLabel, floorId) {
+  const key = buildDrawingAlignKey(buildingLabel, floorId);
+  if (!key) return;
+  drawingAlignCache.delete(key);
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try { window.localStorage.removeItem(key); } catch {}
+}
+
+function clearFloorAdjust(buildingLabel, floorId) {
+  const key = buildFloorAdjustKey(buildingLabel, floorId);
+  if (!key) return;
+  floorAdjustCache.delete(key);
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try { window.localStorage.removeItem(key); } catch {}
+}
+
+function clearFloorAdjustByUrl(url) {
+  const key = buildFloorAdjustUrlKey(url);
+  if (!key) return;
+  floorAdjustUrlCache.delete(key);
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try { window.localStorage.removeItem(key); } catch {}
+}
+
+function clearFloorAdjustByBasePath(basePath, floorId) {
+  const key = buildFloorAdjustFloorKey(basePath, floorId);
+  if (!key) return;
+  floorAdjustFloorCache.delete(key);
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try { window.localStorage.removeItem(key); } catch {}
+}
+
+function applyDrawingAlignment(fc, align) {
+  if (!fc?.features?.length || !align) return fc;
+  const sig = getDrawingAlignSignature(align);
+  if (sig && fc.__mfDrawingAlignSignature === sig) return fc;
+  const pivot = Array.isArray(align.pivot) ? align.pivot : null;
+  const target = Array.isArray(align.target) ? align.target : null;
+  if (!pivot || !target) return fc;
+  const scale = Number.isFinite(align.scale) ? align.scale : 1;
+  const rotationDeg = Number.isFinite(align.rotationDeg) ? align.rotationDeg : 0;
+  const theta = (rotationDeg * Math.PI) / 180;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const [px, py] = pivot;
+  const [tx, ty] = target;
+  const transformPoint = (coords) => {
+    const dx = coords[0] - px;
+    const dy = coords[1] - py;
+    const rx = (dx * cosT - dy * sinT) * scale;
+    const ry = (dx * sinT + dy * cosT) * scale;
+    return [tx + rx, ty + ry];
+  };
+  const nextFeatures = fc.features.map((f) => {
+    if (!isDrawingFeature(f?.properties || {})) return f;
+    if (!f?.geometry) return f;
+    return {
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: mapCoords(f.geometry.coordinates, transformPoint)
+      }
+    };
+  });
+  const next = { ...fc, features: nextFeatures };
+  if (sig) next.__mfDrawingAlignSignature = sig;
+  return next;
+}
+
+function resolveDrawingAlignLabel({ buildingLabel, buildingId, floorBasePath, fitBuilding } = {}) {
+  const raw =
+    buildingLabel ||
+    buildingId ||
+    fitBuilding?.properties?.id ||
+    fitBuilding?.properties?.name ||
+    '';
+  const resolved = resolveBuildingNameFromInput(raw) || raw;
+  if (resolved) return resolved;
+  if (floorBasePath) {
+    const folder = getBuildingFolderFromBasePath(floorBasePath);
+    if (folder) return BUILDING_FOLDER_TO_NAME?.[folder] || folder;
+  }
+  return '';
+}
+
+function resolveFloorAdjustLabel({ buildingLabel, buildingId, floorBasePath, fitBuilding } = {}) {
+  const folder = floorBasePath ? getBuildingFolderFromBasePath(floorBasePath) : null;
+  if (folder) return folder;
+  return resolveDrawingAlignLabel({ buildingLabel, buildingId, floorBasePath, fitBuilding });
+}
+
+function getFloorAdjustSignature(adjust) {
+  if (!adjust) return null;
+  const parts = [
+    adjust.rotationDeg,
+    adjust.scale,
+    Array.isArray(adjust.translateMeters) ? adjust.translateMeters.join(',') : '',
+    Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat.join(',') : '',
+    Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat.join(',') : ''
+  ];
+  return parts.map((v) => (v == null ? '' : String(v))).join('|');
+}
+
+function hasFloorAdjust(adjust) {
+  if (!adjust) return false;
+  return (
+    Math.abs(adjust.rotationDeg || 0) > 1e-6 ||
+    Math.abs((adjust.scale || 1) - 1) > 1e-6 ||
+    Math.abs((adjust.translateMeters?.[0] || 0)) > 1e-6 ||
+    Math.abs((adjust.translateMeters?.[1] || 0)) > 1e-6 ||
+    Math.abs((adjust.translateLngLat?.[0] || 0)) > 1e-12 ||
+    Math.abs((adjust.translateLngLat?.[1] || 0)) > 1e-12 ||
+    Math.abs((adjust.anchorLngLat?.[0] || 0)) > 1e-12 ||
+    Math.abs((adjust.anchorLngLat?.[1] || 0)) > 1e-12
+  );
+}
+
+function pickLatestFloorAdjust({ base, url, label }) {
+  const candidates = [
+    { source: 'basePath', adjust: base },
+    { source: 'url', adjust: url },
+    { source: 'label', adjust: label }
+  ].filter((c) => c.adjust);
+  const withAdjust = candidates.filter((c) => hasFloorAdjust(c.adjust));
+  if (withAdjust.length) {
+    let best = null;
+    for (const c of withAdjust) {
+      const savedAt = Number(c.adjust?.savedAt) || 0;
+      if (!best || savedAt > best.savedAt) {
+        best = { ...c, savedAt };
+      }
+    }
+    if (best) return best;
+  }
+  const labelCandidate = candidates.find((c) => c.source === 'label');
+  return labelCandidate || candidates[0] || { source: 'label', adjust: null, savedAt: 0 };
+}
+
+function getFloorAdjustAnchorLngLat(fc) {
+  if (!fc?.features?.length) return null;
+  try {
+    const coords = turf.centroid(fc)?.geometry?.coordinates || null;
+    if (!Array.isArray(coords) || coords.length < 2) return null;
+    if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return null;
+    return coords;
+  } catch {
+    return null;
+  }
+}
+
+function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
+  if (!fc?.features?.length || !adjust) return { fc, fitTransform };
+  const sig = getFloorAdjustSignature(adjust);
+  if (sig && fc.__mfUserAdjustSignature === sig) return { fc, fitTransform };
+  const rotationDeg = Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0;
+  const scale = Number.isFinite(adjust.scale) ? adjust.scale : 1;
+  const translateMeters = Array.isArray(adjust.translateMeters) ? adjust.translateMeters : [0, 0];
+  const translateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null;
+  const anchorLngLat = Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null;
+  let out = fc;
+  const pivot =
+    (Array.isArray(adjust.pivot) ? adjust.pivot : null) ||
+    fitTransform?.scaleOrigin ||
+    fitTransform?.rotationPivot ||
+    turf.centroid(out)?.geometry?.coordinates ||
+    null;
+  if (Number.isFinite(scale) && Math.abs(scale - 1) > 1e-6 && pivot) {
+    out = turf.transformScale(out, scale, { origin: pivot });
+  }
+  if (Number.isFinite(rotationDeg) && Math.abs(rotationDeg) > 1e-6 && pivot) {
+    out = turf.transformRotate(out, rotationDeg, { pivot });
+  }
+  if (translateLngLat && (Math.abs(translateLngLat[0] || 0) > 1e-12 || Math.abs(translateLngLat[1] || 0) > 1e-12)) {
+    out = applyNudgeLngLat(out, translateLngLat);
+  } else if (translateMeters && (Math.abs(translateMeters[0] || 0) > 1e-6 || Math.abs(translateMeters[1] || 0) > 1e-6)) {
+    out = applyNudgeMeters(out, translateMeters);
+  }
+  if (anchorLngLat && Number.isFinite(anchorLngLat[0]) && Number.isFinite(anchorLngLat[1])) {
+    const currentAnchor = getFloorAdjustAnchorLngLat(out);
+    if (currentAnchor) {
+      const deltaLng = anchorLngLat[0] - currentAnchor[0];
+      const deltaLat = anchorLngLat[1] - currentAnchor[1];
+      if (Math.abs(deltaLng) > 1e-12 || Math.abs(deltaLat) > 1e-12) {
+        out = applyNudgeLngLat(out, [deltaLng, deltaLat]);
+      }
+    }
+  }
+  if (out && typeof out === 'object') {
+    out.__mfUserAdjustSignature = sig;
+  }
+
+  let nextTransform = fitTransform;
+  if (Number.isFinite(scale) || Number.isFinite(rotationDeg) || Array.isArray(translateMeters)) {
+    nextTransform = nextTransform || {
+      rotationDeg: 0,
+      rotationPivot: pivot,
+      scale: 1,
+      scaleOrigin: pivot,
+      translateKm: 0,
+      translateBearing: 0,
+      nudgeMeters: [0, 0],
+      refineRotationDeg: 0,
+      refineRotationPivot: pivot
+    };
+    if (pivot) {
+      if (!Array.isArray(nextTransform.rotationPivot)) nextTransform.rotationPivot = pivot;
+      if (!Array.isArray(nextTransform.scaleOrigin)) nextTransform.scaleOrigin = pivot;
+      if (!Array.isArray(nextTransform.refineRotationPivot)) nextTransform.refineRotationPivot = pivot;
+    }
+    if (Number.isFinite(scale) && Math.abs(scale - 1) > 1e-6) {
+      nextTransform.scale = (Number.isFinite(nextTransform.scale) ? nextTransform.scale : 1) * scale;
+    }
+    if (Number.isFinite(rotationDeg) && Math.abs(rotationDeg) > 1e-6) {
+      nextTransform.rotationDeg = (Number.isFinite(nextTransform.rotationDeg) ? nextTransform.rotationDeg : 0) + rotationDeg;
+    }
+    if (Array.isArray(translateMeters)) {
+      const base = Array.isArray(nextTransform.nudgeMeters) ? nextTransform.nudgeMeters : [0, 0];
+      nextTransform.nudgeMeters = [
+        (Number(base[0]) || 0) + (Number(translateMeters[0]) || 0),
+        (Number(base[1]) || 0) + (Number(translateMeters[1]) || 0)
+      ];
+    }
+  }
+  return { fc: out, fitTransform: nextTransform };
+}
+
+function isDrawingFeature(props = {}) {
+  if (!props) return false;
+  const type = String(props.type ?? props.Type ?? '').toLowerCase();
+  if (type === 'drawing') return true;
+  return props.interactive === false;
+}
+
+function snapToNearestVertex(feature, fallback) {
+  if (!feature?.geometry || !Array.isArray(fallback)) return fallback;
+  const pts = extractLngLatPairs(feature.geometry, 4000);
+  if (!pts.length) return fallback;
+  let best = fallback;
+  let bestDist = Infinity;
+  for (const [x, y] of pts) {
+    const dx = x - fallback[0];
+    const dy = y - fallback[1];
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = [x, y];
+    }
+  }
+  return best;
+}
+
+function bboxFromCoords(coords, limit = 4000) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let count = 0;
+  const visit = (node) => {
+    if (!Array.isArray(node) || count >= limit) return;
+    if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+      const x = node[0];
+      const y = node[1];
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      count += 1;
+      return;
+    }
+    node.forEach(visit);
+  };
+  visit(coords);
+  if (!count) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function pruneDrawingOutsideRooms(fc, marginRatio = 0.12) {
+  if (!fc?.features?.length) return fc;
+  const rooms = fc.features.filter((f) => !isDrawingFeature(f?.properties || {}));
+  if (!rooms.length) return fc;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let count = 0;
+  for (const f of rooms) {
+    const pts = extractLngLatPairs(f?.geometry, 4000);
+    for (const [x, y] of pts) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      count += 1;
+    }
+    if (count > 20000) break;
+  }
+  if (!count) return fc;
+  const spanX = Math.max(1e-9, maxX - minX);
+  const spanY = Math.max(1e-9, maxY - minY);
+  const padX = spanX * marginRatio;
+  const padY = spanY * marginRatio;
+  const clipMinX = minX - padX;
+  const clipMinY = minY - padY;
+  const clipMaxX = maxX + padX;
+  const clipMaxY = maxY + padY;
+  const keep = [];
+  for (const f of fc.features) {
+    if (!isDrawingFeature(f?.properties || {})) {
+      keep.push(f);
+      continue;
+    }
+    const bbox = bboxFromCoords(f?.geometry?.coordinates, 4000);
+    if (!bbox) continue;
+    const intersects = !(bbox.maxX < clipMinX || bbox.minX > clipMaxX || bbox.maxY < clipMinY || bbox.minY > clipMaxY);
+    if (intersects) keep.push(f);
+  }
+  return keep.length === fc.features.length ? fc : { ...fc, features: keep };
+}
+
+function findNearestVertexInFloor({ map, fc, isDrawing, screenPoint, maxPixels, maxPoints }) {
+  if (!map || !fc?.features?.length || !screenPoint) return null;
+  const radius = Number.isFinite(maxPixels) ? maxPixels : null;
+  const limit = Number.isFinite(maxPoints) ? maxPoints : 8000;
+  let best = null;
+  let bestDist = Infinity;
+  let count = 0;
+  for (const f of fc.features) {
+    const props = f?.properties || {};
+    const drawing = isDrawingFeature(props);
+    const geomType = f?.geometry?.type || '';
+    const isLineGeom = geomType === 'LineString' || geomType === 'MultiLineString';
+    const isDrawingCandidate = drawing || isLineGeom;
+    if (isDrawing ? !isDrawingCandidate : isDrawingCandidate) continue;
+    if (!f?.geometry) continue;
+    const pts = extractLngLatPairs(f.geometry, Math.max(0, limit - count));
+    count += pts.length;
+    for (const [lng, lat] of pts) {
+      const projected = map.project({ lng, lat });
+      const dx = projected.x - screenPoint.x;
+      const dy = projected.y - screenPoint.y;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = [lng, lat];
+      }
+    }
+    if (count >= limit) break;
+  }
+  if (!best) return null;
+  if (radius == null) return best;
+  return bestDist <= radius * radius ? best : null;
+}
+
+function buildFitCandidate(fc) {
+  if (!fc || !Array.isArray(fc.features) || fc.features.length === 0) return fc;
+  const filtered = fc.features.filter((f) => !isDrawingFeature(f?.properties || {}));
+  if (filtered.length === 0 || filtered.length === fc.features.length) return fc;
+  return { ...fc, features: filtered, __mfFitCandidate: true };
+}
+
+const DRAWING_ALIGN_STEPS = [
+  { key: 'roomA', label: 'Click room point A (rooms layer)' },
+  { key: 'roomB', label: 'Click room point B (rooms layer)' },
+  { key: 'drawingA', label: 'Click drawing point A (linework)' },
+  { key: 'drawingB', label: 'Click drawing point B (linework)' }
+];
+const DRAWING_ALIGN_ROOM_RADIUS_PX = 40;
+const DRAWING_ALIGN_DRAWING_RADIUS_PX = 140;
+const DRAWING_ALIGN_POINT_LIMIT = 12000;
 
 // Robust base for static assets in Vite (dev vs prod)
 const PUBLIC_BASE = (import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : '/';
 const assetUrl = (path) => `${PUBLIC_BASE}${path}`.replace(/\/{2,}/g, '/');
 const FLOORPLAN_MANIFEST_URL = assetUrl('floorplans/manifest.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
-
-function normalizeFloorId(floorId) {
-  return String(floorId || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, '_');
-}
+const DEBUG_OVERLAY_LOGS = false;
+const ENABLE_DOOR_STAIR_OVERLAY = false;
+const ROOMS_ONLY_FILTER = ['==', ['get', 'Element'], 'Room'];
 
 async function fetchJSON(url) {
   try {
     const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
     const ct = (res.headers.get('content-type') || '').toLowerCase();
-    if (!res.ok || !ct.includes('json')) return null;
-    return await res.json();
+    const text = await res.text();
+    if (ct.includes('text/html')) return null;
+    const cleaned = text.replace(/^\uFEFF/, '');
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
   } catch {
     return null;
   }
@@ -876,7 +1764,8 @@ async function fetchJson(url) {
     const text = await r.text();
     if (ct.includes("text/html")) return null;
     try {
-      return JSON.parse(text);
+      const cleaned = text.replace(/^\uFEFF/, '');
+      return JSON.parse(cleaned);
     } catch {
       return null;
     }
@@ -901,8 +1790,239 @@ function applyAffineIfPresent(fc, affine) {
   const out = applyAffineTransform(fc, affine);
   if (out && typeof out === "object") {
     out.__mfAffineApplied = true;
+    out.__mfAffineSignature = getAffineSignature(affine);
   }
   return out;
+}
+
+function applyRotationOverride(fc, rotationDeg, pivot) {
+  if (!fc || !Number.isFinite(rotationDeg) || Math.abs(rotationDeg) < 1e-6) return fc;
+  if (fc.__mfRotationOverride === rotationDeg) return fc;
+  try {
+    const pivotCoords =
+      (Array.isArray(pivot) && pivot.length >= 2)
+        ? pivot
+        : (pivot?.geometry?.coordinates || turf.centroid(fc)?.geometry?.coordinates || null);
+    const rotated = turf.transformRotate(fc, rotationDeg, pivotCoords ? { pivot: pivotCoords } : undefined);
+    if (rotated && typeof rotated === 'object') {
+      rotated.__mfRotationOverride = rotationDeg;
+      if (pivotCoords) rotated.__mfRotationPivot = pivotCoords;
+      if (fc.__mfFitTransform) rotated.__mfFitTransform = fc.__mfFitTransform;
+      if (fc.__mfFitted) rotated.__mfFitted = fc.__mfFitted;
+      if (fc.__mfFittedBuilding) rotated.__mfFittedBuilding = fc.__mfFittedBuilding;
+      if (fc.__mfAffineApplied) rotated.__mfAffineApplied = fc.__mfAffineApplied;
+      return rotated;
+    }
+  } catch {}
+  return fc;
+}
+
+function applyNudgeMeters(fc, nudgeMeters) {
+  if (!fc || !Array.isArray(nudgeMeters) || nudgeMeters.length < 2) return fc;
+  const eastMeters = Number(nudgeMeters[0]);
+  const northMeters = Number(nudgeMeters[1]);
+  let out = fc;
+  if (Number.isFinite(eastMeters) && Math.abs(eastMeters) > 1e-6) {
+    const distKm = Math.abs(eastMeters) / 1000;
+    const bearing = eastMeters >= 0 ? 90 : 270;
+    out = turf.transformTranslate(out, distKm, bearing, { units: 'kilometers' });
+  }
+  if (Number.isFinite(northMeters) && Math.abs(northMeters) > 1e-6) {
+    const distKm = Math.abs(northMeters) / 1000;
+    const bearing = northMeters >= 0 ? 0 : 180;
+    out = turf.transformTranslate(out, distKm, bearing, { units: 'kilometers' });
+  }
+  return out;
+}
+
+function applyNudgeLngLat(fc, nudgeLngLat) {
+  if (!fc || !Array.isArray(nudgeLngLat) || nudgeLngLat.length < 2) return fc;
+  const deltaLng = Number(nudgeLngLat[0]);
+  const deltaLat = Number(nudgeLngLat[1]);
+  if (!Number.isFinite(deltaLng) && !Number.isFinite(deltaLat)) return fc;
+  const translate = (coords) => [
+    coords[0] + (Number.isFinite(deltaLng) ? deltaLng : 0),
+    coords[1] + (Number.isFinite(deltaLat) ? deltaLat : 0)
+  ];
+  return {
+    ...fc,
+    features: (fc.features || []).map((f) => ({
+      ...f,
+      geometry: f.geometry ? { ...f.geometry, coordinates: mapCoords(f.geometry.coordinates, translate) } : f.geometry
+    }))
+  };
+}
+
+function applyFloorplanFitTransform(fc, transform) {
+  if (!fc || !transform) return fc;
+  if (fc.__mfFitTransformApplied) return fc;
+  let out = fc;
+  try {
+    const {
+      rotationDeg,
+      rotationPivot,
+      scale,
+      scaleOrigin,
+      translateKm,
+      translateBearing,
+      nudgeMeters,
+      refineRotationDeg,
+      refineRotationPivot
+    } = transform;
+
+    if (Number.isFinite(rotationDeg) && Math.abs(rotationDeg) > 1e-6 && Array.isArray(rotationPivot)) {
+      out = turf.transformRotate(out, rotationDeg, { pivot: rotationPivot });
+    }
+    if (Number.isFinite(scale) && scale > 0 && Math.abs(scale - 1) > 1e-6 && Array.isArray(scaleOrigin)) {
+      out = turf.transformScale(out, scale, { origin: scaleOrigin });
+    }
+    if (Number.isFinite(translateKm) && Number.isFinite(translateBearing) && Math.abs(translateKm) > 1e-9) {
+      out = turf.transformTranslate(out, translateKm, translateBearing, { units: 'kilometers' });
+    }
+    if (Array.isArray(nudgeMeters)) {
+      out = applyNudgeMeters(out, nudgeMeters);
+    }
+    if (Number.isFinite(refineRotationDeg) && Math.abs(refineRotationDeg) > 1e-6 && Array.isArray(refineRotationPivot)) {
+      out = turf.transformRotate(out, refineRotationDeg, { pivot: refineRotationPivot });
+    }
+  } catch {}
+
+  if (out && typeof out === 'object') {
+    out.__mfFitTransformApplied = true;
+  }
+  return out;
+}
+
+function findBuildingFeatureInMap(map, buildingId) {
+  if (!map || !buildingId) return null;
+  try {
+    const src = map.getSource('buildings');
+    const data = src?._data || src?.serialize?.().data || null;
+    let features = data?.features || [];
+    if (!features.length && typeof map.querySourceFeatures === 'function') {
+      try {
+        features = map.querySourceFeatures('buildings') || [];
+      } catch {}
+    }
+    return matchBuildingFeature(features, buildingId);
+  } catch {
+    return null;
+  }
+}
+
+function applyBearingRotation(fc, deltaDeg) {
+  if (!fc || !Number.isFinite(deltaDeg) || Math.abs(deltaDeg) < 1e-6) return fc;
+  if (!Array.isArray(fc.features) || !fc.features.length) return fc;
+  const degToRad = Math.PI / 180;
+  // Align with turf.transformRotate (positive is clockwise)
+  const theta = -deltaDeg * degToRad;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const rotateBearing = (bearing) => {
+    const bRad = bearing * degToRad;
+    const x = Math.sin(bRad);
+    const y = Math.cos(bRad);
+    const xr = x * cosT - y * sinT;
+    const yr = x * sinT + y * cosT;
+    const ang = Math.atan2(xr, yr) / degToRad;
+    return (ang + 360) % 360;
+  };
+  const next = {
+    ...fc,
+    features: fc.features.map((f) => {
+      const props = f?.properties || {};
+      const bearing = Number(props.bearing_deg);
+      if (!Number.isFinite(bearing)) return f;
+      const rotated = rotateBearing(bearing);
+      return {
+        ...f,
+        properties: {
+          ...props,
+          bearing_deg: rotated
+        }
+      };
+    })
+  };
+  return next;
+}
+
+function getAffineRotationDeg(affine) {
+  const rot = Number(affine?.rotation_deg_cw ?? affine?.rotation_deg ?? 0);
+  return Number.isFinite(rot) ? rot : 0;
+}
+
+function applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, options = {}) {
+  if (!fc) return fc;
+  const needsBearingRotation =
+    options.adjustBearings &&
+    Number.isFinite(options.bearingRotationDeg) &&
+    Math.abs(options.bearingRotationDeg) > 1e-6;
+  if (!rotationOverride && !fitTransform && !needsBearingRotation) return fc;
+  if (fc.__mfOverlayTransformApplied) return fc;
+
+  let out = fc;
+  if (rotationOverride?.deg != null) {
+    out = applyRotationOverride(out, rotationOverride.deg, rotationOverride.pivot);
+  }
+  if (fitTransform) {
+    out = applyFloorplanFitTransform(out, fitTransform);
+  }
+
+  if (options.adjustBearings) {
+    const bearingDelta =
+      (Number.isFinite(options.bearingRotationDeg) ? options.bearingRotationDeg : 0) +
+      (Number.isFinite(rotationOverride?.deg) ? rotationOverride.deg : 0) +
+      (Number.isFinite(fitTransform?.rotationDeg) ? fitTransform.rotationDeg : 0) +
+      (Number.isFinite(fitTransform?.refineRotationDeg) ? fitTransform.refineRotationDeg : 0);
+    out = applyBearingRotation(out, bearingDelta);
+  }
+
+  if (out && typeof out === 'object') {
+    out.__mfOverlayTransformApplied = true;
+  }
+  return out;
+}
+
+function applyDoorSwingDirection(doorsFC, roomsFC, options = {}) {
+  if (!doorsFC?.features?.length || !roomsFC?.features?.length) return doorsFC;
+  const hull = buildHullFeature(roomsFC, options.hullLimit || 2000);
+  if (!hull) return doorsFC;
+  const offsetMeters = Number.isFinite(options.offsetMeters) ? options.offsetMeters : 0.7;
+  const invertBearing = Boolean(options.invertBearing);
+
+  const nextFeatures = doorsFC.features.map((f) => {
+    if (!f?.geometry?.coordinates) return f;
+    const props = f.properties || {};
+    const rawBearing = Number(props.bearing_deg);
+    if (!Number.isFinite(rawBearing)) return f;
+    const bearing = invertBearing ? ((rawBearing + 180) % 360) : rawBearing;
+
+    const pt = turf.point(f.geometry.coordinates);
+    const forward = turf.destination(pt, offsetMeters, bearing, { units: 'meters' });
+    const reverseBearing = (bearing + 180) % 360;
+    const reverse = turf.destination(pt, offsetMeters, reverseBearing, { units: 'meters' });
+
+    const insideForward = turf.booleanPointInPolygon(forward, hull);
+    const insideReverse = turf.booleanPointInPolygon(reverse, hull);
+
+    if (!insideForward && !insideReverse) return f;
+
+    const isExterior = insideForward !== insideReverse;
+    let desired = bearing;
+    if (isExterior) {
+      desired = insideForward ? reverseBearing : bearing;
+    }
+
+    return {
+      ...f,
+      properties: {
+        ...props,
+        bearing_deg: desired
+      }
+    };
+  });
+
+  return { ...doorsFC, features: nextFeatures };
 }
 
 async function loadAffineForFloor(basePath, floorId) {
@@ -930,8 +2050,10 @@ async function loadGeoJsonWithFallbacks(urls) {
 
 async function loadRoomsFC({ basePath, floorId }) {
   const candidates = [
-    `${basePath}/${floorId}_Dept.geojson`,
+    `${basePath}/Rooms/${floorId}_Dept_Rooms.geojson`,
+    `${basePath}/Rooms/${floorId}_Dept.geojson`,
     `${basePath}/${floorId}_Dept_Rooms.geojson`,
+    `${basePath}/${floorId}_Dept.geojson`,
   ];
 
   const [{ data: raw }, affine] = await Promise.all([
@@ -941,6 +2063,21 @@ async function loadRoomsFC({ basePath, floorId }) {
 
   const rawFC = ensureFeatureCollection(raw);
   if (!rawFC) return { rawFC: null, patchedFC: null, affine: null };
+
+  rawFC.features = (rawFC.features || []).map((f) => {
+    const p = f?.properties || {};
+    const ncesType = resolveNcesType(p);
+    const ncesDept = resolveNcesDept(p);
+    return {
+      ...f,
+      properties: {
+        ...p,
+        __roomType: ncesType || '',
+        __dept: ncesDept || '',
+        __areaSf: resolveAreaSf(p),
+      }
+    };
+  });
 
   const patchedFC = applyAffineIfPresent(rawFC, affine);
   return { rawFC, patchedFC, affine };
@@ -1027,7 +2164,8 @@ async function fetchFirstOk(urls) {
 
       // Try to parse JSON; if it fails, skip and try next URL
       try {
-        const data = JSON.parse(text);
+        const cleaned = text.replace(/^\uFEFF/, '');
+        const data = JSON.parse(cleaned);
         return { ok: true, url: u, data };
       } catch {
         continue;
@@ -1040,7 +2178,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
   if (!basePath || !floorId || !map) return;
 
   const cleanFloor = String(floorId).trim();
@@ -1090,6 +2228,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine }) 
   } else if (affine) {
     console.log("[walls] skipped affine (already lon/lat)");
   }
+  fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
 
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
@@ -1127,15 +2266,21 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine }) 
   }
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel }) {
+  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
-  const cleanFloor = normalizeFloorId(floorId);
+  const normalizedFloor = String(floorId || '').trim().toUpperCase();
+  const affineRotationDeg = getAffineRotationDeg(affine);
   const candidates = [
-    `${basePath}/Doors/${cleanFloor}_Dept_Doors.geojson`,
-    `${basePath}/Doors/${cleanFloor}_Doors.geojson`,
-    `${basePath}/${cleanFloor}_Dept_Doors.geojson`,
-    `${basePath}/${cleanFloor}_Doors.geojson`
+    `${basePath}/Doors/${floorId}_Dept_Doors.geojson`,
+    `${basePath}/Doors/${floorId}_Doors.geojson`,
+    `${basePath}/${floorId}_Dept_Doors.geojson`,
+    `${basePath}/${floorId}_Doors.geojson`
   ];
+  if (normalizedFloor && normalizedFloor !== 'BASEMENT') {
+    candidates.push(`${basePath}/Doors/BASEMENT_Doors.geojson`);
+    candidates.push(`${basePath}/BASEMENT_Doors.geojson`);
+  }
 
   const raw = await fetchGeoJSON(candidates);
   if (!raw) {
@@ -1148,6 +2293,13 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine }) {
   if (affine && !isLikelyLonLat(fc)) {
     fc = applyAffineTransform(fc, affine);
   }
+  fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, {
+    adjustBearings: true,
+    bearingRotationDeg: affineRotationDeg
+  });
+  fc = applyDoorSwingDirection(fc, roomsFC, {
+    invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
+  });
 
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
@@ -1155,7 +2307,7 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine }) {
   if (!map.getLayer(DOORS_LAYER)) {
     try {
       if (!map.hasImage('mf-door-swing')) {
-        await loadIcon(map, 'mf-door-swing', 'icons/door-swing.png');
+        await loadIcon(map, 'mf-door-swing', assetUrl('icons/door-swing.png'));
       }
     } catch (err) {
       console.warn('Door icon load failed:', err);
@@ -1168,9 +2320,9 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine }) {
         "icon-image": "mf-door-swing",
         "icon-size": [
           "interpolate", ["linear"], ["zoom"],
-          16, 0.28,
-          18, 0.42,
-          20, 0.65
+          16, 0.18,
+          18, 0.26,
+          20, 0.34
         ],
         "icon-rotate": [
           "coalesce",
@@ -1183,27 +2335,383 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine }) {
         "icon-ignore-placement": true
       },
       paint: {
-        "icon-color": "#00a000",
+        "icon-color": "#888888",
         "icon-opacity": 0.95
       }
     });
   }
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine }) {
-  if (!basePath || !floorId || !map) return;
-  const cleanFloor = normalizeFloorId(floorId);
-  const candidates = [
-    `${basePath}/Stairs/${cleanFloor}_Dept_Stairs.geojson`,
-    `${basePath}/Stairs/${cleanFloor}_DEPT_Stairs.geojson`,
-    `${basePath}/Stairs/${cleanFloor}_Dept_StairsPoints.geojson`,
-    `${basePath}/Stairs/${cleanFloor}_Stairs.geojson`,
-    `${basePath}/Stairs/${cleanFloor}_StairRuns.geojson`,
-    `${basePath}/Stairs/${cleanFloor}_StairsRuns.geojson`,
-    `${basePath}/Stairs/${cleanFloor}_Dept_StairsRuns.geojson`,
-    `${basePath}/${cleanFloor}_Dept_Stairs.geojson`,
-    `${basePath}/${cleanFloor}_Stairs.geojson`
+function invertAffinePoint(lonLat, affine) {
+  if (!affine || !Array.isArray(lonLat) || lonLat.length < 2) return lonLat;
+  const targetLon = Number(affine.target_lon ?? affine.targetLon);
+  const targetLat = Number(affine.target_lat ?? affine.targetLat);
+  const rotDeg = Number(affine.rotation_deg_cw ?? affine.rotation_deg ?? 0);
+  const baseScale = Number(
+    affine.effective_scale_deg_per_foot ??
+    affine.scale_deg_per_foot ??
+    affine.scale_deg_per_ft ??
+    affine.scale
+  );
+  const anchor = affine.anchor_feet || affine.anchorFeet || affine.anchor;
+  if (!Number.isFinite(targetLon) || !Number.isFinite(targetLat) || !Number.isFinite(baseScale) || !Array.isArray(anchor)) {
+    return lonLat;
+  }
+  const scaleLat = baseScale;
+  const scaleLon = scaleLat / Math.max(1e-9, Math.cos((targetLat * Math.PI) / 180));
+  const [lon, lat] = lonLat;
+  const dx = (lon - targetLon) / scaleLon;
+  const dy = (lat - targetLat) / scaleLat;
+  const theta = (rotDeg * Math.PI) / 180;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const [ax, ay] = anchor;
+  return [
+    cosT * dx + sinT * dy + ax,
+    -sinT * dx + cosT * dy + ay
   ];
+}
+
+function rotatePoint(point, origin, deg) {
+  if (!Array.isArray(point) || point.length < 2) return point;
+  const [x, y] = point;
+  const [ox, oy] = origin || [0, 0];
+  const theta = (deg * Math.PI) / 180;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const dx = x - ox;
+  const dy = y - oy;
+  return [
+    ox + cosT * dx - sinT * dy,
+    oy + sinT * dx + cosT * dy
+  ];
+}
+
+function mapCoords(coords, fn) {
+  if (!coords) return coords;
+  if (typeof coords[0] === 'number') return fn(coords);
+  return coords.map((c) => mapCoords(c, fn));
+}
+
+function bboxFromPoints(pts) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  pts.forEach(([x, y]) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  });
+  return {
+    minx: minX,
+    miny: minY,
+    maxx: maxX,
+    maxy: maxY,
+    spanX: maxX - minX,
+    spanY: maxY - minY,
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2
+  };
+}
+
+function isFrenchChapelBasement({ buildingLabel, floorId, floorBasePath } = {}) {
+  const floorKey = fId(floorId || '');
+  if (floorKey !== 'basement') return false;
+  if (floorBasePath && String(floorBasePath).includes('/Calvin French Chapel/')) return true;
+  const key = normalizeSnapKey(buildingLabel);
+  return key && [
+    normalizeSnapKey('Calvin French Chapel'),
+    normalizeSnapKey('Calvin H. French Chapel'),
+    normalizeSnapKey('Calvin H. French Memorial Chapel')
+  ].includes(key);
+}
+
+function isBabcockHallLevel3({ buildingLabel, floorId, floorBasePath } = {}) {
+  const floorKey = fId(floorId || '');
+  if (floorKey !== 'level_3') return false;
+  if (floorBasePath) {
+    const decoded = (() => {
+      try { return decodeURIComponent(String(floorBasePath)); } catch { return String(floorBasePath); }
+    })();
+    if (decoded.includes('/Babcock Hall/')) return true;
+  }
+  const key = normalizeSnapKey(buildingLabel);
+  return key && [
+    normalizeSnapKey('Babcock Hall'),
+    normalizeSnapKey('Babcock Hall Residence')
+  ].includes(key);
+}
+
+function computeFeatureCentroid(features) {
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  const visit = (node) => {
+    if (!Array.isArray(node)) return;
+    if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+      sumX += node[0];
+      sumY += node[1];
+      count += 1;
+      return;
+    }
+    node.forEach(visit);
+  };
+  (features || []).forEach((f) => {
+    if (f?.geometry?.coordinates) visit(f.geometry.coordinates);
+  });
+  if (!count) return null;
+  return [sumX / count, sumY / count];
+}
+
+function collectFeaturePoints(features, limit = 8000) {
+  const pts = [];
+  const visit = (node) => {
+    if (!Array.isArray(node) || pts.length >= limit) return;
+    if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+      pts.push([node[0], node[1]]);
+      return;
+    }
+    node.forEach(visit);
+  };
+  (features || []).forEach((f) => {
+    if (pts.length >= limit) return;
+    if (f?.geometry?.coordinates) visit(f.geometry.coordinates);
+  });
+  return pts;
+}
+
+function translateGeometry(geom, dx, dy) {
+  if (!geom?.coordinates || (!dx && !dy)) return geom;
+  const translatePoint = (coords) => [coords[0] + dx, coords[1] + dy];
+  return {
+    ...geom,
+    coordinates: mapCoords(geom.coordinates, translatePoint)
+  };
+}
+
+function applyBabcockHallLevel3Fix(roomsFC, buildingLabel, floorId) {
+  if (!roomsFC?.features?.length) return roomsFC;
+  if (roomsFC.__mfBabcockL3AutoRotated) return roomsFC;
+  const theta = (90 * Math.PI) / 180;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const rotatePoint = (coords) => {
+    const x = coords[0];
+    const y = coords[1];
+    return [x * cosT - y * sinT, x * sinT + y * cosT];
+  };
+  const nextFeatures = roomsFC.features.map((f) => {
+    if (!isDrawingFeature(f?.properties || {})) return f;
+    if (!f?.geometry) return f;
+    return {
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: mapCoords(f.geometry.coordinates, rotatePoint)
+      }
+    };
+  });
+  return { ...roomsFC, features: nextFeatures, __mfBabcockL3AutoRotated: true };
+}
+
+function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
+  if (!roomsFC?.features?.length) return roomsFC;
+  if (roomsFC.__mfBasementFixed) return roomsFC;
+
+  const drawingFeatures = roomsFC.features.filter((f) => isDrawingFeature(f?.properties || {}));
+  const roomFeatures = roomsFC.features.filter((f) => !isDrawingFeature(f?.properties || {}));
+  if (drawingFeatures.length && roomFeatures.length) {
+    const drawingFC = { type: 'FeatureCollection', features: drawingFeatures };
+    const roomsOnlyFC = { type: 'FeatureCollection', features: roomFeatures };
+    const drawHull = buildHullFeature(drawingFC, 1200) || drawingFC;
+    const roomHull = buildHullFeature(roomsOnlyFC, 1200) || roomsOnlyFC;
+    const drawPts = collectLngLatPairsFromGeoJSON(drawHull, 2000);
+    const roomPts = collectLngLatPairsFromGeoJSON(roomHull, 2000);
+    const drawBox = bboxFromPoints(drawPts);
+    const roomBox = bboxFromPoints(roomPts);
+    const drawCentroid = computeFeatureCentroid(drawingFeatures) || (drawBox ? [drawBox.cx, drawBox.cy] : null);
+    const roomCentroid = computeFeatureCentroid(roomFeatures) || (roomBox ? [roomBox.cx, roomBox.cy] : null);
+    if (drawBox && roomBox && drawCentroid && roomCentroid) {
+      const span = Math.max(roomBox.spanX || 0, roomBox.spanY || 0, 1e-9);
+      const dist = Math.hypot(drawCentroid[0] - roomCentroid[0], drawCentroid[1] - roomCentroid[1]);
+      const farApart = dist > span * 0.18;
+      if (farApart) {
+        const drawAngle = getDominantEdgeAngleDeg(drawHull?.geometry) ?? 0;
+        const roomAngle = getDominantEdgeAngleDeg(roomHull?.geometry) ?? 0;
+        const rotDelta = normalizeAngleDelta(roomAngle - drawAngle);
+        const ratioX = drawBox.spanX ? roomBox.spanX / drawBox.spanX : 1;
+        const ratioY = drawBox.spanY ? roomBox.spanY / drawBox.spanY : 1;
+        let scale = 1;
+        if (Number.isFinite(ratioX) && Number.isFinite(ratioY) && ratioX > 0 && ratioY > 0) {
+          scale = Math.min(ratioX, ratioY);
+        }
+        scale = Math.max(0.2, Math.min(5, scale || 1));
+        const theta = (rotDelta * Math.PI) / 180;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+        const [px, py] = drawCentroid;
+        const [tx, ty] = roomCentroid;
+        const transformPoint = (coords) => {
+          const dx = coords[0] - px;
+          const dy = coords[1] - py;
+          const rx = (dx * cosT - dy * sinT) * scale;
+          const ry = (dx * sinT + dy * cosT) * scale;
+          return [tx + rx, ty + ry];
+        };
+        const nextFeatures = roomsFC.features.map((f) => {
+          if (!isDrawingFeature(f?.properties || {})) return f;
+          if (!f?.geometry) return f;
+          return {
+            ...f,
+            geometry: {
+              ...f.geometry,
+              coordinates: mapCoords(f.geometry.coordinates, transformPoint)
+            }
+          };
+        });
+        const next = { ...roomsFC, features: nextFeatures };
+        next.__mfBasementFixed = true;
+        return next;
+      }
+    }
+  }
+
+  if (!affine || !buildingFeature) return roomsFC;
+
+  const featureCentroids = roomsFC.features
+    .map((f, i) => {
+      const coords = f?.geometry?.coordinates;
+      if (!coords) return null;
+      const pts = extractLngLatPairs({ coordinates: coords }, 1000);
+      if (!pts.length) return null;
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      return { i, c: [cx, cy] };
+    })
+    .filter(Boolean);
+  if (featureCentroids.length < 6) return roomsFC;
+
+  const xs = featureCentroids.map((o) => o.c[0]).sort((a, b) => a - b);
+  const mid = xs[Math.floor(xs.length / 2)];
+  const leftIdx = new Set(featureCentroids.filter((o) => o.c[0] <= mid).map((o) => o.i));
+  if (!leftIdx.size || leftIdx.size === roomsFC.features.length) return roomsFC;
+
+  const leftFC = {
+    type: 'FeatureCollection',
+    features: roomsFC.features.filter((_, i) => leftIdx.has(i))
+  };
+  const leftHull = buildHullFeature(leftFC, 1200);
+  const buildingAngle = getDominantEdgeAngleDeg(buildingFeature?.geometry) ?? 0;
+  const leftAngle = getDominantEdgeAngleDeg(leftHull?.geometry) ?? 0;
+  const rotDelta = Number.isFinite(buildingAngle) && Number.isFinite(leftAngle)
+    ? (buildingAngle - leftAngle)
+    : 0;
+
+  const buildingCentroid = turf.centroid(buildingFeature)?.geometry?.coordinates || null;
+  if (!buildingCentroid) return roomsFC;
+  const rotateToAxis = (pt) => rotatePoint(pt, buildingCentroid, -buildingAngle);
+  const rotateFromAxis = (pt) => rotatePoint(pt, buildingCentroid, buildingAngle);
+
+  const buildingRot = {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      ...buildingFeature.geometry,
+      coordinates: mapCoords(buildingFeature.geometry.coordinates, rotateToAxis)
+    }
+  };
+  const buildingRotPts = collectLngLatPairsFromGeoJSON(buildingRot, 4000);
+  const buildingRotBox = bboxFromPoints(buildingRotPts);
+  if (!Number.isFinite(buildingRotBox.cx)) return roomsFC;
+  const splitX = buildingRotBox.cx;
+  const leftHalf = turf.polygon([[
+    [splitX - 10, buildingRotBox.miny - 10],
+    [splitX, buildingRotBox.miny - 10],
+    [splitX, buildingRotBox.maxy + 10],
+    [splitX - 10, buildingRotBox.maxy + 10],
+    [splitX - 10, buildingRotBox.miny - 10]
+  ]]);
+  const leftRot = turf.intersect(turf.featureCollection([buildingRot, leftHalf]));
+  if (!leftRot?.geometry) return roomsFC;
+  const leftTarget = {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      ...leftRot.geometry,
+      coordinates: mapCoords(leftRot.geometry.coordinates, rotateFromAxis)
+    }
+  };
+
+  const leftTargetPts = collectLngLatPairsFromGeoJSON(leftTarget, 4000);
+  const leftTargetBox = bboxFromPoints(leftTargetPts);
+  if (!Number.isFinite(leftTargetBox.minx)) return roomsFC;
+
+  const targetLocalBox = bboxFromPoints([
+    invertAffinePoint([leftTargetBox.minx, leftTargetBox.miny], affine),
+    invertAffinePoint([leftTargetBox.maxx, leftTargetBox.maxy], affine)
+  ]);
+
+  const leftPts = collectLngLatPairsFromGeoJSON(leftFC, 4000);
+  const leftBox = bboxFromPoints(leftPts);
+  const leftCenter = [leftBox.cx, leftBox.cy];
+
+  const rotatedLeftPts = leftPts.map((pt) => rotatePoint(pt, leftCenter, rotDelta));
+  const rotatedLeftBox = bboxFromPoints(rotatedLeftPts);
+  if (!Number.isFinite(rotatedLeftBox.spanX) || !Number.isFinite(rotatedLeftBox.spanY)) return roomsFC;
+
+  const scale = Math.min(
+    targetLocalBox.spanX / Math.max(1e-9, rotatedLeftBox.spanX),
+    targetLocalBox.spanY / Math.max(1e-9, rotatedLeftBox.spanY)
+  );
+  const translate = [
+    targetLocalBox.cx - rotatedLeftBox.cx,
+    targetLocalBox.cy - rotatedLeftBox.cy
+  ];
+
+  const transformPoint = (pt) => {
+    const rotated = rotatePoint(pt, leftCenter, rotDelta);
+    const scaled = [
+      (rotated[0] - rotatedLeftBox.cx) * scale + rotatedLeftBox.cx,
+      (rotated[1] - rotatedLeftBox.cy) * scale + rotatedLeftBox.cy
+    ];
+    return [
+      scaled[0] + translate[0],
+      scaled[1] + translate[1]
+    ];
+  };
+
+  const nextFeatures = roomsFC.features.map((f, i) => {
+    if (!leftIdx.has(i)) return f;
+    if (!f?.geometry?.coordinates) return f;
+    return {
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: mapCoords(f.geometry.coordinates, transformPoint)
+      }
+    };
+  });
+
+  const next = { ...roomsFC, features: nextFeatures };
+  next.__mfBasementFixed = true;
+  return next;
+}
+
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform }) {
+  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
+  if (!basePath || !floorId || !map) return;
+  const normalizedFloor = String(floorId || '').trim().toUpperCase();
+  const affineRotationDeg = getAffineRotationDeg(affine);
+  const candidates = [
+    `${basePath}/Stairs/${floorId}_Dept_Stairs.geojson`,
+    `${basePath}/Stairs/${floorId}_Stairs.geojson`,
+    `${basePath}/${floorId}_Dept_Stairs.geojson`,
+    `${basePath}/${floorId}_Stairs.geojson`
+  ];
+  if (normalizedFloor && normalizedFloor !== 'BASEMENT') {
+    candidates.push(`${basePath}/Stairs/BASEMENT_Stairs.geojson`);
+    candidates.push(`${basePath}/BASEMENT_Stairs.geojson`);
+  }
 
   const raw = await fetchGeoJSON(candidates);
   if (!raw) {
@@ -1216,6 +2724,10 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine }) {
   if (affine && !isLikelyLonLat(fc)) {
     fc = applyAffineTransform(fc, affine);
   }
+  fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, {
+    adjustBearings: true,
+    bearingRotationDeg: affineRotationDeg
+  });
 
   console.log("[stairs] loaded features", fc.features.length);
 
@@ -1225,7 +2737,7 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine }) {
   if (!map.getLayer(STAIRS_LAYER)) {
     try {
       if (!map.hasImage('mf-stairs-run')) {
-        await loadIcon(map, 'mf-stairs-run', 'icons/stairs-run.png');
+        await loadIcon(map, 'mf-stairs-run', assetUrl('icons/stairs-run.png'));
       }
     } catch (err) {
       console.warn('Stairs icon load failed:', err);
@@ -1238,9 +2750,9 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine }) {
         "icon-image": "mf-stairs-run",
         "icon-size": [
           "interpolate", ["linear"], ["zoom"],
-          16, 0.30,
-          18, 0.50,
-          20, 0.80
+          16, 0.20,
+          18, 0.28,
+          20, 0.36
         ],
         "icon-rotate": [
           "coalesce",
@@ -1253,7 +2765,7 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine }) {
         "icon-ignore-placement": true
       },
       paint: {
-        "icon-color": "#0066ff",
+        "icon-color": "#888888",
         "icon-opacity": 0.95
       }
     });
@@ -1275,11 +2787,59 @@ async function guardedAiFetch(url, opts) {
 
 async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS) {
   if (!buildingKey) return [];
+  const normalizeKey = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  const normalizeFloorEntries = (floors = []) => {
+    if (!Array.isArray(floors)) return [];
+    return floors
+      .map((f) => {
+        if (typeof f === 'string') return { id: f, url: null };
+        if (!f) return null;
+        const id = f.id || f.floorId || f.name || f.label;
+        const url = f.url || f.path || null;
+        if (!id) return null;
+        return { id, url };
+      })
+      .filter(Boolean);
+  };
+
   const campusSeg = encodeURIComponent(campus);
   const buildingSeg = encodeURIComponent(buildingKey);
   const url = assetUrl(`floorplans/${campusSeg}/${buildingSeg}/manifest.json`);
   const manifest = await fetchJSON(url);
-  return Array.isArray(manifest?.floors) ? manifest.floors : [];
+
+  const globalManifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+  const floorsByBuilding = globalManifest?.floorsByBuilding || {};
+  let globalFloors = floorsByBuilding[buildingKey];
+  if (!globalFloors) {
+    const matchKey = Object.keys(floorsByBuilding).find(
+      (key) => normalizeKey(key) === normalizeKey(buildingKey)
+    );
+    globalFloors = matchKey ? floorsByBuilding[matchKey] : null;
+  }
+  const normalizedGlobal = normalizeFloorEntries(globalFloors || []);
+
+  if (Array.isArray(manifest?.floors)) {
+    const entries = normalizeFloorEntries(manifest.floors);
+    if (!entries.length) return normalizedGlobal;
+    if (normalizedGlobal.length && entries.some((e) => !e.url)) {
+      const globalMap = new Map(
+        normalizedGlobal
+          .filter((f) => f?.id && f?.url)
+          .map((f) => [f.id, f.url])
+      );
+      return entries.map((entry) => ({
+        ...entry,
+        url: entry.url || globalMap.get(entry.id) || null
+      }));
+    }
+    return entries;
+  }
+
+  return normalizedGlobal;
 }
 
 
@@ -1294,6 +2854,7 @@ console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
 const FLOOR_SOURCE = 'floor-source';
 const FLOOR_FILL_ID = "floor-fill";
 const FLOOR_LINE_ID = "floor-line";
+const FLOOR_DRAWING_LAYER = "floor-drawing";
 const FLOOR_HL_ID = "floor-highlight";
 const FLOOR_HL_BORDER_ID = "floor-highlight-border";
 const FLOOR_ROOM_LABEL_LAYER = "floor-room-labels";
@@ -1308,13 +2869,78 @@ const STAIRS_LAYER = "stairs-layer";
 
 // Cache to avoid double-loading sources
 const floorCache = new Map();
+const floorTransformCache = new Map();
+const floorRoomsCache = new Map();
+const buildingAggCache = new Map();
+let campusAggCache = null;
+
+const normalizeDashboardUrl = (url) => {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith(PUBLIC_BASE)) return url;
+  return assetUrl(String(url).replace(/^\//, ''));
+};
+
+async function fetchRoomsForFloorUrl(floorUrl) {
+  const normalized = normalizeDashboardUrl(floorUrl);
+  if (!normalized) return [];
+  if (floorRoomsCache.has(normalized)) return floorRoomsCache.get(normalized);
+  const data = await fetchJSON(normalized);
+  const feats = Array.isArray(data?.features) ? data.features : [];
+  floorRoomsCache.set(normalized, feats);
+  return feats;
+}
+
+async function runWithLimit(items, limit, fn) {
+  const out = [];
+  const queue = [...items];
+  const workerCount = Math.max(1, Number(limit) || 1);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      try {
+        out.push(await fn(item));
+      } catch (err) {
+        console.warn('dashboard fetch failed', item, err);
+      }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+async function computeCampusDashboard(manifest) {
+  if (campusAggCache) return campusAggCache;
+  const floorUrls = [];
+  for (const floors of Object.values(manifest?.floorsByBuilding || {})) {
+    for (const f of floors || []) {
+      if (f?.url) floorUrls.push(f.url);
+    }
+  }
+  const floorFeaturesArrays = await runWithLimit(floorUrls, 6, fetchRoomsForFloorUrl);
+  const allFeatures = floorFeaturesArrays.flat();
+  campusAggCache = computeSpaceDashboard(allFeatures);
+  return campusAggCache;
+}
+
+async function computeBuildingDashboard(manifest, buildingKey) {
+  if (!buildingKey) return null;
+  if (buildingAggCache.has(buildingKey)) return buildingAggCache.get(buildingKey);
+  const floors = manifest?.floorsByBuilding?.[buildingKey] || [];
+  const urls = (floors || []).map((f) => f?.url).filter(Boolean);
+  const floorFeaturesArrays = await runWithLimit(urls, 6, fetchRoomsForFloorUrl);
+  const feats = floorFeaturesArrays.flat();
+  const metrics = computeSpaceDashboard(feats);
+  buildingAggCache.set(buildingKey, metrics);
+  return metrics;
+}
 
 function applyBuildingStyleForSpace(map) {
   if (!map) return;
   const layerId = 'buildings-fill';
   if (map.getLayer(layerId)) {
     try {
-      map.setPaintProperty(layerId, 'fill-color', '#ffffff');
+      map.setPaintProperty(layerId, 'fill-color', withNoFloorplanOverride('#ffffff'));
       map.setPaintProperty(layerId, 'fill-opacity', 1.0);
       map.setPaintProperty(layerId, 'fill-outline-color', '#cbd5e1');
     } catch {}
@@ -1351,9 +2977,88 @@ function applyFloorFillExpression(map, mode = 'department', options = {}) {
     ['length', ['coalesce', ['to-string', ['get', 'occupant']], ['to-string', ['get', 'Occupant']], '']],
     0
   ];
-  const vacancyExpr = ['!', occupantExpr];
-  const occupancyColorExpr = ['case', occupantExpr, '#29b6f6', '#e0e0e0'];
-  const vacancyColorExpr = ['case', vacancyExpr, '#ff7043', '#cfd8dc'];
+  const occupancyRawExpr = [
+    'to-string',
+    [
+      'coalesce',
+      ['get', 'occupancyStatus'],
+      ['get', 'Occupancy Status'],
+      ['get', 'OccupancyStatus'],
+      ['get', 'Occupancy'],
+      ['get', 'Vacancy'],
+      ['get', 'vacancy'],
+      ['get', 'Vacant'],
+      ''
+    ]
+  ];
+  const occupancyUpperExpr = ['upcase', occupancyRawExpr];
+  const roomTypeUpperExpr = [
+    'upcase',
+    [
+      'to-string',
+      [
+        'coalesce',
+        ['get', '__roomType'],
+        ['get', 'NCES_Type'],
+        ['get', 'RoomType'],
+        ['get', 'Room Type'],
+        ['get', 'Type'],
+        ['get', 'type'],
+        ['get', 'Name'],
+        ''
+      ]
+    ]
+  ];
+  const isOfficeExpr = ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]];
+  const hasOccupancyExpr = ['>', ['length', occupancyUpperExpr], 0];
+  const isVacantExpr = [
+    'any',
+    ['>=', ['index-of', 'VACANT', occupancyUpperExpr], 0],
+    ['>=', ['index-of', 'UNOCCUPIED', occupancyUpperExpr], 0],
+    ['>=', ['index-of', 'AVAILABLE', occupancyUpperExpr], 0],
+    ['>=', ['index-of', 'UNASSIGNED', occupancyUpperExpr], 0]
+  ];
+  const isOccupiedExpr = ['>=', ['index-of', 'OCCUPIED', occupancyUpperExpr], 0];
+  const occupancyLabelExpr = [
+    'case',
+    hasOccupancyExpr,
+    ['case', isVacantExpr, 'Vacant', isOccupiedExpr, 'Occupied', 'Unknown'],
+    occupantExpr,
+    'Occupied',
+    'Unknown'
+  ];
+  const occupancyColorExpr = [
+    'case',
+    isOfficeExpr,
+    [
+      'match',
+      occupancyLabelExpr,
+      'Occupied',
+      '#29b6f6',
+      'Vacant',
+      '#ff7043',
+      'Unknown',
+      '#e0e0e0',
+      '#e0e0e0'
+    ],
+    '#e6e6e6'
+  ];
+  const vacancyColorExpr = [
+    'case',
+    isOfficeExpr,
+    [
+      'match',
+      occupancyLabelExpr,
+      'Vacant',
+      '#ff7043',
+      'Occupied',
+      '#cfd8dc',
+      'Unknown',
+      '#cfd8dc',
+      '#cfd8dc'
+    ],
+    '#e6e6e6'
+  ];
   try {
     if (mode === 'occupancy') {
       map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', occupancyColorExpr);
@@ -1499,6 +3204,15 @@ function ensureLayerOrder(map) {
       map.moveLayer(FLOOR_LINE_ID);
     }
 
+    // Drawing lines above fills but under labels.
+    if (map.getLayer(FLOOR_DRAWING_LAYER)) {
+      if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) {
+        map.moveLayer(FLOOR_DRAWING_LAYER, FLOOR_ROOM_LABEL_LAYER);
+      } else {
+        map.moveLayer(FLOOR_DRAWING_LAYER);
+      }
+    }
+
     // Doors above room outlines.
     if (map.getLayer(DOORS_LAYER)) {
       map.moveLayer(DOORS_LAYER);
@@ -1578,14 +3292,126 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef } = options;
+  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
+  let fitBuilding = affineParams?.fitBuilding || null;
+  if (!fitBuilding && buildingId) {
+    fitBuilding = findBuildingFeatureInMap(map, buildingId);
+  }
+  if (!fitBuilding && floorBasePath) {
+    const folderName = getBuildingFolderFromBasePath(floorBasePath);
+    if (folderName) {
+      fitBuilding = findBuildingFeatureInMap(map, folderName);
+    }
+  }
+  if (!fitBuilding && floorBasePath) {
+    const buildings = await loadCampusBuildings();
+    if (buildings?.features?.length) {
+      const folderName = getBuildingFolderFromBasePath(floorBasePath);
+      const canonicalName = BUILDING_FOLDER_TO_NAME?.[folderName] || folderName;
+      fitBuilding =
+        matchBuildingFeature(buildings.features, buildingId) ||
+        matchBuildingFeature(buildings.features, canonicalName) ||
+        matchBuildingFeature(buildings.features, folderName) ||
+        null;
+    }
+  }
+  if (!fitBuilding && floorBasePath) {
+    const folderName = getBuildingFolderFromBasePath(floorBasePath);
+    const canonicalName = BUILDING_FOLDER_TO_NAME?.[folderName] || folderName;
+    const buildingLabel = buildingId || canonicalName;
+    const key = normalizeSnapKey(buildingLabel);
+    if (key && BUILDING_FORCE_FIT.has(key)) {
+      fitBuilding = findBuildingFeatureInMap(map, canonicalName);
+    }
+  }
+  let snapCorner = getSnapCornerForBuilding(fitBuilding);
+  const affineBuildingLabel =
+    fitBuilding?.properties?.id ||
+    fitBuilding?.properties?.name ||
+    buildingId ||
+    '';
+  const drawingAlignLabel = resolveDrawingAlignLabel({
+    buildingLabel: affineBuildingLabel,
+    buildingId,
+    floorBasePath,
+    fitBuilding
+  });
+  const floorAdjustLabel = resolveFloorAdjustLabel({
+    buildingLabel: affineBuildingLabel,
+    buildingId,
+    floorBasePath,
+    fitBuilding
+  });
+  const skipAffine = shouldSkipAffine({ buildingLabel: affineBuildingLabel, floorBasePath });
+  const basePostRotateDeg = getFloorplanPostRotationOverride(affineBuildingLabel || buildingId || '', floorId || floor || '') || 0;
+  const floorAdjustFromBase =
+    floorBasePath && floorId ? loadFloorAdjustByBasePath(floorBasePath, floorId) : null;
+  const floorAdjustFromUrl = loadFloorAdjustByUrl(url);
+  const floorAdjustFromLabel = loadFloorAdjust(floorAdjustLabel, floorId || floor);
+  const floorAdjustPick = pickLatestFloorAdjust({
+    base: floorAdjustFromBase,
+    url: floorAdjustFromUrl,
+    label: floorAdjustFromLabel
+  });
+  const floorAdjust = floorAdjustPick.adjust;
+  const postRotateDeg = basePostRotateDeg;
 
-  let data = floorCache.get(url);
   let affine = null;
   let fc = null;
+  let data = floorCache.get(url);
+  const drawingAlign = loadDrawingAlign(drawingAlignLabel, floorId || floor);
+  const drawingAlignSig = getDrawingAlignSignature(drawingAlign);
+  if (data && shouldBypassFloorCache(affineBuildingLabel || buildingId || '', floorId || floor || '')) {
+    floorCache.delete(url);
+    floorTransformCache.delete(url);
+    data = null;
+  }
+  if (data && snapCorner && (data.__mfTransformed || data.__mfFitted || data.__mfFitTransform)) {
+    floorCache.delete(url);
+    data = null;
+  }
+  if (data && Number.isFinite(postRotateDeg) && data.__mfPostRotation !== postRotateDeg) {
+    floorCache.delete(url);
+    floorTransformCache.delete(url);
+    data = null;
+  }
+  if (data && floorBasePath && floorId && !skipAffine) {
+    const cachedAffine = await loadAffineForFloor(floorBasePath, floorId);
+    const sig = getAffineSignature(cachedAffine);
+    if (sig && data.__mfAffineSignature && data.__mfAffineSignature !== sig) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+      data = null;
+    } else if (sig && data.__mfAffineApplied && !data.__mfAffineSignature) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+      data = null;
+    } else {
+      affine = cachedAffine;
+    }
+  }
+  if (data && (data.__mfDrawingAlignSignature || drawingAlignSig)) {
+    if (data.__mfDrawingAlignSignature !== drawingAlignSig) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+      data = null;
+    }
+  }
+  if (data) {
+    const sig = getFloorAdjustSignature(floorAdjust);
+    if (sig && data.__mfUserAdjustSignature && data.__mfUserAdjustSignature !== sig) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+      data = null;
+    } else if (sig && data.__mfTransformed && !data.__mfUserAdjustSignature) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+      data = null;
+    }
+  }
   if (!data) {
     if (floorBasePath && floorId) {
       const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId });
@@ -1594,8 +3420,17 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         return;
       }
       data = roomsLoad.rawFC;
-      fc = roomsLoad.patchedFC;
       affine = roomsLoad.affine;
+      if (skipAffine) affine = null;
+      if (isFrenchChapelBasement({ buildingLabel: buildingId, floorId, floorBasePath })) {
+        const fixed = applyFrenchChapelBasementFix(roomsLoad.rawFC, affine, fitBuilding);
+        fc = applyAffineIfPresent(fixed, affine);
+      } else if (isBabcockHallLevel3({ buildingLabel: buildingId, floorId, floorBasePath })) {
+        const fixed = applyBabcockHallLevel3Fix(roomsLoad.rawFC);
+        fc = applyAffineIfPresent(fixed, affine);
+      } else {
+        fc = roomsLoad.patchedFC;
+      }
     } else {
       data = await fetchGeoJSON(url);
       if (!data) return;
@@ -1606,14 +3441,84 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   if (!fc) {
     fc = ensureFeatureCollection(data) || toFeatureCollection(data);
     if (!fc?.features?.length) return;
-    if (!affine && floorBasePath && floorId) {
+    if (!skipAffine && !affine && floorBasePath && floorId) {
       affine = await loadAffineForFloor(floorBasePath, floorId);
+    }
+    if (isBabcockHallLevel3({ buildingLabel: buildingId, floorId, floorBasePath })) {
+      fc = applyBabcockHallLevel3Fix(fc);
     }
     fc = applyAffineIfPresent(fc, affine);
   }
 
-  if (fc && Array.isArray(fc.features) && currentFloorContextRef && typeof currentFloorContextRef === 'object') {
-    currentFloorContextRef.current = { url, buildingId, floor, fc };
+  if (drawingAlign) {
+    fc = applyDrawingAlignment(fc, drawingAlign);
+  }
+  fc = pruneDrawingOutsideRooms(fc);
+
+  fc = applyRoomTypeLabel(fc);
+  const fitSkipLabel =
+    affineBuildingLabel ||
+    fitBuilding?.properties?.id ||
+    fitBuilding?.properties?.name ||
+    buildingId ||
+    '';
+  const fitSkipFloor = floorId || floor || '';
+  if (shouldSkipFloorplanFit(fitSkipLabel, fitSkipFloor)) {
+    fc.__mfNoFit = true;
+  }
+
+  if (!fitBuilding && floorBasePath) {
+    const buildings = await loadCampusBuildings();
+    if (buildings?.features?.length) {
+      const folderName = getBuildingFolderFromBasePath(floorBasePath);
+      const canonicalName = BUILDING_FOLDER_TO_NAME?.[folderName] || folderName;
+      fitBuilding =
+        matchBuildingFeature(buildings.features, buildingId) ||
+        matchBuildingFeature(buildings.features, canonicalName) ||
+        matchBuildingFeature(buildings.features, folderName) ||
+        null;
+      snapCorner = getSnapCornerForBuilding(fitBuilding);
+    }
+  }
+  if (!fitBuilding && floorBasePath) {
+    const folderName = getBuildingFolderFromBasePath(floorBasePath);
+    const canonicalName = BUILDING_FOLDER_TO_NAME?.[folderName] || folderName;
+    const buildingLabel = buildingId || canonicalName;
+    const key = normalizeSnapKey(buildingLabel);
+    if (key && BUILDING_FORCE_FIT.has(key)) {
+      const buildings = await loadCampusBuildings();
+      if (buildings?.features?.length) {
+        fitBuilding =
+          matchBuildingFeature(buildings.features, canonicalName) ||
+          matchBuildingFeature(buildings.features, folderName) ||
+          null;
+        snapCorner = getSnapCornerForBuilding(fitBuilding);
+      }
+    }
+  }
+
+  const rotationOverrideDeg = Number.isFinite(affineParams?.rotationOverrideDeg)
+    ? affineParams.rotationOverrideDeg
+    : null;
+  const cachedTransform = floorTransformCache.get(url) || {};
+  if (snapCorner) {
+    delete cachedTransform.fitTransform;
+  }
+  let rotationOverride = null;
+  if (rotationOverrideDeg != null) {
+    const pivot = cachedTransform.rotationPivot || turf.centroid(fc)?.geometry?.coordinates || null;
+    rotationOverride = pivot ? { deg: rotationOverrideDeg, pivot } : { deg: rotationOverrideDeg };
+    if (!cachedTransform.rotationPivot && pivot) {
+      cachedTransform.rotationPivot = pivot;
+      floorTransformCache.set(url, cachedTransform);
+    }
+    const rotated = applyRotationOverride(fc, rotationOverrideDeg, pivot);
+    if (rotated && rotated !== fc) {
+      fc = rotated;
+      if (!snapCorner) {
+        floorCache.set(url, fc);
+      }
+    }
   }
 
   fc.features.forEach((feature, i) => {
@@ -1671,32 +3576,158 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   let summary = computeFloorSummary(fc);
   cacheFloorSummary(summary, fc);
 
+  const fitCandidate = buildFitCandidate(fc);
+  const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
+  let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
   try {
-    const fitBuilding = affineParams?.fitBuilding || null;
-    if (fitBuilding && shouldFitFloorplanToBuilding(fc, fitBuilding)) {
-      const fitted = fitFloorplanToBuilding(fc, fitBuilding);
+    if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding)) {
+      const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
       if (fitted?.features?.length) {
-        fc = fitted;
+        fitTransform = fitted.__mfFitTransform || null;
+        if (fitSource !== fc && fitTransform) {
+          const applied = applyFloorplanFitTransform(fc, fitTransform);
+          if (applied?.features?.length) {
+            if (fc.__mfAffineApplied) applied.__mfAffineApplied = fc.__mfAffineApplied;
+            if (fc.__mfRotationOverride != null) applied.__mfRotationOverride = fc.__mfRotationOverride;
+            if (fc.__mfRotationPivot) applied.__mfRotationPivot = fc.__mfRotationPivot;
+            applied.__mfFitted = true;
+            applied.__mfFittedBuilding = fitted.__mfFittedBuilding || '';
+            applied.__mfFitTransform = fitTransform;
+            fc = applied;
+          }
+        } else {
+          fc = fitted;
+        }
         data.__mfTransformed = true;
-        floorCache.set(url, fc);
+        if (!snapCorner) {
+          floorCache.set(url, fc);
+        }
       }
     }
   } catch {}
 
+  const scaleOverride = getFloorplanScaleOverride(affineBuildingLabel || buildingId || '', floorId || floor || '');
+  if (Number.isFinite(scaleOverride) && Math.abs(scaleOverride - 1) > 1e-3) {
+    const scaleOrigin = fitTransform?.scaleOrigin || turf.centroid(fc)?.geometry?.coordinates || null;
+    if (scaleOrigin) {
+      fc = turf.transformScale(fc, scaleOverride, { origin: scaleOrigin });
+      fitTransform = fitTransform || {
+        rotationDeg: 0,
+        rotationPivot: null,
+        scale: 1,
+        scaleOrigin,
+        translateKm: 0,
+        translateBearing: 0,
+        nudgeMeters: null,
+        refineRotationDeg: 0,
+        refineRotationPivot: null
+      };
+      fitTransform.scale = (Number.isFinite(fitTransform.scale) ? fitTransform.scale : 1) * scaleOverride;
+      fitTransform.scaleOrigin = scaleOrigin;
+      data.__mfTransformed = true;
+      if (!snapCorner) {
+        floorCache.set(url, fc);
+      }
+    }
+  }
+
+  if (Number.isFinite(postRotateDeg) && Math.abs(postRotateDeg) > 1e-3) {
+    const pivot =
+      fitTransform?.scaleOrigin ||
+      fitTransform?.rotationPivot ||
+      turf.centroid(fitBuilding || fc)?.geometry?.coordinates ||
+      null;
+    if (pivot) {
+      fc = turf.transformRotate(fc, postRotateDeg, { pivot });
+      fitTransform = fitTransform || {
+        rotationDeg: 0,
+        rotationPivot: null,
+        scale: 1,
+        scaleOrigin: pivot,
+        translateKm: 0,
+        translateBearing: 0,
+        nudgeMeters: null,
+        refineRotationDeg: 0,
+        refineRotationPivot: null
+      };
+      fitTransform.refineRotationDeg =
+        (Number.isFinite(fitTransform.refineRotationDeg) ? fitTransform.refineRotationDeg : 0) +
+        postRotateDeg;
+      fitTransform.refineRotationPivot = pivot;
+      data.__mfTransformed = true;
+      data.__mfPostRotation = postRotateDeg;
+      if (!snapCorner) {
+        floorCache.set(url, fc);
+      }
+    }
+  }
+  const adjustPivotBase =
+    fitTransform?.scaleOrigin ||
+    fitTransform?.rotationPivot ||
+    turf.centroid(fc)?.geometry?.coordinates ||
+    null;
+  if (floorAdjust) {
+    const hasAdjust = hasFloorAdjust(floorAdjust);
+    if (hasAdjust) {
+      const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+      if (adjustedResult?.fc && adjustedResult.fc !== fc) {
+        fc = adjustedResult.fc;
+        fitTransform = adjustedResult.fitTransform || fitTransform;
+        data.__mfTransformed = true;
+        if (!snapCorner) {
+          floorCache.set(url, fc);
+        }
+      }
+    }
+  }
+  if (fitTransform) {
+    cachedTransform.fitTransform = fitTransform;
+    floorTransformCache.set(url, cachedTransform);
+  }
+
+  if (fc && Array.isArray(fc.features) && currentFloorContextRef && typeof currentFloorContextRef === 'object') {
+    currentFloorContextRef.current = {
+      url,
+      buildingId,
+      floor,
+      fc,
+      floorAdjustLabel,
+      floorAdjustFloorId: floorId || floor || '',
+      floorAdjustBasePath: floorBasePath || null,
+      floorAdjustBasePivot: adjustPivotBase || null
+    };
+  }
+
   let patchedFC = fc;
   let roomsEnriched = [];
-  if (buildingId && floor && roomPatches instanceof Map) {
+  const canUseRoomPatches = buildingId && floor && roomPatches instanceof Map;
+  const canUseAirtable = Boolean(airtableLookup);
+  if (canUseRoomPatches || canUseAirtable) {
     const patchedFeatures = (fc.features || []).map((feature) => {
-      const revitId = feature.id ?? feature.properties?.RevitId ?? feature.properties?.id;
-      const rid = rId(buildingId, floor, revitId);
-      const patch = roomPatches.get(rid);
-      if (patch) {
-        return {
-          ...feature,
-          properties: mergePatch(feature.properties || {}, patch)
-        };
+      const baseProps = feature.properties || {};
+      let mergedProps = baseProps;
+      if (canUseAirtable && detectFeatureKind(baseProps) === 'room') {
+        const airtablePatch = getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor);
+        if (airtablePatch) {
+          mergedProps = mergePatch(mergedProps, airtablePatch);
+        }
       }
-      return feature;
+      if (canUseRoomPatches) {
+        const revitId = feature.id ?? baseProps.RevitId ?? baseProps.id;
+        const rid = rId(buildingId, floor, revitId);
+        const patch = roomPatches.get(rid);
+        if (patch) {
+          mergedProps = mergePatch(mergedProps, patch);
+        }
+      }
+      const typeLabel = getRoomTypeLabelFromProps(mergedProps);
+      return {
+        ...feature,
+        properties: {
+          ...mergedProps,
+          __roomType: typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '')
+        }
+      };
     });
     patchedFC = { ...fc, features: patchedFeatures };
     if (typeof onOptionsCollected === 'function') {
@@ -1729,15 +3760,81 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   // add / update source
   unloadFloorplan(map);
-  if (map.getSource(FLOOR_SOURCE)) map.getSource(FLOOR_SOURCE).setData(patchedFC);
+  const floorSrc = getGeojsonSource(map, FLOOR_SOURCE);
+  if (floorSrc) floorSrc.setData(patchedFC);
   else map.addSource(FLOOR_SOURCE, { type: 'geojson', data: patchedFC, promoteId: 'RevitId' });
 
   // fill colored by Department
   if (!map.getLayer(FLOOR_FILL_ID)) {
-    map.addLayer({ id: FLOOR_FILL_ID, type: 'fill', source: FLOOR_SOURCE, paint: FLOOR_FILL_PAINT });
+    map.addLayer({
+      id: FLOOR_FILL_ID,
+      type: 'fill',
+      source: FLOOR_SOURCE,
+      paint: FLOOR_FILL_PAINT,
+      filter: ROOMS_ONLY_FILTER
+    });
+  } else {
+    try { map.setFilter(FLOOR_FILL_ID, ROOMS_ONLY_FILTER); } catch {}
   }
   applyFloorFillExpression(map);
   ensureFloorHighlightLayer(map);
+
+  const suppressDrawing = shouldSuppressDrawingLayer(affineBuildingLabel || buildingId || '', floorId || floor || '');
+  const hasDrawingFeatures = !suppressDrawing &&
+    Array.isArray(patchedFC?.features) &&
+    patchedFC.features.some((f) => f?.properties?.interactive === false || f?.properties?.type === 'drawing');
+  if (hasDrawingFeatures) {
+    const drawingLayerNameExpr = [
+      'downcase',
+      [
+        'to-string',
+        [
+          'coalesce',
+          ['get', 'Layer'],
+          ['get', 'layer'],
+          ['get', 'FeatureClass'],
+          ['get', 'featureClass'],
+          ['get', 'type'],
+          ['get', 'Type']
+        ]
+      ]
+    ];
+    const drawingExcludeExpr = [
+      'any',
+      ['>=', ['index-of', 'grid', drawingLayerNameExpr], 0],
+      ['>=', ['index-of', 'area-bndy', drawingLayerNameExpr], 0],
+      ['>=', ['index-of', 'area bndy', drawingLayerNameExpr], 0]
+    ];
+    const drawingFilter = [
+      'all',
+      ['==', ['get', 'interactive'], false],
+      ['!', drawingExcludeExpr]
+    ];
+    if (!map.getLayer(FLOOR_DRAWING_LAYER)) {
+      map.addLayer({
+        id: FLOOR_DRAWING_LAYER,
+        type: 'line',
+        source: FLOOR_SOURCE,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#2f2f2f',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            16, 0.15,
+            18, 0.25,
+            20, 0.45
+          ],
+          'line-opacity': 0.6
+        },
+        filter: drawingFilter
+      });
+    } else {
+      try { map.setFilter(FLOOR_DRAWING_LAYER, drawingFilter); } catch {}
+    }
+  }
 
   // outline
   if (!map.getLayer(FLOOR_LINE_ID)) {
@@ -1754,31 +3851,63 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           20, 1.2
         ],
         'line-opacity': 0.7
-      }
+      },
+      filter: ROOMS_ONLY_FILTER
     });
+  } else {
+    try { map.setFilter(FLOOR_LINE_ID, ROOMS_ONLY_FILTER); } catch {}
   }
 
   ensureFloorRoomLabelLayer(map);
   // ---- WALLS OVERLAY (NEW) ----
   if (options?.wallsBasePath) {
     const floorId = options.wallsFloorId || floor || (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) || null;
-    await tryLoadWallsOverlay({ basePath: options.wallsBasePath, floorId, map, roomsFC: patchedFC, affine });
+    await tryLoadWallsOverlay({
+      basePath: options.wallsBasePath,
+      floorId,
+      map,
+      roomsFC: patchedFC,
+      affine,
+      rotationOverride,
+      fitTransform
+    });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
   // ---- end walls overlay ----
 
   // ---- DOORS + STAIRS OVERLAY (optional) ----
-  const overlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
-  if (overlayBasePath) {
-    const overlayFloorId =
-      options?.roomsFloorId ||
-      options?.wallsFloorId ||
-      floor ||
+    const overlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
+    const overlayBuildingLabel =
+      buildingId ||
+      affineParams?.fitBuilding?.properties?.id ||
+      affineParams?.fitBuilding?.properties?.name ||
+      null;
+    if (overlayBasePath) {
+      const overlayFloorId =
+        options?.roomsFloorId ||
+        options?.wallsFloorId ||
+        floor ||
       (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) ||
       null;
     if (overlayFloorId) {
-      await tryLoadDoorsOverlay({ basePath: overlayBasePath, floorId: overlayFloorId, map, affine });
-      await tryLoadStairsOverlay({ basePath: overlayBasePath, floorId: overlayFloorId, map, affine });
+        await tryLoadDoorsOverlay({
+          basePath: overlayBasePath,
+          floorId: overlayFloorId,
+          map,
+          affine,
+          rotationOverride,
+          fitTransform: fitTransform || cachedTransform.fitTransform || null,
+          roomsFC: patchedFC,
+          buildingLabel: overlayBuildingLabel
+        });
+      await tryLoadStairsOverlay({
+        basePath: overlayBasePath,
+        floorId: overlayFloorId,
+        map,
+        affine,
+        rotationOverride,
+        fitTransform: fitTransform || cachedTransform.fitTransform || null
+      });
     }
   }
   // ---- end doors + stairs overlay ----
@@ -1956,6 +4085,37 @@ function finalizeCombinedSummary(combined) {
   };
 }
 
+function isAssignableDeptName(dept) {
+  const normed = String(dept || '').trim();
+  if (!normed) return false;
+  if (isAirtableRecordId(normed)) return false;
+  const upper = normed.toUpperCase();
+  return upper !== 'UNSPECIFIED' && upper !== 'UNKNOWN' && upper !== 'N/A' && upper !== 'NA';
+}
+
+function filterDeptTotals(totalsByDept) {
+  const entries = Object.entries(totalsByDept || {});
+  const filtered = entries.filter(([name]) => isAssignableDeptName(name));
+  return Object.fromEntries(filtered);
+}
+
+function summarizeRoomRowsForPanels(roomRows = []) {
+  const features = (roomRows || [])
+    .map(roomRowToDashboardFeature)
+    .filter(Boolean);
+  if (!features.length) return null;
+  const summary = summarizeFeatures(features);
+  if (!summary) return null;
+  const filteredTotals = filterDeptTotals(summary.totalsByDept || summary.deptCounts || {});
+  const sorted = Object.entries(filteredTotals).sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  return {
+    ...summary,
+    deptCounts: filteredTotals,
+    totalsByDept: filteredTotals,
+    keyDepts: sorted.slice(0, 6).map(([name]) => name)
+  };
+}
+
 function toScenarioShape(stats) {
   if (!stats) return null;
 
@@ -1993,20 +4153,7 @@ function computeDeptTotalsFromFeatures(features, deptName) {
     const dep = String(getDeptFromProps(p) || '').trim().toLowerCase();
     if (dep !== dept) continue;
 
-    const type = String(
-      getTypeFromProps(p) ??
-      p.Type ??
-      p.RoomType ??
-      p.Room_Type ??
-      p.Name ??
-      p.Room ??
-      p.SpaceType ??
-      p.Space_Type ??
-      p.Use ??
-      p.Usage ??
-      p.Category ??
-      'Unspecified'
-    ).trim() || 'Unspecified';
+    const type = getRoomTypeLabelFromProps(p) || 'Unspecified';
     const resolvedArea = resolvePatchedArea(p);
     const sf = Number.isFinite(resolvedArea)
       ? resolvedArea
@@ -2028,23 +4175,285 @@ function buildInventoryFromRoomRows(roomRows, limit = 1200) {
     const floorId = String(r.floor ?? r.floorId ?? '').trim();
     const roomLabel = String(r.roomNumber ?? r.roomLabel ?? r.name ?? '').trim();
     const idCandidate = String(r.roomId ?? r.revitId ?? r.id ?? '').trim();
+    const roomGuid = r.roomGuid ?? r.roomGUID ?? r.revitUniqueId ?? r.revitUniqueID ?? r['Room GUID'] ?? null;
     const fallbackId = [buildingLabel, floorId, roomLabel].filter(Boolean).join('|') || `room-${idx}`;
     const id = idCandidate || fallbackId;
+    const occupant = String(r.occupant ?? '').trim();
+    const vacancyRaw = String(r.vacancy ?? (occupant ? 'Occupied' : 'Unknown')).trim();
     return {
       id,
-      revitId: r.revitId ?? null,
+      revitId: r.revitId ?? roomGuid ?? null,
+      roomGuid,
       roomId: idCandidate || fallbackId,
       buildingLabel,
       floorId,
+      floorName: floorId,
       roomLabel,
       type: String(r.type ?? r.roomType ?? '').trim(),
       sf: Number(r.sf ?? r.areaSF ?? r.area ?? 0) || 0,
       department: String(r.department ?? '').trim(),
-      occupant: String(r.occupant ?? '').trim(),
-      vacancy: String(r.vacancy ?? (r.occupant ? 'Occupied' : 'Unknown')).trim()
+      occupant,
+      vacancy: vacancyRaw,
+      occupancyStatus: occupant ? 'Occupied' : 'Vacant',
+      occupantDept: String(r.department ?? '').trim() || null
     };
   });
   return trimmed.filter((x) => x.id);
+}
+
+function minifyMoveScenarioInventory(inventory) {
+  if (!Array.isArray(inventory)) return [];
+  return inventory.map((room) => ({
+    id: room?.id ?? room?.roomId ?? '',
+    roomId: room?.roomId ?? room?.id ?? '',
+    revitId: room?.revitId ?? room?.roomGuid ?? null,
+    buildingLabel: room?.buildingLabel ?? room?.buildingName ?? room?.building ?? '',
+    floorId: room?.floorId ?? room?.floorName ?? '',
+    floorName: room?.floorName ?? room?.floorId ?? '',
+    roomLabel: room?.roomLabel ?? room?.roomNumber ?? '',
+    type: room?.type ?? room?.roomType ?? '',
+    sf: Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0) || 0,
+    department: room?.department ?? ''
+  })).filter((room) => room.id || room.roomId);
+}
+
+function shrinkMoveScenarioInventory(inventory, options = {}) {
+  if (!Array.isArray(inventory) || inventory.length === 0) return [];
+  const maxTotal = Number.isFinite(options.maxTotal) ? options.maxTotal : 700;
+  const maxPerBuilding = Number.isFinite(options.maxPerBuilding) ? options.maxPerBuilding : 120;
+  const maxPerType = Number.isFinite(options.maxPerType) ? options.maxPerType : 30;
+
+  const minimal = minifyMoveScenarioInventory(inventory);
+
+  if (minimal.length <= maxTotal) return minimal;
+
+  const bucketed = new Map();
+  for (const room of minimal) {
+    const buildingKey = normalizeDashboardKey(room.buildingLabel || '');
+    const typeKey = normalizeTypeMatch(room.type || '') || 'other';
+    if (!bucketed.has(buildingKey)) bucketed.set(buildingKey, new Map());
+    const typeMap = bucketed.get(buildingKey);
+    if (!typeMap.has(typeKey)) typeMap.set(typeKey, []);
+    typeMap.get(typeKey).push(room);
+  }
+
+  const picked = [];
+  const addRooms = (rooms, limit) => {
+    if (!Array.isArray(rooms) || limit <= 0) return;
+    rooms.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0));
+    for (const r of rooms.slice(0, limit)) {
+      picked.push(r);
+      if (picked.length >= maxTotal) return;
+    }
+  };
+
+  for (const [, typeMap] of bucketed.entries()) {
+    if (picked.length >= maxTotal) break;
+    let buildingCount = 0;
+    for (const rooms of typeMap.values()) {
+      if (picked.length >= maxTotal) break;
+      const remainingBuilding = maxPerBuilding - buildingCount;
+      if (remainingBuilding <= 0) break;
+      const take = Math.min(maxPerType, remainingBuilding);
+      addRooms(rooms, take);
+      buildingCount += Math.min(rooms.length, take);
+    }
+  }
+
+  if (picked.length >= maxTotal) return picked.slice(0, maxTotal);
+  const seen = new Set(picked.map((r) => r.id || r.roomId));
+  for (const r of minimal) {
+    if (picked.length >= maxTotal) break;
+    const key = r.id || r.roomId;
+    if (seen.has(key)) continue;
+    picked.push(r);
+    seen.add(key);
+  }
+  return picked.slice(0, maxTotal);
+}
+
+function computeScenarioTotalsFromCandidates(candidates = []) {
+  const totals = { totalSF: 0, rooms: 0, roomTypes: {}, sfByRoomType: {} };
+  (candidates || []).forEach((c) => {
+    const sf = Number(c?.sf ?? 0) || 0;
+    const type = norm(c?.type ?? c?.roomType ?? 'Unknown') || 'Unknown';
+    totals.rooms += 1;
+    totals.totalSF += sf;
+    totals.roomTypes[type] = (totals.roomTypes[type] || 0) + 1;
+    totals.sfByRoomType[type] = (totals.sfByRoomType[type] || 0) + sf;
+  });
+  return totals;
+}
+
+function selectScenarioInventoryByBaseline(inventory, baselineTotals, options = {}) {
+  if (!Array.isArray(inventory) || !baselineTotals) return inventory || [];
+  const maxTotal = Number.isFinite(options.maxTotal) ? options.maxTotal : 180;
+  const minPerType = Number.isFinite(options.minPerType) ? options.minPerType : 4;
+  const maxPerType = Number.isFinite(options.maxPerType) ? options.maxPerType : 30;
+  const baselineSfByType = baselineTotals?.sfByRoomType || {};
+  const baselineRoomTypes = baselineTotals?.roomTypes || {};
+  const baselineTotalSf = Number(baselineTotals?.totalSF ?? 0) || 0;
+  const baselineTotalRooms = Number(baselineTotals?.rooms ?? 0) || 0;
+
+  const typeTargets = Object.entries(baselineSfByType)
+    .map(([type, sf]) => {
+      const key = normalizeTypeMatch(type);
+      const sfVal = Number(sf || 0) || 0;
+      const countVal = Number(baselineRoomTypes[type] || 0) || 0;
+      return { key, label: type, sf: sfVal, count: countVal };
+    })
+    .filter((t) => t.key);
+
+  if (!typeTargets.length) {
+    return shrinkMoveScenarioInventory(inventory, { maxTotal, maxPerBuilding: maxTotal, maxPerType });
+  }
+
+  typeTargets.sort((a, b) => (b.sf || 0) - (a.sf || 0));
+  const desiredCounts = new Map();
+  typeTargets.forEach((t) => {
+    const sfShare = baselineTotalSf > 0 ? t.sf / baselineTotalSf : 0;
+    const countShare = baselineTotalRooms > 0 ? t.count / baselineTotalRooms : 0;
+    const sfTarget = Math.round(sfShare * maxTotal);
+    const countTarget = Math.round(countShare * maxTotal);
+    const desired = Math.max(minPerType, sfTarget, countTarget);
+    desiredCounts.set(t.key, Math.min(maxPerType, desired));
+  });
+
+  const roomsByType = new Map();
+  inventory.forEach((room) => {
+    const typeKey = normalizeTypeMatch(room?.type ?? room?.roomType ?? '') || 'other';
+    if (!roomsByType.has(typeKey)) roomsByType.set(typeKey, []);
+    roomsByType.get(typeKey).push(room);
+  });
+  roomsByType.forEach((rooms) => rooms.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0)));
+
+  const picked = [];
+  const pickedKeys = new Set();
+  const pushRoom = (room) => {
+    const key = String(room?.roomId ?? room?.id ?? room?.revitId ?? '');
+    if (!key || pickedKeys.has(key)) return;
+    picked.push(room);
+    pickedKeys.add(key);
+  };
+
+  for (const t of typeTargets) {
+    if (picked.length >= maxTotal) break;
+    const rooms = roomsByType.get(t.key) || [];
+    const target = desiredCounts.get(t.key) || 0;
+    let added = 0;
+    for (const room of rooms) {
+      if (picked.length >= maxTotal || added >= target) break;
+      pushRoom(room);
+      added += 1;
+    }
+  }
+
+  if (picked.length >= maxTotal) return picked.slice(0, maxTotal);
+
+  const remaining = [];
+  roomsByType.forEach((rooms) => rooms.forEach((r) => {
+    const key = String(r?.roomId ?? r?.id ?? r?.revitId ?? '');
+    if (!key || pickedKeys.has(key)) return;
+    remaining.push(r);
+  }));
+  remaining.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0));
+  for (const room of remaining) {
+    if (picked.length >= maxTotal) break;
+    pushRoom(room);
+  }
+  return picked.slice(0, maxTotal);
+}
+
+function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals, options = {}) {
+  if (!baselineTotals || !Array.isArray(inventory)) {
+    return { candidates: candidates || [], added: 0 };
+  }
+  const baseTotal = Number(baselineTotals.totalSF ?? 0) || 0;
+  if (!baseTotal) return { candidates: candidates || [], added: 0 };
+
+  const targetTolerance = Number.isFinite(options.targetTolerance) ? options.targetTolerance : 0.1;
+  const targetMin = baseTotal * (1 - targetTolerance);
+  const maxCandidates = Number.isFinite(options.maxCandidates) ? options.maxCandidates : 25;
+
+  const next = Array.isArray(candidates) ? [...candidates] : [];
+  const totals = computeScenarioTotalsFromCandidates(next);
+  if (totals.totalSF >= targetMin || next.length >= maxCandidates) {
+    return { candidates: next, added: 0 };
+  }
+
+  const usedKeys = new Set(next.map((c) => String(c?.roomId ?? c?.id ?? c?.revitId ?? '')));
+  const roomsByType = new Map();
+  inventory.forEach((room) => {
+    const key = String(room?.roomId ?? room?.id ?? room?.revitId ?? '');
+    if (!key || usedKeys.has(key)) return;
+    const typeKey = normalizeTypeMatch(room?.type ?? room?.roomType ?? '') || 'other';
+    if (!roomsByType.has(typeKey)) roomsByType.set(typeKey, []);
+    roomsByType.get(typeKey).push(room);
+  });
+  roomsByType.forEach((rooms) => rooms.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0)));
+
+  const baselineTypeOrder = Object.keys(baselineTotals.sfByRoomType || {})
+    .map((t) => normalizeTypeMatch(t))
+    .filter(Boolean);
+
+  let added = 0;
+  const addRoom = (room, reason) => {
+    if (!room || next.length >= maxCandidates) return false;
+    next.push({
+      roomId: room?.roomId ?? room?.id ?? '',
+      id: room?.id ?? room?.roomId ?? '',
+      revitId: room?.revitId ?? room?.roomGuid ?? null,
+      buildingLabel: room?.buildingLabel ?? '',
+      floorId: room?.floorId ?? room?.floorName ?? '',
+      floorName: room?.floorName ?? room?.floorId ?? '',
+      roomLabel: room?.roomLabel ?? '',
+      type: room?.type ?? '',
+      sf: Number(room?.sf ?? 0) || 0,
+      rationale: reason || 'Added to reach baseline target.'
+    });
+    totals.totalSF += Number(room?.sf ?? 0) || 0;
+    added += 1;
+    return true;
+  };
+
+  for (const typeKey of baselineTypeOrder) {
+    if (totals.totalSF >= targetMin || next.length >= maxCandidates) break;
+    const rooms = roomsByType.get(typeKey) || [];
+    while (rooms.length && totals.totalSF < targetMin && next.length < maxCandidates) {
+      const room = rooms.shift();
+      addRoom(room, 'Added to better match baseline room-type mix.');
+    }
+  }
+
+  if (totals.totalSF < targetMin && next.length < maxCandidates) {
+    const remaining = [];
+    roomsByType.forEach((rooms) => rooms.forEach((room) => remaining.push(room)));
+    remaining.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0));
+    for (const room of remaining) {
+      if (totals.totalSF >= targetMin || next.length >= maxCandidates) break;
+      addRoom(room, 'Added to reach baseline total SF.');
+    }
+  }
+
+  return { candidates: next, added };
+}
+
+function sanitizeVacancyLanguage(text) {
+  if (!text) return text;
+  return String(text)
+    .replace(/^\s*vacant\s*[:\-–]\s*/i, '')
+    .replace(/^\s*vacant\?\s*[:\-–]\s*/i, '')
+    .replace(/\bvacancy status\b/ig, 'availability')
+    .replace(/\bvacant\b/ig, 'available');
+}
+
+function getGeojsonSource(map, id) {
+  try {
+    const src = map?.getSource(id);
+    return src && typeof src.setData === 'function' ? src : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildInventoryFromFeatures(features, buildingLabel = '', floorId = '', limit = 1200) {
@@ -2055,9 +4464,7 @@ function buildInventoryFromFeatures(features, buildingLabel = '', floorId = '', 
     const roomLabel = String(
       p.roomNumber ?? p.RoomNumber ?? p.Number ?? p.Room ?? p.Name ?? ''
     ).trim();
-    const type = String(
-      p.RoomType ?? p.Type ?? p.type ?? p.Name ?? p.SpaceType ?? p.Use ?? ''
-    ).trim();
+    const type = getRoomTypeLabelFromProps(p) || 'Unknown';
     const dept = String(p.department ?? p.Department ?? p.Dept ?? '').trim();
     const occupant = String(p.occupant ?? p.Occupant ?? '').trim();
     const resolvedArea = resolvePatchedArea(p);
@@ -2072,12 +4479,15 @@ function buildInventoryFromFeatures(features, buildingLabel = '', floorId = '', 
       roomId: id,
       buildingLabel: buildingLabel || String(p.buildingLabel ?? p.Building ?? p.building ?? '').trim(),
       floorId: floorId || String(p.floorId ?? p.floor ?? p.Floor ?? '').trim(),
+      floorName: floorId || String(p.floorId ?? p.floor ?? p.Floor ?? '').trim(),
       roomLabel,
       type,
       sf,
       department: dept,
       occupant,
-      vacancy: occupant ? 'Occupied' : 'Unknown'
+      vacancy: occupant ? 'Occupied' : 'Unknown',
+      occupancyStatus: occupant ? 'Occupied' : 'Vacant',
+      occupantDept: dept || null
     };
   }).filter((x) => x.id);
 }
@@ -2231,7 +4641,7 @@ const normalizeRoomProps = (p = {}) => {
   const resolvedArea = resolvePatchedArea(p);
   const props = {
     number:     p.number ?? p.Number ?? p.RoomNumber ?? p['Room Number'] ?? '',
-    name:       p.type ?? p.roomType ?? p.Name ?? p.RoomType ?? p['Room Type'] ?? '',
+    name:       getRoomTypeLabelFromProps(p) || p.Name || '',
     department: p.department ?? p.Department ?? p.Dept ?? '',
     areaSF:     Number.isFinite(resolvedArea) ? resolvedArea : null,
     revitId:    p.revitId ?? p.RevitId ?? null,
@@ -2259,12 +4669,264 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
 
     if (!building) return roomsFC;
 
+    const snapCorner = getSnapCornerForBuilding(building);
+    if (snapCorner) {
+      const fitTransform = {
+        rotationDeg: 0,
+        rotationPivot: null,
+        scale: 1,
+        scaleOrigin: null,
+        translateKm: 0,
+        translateBearing: 0,
+        nudgeMeters: null,
+        refineRotationDeg: 0,
+        refineRotationPivot: null,
+        snapCorner
+      };
+      const rotationMode = getSnapRotationModeForBuilding(building);
+      const snapPair = getSnapCornerPairForBuilding(building);
+      const pairPrimary = Array.isArray(snapPair) ? snapPair[0] : null;
+      const pairSecondary = Array.isArray(snapPair) ? snapPair[1] : null;
+      const pairEnabled = Boolean(pairPrimary && pairSecondary);
+      const pairMode = getSnapPairModeForBuilding(building);
+      let working = roomsFC;
+      let cRooms = turf.centroid(roomsFC);
+
+      if (rotationMode !== 'none' && !pairEnabled) {
+        const rotationDelta = getOrientationDeltaDeg(roomsFC, building);
+        if (Number.isFinite(rotationDelta) && Math.abs(rotationDelta) > 1.5) {
+          const rotationPivot = cRooms?.geometry?.coordinates || null;
+          fitTransform.rotationDeg = rotationDelta;
+          fitTransform.rotationPivot = rotationPivot;
+          const rotated = turf.transformRotate(
+            roomsFC,
+            rotationDelta,
+            rotationPivot ? { pivot: rotationPivot } : undefined
+          );
+          if (rotated?.features?.length) {
+            working = rotated;
+            cRooms = turf.centroid(working);
+          }
+        }
+      }
+
+      const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(working);
+      const [bxMin, byMin, bxMax, byMax] = turf.bbox(building);
+      if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
+        return roomsFC;
+      }
+
+      const rW = Math.max(1e-9, rxMax - rxMin);
+      const rH = Math.max(1e-9, ryMax - ryMin);
+      const bW = Math.max(1e-9, bxMax - bxMin);
+      const bH = Math.max(1e-9, byMax - byMin);
+
+      const cornerMethod = getSnapCornerMethodForBuilding(building);
+      const useDirectionalCorners = cornerMethod === 'directional';
+      const roomCornersPre = useDirectionalCorners
+        ? getDirectionalCorners(working)
+        : getBboxCorners([rxMin, ryMin, rxMax, ryMax]);
+      const buildingCornersPre = useDirectionalCorners
+        ? getDirectionalCorners(building)
+        : getBboxCorners([bxMin, byMin, bxMax, byMax]);
+      let pairScale = null;
+      let pairRotationDeg = 0;
+      let pairRoomPrimary = null;
+      let pairRoomSecondary = null;
+      let pairBuildingPrimary = null;
+      let pairBuildingSecondary = null;
+      if (pairPrimary && pairSecondary && roomCornersPre && buildingCornersPre) {
+        pairRoomPrimary = roomCornersPre[pairPrimary];
+        pairRoomSecondary = roomCornersPre[pairSecondary];
+        pairBuildingPrimary = buildingCornersPre[pairPrimary];
+        pairBuildingSecondary = buildingCornersPre[pairSecondary];
+        if (pairRoomPrimary && pairRoomSecondary && pairBuildingPrimary && pairBuildingSecondary) {
+          const roomDistKm = turf.distance(
+            turf.point(pairRoomPrimary),
+            turf.point(pairRoomSecondary),
+            { units: 'kilometers' }
+          );
+          const buildingDistKm = turf.distance(
+            turf.point(pairBuildingPrimary),
+            turf.point(pairBuildingSecondary),
+            { units: 'kilometers' }
+          );
+          if (Number.isFinite(roomDistKm) && Number.isFinite(buildingDistKm) && roomDistKm > 0) {
+            pairScale = buildingDistKm / roomDistKm;
+          }
+          const roomBearing = turf.bearing(turf.point(pairRoomPrimary), turf.point(pairRoomSecondary));
+          const buildingBearing = turf.bearing(turf.point(pairBuildingPrimary), turf.point(pairBuildingSecondary));
+          const delta = ((buildingBearing - roomBearing + 540) % 360) - 180;
+          if (Number.isFinite(delta)) pairRotationDeg = delta;
+        }
+      }
+
+      const scaleOrigin = pairRoomPrimary || cRooms?.geometry?.coordinates || null;
+      fitTransform.scaleOrigin = scaleOrigin;
+
+      const FIT_MARGIN = 0.96; // 96% of building bbox
+      const scaleMultiplier = getSnapScaleMultiplierForBuilding(building);
+      const baseScale = Math.min(bW / rW, bH / rH) * FIT_MARGIN;
+      const usePairScale = pairMode !== 'legacy' && Number.isFinite(pairScale) && pairScale > 0;
+      const scale = (usePairScale ? pairScale : baseScale) * scaleMultiplier;
+      const forceScale = usePairScale || Math.abs(scaleMultiplier - 1) > 1e-6;
+      const shouldScale = forceScale || scale < 0.9 || scale > 1.1;
+      fitTransform.scale = shouldScale ? scale : 1;
+
+      let fitted = shouldScale
+        ? turf.transformScale(working, scale, scaleOrigin ? { origin: scaleOrigin } : undefined)
+        : working;
+
+      const snapRotationOffset = getSnapRotationOffsetForBuilding(building);
+      const pairRotationTotal =
+        (Number.isFinite(pairRotationDeg) ? pairRotationDeg : 0) +
+        (Number.isFinite(snapRotationOffset) ? snapRotationOffset : 0);
+      if (
+        pairEnabled &&
+        pairMode !== 'legacy' &&
+        Number.isFinite(pairRotationTotal) &&
+        Math.abs(pairRotationTotal) > 1e-6 &&
+        Array.isArray(scaleOrigin)
+      ) {
+        fitted = turf.transformRotate(fitted, pairRotationTotal, { pivot: scaleOrigin });
+        fitTransform.rotationDeg = pairRotationTotal;
+        fitTransform.rotationPivot = scaleOrigin;
+      }
+
+      const fittedBBox = !useDirectionalCorners ? turf.bbox(fitted) : null;
+      const roomCorners = useDirectionalCorners
+        ? getDirectionalCorners(fitted)
+        : getBboxCorners(fittedBBox);
+      const buildingCorners = buildingCornersPre || (useDirectionalCorners
+        ? getDirectionalCorners(building)
+        : getBboxCorners([bxMin, byMin, bxMax, byMax]));
+      if (roomCorners && buildingCorners) {
+        const usePair = pairPrimary === snapCorner && pairSecondary;
+        const fromCoords = usePair ? roomCorners[pairPrimary] : roomCorners[snapCorner];
+        const toCoords = usePair ? buildingCorners[pairPrimary] : buildingCorners[snapCorner];
+        if (fromCoords && toCoords) {
+          const fromPt = turf.point(fromCoords);
+          const toPt = turf.point(toCoords);
+          const distKm = turf.distance(fromPt, toPt, { units: 'kilometers' });
+          const bearing = turf.bearing(fromPt, toPt);
+          if (Number.isFinite(distKm) && Number.isFinite(bearing)) {
+            fitted = distKm > 0
+              ? turf.transformTranslate(fitted, distKm, bearing, { units: 'kilometers' })
+              : fitted;
+            fitTransform.translateKm = distKm;
+            fitTransform.translateBearing = bearing;
+          }
+        }
+        if (pairEnabled && usePair && pairMode !== 'legacy' && pairMode !== 'match') {
+          const postRoomPrimary = roomCorners[pairPrimary];
+          const postBuildingPrimary = buildingCorners[pairPrimary];
+          if (postRoomPrimary && postBuildingPrimary) {
+            const extraDistKm = turf.distance(
+              turf.point(postRoomPrimary),
+              turf.point(postBuildingPrimary),
+              { units: 'kilometers' }
+            );
+            const extraBearing = turf.bearing(
+              turf.point(postRoomPrimary),
+              turf.point(postBuildingPrimary)
+            );
+            if (
+              Number.isFinite(extraDistKm) &&
+              Number.isFinite(extraBearing) &&
+              extraDistKm > 1e-9
+            ) {
+              fitted = turf.transformTranslate(fitted, extraDistKm, extraBearing, { units: 'kilometers' });
+              fitTransform.translateKm = (fitTransform.translateKm || 0) + extraDistKm;
+              fitTransform.translateBearing = extraBearing;
+            }
+          }
+        }
+
+      }
+
+      const snapPivot = pairBuildingPrimary || buildingCorners?.[snapCorner] || null;
+      if (
+        pairEnabled &&
+        pairMode === 'legacy' &&
+        Number.isFinite(pairRotationTotal) &&
+        Math.abs(pairRotationTotal) > 1e-6 &&
+        snapPivot
+      ) {
+        fitted = turf.transformRotate(fitted, pairRotationTotal, { pivot: snapPivot });
+        fitTransform.refineRotationDeg =
+          (fitTransform.refineRotationDeg || 0) + pairRotationTotal;
+        fitTransform.refineRotationPivot = snapPivot;
+      }
+      if (snapPivot && rotationMode !== 'none' && !pairEnabled) {
+        const refinedResult = refineRotationToBuilding(fitted, building, snapPivot, {
+          maxDeg: 6,
+          stepDeg: 0.4,
+          fineStep: 0.1,
+          fineWindow: 1.5,
+          hullLimit: 1200
+        });
+        if (refinedResult?.fc) {
+          fitted = refinedResult.fc;
+        }
+        fitTransform.refineRotationDeg = refinedResult?.angle || 0;
+        fitTransform.refineRotationPivot = snapPivot;
+      }
+
+      if (!pairEnabled) {
+        if (
+          Number.isFinite(snapRotationOffset) &&
+          Math.abs(snapRotationOffset) > 1e-6 &&
+          snapPivot
+        ) {
+          fitted = turf.transformRotate(fitted, snapRotationOffset, { pivot: snapPivot });
+          fitTransform.refineRotationDeg =
+            (fitTransform.refineRotationDeg || 0) + snapRotationOffset;
+          fitTransform.refineRotationPivot = snapPivot;
+        }
+      }
+
+      const nudgeMeters = getSnapNudgeMetersForBuilding(building);
+      if (Array.isArray(nudgeMeters)) {
+        fitted = applyNudgeMeters(fitted, nudgeMeters);
+        fitTransform.nudgeMeters = nudgeMeters;
+      }
+
+      if (fitted && typeof fitted === 'object') {
+        fitted.__mfFitted = true;
+        fitted.__mfFittedBuilding = building?.properties?.id || building?.properties?.name || '';
+        fitted.__mfFitTransform = fitTransform;
+        if (roomsFC.__mfAffineApplied) fitted.__mfAffineApplied = roomsFC.__mfAffineApplied;
+        if (roomsFC.__mfRotationOverride != null) fitted.__mfRotationOverride = roomsFC.__mfRotationOverride;
+        if (roomsFC.__mfRotationPivot) fitted.__mfRotationPivot = roomsFC.__mfRotationPivot;
+        if (roomsFC.__mfFitTransformApplied) fitted.__mfFitTransformApplied = roomsFC.__mfFitTransformApplied;
+      }
+      return fitted;
+    }
+
     let cRooms = turf.centroid(roomsFC);
     const cBldg = turf.centroid(building);
+    const fitTransform = {
+      rotationDeg: 0,
+      rotationPivot: null,
+      scale: 1,
+      scaleOrigin: null,
+      translateKm: 0,
+      translateBearing: 0,
+      nudgeMeters: null,
+      refineRotationDeg: 0,
+      refineRotationPivot: null
+    };
 
     const rotationDelta = getOrientationDeltaDeg(roomsFC, building);
     if (Number.isFinite(rotationDelta) && Math.abs(rotationDelta) > 1.5) {
-      const rotated = turf.transformRotate(roomsFC, rotationDelta, { pivot: cRooms });
+      const rotationPivot = cRooms?.geometry?.coordinates || null;
+      fitTransform.rotationDeg = rotationDelta;
+      fitTransform.rotationPivot = rotationPivot;
+      const rotated = turf.transformRotate(
+        roomsFC,
+        rotationDelta,
+        rotationPivot ? { pivot: rotationPivot } : undefined
+      );
       if (rotated?.features?.length) {
         roomsFC = rotated;
         cRooms = turf.centroid(roomsFC);
@@ -2279,60 +4941,132 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
     const bW = Math.max(1e-9, bxMax - bxMin);
     const bH = Math.max(1e-9, byMax - byMin);
 
-    const FIT_MARGIN = 0.96; // 96% of building bbox
-    const scale = Math.min(bW / rW, bH / rH) * FIT_MARGIN;
+  const FIT_MARGIN = 0.96; // 96% of building bbox
+  const scaleMultiplier = getSnapScaleMultiplierForBuilding(building);
+  const scale = Math.min(bW / rW, bH / rH) * FIT_MARGIN * scaleMultiplier;
+  const shouldScale = scale < 0.9 || scale > 1.1;
 
-    let fitted = turf.transformScale(roomsFC, scale, { origin: cRooms });
+    const scaleOrigin = cRooms?.geometry?.coordinates || null;
+    fitTransform.scale = shouldScale ? scale : 1;
+    fitTransform.scaleOrigin = scaleOrigin;
+    let fitted = shouldScale
+      ? turf.transformScale(roomsFC, scale, scaleOrigin ? { origin: scaleOrigin } : undefined)
+      : roomsFC;
 
     const fittedBBox = turf.bbox(fitted);
     const buildingCenter = [
       (bxMin + bxMax) / 2,
       (byMin + byMax) / 2
     ];
-    const hasValidFittedBBox =
-      Array.isArray(fittedBBox) &&
-      fittedBBox.length === 4 &&
-      fittedBBox.every((coord) => Number.isFinite(coord));
-    const hasValidBuildingCenter =
-      Number.isFinite(buildingCenter[0]) && Number.isFinite(buildingCenter[1]);
+  const hasValidFittedBBox =
+    Array.isArray(fittedBBox) &&
+    fittedBBox.length === 4 &&
+    fittedBBox.every((coord) => Number.isFinite(coord));
+  const hasValidBuildingCenter =
+    Number.isFinite(buildingCenter[0]) && Number.isFinite(buildingCenter[1]);
 
-    let translated = false;
+  if (snapCorner && hasValidFittedBBox) {
+    const cornerMethod = getSnapCornerMethodForBuilding(building);
+    const useDirectionalCorners = cornerMethod === 'directional';
+    const roomCorners = useDirectionalCorners
+      ? getDirectionalCorners(fitted)
+      : getBboxCorners(fittedBBox);
+    const buildingCorners = useDirectionalCorners
+      ? getDirectionalCorners(building)
+      : getBboxCorners([bxMin, byMin, bxMax, byMax]);
+    if (roomCorners && buildingCorners) {
+      const fromCoords = roomCorners[snapCorner];
+      const toCoords = buildingCorners[snapCorner];
+      if (fromCoords && toCoords) {
+        const fromPt = turf.point(fromCoords);
+        const toPt = turf.point(toCoords);
+        const distKm = turf.distance(fromPt, toPt, { units: 'kilometers' });
+        const bearing = turf.bearing(fromPt, toPt);
+        if (Number.isFinite(distKm) && Number.isFinite(bearing)) {
+          fitted = distKm > 0
+            ? turf.transformTranslate(fitted, distKm, bearing, { units: 'kilometers' })
+            : fitted;
+          fitTransform.translateKm = distKm;
+          fitTransform.translateBearing = bearing;
+          fitTransform.snapCorner = snapCorner;
+        }
+      }
+    }
+  } else {
+    const candidates = [];
+    const addCandidate = (label, fromCoords, toCoords) => {
+      if (!Array.isArray(fromCoords) || !Array.isArray(toCoords)) return;
+      const fromPt = turf.point(fromCoords);
+      const toPt = turf.point(toCoords);
+      const distKm = turf.distance(fromPt, toPt, { units: 'kilometers' });
+      const bearing = turf.bearing(fromPt, toPt);
+      if (!Number.isFinite(distKm) || !Number.isFinite(bearing)) return;
+      const translated = distKm > 0
+        ? turf.transformTranslate(fitted, distKm, bearing, { units: 'kilometers' })
+        : fitted;
+      const hull = buildHullFeature(translated, 1200);
+      const score = hull ? overlapScore(hull, building) : 0;
+      candidates.push({ label, distKm, bearing, fc: translated, score });
+    };
+
     if (hasValidFittedBBox && hasValidBuildingCenter) {
       const roomsCenter = [
         (fittedBBox[0] + fittedBBox[2]) / 2,
         (fittedBBox[1] + fittedBBox[3]) / 2
       ];
-      const roomsCenterPt = turf.point(roomsCenter);
-      const buildingCenterPt = turf.point(buildingCenter);
-      const distKm = turf.distance(roomsCenterPt, buildingCenterPt, { units: 'kilometers' });
-      const bearing = turf.bearing(roomsCenterPt, buildingCenterPt);
-      if (Number.isFinite(distKm) && Number.isFinite(bearing)) {
-        fitted = turf.transformTranslate(fitted, distKm, bearing, { units: 'kilometers' });
-        translated = true;
+      addCandidate('center', roomsCenter, buildingCenter);
+      const cornerMethod = getSnapCornerMethodForBuilding(building);
+      const useDirectionalCorners = cornerMethod === 'directional';
+      const roomCorners = useDirectionalCorners
+        ? getDirectionalCorners(fitted)
+        : getBboxCorners(fittedBBox);
+      const buildingCorners = useDirectionalCorners
+        ? getDirectionalCorners(building)
+        : getBboxCorners([bxMin, byMin, bxMax, byMax]);
+      if (roomCorners && buildingCorners) {
+        Object.keys(roomCorners).forEach((corner) => {
+          addCandidate(`corner-${corner}`, roomCorners[corner], buildingCorners[corner]);
+        });
       }
+    } else {
+      addCandidate('centroid', cRooms?.geometry?.coordinates, cBldg?.geometry?.coordinates);
     }
 
-    if (!translated) {
-      // translate by centroid difference as a fallback
-      const distKm = turf.distance(cRooms, cBldg, { units: 'kilometers' });
-      const bearing = turf.bearing(cRooms, cBldg);
-      if (Number.isFinite(distKm) && Number.isFinite(bearing)) {
-        fitted = turf.transformTranslate(fitted, distKm, bearing, { units: 'kilometers' });
+    if (candidates.length) {
+      const best = candidates.reduce((acc, cur) => {
+        if (!acc) return cur;
+        if (cur.score > acc.score + 1e-6) return cur;
+        if (Math.abs(cur.score - acc.score) <= 1e-6 && cur.distKm < acc.distKm) return cur;
+        return acc;
+      }, null);
+      if (best?.fc) {
+        fitted = best.fc;
+        fitTransform.translateKm = best.distKm;
+        fitTransform.translateBearing = best.bearing;
       }
     }
+  }
 
     const buildingPivot = cBldg?.geometry?.coordinates || buildingCenter;
-    const refined = refineRotationToBuilding(fitted, building, buildingPivot, {
+    const refinedResult = refineRotationToBuilding(fitted, building, buildingPivot, {
       maxDeg: 6,
       stepDeg: 0.4,
       fineStep: 0.1,
       fineWindow: 1.5,
       hullLimit: 1200
     });
+    const refined = refinedResult?.fc || fitted;
+    fitTransform.refineRotationDeg = refinedResult?.angle || 0;
+    fitTransform.refineRotationPivot = buildingPivot;
 
     if (refined && typeof refined === 'object') {
       refined.__mfFitted = true;
       refined.__mfFittedBuilding = building?.properties?.id || building?.properties?.name || '';
+      refined.__mfFitTransform = fitTransform;
+      if (roomsFC.__mfAffineApplied) refined.__mfAffineApplied = roomsFC.__mfAffineApplied;
+      if (roomsFC.__mfRotationOverride != null) refined.__mfRotationOverride = roomsFC.__mfRotationOverride;
+      if (roomsFC.__mfRotationPivot) refined.__mfRotationPivot = roomsFC.__mfRotationPivot;
+      if (roomsFC.__mfFitTransformApplied) refined.__mfFitTransformApplied = roomsFC.__mfFitTransformApplied;
     }
     return refined;
   } catch {
@@ -2357,6 +5091,22 @@ function extractLngLatPairs(geom, limit = Infinity) {
   if (geom?.type === 'GeometryCollection') (geom.geometries || []).forEach((g) => collect(g.coordinates));
   else collect(geom?.coordinates);
   return out;
+}
+
+function collectLngLatPairsFromGeoJSON(input, limit = Infinity) {
+  if (!input) return [];
+  if (input.type === 'FeatureCollection') {
+    const pts = [];
+    for (const f of input.features || []) {
+      if (pts.length >= limit) break;
+      const next = extractLngLatPairs(f.geometry, limit - pts.length);
+      if (next?.length) pts.push(...next);
+    }
+    return pts;
+  }
+  if (input.type === 'Feature') return extractLngLatPairs(input.geometry, limit);
+  if (input.type) return extractLngLatPairs(input, limit);
+  return [];
 }
 
 function orientationFromPoints(points) {
@@ -2539,13 +5289,13 @@ function overlapScore(hull, buildingFeature) {
 }
 
 function refineRotationToBuilding(roomsFC, buildingFeature, pivot, options = {}) {
-  if (!roomsFC || !buildingFeature || !pivot) return roomsFC;
+  if (!roomsFC || !buildingFeature || !pivot) return { fc: roomsFC, angle: 0 };
   const maxDeg = Number.isFinite(options.maxDeg) ? options.maxDeg : 5;
   const stepDeg = Number.isFinite(options.stepDeg) ? options.stepDeg : 0.5;
   const fineStep = Number.isFinite(options.fineStep) ? options.fineStep : 0.1;
   const fineWindow = Number.isFinite(options.fineWindow) ? options.fineWindow : 1.2;
   const hull = buildHullFeature(roomsFC, options.hullLimit || 1200);
-  if (!hull) return roomsFC;
+  if (!hull) return { fc: roomsFC, angle: 0 };
   const baseScore = overlapScore(hull, buildingFeature);
   let bestAngle = 0;
   let bestScore = baseScore;
@@ -2574,9 +5324,12 @@ function refineRotationToBuilding(roomsFC, buildingFeature, pivot, options = {})
     }
   }
 
-  if (Math.abs(bestAngle) < 1e-3) return roomsFC;
+  if (Math.abs(bestAngle) < 1e-3) return { fc: roomsFC, angle: 0 };
   const rotated = turf.transformRotate(roomsFC, bestAngle, { pivot });
-  return rotated?.features?.length ? rotated : roomsFC;
+  return {
+    fc: rotated?.features?.length ? rotated : roomsFC,
+    angle: bestAngle
+  };
 }
 
 // Compute bbox [minX, minY, maxX, maxY] from a FeatureCollection using extractLngLatPairs
@@ -2593,10 +5346,361 @@ function bboxFromFC(fc) {
   return [minX, minY, maxX, maxY];
 }
 
+function getBboxCorners(bbox) {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return null;
+  const [minX, minY, maxX, maxY] = bbox;
+  if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+  return {
+    nw: [minX, maxY],
+    ne: [maxX, maxY],
+    sw: [minX, minY],
+    se: [maxX, minY]
+  };
+}
+
+function getDirectionalCorners(input, limit = 4000) {
+  let target = input;
+  if (input?.type === 'FeatureCollection') {
+    const hull = buildHullFeature(input, limit);
+    if (hull?.geometry) {
+      target = hull;
+    }
+  }
+  const pts = collectLngLatPairsFromGeoJSON(target, limit);
+  if (!pts.length) return null;
+  const dirs = {
+    nw: [-1, 1],
+    ne: [1, 1],
+    sw: [-1, -1],
+    se: [1, -1]
+  };
+  const best = {
+    nw: { score: -Infinity, pt: null },
+    ne: { score: -Infinity, pt: null },
+    sw: { score: -Infinity, pt: null },
+    se: { score: -Infinity, pt: null }
+  };
+  for (const [x, y] of pts) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    for (const key of Object.keys(dirs)) {
+      const [dx, dy] = dirs[key];
+      const score = (x * dx) + (y * dy);
+      if (score > best[key].score) {
+        best[key] = { score, pt: [x, y] };
+      }
+    }
+  }
+  return {
+    nw: best.nw.pt,
+    ne: best.ne.pt,
+    sw: best.sw.pt,
+    se: best.se.pt
+  };
+}
+
+function normalizeSnapKey(value) {
+  return String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\bthe\b/g, '')
+    .replace(/\bmemorial\b/g, '')
+    .replace(/\bresidence\b/g, '')
+    .replace(/\bresidency\b/g, '')
+    .replace(/\b[a-z]\b/g, '')
+    .replace(/theatre/g, 'theater')
+    .replace(/centre/g, 'center')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+const BUILDING_SNAP_CONFIGS = [
+  {
+    keys: ['Morrison Reeves', 'Morrison-Reeves Science Center'],
+    corner: 'nw',
+    cornerMethod: 'directional',
+    cornerPair: ['nw', 'sw'],
+    pairMode: 'match',
+    rotationMode: 'none'
+  },
+  {
+    keys: ['Calvin French Chapel', 'Calvin H. French Chapel', 'French Memorial Chapel'],
+    corner: 'nw',
+    cornerMethod: 'directional',
+    cornerPair: ['nw', 'sw'],
+    pairMode: 'match'
+  }
+];
+
+function buildSnapMap(configs, field) {
+  const out = {};
+  configs.forEach((cfg) => {
+    if (!cfg || !cfg.keys || cfg[field] == null) return;
+    cfg.keys.forEach((key) => {
+      const norm = normalizeSnapKey(key);
+      if (!norm) return;
+      out[norm] = cfg[field];
+    });
+  });
+  return out;
+}
+
+const BUILDING_AFFINE_SKIP = new Set([]);
+
+const BUILDING_FORCE_FIT = new Set([
+  normalizeSnapKey('Calvin French Chapel'),
+  normalizeSnapKey('Calvin H. French Chapel'),
+  normalizeSnapKey('Calvin H. French Memorial Chapel'),
+  normalizeSnapKey('Kiewit Building'),
+  normalizeSnapKey('Taylor Hall'),
+  normalizeSnapKey('Taylor Hall Residence')
+]);
+
+function shouldSkipAffine({ buildingLabel } = {}) {
+  const key = normalizeSnapKey(buildingLabel);
+  return key && BUILDING_AFFINE_SKIP.has(key);
+}
+
+let campusBuildingsCache = null;
+async function loadCampusBuildings() {
+  if (campusBuildingsCache) return campusBuildingsCache;
+  try {
+    const candidates = [
+      assetUrl('Hastings_College_Buildings.json'),
+      '/Hastings_College_Buildings.json',
+      'Hastings_College_Buildings.json'
+    ];
+    const result = await fetchFirstOk(candidates);
+    if (result?.ok && result.data && Array.isArray(result.data.features)) {
+      campusBuildingsCache = result.data;
+      return result.data;
+    }
+  } catch {}
+  return null;
+}
+
+function getBuildingFolderFromBasePath(basePath) {
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(String(basePath || ''));
+    } catch {
+      return String(basePath || '');
+    }
+  })();
+  const parts = decoded.split('/').filter(Boolean);
+  if (!parts.length) return '';
+  const floorIdx = parts.indexOf('floorplans');
+  if (floorIdx >= 0 && parts.length > floorIdx + 2) return parts[floorIdx + 2];
+  return parts[parts.length - 1] || '';
+}
+
+function getSnapCornerForBuilding(buildingFeature) {
+  if (!buildingFeature) return null;
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    if (key && BUILDING_SNAP_CORNERS[key]) return BUILDING_SNAP_CORNERS[key];
+  }
+  return null;
+}
+
+function getSnapRotationOffsetForBuilding(buildingFeature) {
+  if (!buildingFeature) return null;
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    if (key && Number.isFinite(BUILDING_SNAP_ROTATION_OFFSETS[key])) {
+      return BUILDING_SNAP_ROTATION_OFFSETS[key];
+    }
+  }
+  return null;
+}
+
+function getSnapCornerMethodForBuilding(buildingFeature) {
+  if (!buildingFeature) return 'bbox';
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    if (key && BUILDING_SNAP_CORNER_METHODS[key]) {
+      return BUILDING_SNAP_CORNER_METHODS[key];
+    }
+  }
+  return 'bbox';
+}
+
+function getSnapCornerPairForBuilding(buildingFeature) {
+  if (!buildingFeature) return null;
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    if (key && BUILDING_SNAP_CORNER_PAIRS[key]) {
+      return BUILDING_SNAP_CORNER_PAIRS[key];
+    }
+  }
+  return null;
+}
+
+function getSnapPairModeForBuilding(buildingFeature) {
+  if (!buildingFeature) return 'match';
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    if (key && BUILDING_SNAP_PAIR_MODES[key]) {
+      return BUILDING_SNAP_PAIR_MODES[key];
+    }
+  }
+  return 'match';
+}
+
+function getSnapRotationModeForBuilding(buildingFeature) {
+  if (!buildingFeature) return 'auto';
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    if (key && BUILDING_SNAP_ROTATION_MODES[key]) {
+      return BUILDING_SNAP_ROTATION_MODES[key];
+    }
+  }
+  return 'auto';
+}
+
+function getSnapScaleMultiplierForBuilding(buildingFeature) {
+  if (!buildingFeature) return 1;
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    const multiplier = BUILDING_SNAP_SCALE_MULTIPLIERS[key];
+    if (key && Number.isFinite(multiplier)) {
+      return multiplier;
+    }
+  }
+  return 1;
+}
+
+function getSnapNudgeMetersForBuilding(buildingFeature) {
+  if (!buildingFeature) return null;
+  const props = buildingFeature.properties || {};
+  const candidates = [
+    props.id,
+    props.name,
+    props.Name,
+    props.buildingId,
+    props.buildingName,
+    props.Building,
+    props.building
+  ];
+  for (const value of candidates) {
+    const key = normalizeSnapKey(value);
+    const nudge = BUILDING_SNAP_NUDGE_METERS[key];
+    if (key && Array.isArray(nudge) && nudge.length >= 2) {
+      return nudge;
+    }
+  }
+  return null;
+}
+
+function matchBuildingFeature(features = [], input) {
+  if (!Array.isArray(features) || !features.length || !input) return null;
+  const targetKey = normalizeSnapKey(input);
+  if (!targetKey) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const feature of features) {
+    const props = feature?.properties || {};
+    const keys = [
+      normalizeSnapKey(props.id),
+      normalizeSnapKey(props.name),
+      normalizeSnapKey(props.Name),
+      normalizeSnapKey(props.buildingId),
+      normalizeSnapKey(props.buildingName),
+      normalizeSnapKey(props.Building),
+      normalizeSnapKey(props.building)
+    ].filter(Boolean);
+    for (const key of keys) {
+      if (!key) continue;
+      const direct = key === targetKey;
+      const contains = key.includes(targetKey) || targetKey.includes(key);
+      if (!direct && !contains) continue;
+      const score = key.length;
+      if (score > bestScore) {
+        best = feature;
+        bestScore = score;
+      }
+    }
+  }
+  return best;
+}
+
 function shouldFitFloorplanToBuilding(roomsFC, buildingFeature) {
   try {
-    if (roomsFC?.__mfFitted) return false;
     if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
+    if (roomsFC.__mfGeoreferenced || roomsFC.__mfNoFit) return false;
+    const forceKey = normalizeSnapKey(buildingFeature?.properties?.id || buildingFeature?.properties?.name || '');
+    if (forceKey && BUILDING_FORCE_FIT.has(forceKey)) return true;
+    if (getSnapCornerForBuilding(buildingFeature)) return true;
+    if (roomsFC?.__mfFitted) return false;
     const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(roomsFC);
     const [bxMin, byMin, bxMax, byMax] = turf.bbox(buildingFeature);
     if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) return false;
@@ -2612,6 +5716,15 @@ function shouldFitFloorplanToBuilding(roomsFC, buildingFeature) {
     const buildingCenter = turf.centroid(buildingFeature);
     const distKm = turf.distance(roomsCenter, buildingCenter, { units: 'kilometers' });
     const farApart = Number.isFinite(distKm) && distKm > 0.06;
+    const diagKm = turf.distance(
+      turf.point([bxMin, byMin]),
+      turf.point([bxMax, byMax]),
+      { units: 'kilometers' }
+    );
+    const offsetRatio = Number.isFinite(distKm) && Number.isFinite(diagKm) && diagKm > 0
+      ? distKm / diagKm
+      : 0;
+    const offsetMismatch = offsetRatio > 0.18;
 
     const noOverlap =
       rxMax < bxMin ||
@@ -2622,7 +5735,11 @@ function shouldFitFloorplanToBuilding(roomsFC, buildingFeature) {
     const rotationDelta = getOrientationDeltaDeg(roomsFC, buildingFeature);
     const needsRotation = Number.isFinite(rotationDelta) && Math.abs(rotationDelta) > 1.5;
 
-    return scaleMismatch || farApart || noOverlap || needsRotation;
+    const hull = buildHullFeature(roomsFC, 1200);
+    const overlap = hull ? overlapScore(hull, buildingFeature) : 1;
+    const lowOverlap = overlap > 0 && overlap < 0.85;
+
+    return scaleMismatch || farApart || noOverlap || needsRotation || offsetMismatch || lowOverlap;
   } catch {
     return false;
   }
@@ -2640,10 +5757,16 @@ const BUILDINGS_LIST = [
   { name: 'Barrett Alumni', folder: 'Barrett Alumni' },
   { name: 'Batchelder Services Bldg', folder: 'Batchelder' },
   { name: 'Bronc Hall', folder: 'Bronc Hall' },
+  { name: 'Bronco Village Apt 911', folder: 'Bronco Village Apt 911' },
+  { name: 'Bronco Village Apt 915', folder: 'Bronco Village Apt 915' },
+  { name: 'Bronco Village Apt 917', folder: 'Bronco Village Apt 917' },
+  { name: 'Bronco Village Apt 919', folder: 'Bronco Village Apt 919' },
+  { name: 'Bronco Village Apt 921', folder: 'Bronco Village Apt 921' },
+  { name: 'Bronco Village Apt 923', folder: 'Bronco Village Apt 923' },
   { name: 'Calvin H. French Chapel', folder: 'Calvin French Chapel' },
   { name: 'Daugherty Student Engagement Center', folder: 'Daugherty' },
   { name: 'Farrell-Fleharty', folder: 'Fleharty' },
-  { name: 'Hazzelrig Student Union', folder: 'Hazzelrig' },
+  { name: 'Hazelrigg Student Union', folder: 'Hazzelrig' },
   { name: 'Jackson Dinsdale Art Center', folder: 'Jackson Dinsdale' },
   { name: 'Kiewit Building', folder: 'Kiewit' },
   { name: 'Lloyd Wilson Stadium', folder: 'Lloyd Wilson Stadium' },
@@ -2651,8 +5774,9 @@ const BUILDINGS_LIST = [
   { name: 'Perkins Library', folder: 'Perkins' },
   { name: 'Physical Fitness Facility', folder: 'Physical Fitness Facility' },
   { name: 'Scott Studio Theater', folder: 'Scott Theater' },
-  { name: 'Taylor Hall ', folder: 'Taylor Hall' },
-  { name: 'Wilson Center', folder: 'Wilson Center' },
+  { name: 'Stone Health Center', folder: 'Stone Health Center' },
+  { name: 'Taylor Hall', folder: 'Taylor Hall' },
+  { name: 'Wilson Center', folder: 'WilsonCenter' },
 
   // add more as you add folders...
 ];
@@ -2665,20 +5789,905 @@ const BUILDING_FOLDER_TO_NAME = Object.fromEntries(
   BUILDINGS_LIST.map((b) => [b.folder, b.name])
 );
 
+const normalizeBuildingBase = (value) =>
+  String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/theatre/g, 'theater')
+    .replace(/centre/g, 'center')
+    .replace(/\bmemorial\b/g, '');
+const normalizeBuildingKey = (value) =>
+  normalizeBuildingBase(value).replace(/[^a-z0-9]/g, '');
+const normalizeBuildingKeyLoose = (value) =>
+  normalizeBuildingBase(value)
+    .replace(/\b[a-z]\b/gi, '')
+    .replace(/[^a-z0-9]/g, '');
+
+const resolveBuildingNameStrict = (value) => {
+  if (!value) return null;
+  const normalized = normalizeBuildingKey(value);
+  if (!normalized) return null;
+  const aliasMatch = BUILDING_ALIAS_NORMALIZED?.[normalized];
+  if (aliasMatch && BUILDING_FOLDER_MAP[aliasMatch]) return aliasMatch;
+  for (const name of Object.keys(BUILDING_FOLDER_MAP)) {
+    if (normalizeBuildingKey(name) === normalized) return name;
+  }
+  return null;
+};
+
+const resolveBuildingNameFromInput = (idOrName) => {
+  if (!idOrName) return null;
+  if (BUILDING_FOLDER_MAP[idOrName]) return idOrName;
+  if (BUILDING_FOLDER_SET.has(idOrName)) return BUILDING_FOLDER_TO_NAME[idOrName] || null;
+  const aliasMatch = BUILDING_ALIAS_REVERSE[idOrName];
+  if (aliasMatch && BUILDING_FOLDER_MAP[aliasMatch]) return aliasMatch;
+  const normalizedInput = normalizeBuildingKey(idOrName);
+  const looseInput = normalizeBuildingKeyLoose(idOrName);
+  const normalizedAlias =
+    (normalizedInput && BUILDING_ALIAS_NORMALIZED?.[normalizedInput]) ||
+    (looseInput && BUILDING_ALIAS_NORMALIZED_LOOSE?.[looseInput]) ||
+    null;
+  if (normalizedAlias && BUILDING_FOLDER_MAP[normalizedAlias]) return normalizedAlias;
+  let best = null;
+  let bestScore = 0;
+  for (const name of Object.keys(BUILDING_FOLDER_MAP)) {
+    const normalizedName = normalizeBuildingKey(name);
+    const looseName = normalizeBuildingKeyLoose(name);
+    const directMatch =
+      normalizedInput === normalizedName || looseInput === looseName;
+    const containsMatch =
+      (normalizedInput && normalizedName &&
+        (normalizedInput.includes(normalizedName) || normalizedName.includes(normalizedInput))) ||
+      (looseInput && looseName &&
+        (looseInput.includes(looseName) || looseName.includes(looseInput)));
+    if (!directMatch && !containsMatch) continue;
+    const score = normalizedName.length;
+    if (score > bestScore) {
+      best = name;
+      bestScore = score;
+    }
+  }
+  return best;
+};
+
 const BUILDING_ALIAS = {
+  '1882': 'The 1882 Residence Hall',
+  'Altman Hall': 'Altman Hall Residency',
+  'Babcock Hall': 'Babcock Hall Residence',
+  'Barrett Alumni': 'Barrett Alumni Center',
+  'Batchelder Services Bldg': 'Batchelder General Services',
+  'Bronc Hall': 'Bronc Hall Residence',
   'Hurley-McDonald Hall': 'hurley_mcdonald',
   'Gray Center': 'gray_center',
+  'Hazelrigg Student Union': 'Hazelrigg Student Union',
+  'Lloyd Wilson Stadium': 'Lloyd Wilson Field/Stadium',
   'Morrison-Reeves Science Center': 'morrison_reeves',
+  'Scott Studio Theater': 'Scott Studio Theatre',
+  'Stone Health Center': 'The Stone Health Center',
+  'Taylor Hall': 'Taylor Hall Residence',
+  'Wilson Center': 'wilson_center',
+  'Farrell-Fleharty': 'Lynn Farrell Arena/Fleharty Educational Center',
+  'Calvin H. French Chapel': 'Calvin French Chapel',
+  'Bronco Village Apt 911': 'Bronco Village Apartments 1',
+  'Bronco Village Apt 915': 'Bronco Village Apartments 2',
+  'Bronco Village Apt 917': 'Bronco Village Apartments 3',
+  'Bronco Village Apt 919': 'Bronco Village Apartments 4',
+  'Bronco Village Apt 921': 'Bronco Village Apartments 5',
+  'Bronco Village Apt 923': 'Bronco Village Apartments 6',
 };
-const BUILDING_ALIAS_REVERSE = Object.fromEntries(
-  Object.entries(BUILDING_ALIAS).map(([name, alias]) => [alias, name])
+const BUILDING_ALIAS_REVERSE = {
+  ...Object.fromEntries(Object.entries(BUILDING_ALIAS).map(([name, alias]) => [alias, name])),
+  'Farrell Arena Fleharty Educational Center': 'Farrell-Fleharty',
+  'Daugherty Center for Student Engagement': 'Daugherty Student Engagement Center',
+  'Daugherty Center For Student Engagement': 'Daugherty Student Engagement Center',
+  'Fleharty Center': 'Farrell-Fleharty',
+  'Calvin H. French Memorial Chapel': 'Calvin H. French Chapel',
+  'French Memorial Chapel': 'Calvin H. French Chapel',
+  'Hazzelrig Student Union': 'Hazelrigg Student Union',
+  'Hazelrigg Student Union': 'Hazelrigg Student Union',
+  'Kiewit': 'Kiewit Building',
+  'Scott Theatre': 'Scott Studio Theater',
+  'Scott Theater': 'Scott Studio Theater',
+  'Wilson Math and Computer Sci Center': 'Wilson Center'
+};
+const BUILDING_ALIAS_NORMALIZED = Object.fromEntries(
+  Object.entries(BUILDING_ALIAS_REVERSE).map(([alias, name]) => [normalizeBuildingKey(alias), name])
 );
+const BUILDING_ALIAS_NORMALIZED_LOOSE = Object.fromEntries(
+  Object.entries(BUILDING_ALIAS_REVERSE).map(([alias, name]) => [normalizeBuildingKeyLoose(alias), name])
+);
+
+const UTILIZATION_CSV_PATH = 'Data/Utilization/classroom_utilization.csv';
+
+const parseCsvLine = (line) => {
+  const out = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current);
+  return out;
+};
+
+const parseNumber = (value) => {
+  const cleaned = String(value ?? '').replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+};
+
+const parsePercent = (value) => {
+  const cleaned = String(value ?? '').replace(/[%\s]/g, '').replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+};
+
+const normalizeUtilizationRoomKey = (value) => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return '';
+  if (/^0+\d+$/.test(raw)) return String(Number(raw));
+  return raw;
+};
+
+const buildUtilizationKey = (buildingName, roomLabel) =>
+  `${buildingName}||${normalizeUtilizationRoomKey(roomLabel)}`;
+
+const parseUtilizationCsv = (csvText = '') => {
+  const lines = csvText.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (!lines.length) return { buildings: {}, rooms: {}, campus: null };
+
+  const header = parseCsvLine(lines[0]).map((h) => h.trim());
+  const idxName = header.findIndex((h) => h.toLowerCase().includes('building'));
+  const idxWeekly = header.findIndex((h) => h.toLowerCase().includes('weekly'));
+  const idxEnroll = header.findIndex((h) => h.toLowerCase().includes('enrollment'));
+  const idxCapacity = header.findIndex((h) => h.toLowerCase().includes('capacity'));
+  const idxTime = header.findIndex((h) => h.toLowerCase().includes('time'));
+  const idxSeat = header.findIndex((h) => h.toLowerCase().includes('seat'));
+  const idxOverall = header.findIndex((h) => h.toLowerCase().includes('overall'));
+
+  if (idxName < 0) return { buildings: {}, rooms: {}, campus: null };
+
+  const buildings = {};
+  const rooms = {};
+  let campus = null;
+  let currentBuilding = null;
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const row = parseCsvLine(lines[i]);
+    const rawName = (row[idxName] ?? '').trim();
+    if (!rawName) continue;
+    if (/^grand total$/i.test(rawName)) {
+      campus = {
+        weeklyHours: parseNumber(row[idxWeekly]),
+        finalEnrollment: parseNumber(row[idxEnroll]),
+        totalCapacity: parseNumber(row[idxCapacity]),
+        timeUtilization: parsePercent(row[idxTime]),
+        seatUtilization: parsePercent(row[idxSeat]),
+        overallUtilization: parsePercent(row[idxOverall])
+      };
+      currentBuilding = null;
+      continue;
+    }
+
+    const strictBuilding = resolveBuildingNameStrict(rawName);
+    const resolvedBuilding = strictBuilding || null;
+    const weeklyHours = parseNumber(row[idxWeekly]);
+    const finalEnrollment = parseNumber(row[idxEnroll]);
+    const totalCapacity = parseNumber(row[idxCapacity]);
+    const timeUtilization = parsePercent(row[idxTime]);
+    const seatUtilization = parsePercent(row[idxSeat]);
+    const overallUtilization = parsePercent(row[idxOverall]);
+
+    if (resolvedBuilding) {
+      currentBuilding = resolvedBuilding;
+      buildings[resolvedBuilding] = {
+        weeklyHours,
+        finalEnrollment,
+        totalCapacity,
+        timeUtilization,
+        seatUtilization,
+        overallUtilization
+      };
+      continue;
+    }
+
+    if (!currentBuilding) continue;
+    const roomKey = buildUtilizationKey(currentBuilding, rawName);
+    rooms[roomKey] = {
+      building: currentBuilding,
+      roomLabel: rawName,
+      weeklyHours,
+      finalEnrollment,
+      totalCapacity,
+      timeUtilization,
+      seatUtilization,
+      overallUtilization
+    };
+  }
+
+  return { buildings, rooms, campus };
+};
+
+const BUILDING_SNAP_CORNERS = {
+  [normalizeSnapKey('Babcock Hall')]: 'nw',
+  [normalizeSnapKey('Babcock Hall Residence')]: 'nw',
+  [normalizeSnapKey('Gray Center')]: 'sw',
+  [normalizeSnapKey('Lloyd Wilson Stadium')]: 'nw',
+  [normalizeSnapKey('Lloyd Wilson Field/Stadium')]: 'nw',
+  [normalizeSnapKey('Stone Health Center')]: 'nw',
+  [normalizeSnapKey('The Stone Health Center')]: 'nw',
+  [normalizeSnapKey('McCormick Hall')]: 'nw',
+  [normalizeSnapKey('Jackson Dinsdale Art Center')]: 'nw',
+  [normalizeSnapKey('Farrell-Fleharty')]: 'nw',
+  [normalizeSnapKey('Lynn Farrell Arena/Fleharty Educational Center')]: 'nw',
+  ...buildSnapMap(BUILDING_SNAP_CONFIGS, 'corner')
+};
+
+const BUILDING_SNAP_ROTATION_OFFSETS = {
+  // Manual clockwise adjustments for snapped buildings.
+  [normalizeSnapKey('Gray Center')]: 0,
+  [normalizeSnapKey('McCormick Hall')]: 90
+};
+
+const BUILDING_SNAP_CORNER_METHODS = {
+  // Use directional extremes for odd/rotated footprints.
+  [normalizeSnapKey('Gray Center')]: 'directional',
+  [normalizeSnapKey('Lloyd Wilson Stadium')]: 'directional',
+  [normalizeSnapKey('Lloyd Wilson Field/Stadium')]: 'directional',
+  ...buildSnapMap(BUILDING_SNAP_CONFIGS, 'cornerMethod')
+};
+
+const BUILDING_SNAP_CORNER_PAIRS = {
+  // Align to two corners (primary, secondary) when snapping.
+  [normalizeSnapKey('Gray Center')]: ['sw', 'nw'],
+  [normalizeSnapKey('Lloyd Wilson Stadium')]: ['nw', 'sw'],
+  [normalizeSnapKey('Lloyd Wilson Field/Stadium')]: ['nw', 'sw'],
+  [normalizeSnapKey('Stone Health Center')]: ['nw', 'sw'],
+  [normalizeSnapKey('The Stone Health Center')]: ['nw', 'sw'],
+  [normalizeSnapKey('Jackson Dinsdale Art Center')]: ['nw', 'sw'],
+  [normalizeSnapKey('Farrell-Fleharty')]: ['nw', 'sw'],
+  [normalizeSnapKey('Lynn Farrell Arena/Fleharty Educational Center')]: ['nw', 'sw'],
+  [normalizeSnapKey('Daugherty Student Engagement Center')]: ['nw', 'sw'],
+  [normalizeSnapKey('McCormick Hall')]: ['nw', 'sw'],
+  ...buildSnapMap(BUILDING_SNAP_CONFIGS, 'cornerPair')
+};
+
+const BUILDING_SNAP_PAIR_MODES = {
+  // legacy = scale by bbox, rotate after NW snap (restores earlier behavior).
+  [normalizeSnapKey('Lloyd Wilson Stadium')]: 'match',
+  [normalizeSnapKey('Lloyd Wilson Field/Stadium')]: 'match',
+  [normalizeSnapKey('Stone Health Center')]: 'legacy',
+  [normalizeSnapKey('The Stone Health Center')]: 'legacy',
+  ...buildSnapMap(BUILDING_SNAP_CONFIGS, 'pairMode')
+};
+
+const BUILDING_SNAP_ROTATION_MODES = {
+  // Skip auto-rotation for buildings that already align.
+  [normalizeSnapKey('Babcock Hall')]: 'none',
+  [normalizeSnapKey('Babcock Hall Residence')]: 'none',
+  ...buildSnapMap(BUILDING_SNAP_CONFIGS, 'rotationMode')
+};
+
+const BUILDING_SNAP_SCALE_MULTIPLIERS = {
+  // Manual scale tweaks applied after auto-fit.
+  [normalizeSnapKey('Gray Center')]: 1.035,
+  [normalizeSnapKey('Lloyd Wilson Stadium')]: 1.0,
+  [normalizeSnapKey('Lloyd Wilson Field/Stadium')]: 1.0
+};
+
+const BUILDING_SNAP_NUDGE_METERS = {
+  // Nudges applied after snap (east/west, north/south).
+  // (empty)
+};
+
+const FLOORPLAN_ROTATION_OVERRIDES = {
+  // Wilson Center overrides (CW degrees)
+  'wilson_center/basement': 184.5,
+  'wilson_center/level_1': 180.5,
+  // Daugherty Student Engagement Center
+  'daugherty_student_engagement_center/basement': 42,
+  'daugherty_student_engagement_center/level_1': 42,
+  // Hurley-McDonald Hall (all floors)
+  'hurley_mcdonald_hall': 180,
+  // McCormick Hall (per-floor overrides)
+  'mccormick_hall/basement': 84.5,
+  'mccormick_hall/level_1': 88.5,
+  'mccormick_hall/level_2': 88.5,
+  'mccormick_hall/level_3': 100,
+  // Morrison-Reeves Science Center (all floors)
+  'morrison_reeves_science_center': 0,
+  'morrison_reeves': 0,
+  'morrison_reeves/level_1': 0,
+  'morrison_reeves/level_2': 0
+};
+
+const FLOORPLAN_SCALE_OVERRIDES = {
+  // Per-floor scale tweaks (multiplier).
+  'babcock_hall/level_2': 1.12
+};
+
+const FLOORPLAN_POST_ROTATION_OVERRIDES = {
+  // Apply after auto-fit (CW degrees).
+};
+
+const FLOORPLAN_CACHE_BUST = new Set([
+  'kiewit/level_2',
+  'kiewit_building/level_2',
+  'babcock_hall/level_3',
+  'taylor_hall',
+  'taylor_hall_residence'
+]);
+
+const FLOORPLAN_DRAWING_SUPPRESS = new Set([
+  'calvin_french_chapel/level_2',
+  'calvin_h_french_chapel/level_2',
+  'calvin_h_french_memorial_chapel/level_2'
+]);
+
+const FLOORPLAN_NO_FIT = new Set([
+  'calvin_french_chapel/basement',
+  'calvin_h_french_chapel/basement',
+  'calvin_h_french_memorial_chapel/basement',
+  'kiewit/level_2',
+  'kiewit_building/level_2'
+]);
+
+const DOOR_SWING_FLIP_OVERRIDES = {
+  // Doors swing reversed in this export; flip bearing 180deg.
+  'daugherty_student_engagement_center': true
+};
+
+function getFloorplanRotationOverride(buildingLabel, floorId) {
+  if (!buildingLabel) return null;
+  const key = canon(buildingLabel);
+  const floorKey = floorId ? fId(floorId) : null;
+  if (floorKey) {
+    const composite = `${key}/${floorKey}`;
+    const floorOverride = FLOORPLAN_ROTATION_OVERRIDES[composite];
+    if (Number.isFinite(floorOverride)) return floorOverride;
+  }
+  const override = FLOORPLAN_ROTATION_OVERRIDES[key];
+  return Number.isFinite(override) ? override : null;
+}
+
+function getFloorplanScaleOverride(buildingLabel, floorId) {
+  if (!buildingLabel || !floorId) return null;
+  const key = canon(buildingLabel);
+  const floorKey = fId(floorId);
+  if (!key || !floorKey) return null;
+  const composite = `${key}/${floorKey}`;
+  const override = FLOORPLAN_SCALE_OVERRIDES[composite] ?? FLOORPLAN_SCALE_OVERRIDES[key];
+  return Number.isFinite(override) ? override : null;
+}
+
+function getFloorplanPostRotationOverride(buildingLabel, floorId) {
+  if (!buildingLabel || !floorId) return null;
+  const key = canon(buildingLabel);
+  const floorKey = fId(floorId);
+  if (!key || !floorKey) return null;
+  const composite = `${key}/${floorKey}`;
+  const override =
+    FLOORPLAN_POST_ROTATION_OVERRIDES[composite] ??
+    FLOORPLAN_POST_ROTATION_OVERRIDES[key];
+  return Number.isFinite(override) ? override : null;
+}
+
+function shouldBypassFloorCache(buildingLabel, floorId) {
+  if (!buildingLabel || !floorId) return false;
+  const key = canon(buildingLabel);
+  const floorKey = fId(floorId);
+  if (!key || !floorKey) return false;
+  return FLOORPLAN_CACHE_BUST.has(`${key}/${floorKey}`) || FLOORPLAN_CACHE_BUST.has(key);
+}
+
+function shouldSuppressDrawingLayer(buildingLabel, floorId) {
+  if (!buildingLabel || !floorId) return false;
+  const key = canon(buildingLabel);
+  const floorKey = fId(floorId);
+  if (!key || !floorKey) return false;
+  return FLOORPLAN_DRAWING_SUPPRESS.has(`${key}/${floorKey}`) || FLOORPLAN_DRAWING_SUPPRESS.has(key);
+}
+
+function shouldSkipFloorplanFit(buildingLabel, floorId) {
+  if (!buildingLabel || !floorId) return false;
+  const key = canon(buildingLabel);
+  const floorKey = fId(floorId);
+  if (!key || !floorKey) return false;
+  return FLOORPLAN_NO_FIT.has(`${key}/${floorKey}`);
+}
+
+function shouldFlipDoorSwing(buildingLabel, floorId) {
+  if (!buildingLabel) return false;
+  const key = canon(buildingLabel);
+  const floorKey = floorId ? fId(floorId) : null;
+  if (floorKey && DOOR_SWING_FLIP_OVERRIDES[`${key}/${floorKey}`]) return true;
+  return Boolean(DOOR_SWING_FLIP_OVERRIDES[key]);
+}
 
 // Floorplan view tuning
 const FLOORPLAN_FIT_PADDING = 8;   // tighter frame around floor
 const FLOORPLAN_SCALE = 1.0;       // auto-fit handles size; keep neutral here
 
 const mergePatch = (props, patch) => ({ ...props, ...patch });
+
+const normalizeDashboardKey = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const resolved = resolveBuildingNameFromInput(raw) || raw;
+  return canon(resolved);
+};
+const normalizeRoomLookupKey = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const normalizeRoomLabelMatch = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const norm = normalizeRoomLookupKey(raw);
+  if (!norm) return '';
+  return norm.startsWith('room') && norm.length > 4 ? norm.slice(4) : norm;
+};
+
+const normalizeTypeMatch = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const normalizeDeptMatch = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const getRoomBuildingLabel = (room) =>
+  room?.building ?? room?.buildingName ?? room?.buildingLabel ?? '';
+
+const getDeptCandidates = (rooms = []) => {
+  const seen = new Map();
+  (DEPARTMENTS || []).forEach((name) => {
+    const key = normalizeDeptMatch(name);
+    if (key) seen.set(key, name);
+  });
+  (rooms || []).forEach((room) => {
+    const name = String(room?.department ?? '').trim();
+    const key = normalizeDeptMatch(name);
+    if (key) seen.set(key, name);
+  });
+  return Array.from(seen.values());
+};
+
+const findDeptInText = (text, candidates = []) => {
+  const normalizedText = normalizeDeptMatch(text);
+  if (!normalizedText) return '';
+  let best = '';
+  let bestLen = 0;
+  (candidates || []).forEach((name) => {
+    const key = normalizeDeptMatch(name);
+    if (!key) return;
+    if (normalizedText.includes(key) && key.length > bestLen) {
+      best = name;
+      bestLen = key.length;
+    }
+  });
+  return best;
+};
+
+const normalizeBuildingMatch = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const getBuildingCandidates = (rooms = []) => {
+  const seen = new Map();
+  (BUILDINGS_LIST || []).forEach((b) => {
+    const name = String(b?.name || '').trim();
+    const key = normalizeBuildingMatch(name);
+    if (key) seen.set(key, name);
+  });
+  (rooms || []).forEach((room) => {
+    const name = String(room?.building ?? room?.buildingName ?? room?.buildingLabel ?? '').trim();
+    const key = normalizeBuildingMatch(name);
+    if (key) seen.set(key, name);
+  });
+  return Array.from(seen.values());
+};
+
+const findBuildingInText = (text, candidates = []) => {
+  const normalizedText = normalizeBuildingMatch(text);
+  if (!normalizedText) return '';
+  let best = '';
+  let bestLen = 0;
+  (candidates || []).forEach((name) => {
+    const key = normalizeBuildingMatch(name);
+    if (!key) return;
+    if (normalizedText.includes(key) && key.length > bestLen) {
+      best = name;
+      bestLen = key.length;
+    }
+  });
+  return best;
+};
+
+const getDeptCurrentBuildings = (rooms = [], deptName = '') => {
+  const deptKey = normalizeDeptMatch(deptName);
+  if (!deptKey) return [];
+  const buildingSet = new Set();
+  (rooms || []).forEach((room) => {
+    const roomDept = normalizeDeptMatch(room?.department ?? '');
+    if (roomDept && roomDept === deptKey) {
+      const buildingLabel = getRoomBuildingLabel(room);
+      if (buildingLabel) buildingSet.add(buildingLabel);
+    }
+  });
+  return Array.from(buildingSet);
+};
+
+const getFeatureIdVariants = (value) => {
+  if (value == null) return [];
+  const variants = new Set();
+  const asString = String(value);
+  if (asString) variants.add(asString);
+  const asNumber = Number(asString);
+  if (Number.isFinite(asNumber)) variants.add(asNumber);
+  return Array.from(variants);
+};
+
+const isAirtableRecordId = (value) => /^rec[a-z0-9]{6,}$/i.test(String(value || ''));
+const isLinkedRecordArray = (value) =>
+  Array.isArray(value) && value.length > 0 && value.every((v) => isAirtableRecordId(v));
+
+const OFFICE_TYPE_LABELS = [
+  'Office - Staff',
+  'Office - Prof and Admin',
+  'Office - Prof & Admin',
+  'Office - Prof/Admin',
+  'Office - Faculty',
+  'Office - Adjunct Faculty',
+  'Office - Emeritus Faculty'
+];
+const OFFICE_TYPE_LABELS_UPPER = OFFICE_TYPE_LABELS.map((label) => label.toUpperCase());
+const normalizeOfficeTypeLabel = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(and|&)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
+const isAllowedOfficeType = (value) => OFFICE_TYPE_SET.has(normalizeOfficeTypeLabel(value));
+const normalizeTeachingTypeLabel = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+const isScheduledTeachingTypeLabel = (value) => {
+  const norm = normalizeTeachingTypeLabel(value);
+  if (!norm) return false;
+  if (norm.includes('classroom')) return true;
+  return (
+    norm.includes('laboratory class') ||
+    norm.includes('laboratory studio') ||
+    norm.includes('lab class') ||
+    norm.includes('lab studio')
+  );
+};
+
+const normalizeFloorTokens = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  const tokens = new Set();
+  const canonValue = fId(raw);
+  if (canonValue) tokens.add(canonValue);
+  const num = Number(raw);
+  if (Number.isFinite(num)) {
+    tokens.add(`level_${num}`);
+    if (num === 0) tokens.add('basement');
+  }
+  return Array.from(tokens);
+};
+const floorMatchesTokens = (roomFloor, targetTokens) => {
+  if (!targetTokens?.length) return true;
+  const roomTokens = normalizeFloorTokens(roomFloor);
+  if (!roomTokens.length) return false;
+  return roomTokens.some((token) => targetTokens.includes(token));
+};
+
+const resolveAvailableFloorId = (value, availableFloors = []) => {
+  if (!value) return '';
+  if (availableFloors.includes(value)) return value;
+  const tokens = normalizeFloorTokens(value);
+  if (!tokens.length) return '';
+  return availableFloors.find((floorId) => floorMatchesTokens(floorId, tokens)) || '';
+};
+
+function buildAirtableRoomLookup(rooms = []) {
+  const byGuid = new Map();
+  const byComposite = new Map();
+  if (!Array.isArray(rooms)) return { byGuid, byComposite };
+
+  rooms.forEach((room) => {
+    if (!room) return;
+    const guidKey = normalizeRoomLookupKey(
+      room.roomGuid ?? room.revitUniqueId ?? room['Room GUID'] ?? ''
+    );
+    if (guidKey) byGuid.set(guidKey, room);
+
+    const roomIdKey = normalizeRoomLookupKey(
+      room.roomId ?? room.roomNumber ?? room.roomLabel ?? room.id ?? ''
+    );
+    const buildingKey = normalizeDashboardKey(
+      room.building ?? room.buildingName ?? room.buildingLabel ?? ''
+    );
+    const floorKey = normalizeDashboardKey(
+      room.floor ?? room.floorName ?? room.floorId ?? ''
+    );
+    if (roomIdKey && buildingKey && floorKey) {
+      const compositeKey = `${buildingKey}|${floorKey}|${roomIdKey}`;
+      if (!byComposite.has(compositeKey)) byComposite.set(compositeKey, room);
+    }
+  });
+
+  return { byGuid, byComposite };
+}
+
+function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) {
+  if (!Array.isArray(airtableRooms) || airtableRooms.length === 0) return [];
+  if (!Array.isArray(manifestRooms) || manifestRooms.length === 0) return airtableRooms;
+
+  const manifestLookup = buildAirtableRoomLookup(manifestRooms);
+  return airtableRooms.map((room) => {
+    if (!room) return room;
+    const guidKey = normalizeRoomLookupKey(room.roomGuid ?? room.roomId ?? room.revitUniqueId ?? '');
+    const manifestMatch = guidKey ? manifestLookup.byGuid.get(guidKey) : null;
+    if (!manifestMatch) return room;
+
+    const merged = { ...room };
+    if (!merged.roomGuid && manifestMatch.roomGuid) merged.roomGuid = manifestMatch.roomGuid;
+    if (!merged.roomId && manifestMatch.roomId) merged.roomId = manifestMatch.roomId;
+    if (!merged.roomNumber && manifestMatch.roomNumber) merged.roomNumber = manifestMatch.roomNumber;
+    if (!merged.roomLabel && manifestMatch.roomLabel) merged.roomLabel = manifestMatch.roomLabel;
+    if (!merged.building && manifestMatch.building) merged.building = manifestMatch.building;
+    if (!merged.floor && manifestMatch.floor) merged.floor = manifestMatch.floor;
+
+    if (!merged.type || isLinkedRecordArray(merged.type)) {
+      if (manifestMatch.type) merged.type = manifestMatch.type;
+    }
+    if (!merged.department || isLinkedRecordArray(merged.department)) {
+      if (manifestMatch.department) merged.department = manifestMatch.department;
+    }
+    if (!Number.isFinite(Number(merged.areaSF)) || Number(merged.areaSF) <= 0) {
+      if (Number.isFinite(Number(manifestMatch.areaSF)) && Number(manifestMatch.areaSF) > 0) {
+        merged.areaSF = Number(manifestMatch.areaSF);
+      }
+    }
+    return merged;
+  });
+}
+
+function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
+  if (!lookup) return null;
+  let room = null;
+  const guidKey = normalizeRoomLookupKey(
+    props.Revit_UniqueId ??
+      props.RevitUniqueId ??
+      props['Room GUID'] ??
+      props.roomGuid ??
+      ''
+  );
+  if (guidKey) {
+    room = lookup.byGuid.get(guidKey) || null;
+  }
+  if (!room) {
+    const roomIdKey = normalizeRoomLookupKey(
+      props.Number ??
+        props.RoomNumber ??
+        props.number ??
+        props.Room ??
+        props.roomNumber ??
+        ''
+    );
+    const buildingKey = normalizeDashboardKey(
+      buildingId ?? props.Building ?? props.BuildingName ?? props.buildingId ?? ''
+    );
+    const floorKey = normalizeDashboardKey(
+      floor ?? props.Floor ?? props.floor ?? ''
+    );
+    if (roomIdKey && buildingKey && floorKey) {
+      room = lookup.byComposite.get(`${buildingKey}|${floorKey}|${roomIdKey}`) || null;
+    }
+  }
+  if (!room) return null;
+
+  const occupancyStatus = String(room.occupancyStatus ?? '').trim();
+  const occupant = String(room.occupant ?? '').trim();
+  const type = String(room.type ?? '').trim();
+  const department = String(room.department ?? '').trim();
+  if (!occupancyStatus && !occupant && !type && !department) return null;
+
+  const patch = {};
+  if (occupancyStatus) {
+    patch.occupancyStatus = occupancyStatus;
+    patch.OccupancyStatus = occupancyStatus;
+    patch['Occupancy Status'] = occupancyStatus;
+  }
+  if (occupant) {
+    patch.occupant = occupant;
+    patch.Occupant = occupant;
+  }
+  if (type) {
+    patch.type = type;
+    patch.Type = type;
+    patch['Room Type'] = type;
+    patch['Room Type Description'] = type;
+  }
+  if (department) {
+    patch.department = department;
+    patch.Department = department;
+  }
+  const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
+  if (Number.isFinite(seatCount) && seatCount > 0) {
+    patch.seatCount = seatCount;
+    patch.SeatCount = seatCount;
+    patch['Seat Count'] = seatCount;
+  }
+  return patch;
+}
+
+const hasDashboardRoomArea = (room) => {
+  const area = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
+  return Number.isFinite(area) && area > 0;
+};
+
+const toDashboardRoomRow = (feature, buildingLabel) => {
+  if (!feature) return null;
+  const props = feature?.properties || {};
+  const area = resolveAreaSf(props);
+  if (!Number.isFinite(area) || area <= 0) return null;
+  const occupancyStatus = (
+    props.occupancyStatus ??
+    props['Occupancy Status'] ??
+    props.OccupancyStatus ??
+    props.vacancy ??
+    props.Vacancy ??
+    props.Occupancy ??
+    props.Status ??
+    ''
+  ).toString().trim();
+  const occupant = (
+    props.occupant ??
+    props.Occupant ??
+    props.AssignedTo ??
+    props.Assignee ??
+    ''
+  ).toString().trim();
+  const roomGuid = String(
+    props.Revit_UniqueId ??
+    props.RevitUniqueId ??
+    props['Room GUID'] ??
+    ''
+  ).trim();
+  const roomId = String(
+    props.Number ??
+    props.RoomNumber ??
+    props.number ??
+    props.Room ??
+    ''
+  ).trim();
+  const floor =
+    props.Floor ??
+    props.Level ??
+    props.LevelName ??
+    props['Level Name'] ??
+    '';
+  return {
+    building: buildingLabel || '',
+    floor,
+    areaSF: area,
+    area,
+    sf: area,
+    roomId: roomId || '',
+    roomNumber: roomId || '',
+    roomLabel: roomId || '',
+    roomGuid,
+    department: resolveNcesDept(props),
+    type: resolveNcesType(props),
+    occupancyStatus,
+    occupant
+  };
+};
+
+const buildCampusRoomsFromManifest = async (manifest) => {
+  const floorsByBuilding = manifest?.floorsByBuilding || {};
+  const jobs = [];
+
+  const buildingNameById = new Map();
+  if (Array.isArray(manifest?.buildings)) {
+    manifest.buildings.forEach((b) => {
+      if (!b?.id) return;
+      buildingNameById.set(String(b.id), b?.name || b.id);
+    });
+  } else if (manifest?.buildings && typeof manifest.buildings === 'object') {
+    Object.entries(manifest.buildings).forEach(([id, b]) => {
+      if (!id) return;
+      buildingNameById.set(String(id), b?.name || id);
+    });
+  }
+
+  Object.entries(floorsByBuilding).forEach(([buildingKey, floors]) => {
+    const buildingLabel = buildingNameById.get(String(buildingKey)) || buildingKey;
+    (floors || []).forEach((floor) => {
+      const url = typeof floor === 'string' ? floor : floor?.url;
+      if (url) jobs.push({ url, buildingLabel });
+    });
+  });
+
+  if (!jobs.length) return [];
+
+  const results = await runWithLimit(jobs, 6, async (job) => {
+    const feats = await fetchRoomsForFloorUrl(job.url);
+    const rows = [];
+    (feats || []).forEach((feature) => {
+      const row = toDashboardRoomRow(feature, job.buildingLabel);
+      if (row) rows.push(row);
+    });
+    return rows;
+  });
+
+  return results.flat();
+};
+
+const roomRowToDashboardFeature = (room) => {
+  if (!room) return null;
+  const area = Number(room.areaSF ?? room.area ?? room.sf ?? 0);
+  if (!Number.isFinite(area) || area <= 0) return null;
+  const dept = String(room.department ?? '').trim();
+  const type = String(room.type ?? '').trim();
+  const occupancyStatus = String(room.occupancyStatus ?? '').trim();
+  const occupant = String(room.occupant ?? '').trim();
+  return {
+    type: 'Feature',
+    properties: {
+      Area_SF: area,
+      Area: area,
+      area,
+      'Area (SF)': area,
+      NCES_Department: dept,
+      Department: dept,
+      department: dept,
+      NCES_Type: type,
+      __roomType: type,
+      OccupancyStatus: occupancyStatus,
+      'Occupancy Status': occupancyStatus,
+      occupancyStatus,
+      Occupant: occupant,
+      occupant
+    }
+  };
+};
 
 /**
  * Unload the active single-floor source/layers (FLOOR_*).
@@ -2690,11 +6699,12 @@ function unloadFloorplan(map, currentFloorUrlRef) {
     if (map.getLayer(FLOOR_HL_ID)) map.removeLayer(FLOOR_HL_ID);
     if (map.getLayer(FLOOR_HL_BORDER_ID)) map.removeLayer(FLOOR_HL_BORDER_ID);
     if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) map.removeLayer(FLOOR_ROOM_LABEL_LAYER);
+    if (map.getLayer(FLOOR_DRAWING_LAYER)) map.removeLayer(FLOOR_DRAWING_LAYER);
     if (map.getLayer(FLOOR_LINE_ID)) map.removeLayer(FLOOR_LINE_ID);
     if (map.getLayer(FLOOR_DOOR_LAYER)) map.removeLayer(FLOOR_DOOR_LAYER);
     if (map.getLayer(FLOOR_STAIR_LAYER)) map.removeLayer(FLOOR_STAIR_LAYER);
     if (map.getLayer(FLOOR_FILL_ID)) map.removeLayer(FLOOR_FILL_ID);
-    if (map.getSource(FLOOR_SOURCE)) map.removeSource(FLOOR_SOURCE);
+    if (getGeojsonSource(map, FLOOR_SOURCE)) map.removeSource(FLOOR_SOURCE);
   if (map.getLayer(WALLS_LAYER)) map.removeLayer(WALLS_LAYER);
   if (map.getSource(WALLS_SOURCE)) map.removeSource(WALLS_SOURCE);
   if (map.getLayer(DOORS_LAYER)) map.removeLayer(DOORS_LAYER);
@@ -2710,7 +6720,7 @@ function unloadFloorplan(map, currentFloorUrlRef) {
  */
 function centerOnCurrentFloor(map) {
   try {
-    const src = map?.getSource(FLOOR_SOURCE);
+    const src = getGeojsonSource(map, FLOOR_SOURCE);
     const data = src?._data || src?.serialize?.()?.data;
     const fc = toFeatureCollection(data);
     if (!fc) return;
@@ -2732,21 +6742,28 @@ function ensureFloorRoomLabelLayer(map) {
   ];
   const typeField = [
     'coalesce',
+    ['get', '__roomType'],
     ['get', 'RoomType'],
+    ['get', 'Room Type'],
     ['get', 'Type'],
     ['get', 'type'],
     ['get', 'Name'],
     ['literal', '-']
   ];
   const textField = [
-    'concat',
-    ['coalesce', ['get', 'Number'], ['get', 'RoomNumber'], ['get', 'name'], ['literal', '-']],
-    '\n',
-    typeField,
-    '\n',
-    scenarioDeptField,
-    '\n',
-    ['concat', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ' SF']
+    'case',
+    ['==', ['get', 'Element'], 'Room'],
+    [
+      'concat',
+      ['coalesce', ['get', 'Number'], ['get', 'RoomNumber'], ['get', 'name'], ['literal', '-']],
+      '\n',
+      typeField,
+      '\n',
+      scenarioDeptField,
+      '\n',
+      ['concat', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ' SF']
+    ],
+    ''
   ];
   const textSizeExpr = [
     'interpolate',
@@ -2768,6 +6785,7 @@ function ensureFloorRoomLabelLayer(map) {
       map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-ignore-placement', false);
       map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-max-width', 6);
       map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'visibility', 'visible');
+      map.setFilter(FLOOR_ROOM_LABEL_LAYER, ROOMS_ONLY_FILTER);
     } catch {}
     bringFloorRoomLabelsToFront(map);
     return;
@@ -2778,6 +6796,7 @@ function ensureFloorRoomLabelLayer(map) {
         id: FLOOR_ROOM_LABEL_LAYER,
         type: 'symbol',
         source: FLOOR_SOURCE,
+        filter: ['all', ROOMS_ONLY_FILTER, ['!=', ['id'], -1]],
         layout: {
           'text-field': textField,
           'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
@@ -2797,8 +6816,7 @@ function ensureFloorRoomLabelLayer(map) {
         'text-color': '#0b0b0b',
         'text-halo-color': 'rgba(255,255,255,0.95)',
         'text-halo-width': 1
-      },
-        filter: ['!=', ['id'], -1]
+      }
       },
       FLOOR_LINE_ID
     );
@@ -2846,17 +6864,68 @@ const progressColors = {
 };
 
 const defaultBuildingColor = '#85474b';
+const NO_FLOORPLAN_BUILDINGS = [
+  '603 E 9th St',
+  '603 E. 9th St',
+  '607 E 9th St',
+  'MacKay House',
+  'McKay House',
+  '905 N Elm St',
+  '905 N Elm Ave',
+  'Name 1',
+  'Name1',
+  '706 E. 7th St',
+  '706 E 7th St',
+  '706 E. 7th St. Residence',
+  '710 E. 7th St.',
+  '710 E 7th St',
+  '710 E. 7th St. Residence',
+  '714 E. 7th St.',
+  '714 E 7th St',
+  '714 E. 7th St. Residence',
+  '812 N Ash St',
+  '812 N Ash Ave',
+  '906 E 9th St',
+  'Campus Safety',
+  'The 1882 Residence Hall',
+  '1882 Residence Hall',
+  'Hayes M. Fuhr Hall of Music',
+  'Hayes M Fuhr Hall of Music'
+];
+const NO_FLOORPLAN_BUILDING_KEYS = NO_FLOORPLAN_BUILDINGS.map((name) => String(name || '').toLowerCase());
+const BUILDING_ID_MATCH_EXPR = [
+  'downcase',
+  ['to-string', ['coalesce', ['get', 'id'], ['get', 'name']]]
+];
+const NO_FLOORPLAN_EXPR = ['in', BUILDING_ID_MATCH_EXPR, ['literal', NO_FLOORPLAN_BUILDING_KEYS]];
+const withNoFloorplanOverride = (colorExpr, grayColor = '#d1d5db') => ([
+  'case',
+  NO_FLOORPLAN_EXPR,
+  grayColor,
+  colorExpr
+]);
+const utilizationColorForPercent = (value) => {
+  if (!Number.isFinite(value)) return '#e5e7eb';
+  if (value >= 80) return '#22c55e';
+  if (value >= 60) return '#84cc16';
+  if (value >= 40) return '#facc15';
+  if (value >= 20) return '#f97316';
+  return '#ef4444';
+};
 
 const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
+  const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const previousSelectedBuildingId = useRef(null);
   const floorSelectionRef = useRef({}); // remember last selected room id per floor URL
+  const spacePanelRef = useRef(null);
+  const roomEditPanelRef = useRef(null);
+  const scenarioPanelRef = useRef(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(mode === 'admin'); // Paths feature removed
-  const [showHelp, setShowHelp] = useState(true);
   const [markers, setMarkers] = useState([]); // Paths feature removed
   const [buildingConditions, setBuildingConditions] = useState({});
   const [buildingAssessments, setBuildingAssessments] = useState({});
@@ -2907,6 +6976,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [floorLegendLookup, setFloorLegendLookup] = useState(new Map());
   const [floorLegendSelection, setFloorLegendSelection] = useState(null);
   const floorHighlightIdsRef = useRef([]);
+  const [drawingAlignState, setDrawingAlignState] = useState(null);
+  const [drawingAlignNotice, setDrawingAlignNotice] = useState('');
+  const drawingAlignStateRef = useRef(null);
+  const drawingAlignActiveRef = useRef(false);
+  const drawingAlignCursorRef = useRef('');
+  const [floorAdjustMode, setFloorAdjustMode] = useState(null); // 'rotate' | 'move'
+  const [floorAdjustNotice, setFloorAdjustNotice] = useState('');
+  const floorAdjustModeRef = useRef(null);
+  const floorAdjustActiveRef = useRef(false);
+  const floorAdjustCursorRef = useRef('');
+  const floorAdjustDragRef = useRef(null);
   const [typeOptions, setTypeOptions] = useState(baseTypeOptions);
   const [deptOptions, setDeptOptions] = useState(baseDeptOptions);
   const [roomEditIncluded, setRoomEditIncluded] = useState(new Set());
@@ -2936,11 +7016,55 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [aiCreateScenarioLoading, setAiCreateScenarioLoading] = useState(false);
   const [aiCreateScenarioErr, setAiCreateScenarioErr] = useState('');
   const [aiCreateScenarioResult, setAiCreateScenarioResult] = useState(null);
+  const [aiCreateScenarioStrict, setAiCreateScenarioStrict] = useState(true);
+  const [aiScenarioComparePending, setAiScenarioComparePending] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState('');
   const [askLoading, setAskLoading] = useState(false);
   const [askErr, setAskErr] = useState('');
   const [askResult, setAskResult] = useState(null);
+    const [dashboardMetrics, setDashboardMetrics] = useState(null);
+    const [dashboardTitle, setDashboardTitle] = useState('Campus Summary');
+    const [dashboardLoading, setDashboardLoading] = useState(false);
+    const [dashboardError, setDashboardError] = useState(null);
+  const [airtableRooms, setAirtableRooms] = useState([]);
+  const [campusRooms, setCampusRooms] = useState([]);
+  const [campusRoomsLoaded, setCampusRoomsLoaded] = useState(false);
+  const [airtableRefreshPending, setAirtableRefreshPending] = useState(false);
+  const [airtableRefreshMessage, setAirtableRefreshMessage] = useState('');
+  const [airtableLastSyncedAt, setAirtableLastSyncedAt] = useState(null);
+  const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
+  const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
+    const dashboardManifestRef = useRef(null);
+    const campusRoomsRefreshTimerRef = useRef(null);
+    const airtableRoomLookup = useMemo(
+      () => buildAirtableRoomLookup(airtableRooms.length ? airtableRooms : campusRooms),
+      [airtableRooms, campusRooms]
+    );
+  const utilizationByBuilding = useMemo(() => utilizationData?.buildings || {}, [utilizationData]);
+  const utilizationByRoom = useMemo(() => utilizationData?.rooms || {}, [utilizationData]);
+  const utilizationCampus = utilizationData?.campus || null;
+  const utilizationByBuildingId = useMemo(() => {
+    const out = {};
+    Object.entries(utilizationByBuilding || {}).forEach(([name, data]) => {
+      if (!name) return;
+      out[name] = data;
+      const alias = BUILDING_ALIAS[name];
+      if (alias) out[alias] = data;
+    });
+    return out;
+  }, [utilizationByBuilding]);
+  const getUtilizationForBuilding = useCallback((buildingName) => {
+    if (!buildingName) return null;
+    const resolved = resolveBuildingNameFromInput(buildingName) || buildingName;
+    return utilizationByBuilding[resolved] || null;
+  }, [utilizationByBuilding]);
+  const getUtilizationForRoom = useCallback((buildingName, roomLabel) => {
+    if (!buildingName || !roomLabel) return null;
+    const resolved = resolveBuildingNameFromInput(buildingName) || buildingName;
+    const key = buildUtilizationKey(resolved, roomLabel);
+    return utilizationByRoom[key] || null;
+  }, [utilizationByRoom]);
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
@@ -2951,13 +7075,13 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     VACANCY: 'vacancy'
   }), []);
   const [floorColorMode, setFloorColorMode] = useState('department');
-  const mergeOptionsList = (prev, next) => {
-    const seen = new Set(prev);
-    (next || []).forEach((item) => {
-      if (item) seen.add(item);
-    });
-    return Array.from(seen).sort();
-  };
+    const mergeOptionsList = (prev, next) => {
+      const seen = new Set(prev);
+      (next || []).forEach((item) => {
+        if (item) seen.add(item);
+      });
+      return Array.from(seen).sort();
+    };
 
   const setFloorHighlight = useCallback((idOrIds) => {
     const map = mapRef.current;
@@ -2984,6 +7108,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [roomEditOpen, setRoomEditOpen] = useState(false);
   const [roomEditData, setRoomEditData] = useState(null);
   const [roomEditSelection, setRoomEditSelection] = useState([]);
+  const [roomEditPanelPos, setRoomEditPanelPos] = useState(null);
   const roomEditSelectionRef = useRef([]);
   const getHighlightIdsForSelection = useCallback((selection = []) => {
     return (selection || [])
@@ -3002,7 +7127,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
   const buildLegendForMode = useCallback((mode) => {
     const map = mapRef.current;
-    const src = map?.getSource(FLOOR_SOURCE);
+      const src = getGeojsonSource(map, FLOOR_SOURCE);
     if (!src) return;
     const data = src._data || src.serialize?.()?.data || null;
     const fc = toFeatureCollection(data);
@@ -3020,19 +7145,56 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       const p = f.properties || {};
       const areaVal = resolvePatchedArea(p);
       if (!Number.isFinite(areaVal) || areaVal <= 0) return;
+      const typeLabelRaw =
+        p.__roomType ??
+        p.NCES_Type ??
+        p.RoomType ??
+        p['Room Type'] ??
+        p.Type ??
+        p.type ??
+        p.Name ??
+        '';
+      const isOfficeType = isAllowedOfficeType(typeLabelRaw);
       let key = '';
       let color = '#e6e6e6';
+      const normalizeOccupancyLabel = (props = {}) => {
+        const raw =
+          props.occupancyStatus ??
+          props['Occupancy Status'] ??
+          props.OccupancyStatus ??
+          props.Occupancy ??
+          props.Vacancy ??
+          props.vacancy ??
+          props.Vacant ??
+          '';
+        const rawStr = String(raw ?? '').trim();
+        if (rawStr) {
+          const upper = rawStr.toUpperCase();
+          if (
+            upper.includes('VACANT') ||
+            upper.includes('UNOCCUPIED') ||
+            upper.includes('AVAILABLE') ||
+            upper.includes('UNASSIGNED')
+          ) {
+            return 'Vacant';
+          }
+          if (upper.includes('OCCUPIED')) return 'Occupied';
+          return 'Unknown';
+        }
+        const occ = (props.occupant ?? props.Occupant ?? '').toString().trim();
+        return occ ? 'Occupied' : 'Unknown';
+      };
       if (mode === FLOOR_COLOR_MODES.TYPE) {
-        key = p.RoomType || p.Type || p.type || p.Name || 'Unspecified';
+        key = (p.__roomType || '').toString().trim() || 'Unknown';
         color = colorForType(key);
       } else if (mode === FLOOR_COLOR_MODES.OCCUPANCY) {
-        const occ = (p.occupant ?? p.Occupant ?? '').toString().trim();
-        key = occ ? 'Occupied' : 'Unoccupied';
-        color = occ ? '#29b6f6' : '#cfd8dc';
+        if (!isOfficeType) return;
+        key = normalizeOccupancyLabel(p);
+        color = key === 'Occupied' ? '#29b6f6' : (key === 'Vacant' ? '#ff7043' : '#cfd8dc');
       } else if (mode === FLOOR_COLOR_MODES.VACANCY) {
-        const occ = (p.occupant ?? p.Occupant ?? '').toString().trim();
-        key = occ ? 'Occupied' : 'Vacant';
-        color = occ ? '#29b6f6' : '#ff7043';
+        if (!isOfficeType) return;
+        key = normalizeOccupancyLabel(p);
+        color = key === 'Vacant' ? '#ff7043' : '#cfd8dc';
       } else {
         key = getDeptFromProps(p) || 'Unspecified';
         color = getDeptColor(key) || '#e6e6e6';
@@ -3060,11 +7222,71 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const applyFloorColorMode = useCallback((mode) => {
     const map = mapRef.current;
     if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
-    const src = map.getSource(FLOOR_SOURCE);
+    const src = getGeojsonSource(map, FLOOR_SOURCE);
     const data = src ? (src._data || src.serialize?.().data || null) : null;
     const fc = toFeatureCollection(data);
+    const effectiveMode = mode === FLOOR_COLOR_MODES.VACANCY ? FLOOR_COLOR_MODES.OCCUPANCY : mode;
 
-    if (mode === FLOOR_COLOR_MODES.TYPE && fc?.features?.length) {
+    if (effectiveMode === FLOOR_COLOR_MODES.DEPARTMENT && fc?.features?.length) {
+      const deptColorMap = new Map();
+      const areaSums = new Map();
+      const idsByDept = new Map();
+      const normalizeId = (val) => {
+        if (Number.isFinite(val)) return val;
+        const asNum = Number(val);
+        return Number.isFinite(asNum) ? asNum : (val != null ? String(val) : null);
+      };
+      fc.features.forEach((f) => {
+        const p = f.properties || {};
+        const deptVal = getDeptFromProps(p) || 'Unspecified';
+        const color = getDeptColor(deptVal) || '#e6e6e6';
+        deptColorMap.set(deptVal, color);
+        const areaVal = resolvePatchedArea(p);
+        if (Number.isFinite(areaVal) && areaVal > 0) {
+          const prev = areaSums.get(deptVal) || 0;
+          areaSums.set(deptVal, prev + areaVal);
+        }
+        const fid = normalizeId(f.id ?? p.RevitId ?? p.id);
+        if (fid != null) {
+          const list = idsByDept.get(deptVal) || [];
+          list.push(fid);
+          idsByDept.set(deptVal, list);
+        }
+      });
+      const pairs = [];
+      deptColorMap.forEach((color, deptVal) => {
+        pairs.push(deptVal, color);
+      });
+      const deptExpr = [
+        'match',
+        [
+          'coalesce',
+          ['feature-state', 'department'],
+          ['get', 'department'],
+          ['get', 'Department'],
+          ['get', 'Dept'],
+          ['get', 'NCES_Department'],
+          ['get', 'NCES_Dept']
+        ],
+        ...pairs,
+        '#e6e6e6'
+      ];
+      try {
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', deptExpr);
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        const legend = Array.from(deptColorMap.entries()).map(([name, color]) => ({
+          name,
+          color,
+          areaSf: areaSums.get(name) || 0,
+          ids: idsByDept.get(name) || []
+        })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+        setFloorLegendItems(legend);
+        setFloorLegendLookup(new Map(legend.map((item) => [item.name, item.ids || []])));
+        return;
+      } catch {}
+    }
+
+    if (effectiveMode === FLOOR_COLOR_MODES.TYPE && fc?.features?.length) {
       const typeColorMap = new Map();
       const areaSums = new Map();
       const idsByType = new Map();
@@ -3075,7 +7297,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       };
       fc.features.forEach((f) => {
         const p = f.properties || {};
-        const typeVal = p.RoomType || p.Type || p.type || p.Name || 'Unspecified';
+        const typeVal = (p.__roomType || '').toString().trim() || 'Unknown';
         const color = colorForType(typeVal);
         typeColorMap.set(typeVal, color);
         const areaVal = resolvePatchedArea(p);
@@ -3094,12 +7316,13 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       typeColorMap.forEach((color, typeVal) => {
         pairs.push(typeVal, color);
       });
-      const typeExpr = [
-        'match',
-        ['coalesce', ['get', 'RoomType'], ['get', 'Type'], ['get', 'type'], ['get', 'Name']],
-        ...pairs,
-        '#e6e6e6'
+      const typeExprKey = [
+        'case',
+        ['any', ['!', ['has', '__roomType']], ['==', ['get', '__roomType'], '']],
+        'Unknown',
+        ['get', '__roomType']
       ];
+      const typeExpr = ['match', typeExprKey, ...pairs, '#e6e6e6'];
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', typeExpr);
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
@@ -3115,9 +7338,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       } catch {}
     }
 
-    applyFloorFillExpression(map, mode);
-    buildLegendForMode(mode);
-    setFloorColorMode(mode);
+    applyFloorFillExpression(map, effectiveMode);
+    buildLegendForMode(effectiveMode);
+    setFloorColorMode(effectiveMode);
   }, [FLOOR_COLOR_MODES.TYPE, applyFloorFillExpression, buildLegendForMode]);
   useEffect(() => {
     roomEditSelectionRef.current = roomEditSelection;
@@ -3128,6 +7351,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     clearRoomEditSelection();
     setFloorHighlight(null);
     setRoomEditIncluded(new Set());
+    setRoomEditPanelPos(null);
   }, [clearRoomEditSelection, setFloorHighlight]);
   const roomEditTargets = roomEditData?.targets?.length
     ? roomEditData.targets
@@ -3136,25 +7360,80 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       : [];
   const primaryRoomEditTarget = roomEditTargets[0] || null;
   const roomEditFeatureProps = primaryRoomEditTarget?.feature?.properties || {};
-  const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
-  const editHasOffice = roomEditTargets.some((t) => {
+    const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
+    const OCCUPANCY_OPTIONS = ['Occupied', 'Vacant', 'Unknown'];
+    const resolveOccupancyStatusValue = (props = {}) => (
+      props.occupancyStatus ??
+      props['Occupancy Status'] ??
+      props.OccupancyStatus ??
+      props.Occupancy ??
+      props.occupancy ??
+      ''
+    );
+    const resolveSeatCountValue = (props = {}) => (
+      props.seatCount ??
+      props.SeatCount ??
+      props['Seat Count'] ??
+      props.Seats ??
+      props.Capacity ??
+      props.rm_seats ??
+      props.SeatingCapacity ??
+      props['NCES_Seat Count'] ??
+      props['NCES_Seat_Count'] ??
+      props['NCES_Seat Count'] ??
+      props['NCES_SeatCount'] ??
+      ''
+    );
+    const getMixedValue = (values = []) => {
+      const uniq = Array.from(new Set((values || [])
+        .map((v) => (v ?? '').toString().trim())
+        .filter(Boolean)));
+      if (!uniq.length) return '';
+      if (uniq.length === 1) return uniq[0];
+      return '__MIXED__';
+    };
+    const isMultiEdit = roomEditTargets.length > 1;
+    const sharedOccupancyRaw = roomEditData?.properties?.occupancyStatus;
+    const sharedOccupancy = sharedOccupancyRaw != null ? String(sharedOccupancyRaw).trim() : '';
+    const hasSharedOccupancy = sharedOccupancy.length > 0;
+    const occupancySelectionValue = isMultiEdit
+      ? (hasSharedOccupancy
+          ? sharedOccupancy
+          : getMixedValue(roomEditTargets.map((t) => {
+              const merged = { ...(t?.feature?.properties || {}), ...(t?.properties || {}) };
+              return resolveOccupancyStatusValue(merged);
+            })))
+      : (sharedOccupancy || String(resolveOccupancyStatusValue(roomEditMergedProps) || '').trim());
+    const sharedSeatCountRaw = roomEditData?.properties?.seatCount;
+    const sharedSeatCount = sharedSeatCountRaw != null ? String(sharedSeatCountRaw).trim() : '';
+    const seatCountSelectionValue = isMultiEdit
+      ? (sharedSeatCount
+          ? sharedSeatCount
+          : getMixedValue(roomEditTargets.map((t) => {
+              const merged = { ...(t?.feature?.properties || {}), ...(t?.properties || {}) };
+              return resolveSeatCountValue(merged);
+            })))
+      : (sharedSeatCount || String(resolveSeatCountValue(roomEditMergedProps) || '').trim());
+  const editHasOfficeType = roomEditTargets.length > 0 && roomEditTargets.every((t) => {
     const merged = { ...(t?.feature?.properties || {}), ...(t?.properties || {}), ...(roomEditData?.properties || {}) };
-    const cat = getRoomCategoryCode(merged);
-    const flags = detectRoomTypeFlags(merged);
-    return (isOfficeCategory(cat) || flags.isOfficeText || t?.flags?.isOffice);
+    const typeLabel =
+      getRoomTypeLabelFromProps(merged) ||
+      merged.type ||
+      merged['Room Type'] ||
+      merged['Room Type Description'] ||
+      '';
+    return isAllowedOfficeType(typeLabel);
   });
-  const editHasTeaching = roomEditTargets.some((t) => {
+  const editHasSeatCountType = roomEditTargets.length > 0 && roomEditTargets.every((t) => {
     const merged = { ...(t?.feature?.properties || {}), ...(t?.properties || {}), ...(roomEditData?.properties || {}) };
-    const cat = getRoomCategoryCode(merged);
-    const flags = detectRoomTypeFlags(merged);
-    return (isTeachingCategory(cat) || flags.isTeachingText || t?.flags?.isTeaching);
+    const typeLabel =
+      getRoomTypeLabelFromProps(merged) ||
+      merged.type ||
+      merged['Room Type'] ||
+      merged['Room Type Description'] ||
+      '';
+    return isScheduledTeachingTypeLabel(typeLabel);
   });
-  const editSeatCounts = roomEditTargets
-    .map((t) => getSeatCount({ ...(t?.feature?.properties || {}), ...(t?.properties || {}) }))
-    .filter((n) => Number.isFinite(n));
-  const editSeatCountDisplay = editSeatCounts.length
-    ? (editSeatCounts.every((n) => n === editSeatCounts[0]) ? editSeatCounts[0].toLocaleString() : 'varies')
-    : '-';
   const ncesCategoryCode = pickFirstDefined(roomEditMergedProps, [
     'NCES_Category',
     'NCES Category',
@@ -3195,16 +7474,32 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [selectedFloor, setSelectedFloor] = useState('LEVEL_1');
   const [availableFloors, setAvailableFloors] = useState([]);
   const availableFloorsByBuildingRef = useRef(new Map());
+  const availableFloorUrlsByBuildingRef = useRef(new Map());
+  const activeBuildingFeature = useMemo(() => {
+    const feats = config?.buildings?.features || [];
+    const byId = feats.find((f) => String(f?.properties?.id) === String(selectedBuildingId));
+    if (byId) return byId;
+    const byName = feats.find((f) => (f?.properties?.name || '') === (selectedBuilding || ''));
+    return byName || null;
+  }, [config, selectedBuildingId, selectedBuilding]);
+  const activeBuildingName =
+    activeBuildingFeature?.properties?.name ||
+    selectedBuilding ||
+    selectedBuildingId ||
+    'Building';
+  const activeBuildingId = selectedBuildingId || selectedBuilding || '';
+  const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
   const getAvailableFloors = useCallback((buildingKey) => {
     if (!buildingKey) return [];
     return availableFloorsByBuildingRef.current.get(buildingKey) ?? [];
   }, []);
   const getBuildingFolderKey = useCallback((idOrName) => {
     if (!idOrName) return null;
-    if (BUILDING_FOLDER_MAP[idOrName]) return BUILDING_FOLDER_MAP[idOrName];
+    const resolvedName = resolveBuildingNameFromInput(idOrName);
+    if (resolvedName && BUILDING_FOLDER_MAP[resolvedName]) {
+      return BUILDING_FOLDER_MAP[resolvedName];
+    }
     if (BUILDING_FOLDER_SET.has(idOrName)) return idOrName;
-    const aliasMatch = BUILDING_ALIAS_REVERSE[idOrName];
-    if (aliasMatch && BUILDING_FOLDER_MAP[aliasMatch]) return BUILDING_FOLDER_MAP[aliasMatch];
     return null;
   }, []);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
@@ -3213,18 +7508,31 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (!folderKey) return null;
     const floors = getAvailableFloors(folderKey);
     if (!floors.includes(floorId)) return null;
+    const urlMap = availableFloorUrlsByBuildingRef.current.get(folderKey);
+    const manifestUrl = urlMap?.get(floorId);
+    if (manifestUrl) {
+      return /^https?:\/\//i.test(manifestUrl) ? manifestUrl : assetUrl(manifestUrl);
+    }
     const campusSeg = encodeURIComponent(DEFAULT_FLOORPLAN_CAMPUS);
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(floorId);
-    return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/${floorSeg}_Dept.geojson`);
+    return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
   }, [getAvailableFloors, getBuildingFolderKey]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return [];
     const cached = getAvailableFloors(folderKey);
-    if (cached.length) return cached;
-    const floors = await loadFloorManifest(folderKey);
+    const hasUrls = availableFloorUrlsByBuildingRef.current.has(folderKey);
+    if (cached.length && hasUrls) return cached;
+    const floorEntries = await loadFloorManifest(folderKey);
+    const floors = (floorEntries || []).map((f) => f?.id).filter(Boolean);
+    const urlMap = new Map(
+      (floorEntries || [])
+        .filter((f) => f?.id && f?.url)
+        .map((f) => [f.id, f.url])
+    );
     availableFloorsByBuildingRef.current.set(folderKey, floors);
+    availableFloorUrlsByBuildingRef.current.set(folderKey, urlMap);
     return floors;
   }, [getBuildingFolderKey, getAvailableFloors]);
   const [loadedFloors, setLoadedFloors] = useState([]);
@@ -3238,6 +7546,42 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   useEffect(() => {
     floorUrlRef.current = floorUrl;
   }, [floorUrl]);
+  useEffect(() => {
+    drawingAlignStateRef.current = drawingAlignState;
+    drawingAlignActiveRef.current = Boolean(drawingAlignState);
+  }, [drawingAlignState]);
+  useEffect(() => {
+    floorAdjustModeRef.current = floorAdjustMode;
+    floorAdjustActiveRef.current = Boolean(floorAdjustMode);
+  }, [floorAdjustMode]);
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    const canvas = map.getCanvas();
+    if (!canvas) return;
+    if (drawingAlignState) {
+      drawingAlignCursorRef.current = canvas.style.cursor || '';
+      canvas.style.cursor = 'crosshair';
+      return;
+    }
+    if (!floorAdjustMode) {
+      canvas.style.cursor = drawingAlignCursorRef.current || '';
+    }
+  }, [mapLoaded, drawingAlignState]);
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    const canvas = map.getCanvas();
+    if (!canvas) return;
+    if (floorAdjustMode) {
+      floorAdjustCursorRef.current = canvas.style.cursor || '';
+      canvas.style.cursor = floorAdjustMode === 'move' ? 'move' : 'grab';
+      return;
+    }
+    if (!drawingAlignState) {
+      canvas.style.cursor = floorAdjustCursorRef.current || '';
+    }
+  }, [mapLoaded, floorAdjustMode, drawingAlignState]);
   useEffect(() => {
     if (!mapLoaded || !floorUrl) return;
     applyFloorColorMode(floorColorMode);
@@ -3269,6 +7613,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     setAiCreateScenarioResult(null);
     setAiCreateScenarioErr('');
   }, [selectedBuildingId, selectedBuilding, selectedFloor]);
+  useEffect(() => {
+    if (!drawingAlignState) return;
+    setDrawingAlignState(null);
+    setDrawingAlignNotice('');
+  }, [selectedBuildingId, selectedBuilding, selectedFloor]);
+  useEffect(() => {
+    if (!floorAdjustMode) return;
+    setFloorAdjustMode(null);
+    setFloorAdjustNotice('');
+  }, [selectedBuildingId, selectedBuilding, selectedFloor]);
 
   const [moveScenarioMode, setMoveScenarioMode] = useState(false);
   const [scenarioSelection, setScenarioSelection] = useState(new Set());
@@ -3297,7 +7651,10 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [scenarioPanelVisible, setScenarioPanelVisible] = useState(false);
   const scenarioRoomInfoRef = useRef(new Map());
   const previousScenarioSelectionRef = useRef(new Set());
-  const [scenarioPanelTop, setScenarioPanelTop] = useState(320);
+  const [scenarioPanelTop, setScenarioPanelTop] = useState(20);
+  const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
+  const pendingScenarioLoadRef = useRef(null);
+  const pendingScenarioCandidatesRef = useRef(null);
 
   const SCENARIO_LAYER_ID = 'scenario-highlight';
   const DEFAULT_SCENARIO_COLOR = 'rgba(255, 159, 64, 0.9)';
@@ -3317,7 +7674,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (!updates.length) return;
     const map = mapRef.current;
     if (!map) return;
-    const source = map.getSource(FLOOR_SOURCE);
+    const source = getGeojsonSource(map, FLOOR_SOURCE);
     if (!source) return;
     const data = source._data || source.serialize?.()?.data;
     const fc = toFeatureCollection(data);
@@ -3360,13 +7717,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const clearScenarioFeatureStates = useCallback((roomKeys = [], infoMap = scenarioRoomInfoRef.current) => {
     const map = mapRef.current;
     if (!map) return;
+    if (!getGeojsonSource(map, FLOOR_SOURCE)) return;
     roomKeys.forEach((roomKey) => {
       const info = infoMap.get(roomKey);
       if (!info?.revitId) return;
       try {
-        map.removeFeatureState({ source: FLOOR_SOURCE, id: info.revitId }, 'scenarioColor');
-        map.removeFeatureState({ source: FLOOR_SOURCE, id: info.revitId }, 'scenarioOutlineColor');
-        map.removeFeatureState({ source: FLOOR_SOURCE, id: info.revitId }, 'scenarioDepartment');
+        const ids = getFeatureIdVariants(info.revitId);
+        ids.forEach((id) => {
+          map.removeFeatureState({ source: FLOOR_SOURCE, id }, 'scenarioColor');
+          map.removeFeatureState({ source: FLOOR_SOURCE, id }, 'scenarioOutlineColor');
+          map.removeFeatureState({ source: FLOOR_SOURCE, id }, 'scenarioDepartment');
+        });
       } catch {}
     });
   }, []);
@@ -3393,6 +7754,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     setScenarioAssignedDept('');
     setScenarioLabel('');
     setScenarioPanelVisible(false);
+    setScenarioPanelPos(null);
+    setScenarioPanelTop(20);
+    setAiScenarioComparePending(false);
     resetScenarioRecolor();
   }, [clearScenarioFeatureStates, resetScenarioRecolor, updateScenarioDepartmentOnFloor]);
 
@@ -3402,7 +7766,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
   const ensureScenarioLayer = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !map.getSource(FLOOR_SOURCE)) return;
+    if (!map || !getGeojsonSource(map, FLOOR_SOURCE)) return;
     if (map.getLayer(SCENARIO_LAYER_ID)) return;
     try {
       map.addLayer({
@@ -3427,9 +7791,20 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     ensureScenarioLayer();
     const map = mapRef.current;
     if (!map || !map.getLayer(SCENARIO_LAYER_ID)) return;
+    const expandedIds = Array.isArray(highlightIds)
+      ? highlightIds.flatMap((id) => getFeatureIdVariants(id))
+      : [];
+    const uniqueIds = Array.from(new Set(expandedIds));
     const filter =
-      Array.isArray(highlightIds) && highlightIds.length
-        ? ['any', ['in', ['id'], ['literal', highlightIds]], ['in', ['get', 'RevitId'], ['literal', highlightIds]]]
+      uniqueIds.length
+        ? [
+            'any',
+            ['in', ['id'], ['literal', uniqueIds]],
+            ['in', ['get', 'RevitId'], ['literal', uniqueIds]],
+            ['in', ['get', 'Revit_UniqueId'], ['literal', uniqueIds]],
+            ['in', ['get', 'Revit Unique Id'], ['literal', uniqueIds]],
+            ['in', ['get', 'Room GUID'], ['literal', uniqueIds]]
+          ]
         : ['==', ['id'], ''];
     try {
       map.setFilter(SCENARIO_LAYER_ID, filter);
@@ -3455,8 +7830,35 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       totals.roomTypes[typeName] = (totals.roomTypes[typeName] || 0) + 1;
       totals.sfByRoomType[typeName] = (totals.sfByRoomType[typeName] || 0) + area;
       if (meta.revitId != null) highlightIds.push(meta.revitId);
+      if (meta.roomGuid && meta.roomGuid !== meta.revitId) highlightIds.push(meta.roomGuid);
     });
     return { totals, highlightIds };
+  }, []);
+
+  const buildScenarioRoomMetaFromCandidate = useCallback((c, idx) => {
+    const derivedRoomId = (c?.buildingLabel && (c?.floorName || c?.floorId) && c?.revitId != null)
+      ? rId(c.buildingLabel, c.floorName || c.floorId, c.revitId)
+      : null;
+    const roomId =
+      c?.roomId ||
+      derivedRoomId ||
+      c?.id ||
+      [c?.buildingLabel, c?.floorName || c?.floorId, c?.roomLabel, idx].filter(Boolean).join('|') ||
+      `cand-${idx}`;
+    const roomGuid = c?.roomGuid ?? c?.revitUniqueId ?? c?.revitUniqueID ?? null;
+    const revitId = c?.revitId ?? roomGuid ?? null;
+    return {
+      roomId,
+      buildingId: c?.buildingLabel || '',
+      buildingName: c?.buildingLabel || '',
+      floorName: c?.floorName || c?.floorId || '',
+      revitId,
+      roomGuid,
+      roomNumber: c?.roomLabel || '',
+      roomType: c?.type || 'Unspecified',
+      department: c?.department || '',
+      area: Number(c?.sf || 0) || 0
+    };
   }, []);
 
   const cleanScenarioAssignments = useCallback((selection) => {
@@ -3483,6 +7885,24 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     cleanScenarioAssignments(nextSelection);
   }, [recomputeScenarioTotals, applyScenarioHighlight, clearScenarioFeatureStates, cleanScenarioAssignments]);
 
+  const applyScenarioCandidates = useCallback((candidates = []) => {
+    const prevSelection = previousScenarioSelectionRef.current;
+    if (prevSelection?.size) {
+      clearScenarioFeatureStates(Array.from(prevSelection), scenarioRoomInfoRef.current);
+    }
+    scenarioRoomInfoRef.current = new Map();
+    previousScenarioSelectionRef.current = new Set();
+    const nextSelection = new Set();
+    (candidates || []).forEach((c, idx) => {
+      const meta = buildScenarioRoomMetaFromCandidate(c, idx);
+      if (!meta?.roomId) return;
+      scenarioRoomInfoRef.current.set(meta.roomId, meta);
+      nextSelection.add(meta.roomId);
+    });
+    setScenarioSelection(nextSelection);
+    handleScenarioSelectionChange(nextSelection);
+  }, [buildScenarioRoomMetaFromCandidate, clearScenarioFeatureStates, handleScenarioSelectionChange]);
+
   const toggleScenarioRoom = useCallback((roomMeta) => {
     if (!roomMeta?.roomId) return;
     setScenarioSelection((prev) => {
@@ -3505,10 +7925,14 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     if (!info?.revitId) return;
     const map = mapRef.current;
     if (!map) return;
+    if (!getGeojsonSource(map, FLOOR_SOURCE)) return;
     const sanitizedState = { ...state };
     if (!Object.keys(sanitizedState).length) return;
     try {
-      map.setFeatureState({ source: FLOOR_SOURCE, id: info.revitId }, sanitizedState);
+      const ids = getFeatureIdVariants(info.revitId);
+      ids.forEach((id) => {
+        map.setFeatureState({ source: FLOOR_SOURCE, id }, sanitizedState);
+      });
     } catch {}
   }, []);
 
@@ -3541,15 +7965,290 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     }
   }, [scenarioAssignedDept, scenarioSelection, setScenarioFeatureState, hexToRGBA, updateScenarioDepartmentOnFloor]);
 
-  const handleExportScenario = useCallback(() => {
-    alert('Export Scenario to PDF is not implemented yet.');
-  }, []);
+  const handleExportScenario = useCallback(async () => {
+    if (!aiScenarioResult) {
+      alert('No scenario comparison available yet.');
+      return;
+    }
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const contentWidth = pageWidth - margin * 2;
+      const lineHeight = 14;
+      let y = margin;
+
+      const ensureSpace = (needed = lineHeight) => {
+        if (y + needed > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+      const addLine = (text, opts = {}) => {
+        const indent = opts.indent || 0;
+        ensureSpace(lineHeight);
+        doc.text(String(text), margin + indent, y);
+        y += lineHeight;
+      };
+      const addWrapped = (text, opts = {}) => {
+        const indent = opts.indent || 0;
+        const width = Math.max(50, contentWidth - indent);
+        const lines = doc.splitTextToSize(String(text), width);
+        lines.forEach((line) => addLine(line, { indent }));
+      };
+      const addSectionTitle = (text) => {
+        if (!text) return;
+        ensureSpace(lineHeight * 1.2);
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        addWrapped(text);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(11);
+      };
+      const addBulletList = (items = []) => {
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length) return;
+        list.forEach((item) => addWrapped(`- ${item}`, { indent: 8 }));
+      };
+
+      const rollupRoomTypeCounts = (roomTypes = {}) => {
+        let offices = 0;
+        let classrooms = 0;
+        let labs = 0;
+        for (const [label, qty] of Object.entries(roomTypes || {})) {
+          const s = String(label || '').toLowerCase();
+          const n = Number(qty || 0) || 0;
+          if (s.includes('office')) offices += n;
+          else if (s.includes('class')) classrooms += n;
+          else if (s.includes('lab')) labs += n;
+        }
+        return { offices, classrooms, labs };
+      };
+
+      const deptLabel = aiScenarioResult?.scenarioDept || scenarioAssignedDept || 'Scenario';
+      const baselineLabel = scenarioBaselineTotals?.__label || 'baseline';
+      const scenarioLabel = activeBuildingName || selectedBuilding || selectedBuildingId || 'scenario';
+      const floorLabel = selectedFloor ? ` (${selectedFloor})` : '';
+
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      addLine('Scenario Comparison');
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(11);
+      addWrapped(`${deptLabel} - ${baselineLabel} to ${scenarioLabel}${floorLabel}`);
+      if (aiScenarioResult.summary) {
+        addSectionTitle('Summary');
+        addWrapped(aiScenarioResult.summary);
+      }
+
+      addSectionTitle('Totals');
+      const baselineTotals = scenarioBaselineTotals || {};
+      const scenarioTotalsLocal = scenarioTotals || {};
+      const bCounts = rollupRoomTypeCounts(baselineTotals.roomTypes);
+      const sCounts = rollupRoomTypeCounts(scenarioTotalsLocal.roomTypes);
+      addLine(`Baseline (${baselineLabel})`);
+      addLine(`Total SF: ${Math.round(baselineTotals.totalSF || 0).toLocaleString()}`, { indent: 8 });
+      addLine(`Rooms: ${Math.round(baselineTotals.rooms || 0).toLocaleString()}`, { indent: 8 });
+      if (bCounts.offices || bCounts.classrooms || bCounts.labs) {
+        addLine(`Offices: ${bCounts.offices}`, { indent: 8 });
+        addLine(`Classrooms: ${bCounts.classrooms}`, { indent: 8 });
+        addLine(`Labs: ${bCounts.labs}`, { indent: 8 });
+      }
+      y += lineHeight / 2;
+      addLine(`Scenario (${scenarioLabel})`);
+      addLine(`Total SF: ${Math.round(scenarioTotalsLocal.totalSF || 0).toLocaleString()}`, { indent: 8 });
+      addLine(`Rooms: ${Math.round(scenarioTotalsLocal.rooms || 0).toLocaleString()}`, { indent: 8 });
+      if (sCounts.offices || sCounts.classrooms || sCounts.labs) {
+        addLine(`Offices: ${sCounts.offices}`, { indent: 8 });
+        addLine(`Classrooms: ${sCounts.classrooms}`, { indent: 8 });
+        addLine(`Labs: ${sCounts.labs}`, { indent: 8 });
+      }
+      const deltaSf = (scenarioTotalsLocal.totalSF || 0) - (baselineTotals.totalSF || 0);
+      const deltaRooms = (scenarioTotalsLocal.rooms || 0) - (baselineTotals.rooms || 0);
+      addLine(`Delta SF: ${Math.round(deltaSf).toLocaleString()}`, { indent: 8 });
+      addLine(`Delta Rooms: ${Math.round(deltaRooms).toLocaleString()}`, { indent: 8 });
+
+      if (aiScenarioResult?.scenarioPros?.length) {
+        addSectionTitle('Pluses');
+        addBulletList(aiScenarioResult.scenarioPros);
+      }
+      if (aiScenarioResult?.scenarioCons?.length) {
+        addSectionTitle('Minuses');
+        addBulletList(aiScenarioResult.scenarioCons);
+      }
+      if (aiScenarioResult?.risks?.length) {
+        addSectionTitle('Risks / watchouts');
+        addBulletList(aiScenarioResult.risks);
+      }
+      if (aiScenarioResult?.notes?.length) {
+        addSectionTitle('Notes');
+        addBulletList(aiScenarioResult.notes);
+      }
+      if (Array.isArray(aiScenarioResult?.data_used) && aiScenarioResult.data_used.length) {
+        addSectionTitle('Data used');
+        addWrapped(aiScenarioResult.data_used.join(', '));
+      }
+
+      const addFloorplanPage = (img, label) => {
+        if (!img?.data) return;
+        doc.addPage();
+        const imgMargin = 36;
+        const imgPageWidth = doc.internal.pageSize.getWidth();
+        const imgPageHeight = doc.internal.pageSize.getHeight();
+        const title = label ? `Floorplan - ${label}` : 'Floorplan';
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(14);
+        doc.text(title, imgMargin, imgMargin);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(11);
+        const aspect = img.height && img.width ? img.height / img.width : 1;
+        let imgWidth = imgPageWidth - imgMargin * 2;
+        let imgHeight = imgWidth * aspect;
+        const maxHeight = imgPageHeight - imgMargin * 2 - 18;
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
+          imgWidth = imgHeight / (aspect || 1);
+        }
+        const imgX = imgMargin;
+        const imgY = imgMargin + 18;
+        doc.addImage(img.data, 'PNG', imgX, imgY, imgWidth, imgHeight);
+      };
+
+      const scenarioGroups = new Map();
+      scenarioSelection.forEach((roomId) => {
+        const info = scenarioRoomInfoRef.current.get(roomId);
+        if (!info) return;
+        const buildingLabel =
+          info?.buildingName ||
+          info?.buildingId ||
+          activeBuildingName ||
+          selectedBuilding ||
+          '';
+        const floorLabel = info?.floorName || info?.floorId || selectedFloor || '';
+        if (!buildingLabel || !floorLabel) return;
+        const key = `${canon(buildingLabel)}|${fId(floorLabel)}`;
+        if (!scenarioGroups.has(key)) {
+          scenarioGroups.set(key, { buildingLabel, floorLabel, ids: [] });
+        }
+        const entry = scenarioGroups.get(key);
+        if (info?.revitId != null) entry.ids.push(info.revitId);
+        if (info?.roomGuid && info.roomGuid !== info.revitId) entry.ids.push(info.roomGuid);
+      });
+
+      const scenarioPages = [];
+      if (scenarioGroups.size) {
+        for (const entry of scenarioGroups.values()) {
+          const available = await ensureFloorsForBuilding(entry.buildingLabel);
+          const resolvedFloor = resolveAvailableFloorId(entry.floorLabel, available) || entry.floorLabel;
+          const floorUrl = buildFloorUrl(entry.buildingLabel, resolvedFloor);
+          if (!floorUrl) continue;
+          let data = floorCache.get(floorUrl);
+          if (!data) {
+            try {
+              data = await fetchGeoJSON(floorUrl);
+              if (data) floorCache.set(floorUrl, data);
+            } catch {}
+          }
+          const fc = toFeatureCollection(data);
+          if (!fc?.features?.length) continue;
+          const img = generateFloorplanImageData({
+            fc,
+            colorMode: floorColorMode,
+            solidFill: true,
+            selectedIds: entry.ids,
+            labelOptions: { hideDrawing: true }
+          });
+          if (img?.data) {
+            scenarioPages.push({ img, label: `${entry.buildingLabel} - ${resolvedFloor}` });
+          }
+        }
+      }
+
+      if (!scenarioPages.length) {
+        const highlightIds = [];
+        scenarioSelection.forEach((roomId) => {
+          const info = scenarioRoomInfoRef.current.get(roomId);
+          if (info?.revitId != null) highlightIds.push(info.revitId);
+          if (info?.roomGuid && info.roomGuid !== info.revitId) highlightIds.push(info.roomGuid);
+        });
+        const floorContext = currentFloorContextRef?.current;
+        let floorplanData = floorContext?.fc
+          ? generateFloorplanImageData({
+              ...floorContext,
+              colorMode: floorColorMode,
+              solidFill: true,
+              selectedIds: highlightIds,
+              labelOptions: { hideDrawing: true }
+            })
+          : null;
+        if (!floorplanData?.data && selectedBuilding && selectedFloor) {
+          const floorUrl = buildFloorUrl(selectedBuilding, selectedFloor);
+          if (floorUrl) {
+            let data = floorCache.get(floorUrl);
+            if (!data) {
+              try {
+                data = await fetchGeoJSON(floorUrl);
+                if (data) floorCache.set(floorUrl, data);
+              } catch {}
+            }
+            const fc = toFeatureCollection(data);
+            if (fc?.features?.length) {
+              floorplanData = generateFloorplanImageData({
+                fc,
+                colorMode: floorColorMode,
+                solidFill: true,
+                selectedIds: highlightIds,
+                labelOptions: { hideDrawing: true }
+              });
+            }
+          }
+        }
+        if (floorplanData?.data) {
+          const label = floorContext?.floor || floorContext?.floorId || selectedFloor || '';
+          addFloorplanPage(floorplanData, label || '');
+        }
+      } else {
+        scenarioPages.forEach((page) => addFloorplanPage(page.img, page.label));
+      }
+
+      const filenameBase = `${deptLabel}-scenario-compare`
+        .replace(/\s+/g, '-')
+        .replace(/[^\w-]+/g, '')
+        .toLowerCase();
+      doc.save(`${filenameBase}.pdf`);
+    } catch (err) {
+      console.error('Scenario export failed', err);
+      alert('Export failed - see console for details.');
+    }
+  }, [
+    aiScenarioResult,
+    scenarioAssignedDept,
+    scenarioBaselineTotals,
+    scenarioTotals,
+    activeBuildingName,
+    selectedBuilding,
+    selectedBuildingId,
+    selectedFloor,
+    scenarioSelection,
+    floorColorMode,
+    ensureFloorsForBuilding,
+    resolveAvailableFloorId,
+    buildFloorUrl,
+    fetchGeoJSON
+  ]);
 
   useEffect(() => {
     if (moveScenarioMode) {
       ensureScenarioLayer();
     }
   }, [moveScenarioMode, ensureScenarioLayer]);
+
+  useEffect(() => {
+    if (!moveScenarioMode || scenarioSelection.size === 0) return;
+    const { highlightIds } = recomputeScenarioTotals(scenarioSelection);
+    applyScenarioHighlight(highlightIds);
+  }, [moveScenarioMode, scenarioSelection, floorUrl, recomputeScenarioTotals, applyScenarioHighlight]);
 
   const [moveMode, setMoveMode] = useState(false);
   const [pendingMove, setPendingMove] = useState(null);
@@ -3576,7 +8275,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   };
 
   const repositionScenarioPanelToClick = useCallback((pt) => {
-    if (!pt) return;
+    if (!pt || scenarioPanelPos) return;
     setScenarioPanelTop(() => {
       const height = mapContainerRef.current?.clientHeight ?? 0;
       const panelHeight = Math.max(360, (height || 0) * 0.7);
@@ -3584,16 +8283,17 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       const target = pt.y - 120;
       return Math.max(8, Math.min(target, maxTop));
     });
-  }, []);
+  }, [scenarioPanelPos]);
 
   const nudgeScenarioPanelUp = useCallback(() => {
+    if (scenarioPanelPos) return;
     setScenarioPanelTop((prev) => {
       const height = mapContainerRef.current?.clientHeight ?? 0;
       const panelHeight = Math.max(360, (height || 0) * 0.7);
       const maxTop = Math.max(8, (height || 800) - panelHeight - 40);
       return Math.max(8, Math.min(prev - 40, maxTop));
     });
-  }, []);
+  }, [scenarioPanelPos]);
 
   // Auth / role
   const [authUser, setAuthUser] = useState(null);
@@ -3609,22 +8309,22 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
   const resolveBuildingPlanKey = useCallback((idOrName) => {
     if (!idOrName) return null;
-    if (BUILDING_FOLDER_MAP[idOrName]) return idOrName;
-    const aliasMatch = BUILDING_ALIAS_REVERSE[idOrName];
-    if (aliasMatch && BUILDING_FOLDER_MAP[aliasMatch]) return aliasMatch;
-    if (BUILDING_FOLDER_SET.has(idOrName)) {
-      return BUILDING_FOLDER_TO_NAME[idOrName] || null;
-    }
-    return null;
+    return resolveBuildingNameFromInput(idOrName);
   }, []);
 
   const fetchFloorSummaryByUrl = useCallback(async (url) => {
     if (!url) return null;
 
     // Try original URL first, then fall back to new py export naming
-    const candidates = [url];
+    const candidates = [];
     if (typeof url === "string" && url.endsWith("_Dept.geojson")) {
+      const roomsUrl = url.replace(/\/([^/]+)$/, "/Rooms/$1");
+      candidates.push(url.replace("_Dept.geojson", "_Dept_Rooms.geojson").replace(/\/([^/]+)$/, "/Rooms/$1"));
+      candidates.push(roomsUrl);
       candidates.push(url.replace("_Dept.geojson", "_Dept_Rooms.geojson"));
+      candidates.push(url);
+    } else {
+      candidates.push(url);
     }
 
     // Return cached summary if we already computed it for any candidate
@@ -3742,6 +8442,21 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         totalsByDept: {}
       };
     }
+    if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+      const buildingKey = normalizeDashboardKey(buildingId);
+      if (buildingKey) {
+        const scoped = campusRooms.filter((room) => {
+          const roomBuilding =
+            room?.building ??
+            room?.buildingName ??
+            room?.buildingLabel ??
+            '';
+          return normalizeDashboardKey(roomBuilding) === buildingKey;
+        });
+        const summary = summarizeRoomRowsForPanels(scoped);
+        if (summary) return summary;
+      }
+    }
     const sum = await fetchBuildingSummary(buildingId);
     return sum ?? {
       totalSf: undefined,
@@ -3754,7 +8469,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       officeCount: undefined,
       totalsByDept: {}
     };
-  }, [fetchBuildingSummary]);
+  }, [fetchBuildingSummary, campusRoomsLoaded, campusRooms]);
 
   const computeCampusTotals = useCallback(async () => {
     const campusAcc = createEmptySummaryAccumulator();
@@ -3838,6 +8553,25 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     currentFloorUrlRef.current = null;
     currentFloorContextRef.current = { url: null, key: null, buildingId: null, floorId: null };
     setPanelStats({ loading: true, mode: 'building' });
+    if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+      const buildingKey = normalizeDashboardKey(buildingId);
+      if (buildingKey) {
+        const scoped = campusRooms.filter((room) => {
+          const roomBuilding =
+            room?.building ??
+            room?.buildingName ??
+            room?.buildingLabel ??
+            '';
+          return normalizeDashboardKey(roomBuilding) === buildingKey;
+        });
+        const summary = summarizeRoomRowsForPanels(scoped);
+        if (summary) {
+          setBuildingStats(summary);
+          setPanelStats(formatSummaryForPanel(summary, 'building'));
+          return;
+        }
+      }
+    }
     computeBuildingTotals(buildingId)
       .then((summary) => {
         if (panelBuildingKeyRef.current !== resolvedKey) return;
@@ -3859,10 +8593,36 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     currentFloorUrlRef.current = url;
     setPanelStats({ loading: true, mode: 'floor' });
     const ctx = currentFloorContextRef.current;
+    if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+      const buildingKey = ctx?.buildingId || selectedBuildingId || selectedBuilding;
+      const floorLabel = ctx?.floorLabel || selectedFloor || '';
+      const scoped = campusRooms.filter((room) => {
+        const roomBuilding =
+          room?.building ??
+          room?.buildingName ??
+          room?.buildingLabel ??
+          '';
+        if (normalizeDashboardKey(roomBuilding) !== normalizeDashboardKey(buildingKey)) return false;
+        if (!floorLabel) return true;
+        const floorTokens = normalizeFloorTokens(floorLabel);
+        if (!floorTokens.length) return true;
+        return floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens);
+      });
+      const summary = summarizeRoomRowsForPanels(scoped);
+      if (summary) {
+        const labeled = { ...summary, floorLabel };
+        floorStatsCache.current[url] = summary;
+        setFloorStats(labeled);
+        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
+        setPanelStats(formatSummaryForPanel(summary, 'floor'));
+        return;
+      }
+    }
     const cachedUrlSummary = floorStatsCache.current[url];
     if (cachedUrlSummary) {
       const floorLabel = ctx?.floorLabel || selectedFloor || '';
       setFloorStats({ ...cachedUrlSummary, floorLabel });
+      setFloorLegendItems(toKeyDeptList(filterDeptTotals(cachedUrlSummary.totalsByDept)));
       setPanelStats(formatSummaryForPanel(cachedUrlSummary, 'floor'));
       return;
     }
@@ -3871,6 +8631,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       if (cached) {
         const floorLabel = ctx.floorLabel || selectedFloor || '';
         setFloorStats({ ...cached, floorLabel });
+        setFloorLegendItems(toKeyDeptList(filterDeptTotals(cached.totalsByDept)));
         setPanelStats(formatSummaryForPanel(cached, 'floor'));
         return;
       }
@@ -3884,6 +8645,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         }
         const floorLabel = latestCtx?.floorLabel || selectedFloor || '';
         setFloorStats(summary ? { ...summary, floorLabel } : null);
+        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary?.totalsByDept)));
         setPanelStats(formatSummaryForPanel(summary, 'floor'));
       })
       .catch(() => {
@@ -3893,11 +8655,52 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
       });
   }, [fetchFloorSummaryByUrl, selectedFloor]);
 
+  const refreshCampusRoomsFromApi = useCallback(async () => {
+    try {
+      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store' });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {}
+      if (res.ok && data?.ok && Array.isArray(data.rooms)) {
+        setAirtableRooms(data.rooms);
+        setAirtableLastSyncedAt(new Date());
+        return true;
+      }
+    } catch {}
+    return false;
+  }, []);
+
+  const scheduleCampusRoomsRefresh = useCallback(() => {
+    if (campusRoomsRefreshTimerRef.current) return;
+    campusRoomsRefreshTimerRef.current = setTimeout(() => {
+      campusRoomsRefreshTimerRef.current = null;
+      refreshCampusRoomsFromApi();
+    }, 300);
+  }, [refreshCampusRoomsFromApi]);
+
+  const handleRefreshAirtable = useCallback(async () => {
+    if (airtableRefreshPending) return;
+    setAirtableRefreshPending(true);
+    setAirtableRefreshMessage('');
+    const ok = await refreshCampusRoomsFromApi();
+    const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setAirtableRefreshMessage(ok ? `Refreshed ${timeLabel}` : 'Refresh failed');
+    setAirtableRefreshPending(false);
+  }, [airtableRefreshPending, refreshCampusRoomsFromApi]);
+
+  useEffect(() => () => {
+    if (campusRoomsRefreshTimerRef.current) {
+      clearTimeout(campusRoomsRefreshTimerRef.current);
+      campusRoomsRefreshTimerRef.current = null;
+    }
+  }, []);
+
   const saveRoomEdits = useCallback(
     async (edit) => {
       if (!edit || !universityId) return null;
 
-      const { buildingId, floorName, revitId, roomId, properties = {} } = edit;
+      const { buildingId, buildingName, floorName, revitId, roomId, roomLabel, roomNumber, roomGuid, properties = {} } = edit;
       if (!buildingId || !floorName || revitId == null) {
         console.warn('Missing ids for room edit', edit);
         return null;
@@ -3918,22 +8721,122 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           roomKey
         );
 
+        const typeValue = String(properties.type ?? '').trim();
+        const officeTypeLabel = getRoomTypeLabelFromProps(properties) || typeValue;
+        const allowOfficeFields = isAllowedOfficeType(officeTypeLabel);
+        const occStatus = allowOfficeFields
+          ? String(properties.occupancyStatus ?? '').trim()
+          : '';
+        const deptValue = String(properties.department ?? '').trim();
+        const occupantProvided = properties.occupant != null;
+        const occupantValue = String(properties.occupant ?? '').trim();
+        const seatCountProvided = properties.seatCount != null;
+        const seatCountRaw = properties.seatCount;
+        const seatCountNum = Number(seatCountRaw);
+        const seatCountValue = Number.isFinite(seatCountNum) && seatCountNum > 0 ? seatCountNum : null;
+
         const payload = {
-          type: properties.type || '',
-          department: properties.department || '',
-          occupant: properties.occupant || '',
+          type: typeValue || '',
+          department: deptValue || '',
           comments: properties.comments || '',
           updatedAt: serverTimestamp()
         };
+        if (allowOfficeFields) {
+          payload.occupant = properties.occupant || '';
+          payload.occupancyStatus = properties.occupancyStatus || '';
+        }
+        if (seatCountProvided) {
+          payload.seatCount = seatCountValue;
+        }
 
-        await setDoc(roomRef, payload, { merge: true });
+          await setDoc(roomRef, payload, { merge: true });
 
-        const patchPayload = {
-          type: properties.type || '',
-          department: properties.department || '',
-          occupant: properties.occupant || '',
+          const airtableId =
+            properties.airtableId ||
+            properties.AirtableId ||
+            properties.airtableID ||
+            properties['Airtable ID'] ||
+            properties['Airtable Id'] ||
+            null;
+          const airtablePayload = {};
+          if (occStatus) airtablePayload.occupancyStatus = occStatus;
+          if (typeValue) airtablePayload.type = typeValue;
+          if (deptValue) airtablePayload.department = deptValue;
+          if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
+          if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
+          const roomNumberValue = String(
+            roomNumber ??
+            properties.roomNumber ??
+            properties.RoomNumber ??
+            properties.Number ??
+            roomLabel ??
+            ''
+          ).trim();
+          const roomGuidValue = String(
+            roomGuid ??
+            properties.Revit_UniqueId ??
+            properties.revit_unique_id ??
+            properties.revitUniqueId ??
+            properties.RevitUniqueId ??
+            properties['Room GUID'] ??
+            properties.roomGuid ??
+            ''
+          ).trim();
+          let didUpdateAirtable = false;
+          if (airtableId && Object.keys(airtablePayload).length) {
+            try {
+              const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(airtablePayload)
+              });
+              if (!resp.ok) {
+                const text = await resp.text().catch(() => '');
+                console.warn('Airtable update failed', resp.status, text);
+              } else {
+                didUpdateAirtable = true;
+              }
+            } catch (err) {
+              console.warn('Airtable update failed', err);
+            }
+          }
+          if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
+            try {
+              const resp = await guardedAiFetch('/ai/api/rooms', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  roomId: roomGuidValue || roomNumberValue,
+                  roomGuid: roomGuidValue || undefined,
+                  building: buildingId,
+                  buildingName: buildingName || '',
+                  floor: floorName,
+                  ...airtablePayload
+                })
+              });
+              if (!resp.ok) {
+                const text = await resp.text().catch(() => '');
+                console.warn('Airtable update by roomId failed', resp.status, text);
+              } else {
+                didUpdateAirtable = true;
+              }
+            } catch (err) {
+              console.warn('Airtable update by roomId failed', err);
+            }
+          }
+
+          const patchPayload = {
+            type: properties.type || '',
+            department: properties.department || '',
+            occupant: allowOfficeFields ? (properties.occupant || '') : (properties.occupant ?? ''),
+            occupancyStatus: allowOfficeFields ? (properties.occupancyStatus || '') : (properties.occupancyStatus ?? ''),
           comments: properties.comments || ''
         };
+        if (seatCountProvided) {
+          patchPayload.seatCount = seatCountValue;
+          patchPayload.SeatCount = seatCountValue;
+          patchPayload['Seat Count'] = seatCountValue;
+        }
 
         setRoomPatches((prevMap) => {
           const next = new Map(prevMap || []);
@@ -3942,6 +8845,171 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
           next.set(patchKey, { ...prevPatch, ...patchPayload });
           return next;
         });
+
+        let didApplyDashboardPatch = false;
+        setCampusRooms((prevRooms) => {
+          if (!Array.isArray(prevRooms) || !prevRooms.length) return prevRooms;
+          const airtableId =
+            properties.airtableId ||
+            properties.AirtableId ||
+            properties.airtableID ||
+            properties['Airtable ID'] ||
+            properties['Airtable Id'] ||
+            null;
+          const normalizeKeyLoose = (value) =>
+            String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          const editRoomId = String(roomId ?? '').trim();
+          const editRoomLabel = String(roomLabel ?? '').trim();
+          const editRevitId = revitId != null ? String(revitId) : '';
+          const areaValueRaw =
+            properties.area ??
+            properties.areaSF ??
+            properties['Area (SF)'] ??
+            properties.Area_SF ??
+            properties.Area ??
+            null;
+          const areaValue = Number(areaValueRaw) || 0;
+          const editBuildingKey = normalizeDashboardKey(buildingId);
+          const editFloorKey = normalizeDashboardKey(floorName);
+          const editBuildingLoose = normalizeKeyLoose(buildingId);
+          const editFloorLoose = normalizeKeyLoose(floorName);
+          const labelFallbackIndexes = [];
+          let nextRooms = prevRooms.map((room, idx) => {
+            if (!room) return room;
+            const roomAirtableId =
+              room.airtableId ||
+              room.AirtableId ||
+              room['Airtable ID'] ||
+              null;
+            const roomRoomId = String(room.roomId ?? room.id ?? '').trim();
+            const buildingKey = normalizeDashboardKey(
+              room.building ?? room.buildingName ?? room.buildingLabel ?? ''
+            );
+            const floorKey = normalizeDashboardKey(
+              room.floor ?? room.floorId ?? room.floorName ?? ''
+            );
+            const buildingLoose = normalizeKeyLoose(
+              room.building ?? room.buildingName ?? room.buildingLabel ?? ''
+            );
+            const floorLoose = normalizeKeyLoose(
+              room.floor ?? room.floorId ?? room.floorName ?? ''
+            );
+            const buildingMatch =
+              (editBuildingKey && buildingKey === editBuildingKey) ||
+              (editBuildingLoose && buildingLoose === editBuildingLoose);
+            const floorMatch =
+              (editFloorKey && floorKey === editFloorKey) ||
+              (editFloorLoose && floorLoose === editFloorLoose);
+            const idMatch =
+              (airtableId && roomAirtableId && String(roomAirtableId) === String(airtableId)) ||
+              (editRoomId && roomRoomId === editRoomId) ||
+              (editRevitId && roomRoomId === editRevitId) ||
+              (editRoomLabel && roomRoomId === editRoomLabel);
+            let labelMatch = false;
+            if (!idMatch && buildingMatch && floorMatch && editRoomLabel) {
+              const roomLabelKey = String(
+                room.roomLabel ?? room.name ?? room.number ?? room.roomNumber ?? ''
+              ).trim();
+              const roomIdKey = String(room.roomId ?? room.id ?? '').trim();
+              labelMatch =
+                (roomLabelKey && roomLabelKey === editRoomLabel) ||
+                (roomIdKey && roomIdKey === editRoomLabel);
+            }
+            if (!idMatch && !labelMatch) {
+              if (editRoomLabel && !buildingMatch && !floorMatch) {
+                const roomIdKey = String(room.roomId ?? room.id ?? '').trim();
+                if (roomIdKey && roomIdKey === editRoomLabel) {
+                  labelFallbackIndexes.push(idx);
+                }
+              }
+              return room;
+            }
+            didApplyDashboardPatch = true;
+            return {
+              ...room,
+              type: properties.type != null ? properties.type : room.type,
+              department: properties.department != null ? properties.department : room.department,
+              occupant: properties.occupant != null ? properties.occupant : room.occupant,
+              occupancyStatus: properties.occupancyStatus != null
+                ? properties.occupancyStatus
+                : room.occupancyStatus,
+              seatCount: seatCountProvided ? seatCountValue : (room.seatCount ?? room.SeatCount ?? room['Seat Count']),
+              area: areaValue > 0 ? areaValue : (room.area ?? room.areaSF ?? room.sf ?? room.Area_SF ?? room.Area ?? room['Area (SF)']),
+              areaSF: areaValue > 0 ? areaValue : (room.areaSF ?? room.sf ?? room.area ?? room.Area_SF ?? room.Area ?? room['Area (SF)']),
+              sf: areaValue > 0 ? areaValue : (room.sf ?? room.areaSF ?? room.area ?? room.Area_SF ?? room.Area ?? room['Area (SF)']),
+              roomLabel: room.roomLabel ?? room.name ?? room.number ?? room.roomNumber ?? editRoomLabel,
+              comments: properties.comments != null ? properties.comments : room.comments
+            };
+          });
+          if (!didApplyDashboardPatch && editRoomLabel && labelFallbackIndexes.length === 1) {
+            const idx = labelFallbackIndexes[0];
+            if (nextRooms[idx]) {
+              didApplyDashboardPatch = true;
+                nextRooms[idx] = {
+                  ...nextRooms[idx],
+                  type: properties.type != null ? properties.type : nextRooms[idx].type,
+                  department: properties.department != null ? properties.department : nextRooms[idx].department,
+                  occupant: properties.occupant != null ? properties.occupant : nextRooms[idx].occupant,
+                  occupancyStatus: properties.occupancyStatus != null
+                    ? properties.occupancyStatus
+                    : nextRooms[idx].occupancyStatus,
+                  seatCount: seatCountProvided ? seatCountValue : (nextRooms[idx].seatCount ?? nextRooms[idx].SeatCount ?? nextRooms[idx]['Seat Count']),
+                  area: areaValue > 0 ? areaValue : (nextRooms[idx].area ?? nextRooms[idx].areaSF ?? nextRooms[idx].sf),
+                  areaSF: areaValue > 0 ? areaValue : (nextRooms[idx].areaSF ?? nextRooms[idx].sf ?? nextRooms[idx].area),
+                  sf: areaValue > 0 ? areaValue : (nextRooms[idx].sf ?? nextRooms[idx].areaSF ?? nextRooms[idx].area),
+                  roomLabel: nextRooms[idx].roomLabel ?? nextRooms[idx].name ?? nextRooms[idx].number ?? editRoomLabel,
+                  comments: properties.comments != null ? properties.comments : nextRooms[idx].comments
+                };
+            }
+          }
+          if (!didApplyDashboardPatch && editRoomLabel) {
+            const roomLabelKey = normalizeKeyLoose(editRoomLabel);
+            const buildingKey = normalizeKeyLoose(buildingId);
+            const floorKey = normalizeKeyLoose(floorName);
+            const alreadyExists = nextRooms.some((room) => {
+              const roomBuildingKey = normalizeKeyLoose(
+                room?.building ?? room?.buildingName ?? room?.buildingLabel ?? ''
+              );
+              const roomFloorKey = normalizeKeyLoose(
+                room?.floor ?? room?.floorId ?? room?.floorName ?? ''
+              );
+              const roomLabelKeyExisting = normalizeKeyLoose(
+                room?.roomLabel ?? room?.name ?? room?.number ?? room?.roomNumber ?? room?.roomId ?? room?.id ?? ''
+              );
+              return (
+                roomLabelKeyExisting &&
+                roomLabelKeyExisting === roomLabelKey &&
+                (!buildingKey || roomBuildingKey === buildingKey) &&
+                (!floorKey || roomFloorKey === floorKey)
+              );
+            });
+            if (!alreadyExists) {
+              didApplyDashboardPatch = true;
+              nextRooms = [
+                ...nextRooms,
+                {
+                  roomId: editRoomLabel,
+                  roomLabel: editRoomLabel,
+                  building: buildingId,
+                  floor: floorName,
+                  area: areaValue || 0,
+                  areaSF: areaValue || 0,
+                  sf: areaValue || 0,
+                  type: properties.type || '',
+                  department: properties.department || '',
+                  occupant: properties.occupant || '',
+                  occupancyStatus: properties.occupancyStatus || '',
+                  seatCount: seatCountProvided ? seatCountValue : null,
+                  comments: properties.comments || ''
+                }
+              ];
+            }
+          }
+          return nextRooms;
+        });
+        if (didUpdateAirtable) {
+          scheduleCampusRoomsRefresh();
+        }
 
         try {
           const ctx = currentFloorContextRef.current;
@@ -3961,7 +9029,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
         return null;
       }
     },
-    [db, universityId]
+    [db, universityId, scheduleCampusRoomsRefresh]
   );
 
   // Initialize defaults on mount: first building + LEVEL_1 (or fallback)
@@ -3973,21 +9041,6 @@ useEffect(() => {
   setSelectedBuilding(first);
   setSelectedFloor('LEVEL_1');
 }, []);
-
-  const activeBuildingFeature = useMemo(() => {
-    const feats = config?.buildings?.features || [];
-    const byId = feats.find((f) => String(f?.properties?.id) === String(selectedBuildingId));
-    if (byId) return byId;
-    const byName = feats.find((f) => (f?.properties?.name || '') === (selectedBuilding || ''));
-    return byName || null;
-  }, [config, selectedBuildingId, selectedBuilding]);
-  const activeBuildingName =
-    activeBuildingFeature?.properties?.name ||
-    selectedBuilding ||
-    selectedBuildingId ||
-    'Building';
-  const activeBuildingId = selectedBuildingId || selectedBuilding || '';
-  const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
@@ -4007,6 +9060,281 @@ useEffect(() => {
     await handleLoadFloorplan(floorId);
   }, [handleLoadFloorplan]);
 
+  const getDrawingAlignContext = useCallback(() => {
+    const rawLabel = activeBuildingName || selectedBuildingId || selectedBuilding || '';
+    const buildingLabel = resolveDrawingAlignLabel({
+      buildingLabel: rawLabel,
+      buildingId: selectedBuildingId || selectedBuilding || ''
+    });
+    const floorId = panelSelectedFloor || selectedFloor || '';
+    return {
+      buildingLabel: buildingLabel || rawLabel,
+      floorId
+    };
+  }, [activeBuildingName, selectedBuildingId, selectedBuilding, panelSelectedFloor, selectedFloor]);
+
+  const getFloorAdjustContext = useCallback(() => {
+    const floorId = panelSelectedFloor || selectedFloor || '';
+    const currentUrl = currentFloorContextRef.current?.url || null;
+    const currentBasePath = currentFloorContextRef.current?.floorAdjustBasePath || null;
+    const urlFolder =
+      currentUrl
+        ? getBuildingFolderFromBasePath(currentUrl)
+        : null;
+    const folderKey = getBuildingFolderKey(selectedBuildingId || selectedBuilding) || urlFolder;
+    const storedLabel = currentFloorContextRef.current?.floorAdjustLabel || null;
+    const storedFloorId = currentFloorContextRef.current?.floorAdjustFloorId || null;
+    const rawLabel = activeBuildingName || selectedBuildingId || selectedBuilding || '';
+    const buildingLabel =
+      storedLabel ||
+      folderKey ||
+      resolveDrawingAlignLabel({
+        buildingLabel: rawLabel,
+        buildingId: selectedBuildingId || selectedBuilding || ''
+      }) ||
+      rawLabel;
+    const resolvedFloorId =
+      storedFloorId && fId(storedFloorId) === fId(floorId)
+        ? storedFloorId
+        : floorId;
+    return { buildingLabel, floorId: resolvedFloorId, url: currentUrl, basePath: currentBasePath };
+  }, [activeBuildingName, selectedBuildingId, selectedBuilding, panelSelectedFloor, selectedFloor, getBuildingFolderKey]);
+
+  const buildFloorAdjustDocId = useCallback((buildingLabel, floorId) => {
+    const key = canon(buildingLabel || '');
+    const floorKey = fId(floorId || '');
+    if (!key || !floorKey) return null;
+    return `${key}__${floorKey}`;
+  }, []);
+
+  const loadFloorAdjustFromDb = useCallback(
+    async (buildingLabel, floorId) => {
+      if (!universityId || !buildingLabel || !floorId) return null;
+      const docId = buildFloorAdjustDocId(buildingLabel, floorId);
+      if (!docId) return null;
+      try {
+        const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return null;
+        return snap.data() || null;
+      } catch {
+        return null;
+      }
+    },
+    [db, universityId, buildFloorAdjustDocId]
+  );
+
+  const saveFloorAdjustToDb = useCallback(
+    async (buildingLabel, floorId, adjust) => {
+      if (!universityId || !buildingLabel || !floorId || !adjust) return;
+      const docId = buildFloorAdjustDocId(buildingLabel, floorId);
+      if (!docId) return;
+      try {
+        const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
+        await setDoc(
+          ref,
+          {
+            buildingLabel,
+            floorId,
+            rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
+            scale: Number.isFinite(adjust.scale) ? adjust.scale : 1,
+            translateMeters: Array.isArray(adjust.translateMeters) ? adjust.translateMeters : [0, 0],
+            translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
+            anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
+            pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
+            updatedAt: serverTimestamp(),
+            updatedBy: authUser?.uid || authUser?.email || null
+          },
+          { merge: true }
+        );
+      } catch {}
+    },
+    [db, universityId, buildFloorAdjustDocId, authUser]
+  );
+
+  const computeDrawingAlign = useCallback((roomPts, drawingPts) => {
+    if (!Array.isArray(roomPts) || roomPts.length < 2) return null;
+    if (!Array.isArray(drawingPts) || drawingPts.length < 2) return null;
+    const [r1, r2] = roomPts;
+    const [d1, d2] = drawingPts;
+    const rvx = r2[0] - r1[0];
+    const rvy = r2[1] - r1[1];
+    const dvx = d2[0] - d1[0];
+    const dvy = d2[1] - d1[1];
+    const roomDist = Math.hypot(rvx, rvy);
+    const drawDist = Math.hypot(dvx, dvy);
+    if (!Number.isFinite(roomDist) || !Number.isFinite(drawDist) || roomDist <= 0 || drawDist <= 0) return null;
+    const roomAngle = Math.atan2(rvy, rvx);
+    const drawAngle = Math.atan2(dvy, dvx);
+    const rotationDeg = ((roomAngle - drawAngle) * 180) / Math.PI;
+    const scale = roomDist / drawDist;
+    return {
+      rotationDeg,
+      scale,
+      pivot: d1,
+      target: r1
+    };
+  }, []);
+
+  const cancelDrawingAlign = useCallback(() => {
+    setDrawingAlignState(null);
+    setDrawingAlignNotice('');
+  }, []);
+
+  const startDrawingAlign = useCallback(() => {
+    if (!mapRef.current || !mapRef.current.getLayer(FLOOR_FILL_ID)) {
+      alert('Load a floorplan first, then start align.');
+      return;
+    }
+    const { buildingLabel, floorId } = getDrawingAlignContext();
+    if (!buildingLabel || !floorId) {
+      alert('Select a building and floor before aligning.');
+      return;
+    }
+    setDrawingAlignNotice('');
+    setDrawingAlignState({
+      buildingLabel,
+      floorId,
+      roomPts: [],
+      drawingPts: [],
+      step: 0
+    });
+  }, [getDrawingAlignContext]);
+
+  const clearDrawingAlignForFloor = useCallback(async () => {
+    const { buildingLabel, floorId } = getDrawingAlignContext();
+    if (!buildingLabel || !floorId) return;
+    clearDrawingAlign(buildingLabel, floorId);
+    setDrawingAlignNotice('');
+    const url = buildFloorUrl(selectedBuilding, floorId);
+    if (url) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+    }
+    await handleLoadFloorplan(floorId);
+  }, [getDrawingAlignContext, selectedBuilding, buildFloorUrl, handleLoadFloorplan]);
+
+  const startFloorRotate = useCallback(() => {
+    if (!mapRef.current || !mapRef.current.getLayer(FLOOR_FILL_ID)) {
+      alert('Load a floorplan first, then rotate.');
+      return;
+    }
+    const { buildingLabel, floorId } = getFloorAdjustContext();
+    if (!buildingLabel || !floorId) {
+      alert('Select a building and floor before rotating.');
+      return;
+    }
+    setFloorAdjustNotice('');
+    setFloorAdjustMode('rotate');
+  }, [getFloorAdjustContext]);
+
+  const startFloorMove = useCallback(() => {
+    if (!mapRef.current || !mapRef.current.getLayer(FLOOR_FILL_ID)) {
+      alert('Load a floorplan first, then move.');
+      return;
+    }
+    const { buildingLabel, floorId } = getFloorAdjustContext();
+    if (!buildingLabel || !floorId) {
+      alert('Select a building and floor before moving.');
+      return;
+    }
+    setFloorAdjustNotice('');
+    setFloorAdjustMode('move');
+  }, [getFloorAdjustContext]);
+
+  const cancelFloorAdjust = useCallback(() => {
+    setFloorAdjustMode(null);
+    setFloorAdjustNotice('');
+    try { mapRef.current?.dragPan?.enable(); } catch {}
+  }, []);
+
+  const clearFloorAdjustForFloor = useCallback(async () => {
+    const { buildingLabel, floorId } = getFloorAdjustContext();
+    if (!buildingLabel || !floorId) return;
+    const adjustLabel = currentFloorContextRef.current?.floorAdjustLabel || buildingLabel;
+    clearFloorAdjust(adjustLabel, floorId);
+    const adjustBasePath = currentFloorContextRef.current?.floorAdjustBasePath || null;
+    if (adjustBasePath) clearFloorAdjustByBasePath(adjustBasePath, floorId);
+    const adjustUrl = currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, floorId);
+    if (adjustUrl) clearFloorAdjustByUrl(adjustUrl);
+    try {
+      await saveFloorAdjustToDb(adjustLabel, floorId, {
+        rotationDeg: 0,
+        scale: 1,
+        translateMeters: [0, 0],
+        translateLngLat: null,
+        anchorLngLat: null,
+        pivot: null
+      });
+    } catch {}
+    setFloorAdjustNotice('');
+    const url = adjustUrl || buildFloorUrl(selectedBuilding, floorId);
+    if (url) {
+      floorCache.delete(url);
+      floorTransformCache.delete(url);
+    }
+    await handleLoadFloorplan(floorId);
+  }, [getFloorAdjustContext, selectedBuilding, buildFloorUrl, handleLoadFloorplan, saveFloorAdjustToDb]);
+
+  const drawingAlignContext = getDrawingAlignContext();
+  const drawingAlignStored = Boolean(
+    loadDrawingAlign(drawingAlignContext.buildingLabel, drawingAlignContext.floorId)
+  );
+  const drawingAlignStepLabel = drawingAlignState
+    ? (DRAWING_ALIGN_STEPS[drawingAlignState.step]?.label || '')
+    : '';
+  const drawingAlignStep = drawingAlignState ? drawingAlignState.step : 0;
+  const drawingAlignActive = Boolean(drawingAlignState);
+
+  const floorAdjustContext = getFloorAdjustContext();
+  const floorAdjustByBase = floorAdjustContext.basePath
+    ? loadFloorAdjustByBasePath(floorAdjustContext.basePath, floorAdjustContext.floorId)
+    : null;
+  const floorAdjustByUrl = floorAdjustContext.url ? loadFloorAdjustByUrl(floorAdjustContext.url) : null;
+  const floorAdjustByLabel = loadFloorAdjust(floorAdjustContext.buildingLabel, floorAdjustContext.floorId);
+  const floorAdjustPick = pickLatestFloorAdjust({
+    base: floorAdjustByBase,
+    url: floorAdjustByUrl,
+    label: floorAdjustByLabel
+  });
+  const floorAdjustValue = floorAdjustPick.adjust;
+  const floorAdjustDebugInfo = isAdminUser ? {
+    source: floorAdjustPick.source,
+    labelKey: buildFloorAdjustKey(floorAdjustContext.buildingLabel, floorAdjustContext.floorId),
+    urlKey: floorAdjustContext.url ? buildFloorAdjustUrlKey(floorAdjustContext.url) : null,
+    baseKey: floorAdjustContext.basePath
+      ? buildFloorAdjustFloorKey(floorAdjustContext.basePath, floorAdjustContext.floorId)
+      : null,
+    floorId: floorAdjustContext.floorId,
+    url: floorAdjustContext.url,
+    basePath: floorAdjustContext.basePath,
+    savedAt: floorAdjustValue?.savedAt || 0,
+    rotationDeg: floorAdjustValue?.rotationDeg || 0,
+    scale: floorAdjustValue?.scale || 1,
+    translateMeters: floorAdjustValue?.translateMeters || [0, 0],
+    translateLngLat: floorAdjustValue?.translateLngLat || null,
+    anchorLngLat: floorAdjustValue?.anchorLngLat || null,
+    pivot: floorAdjustValue?.pivot || currentFloorContextRef.current?.floorAdjustBasePivot || null,
+    storedKeys: (() => {
+      if (typeof window === 'undefined' || !window.localStorage) return [];
+      try {
+        const all = Object.keys(window.localStorage).filter((k) =>
+          k.startsWith(FLOORPLAN_ADJUST_STORAGE_PREFIX) ||
+          k.startsWith(FLOORPLAN_ADJUST_URL_PREFIX) ||
+          k.startsWith(FLOORPLAN_ADJUST_FLOOR_PREFIX)
+        );
+        const floorKey = fId(floorAdjustContext.floorId || '');
+        return all.filter((k) => floorKey && k.includes(`/${floorKey}`));
+      } catch {
+        return [];
+      }
+    })()
+  } : null;
+  const floorRotateValue = floorAdjustValue?.rotationDeg || 0;
+  const floorScaleValue = floorAdjustValue?.scale || 1;
+  const floorTranslateValue = floorAdjustValue?.translateMeters || [0, 0];
+  const floorAdjustStored = hasFloorAdjust(floorAdjustValue);
+
   const loadSelectedFloor = useCallback(() => {
     if (!panelSelectedFloor) return;
     if (panelSelectedFloor !== selectedFloor) {
@@ -4015,13 +9343,20 @@ useEffect(() => {
     handlePanelLoadFloor(panelSelectedFloor);
   }, [panelSelectedFloor, handlePanelLoadFloor, selectedFloor]);
 
-  async function handleLoadFloorplan() {
+  async function handleLoadFloorplan(floorOverride) {
     if (!mapLoaded || !mapRef.current) return false;
-    if (!selectedFloor || !availableFloors.includes(selectedFloor)) {
+    const floorIdRaw = floorOverride || selectedFloor;
+    const buildingKey = getBuildingFolderKey(selectedBuildingId || selectedBuilding);
+    const buildingFloors = buildingKey ? getAvailableFloors(buildingKey) : availableFloors;
+    const floorId = resolveAvailableFloorId(floorIdRaw, buildingFloors);
+    if (!floorId) {
       alert('This floor is not available for this building.');
       return false;
     }
-    const url = buildFloorUrl(selectedBuilding, selectedFloor);
+    if (floorId !== selectedFloor) {
+      setSelectedFloor(floorId);
+    }
+    const url = buildFloorUrl(selectedBuilding, floorId);
     if (!url) { alert('No file mapped for that floor.'); return false; }
     try {
       setPopupMode('floor');
@@ -4030,24 +9365,107 @@ useEffect(() => {
       const lastSel = floorSelectionRef.current?.[url];
       const buildingFolder = getBuildingFolderKey(selectedBuildingId || selectedBuilding);
       const basePath = buildingFolder
-        ? `/stakeholder-map/floorplans/Hastings/${buildingFolder}`
+        ? assetUrl(`floorplans/Hastings/${buildingFolder}`)
         : null;
+      const urlFolder = url ? getBuildingFolderFromBasePath(url) : null;
+      const adjustLabel =
+        buildingKey ||
+        urlFolder ||
+        resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding || '') ||
+        selectedBuildingId ||
+        selectedBuilding;
+      const localAdjustByBase = basePath ? loadFloorAdjustByBasePath(basePath, floorId) : null;
+      const localAdjustByUrl = url ? loadFloorAdjustByUrl(url) : null;
+      const localAdjustByLabel = loadFloorAdjust(adjustLabel, floorId);
+      const localPick = pickLatestFloorAdjust({
+        base: localAdjustByBase,
+        url: localAdjustByUrl,
+        label: localAdjustByLabel
+      });
+      const localAdjust = localPick.adjust;
+      const localHasAdjust = hasFloorAdjust(localAdjust);
+      const localSavedAt = Number(localAdjust?.savedAt) || 0;
+      const dbAdjust = await loadFloorAdjustFromDb(adjustLabel, floorId);
+      if (dbAdjust) {
+        const dbCandidate = {
+          rotationDeg: Number(dbAdjust.rotationDeg) || 0,
+          scale: Number(dbAdjust.scale) || 1,
+          translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
+          translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
+          anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
+          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
+        };
+        const dbHasAdjust =
+          hasFloorAdjust(dbCandidate);
+        const dbUpdatedAtMs = (() => {
+          const ts = dbAdjust.updatedAt;
+          if (ts?.toMillis) return ts.toMillis();
+          if (Number.isFinite(ts?.seconds)) return ts.seconds * 1000;
+          return 0;
+        })();
+        const shouldPreferDb = dbUpdatedAtMs
+          ? dbUpdatedAtMs >= localSavedAt
+          : (!localHasAdjust && dbHasAdjust);
+        if (shouldPreferDb) {
+          saveFloorAdjust(adjustLabel, floorId, dbCandidate);
+          if (url) saveFloorAdjustByUrl(url, dbCandidate);
+          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
+          if (url) {
+            floorCache.delete(url);
+            floorTransformCache.delete(url);
+          }
+        }
+      }
       let fitBuilding = selectedBuildingFeatureRef.current || null;
+      const targetRaw = String(selectedBuildingId || selectedBuilding || '');
+      try {
+        const targetKey = normalizeSnapKey(targetRaw);
+        const fitKey = normalizeSnapKey(fitBuilding?.properties?.id || fitBuilding?.properties?.name || '');
+        if (!fitKey || (targetKey && fitKey !== targetKey)) {
+          fitBuilding = null;
+        }
+      } catch {}
       if (!fitBuilding) {
         try {
           const feats = config?.buildings?.features || [];
-          fitBuilding = feats.find(f => String(f.properties?.id) === String(selectedBuildingId || selectedBuilding)) || null;
+          const directMatch = feats.find((f) => String(f.properties?.id) === targetRaw) || null;
+          if (directMatch) {
+            fitBuilding = directMatch;
+          } else {
+            fitBuilding = matchBuildingFeature(feats, targetRaw);
+          }
+          if (fitBuilding) {
+            selectedBuildingFeatureRef.current = fitBuilding;
+          }
         } catch {}
       }
-      const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding }, {
+      if (!fitBuilding && activeBuildingFeature) {
+        fitBuilding = activeBuildingFeature;
+        selectedBuildingFeatureRef.current = activeBuildingFeature;
+      }
+      if (!fitBuilding) {
+        fitBuilding = findBuildingFeatureInMap(mapRef.current, targetRaw);
+        if (fitBuilding) {
+          selectedBuildingFeatureRef.current = fitBuilding;
+        }
+      }
+      const rotationOverrideDeg = getFloorplanRotationOverride(
+        fitBuilding?.properties?.id ||
+        fitBuilding?.properties?.name ||
+        selectedBuildingId ||
+        selectedBuilding,
+        floorId
+      );
+      const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
-        floor: selectedFloor,
+        floor: floorId,
         roomPatches,
+        airtableLookup: airtableRoomLookup,
         currentFloorContextRef,
         roomsBasePath: basePath,
-        roomsFloorId: selectedFloor,
+        roomsFloorId: floorId,
         wallsBasePath: basePath,
-        wallsFloorId: selectedFloor,
+        wallsFloorId: floorId,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -4061,7 +9479,7 @@ useEffect(() => {
       currentFloorUrlRef.current = url;
       lastFloorUrlRef.current = url;
       const canonicalBuildingId = bId(selectedBuildingId || selectedBuilding || '');
-      const canonicalFloorId = fId(selectedFloor || '');
+      const canonicalFloorId = fId(floorId || '');
       const floorKey = canonicalBuildingId && canonicalFloorId ? `${canonicalBuildingId}/${canonicalFloorId}` : null;
       if (floorKey && loadResult.summary) {
         floorSummaryCacheRef.current.set(floorKey, loadResult.summary);
@@ -4073,17 +9491,37 @@ useEffect(() => {
         key: floorKey,
         buildingId: canonicalBuildingId,
         floorId: canonicalFloorId,
-        floorLabel: selectedFloor
+        floorLabel: floorId,
+        floorAdjustLabel: adjustLabel || currentFloorContextRef.current?.floorAdjustLabel || null,
+        floorAdjustFloorId: floorId,
+        floorAdjustBasePath: basePath || currentFloorContextRef.current?.floorAdjustBasePath || null
       };
 
-      if (loadResult.summary) {
-        floorStatsCache.current[url] = loadResult.summary;
-        floorSummaryCacheRef.current.set(url, loadResult.summary);
-        const summaryWithLabel = { ...loadResult.summary, floorLabel: selectedFloor };
+      const summaryFromRooms = (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length)
+        ? summarizeRoomRowsForPanels(
+            campusRooms.filter((room) => {
+              const roomBuilding =
+                room?.building ??
+                room?.buildingName ??
+                room?.buildingLabel ??
+                '';
+              if (normalizeDashboardKey(roomBuilding) !== normalizeDashboardKey(selectedBuildingId || selectedBuilding)) return false;
+              const floorTokens = normalizeFloorTokens(floorId);
+              if (!floorTokens.length) return true;
+              return floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens);
+            })
+          )
+        : null;
+
+      const summaryToUse = summaryFromRooms || loadResult.summary || null;
+      if (summaryToUse) {
+        floorStatsCache.current[url] = summaryToUse;
+        floorSummaryCacheRef.current.set(url, summaryToUse);
+        const summaryWithLabel = { ...summaryToUse, floorLabel: floorId };
         setFloorStats(summaryWithLabel);
-        setFloorLegendItems(toKeyDeptList(loadResult.summary.totalsByDept));
+        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summaryToUse.totalsByDept)));
         if (currentFloorUrlRef.current === url) {
-          setPanelStats(formatSummaryForPanel(loadResult.summary, 'floor'));
+          setPanelStats(formatSummaryForPanel(summaryToUse, 'floor'));
         }
       } else {
         setFloorStats(null);
@@ -4204,7 +9642,7 @@ useEffect(() => {
   }, []);
 
   const explainFloor = useCallback(async ({ context, floorStats, panelStats }) => {
-    const res = await guardedAiFetch('http://localhost:8787/explain-floor', {
+    const res = await guardedAiFetch('/ai/explain-floor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ context, floorStats, panelStats })
@@ -4219,7 +9657,7 @@ useEffect(() => {
   }, []);
 
   const explainCampus = useCallback(async ({ context, campusStats, panelStats }) => {
-    const res = await guardedAiFetch('http://localhost:8787/explain-campus', {
+    const res = await guardedAiFetch('/ai/explain-campus', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ context, campusStats, panelStats })
@@ -4234,7 +9672,7 @@ useEffect(() => {
   }, []);
 
   const compareScenario = useCallback(async ({ context, baselineStats, scenarioStats, deltas }) => {
-    const res = await guardedAiFetch('http://localhost:8787/compare-scenario', {
+    const res = await guardedAiFetch('/ai/compare-scenario', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ context, baselineStats, scenarioStats, deltas })
@@ -4248,7 +9686,7 @@ useEffect(() => {
   }, []);
 
   const createMoveScenario = useCallback(async ({ request, context, inventory, constraints }) => {
-    const res = await guardedAiFetch('http://localhost:8787/create-move-scenario', {
+    const res = await guardedAiFetch('/ai/create-move-scenario', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ request, context, inventory, constraints })
@@ -4262,7 +9700,7 @@ useEffect(() => {
   }, []);
 
   const askMapfluence = useCallback(async ({ question, context, data }) => {
-    const res = await guardedAiFetch('http://localhost:8787/ask-mapfluence', {
+    const res = await guardedAiFetch('/ai/ask-mapfluence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, context, data })
@@ -4276,7 +9714,7 @@ useEffect(() => {
   }, []);
 
   const explainBuilding = useCallback(async ({ context, buildingStats, panelStats }) => {
-    const res = await guardedAiFetch('http://localhost:8787/explain-building', {
+    const res = await guardedAiFetch('/ai/explain-building', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ context, buildingStats, panelStats })
@@ -4382,6 +9820,11 @@ useEffect(() => {
       const baselineScope = 'campus';
 
       const buildingIdVal = selectedBuildingId || selectedBuilding || '';
+      const buildingNameForRows =
+        resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding) ||
+        selectedBuilding ||
+        selectedBuildingId ||
+        '';
 
       const context = {
         universityId,
@@ -4434,6 +9877,13 @@ useEffect(() => {
     universityId
   ]);
 
+  useEffect(() => {
+    if (!aiScenarioComparePending) return;
+    if (!scenarioAssignedDept || !scenarioTotals?.rooms) return;
+    setAiScenarioComparePending(false);
+    onCompareScenario();
+  }, [aiScenarioComparePending, scenarioAssignedDept, scenarioTotals, onCompareScenario]);
+
   const onExplainBuilding = useCallback(async () => {
     setAiBuildingErr('');
     setAiBuildingLoading(true);
@@ -4466,7 +9916,7 @@ useEffect(() => {
   useEffect(() => {
     const ping = async () => {
       try {
-        const r = await fetch('http://localhost:8787/health', { cache: 'no-store' });
+        const r = await fetch('/ai/health', { cache: 'no-store' });
         setAiStatus(r.ok ? 'ok' : 'down');
       } catch {
         setAiStatus('down');
@@ -4495,7 +9945,8 @@ useEffect(() => {
       ...ctx,
       colorMode: floorColorMode,
       selectedIds: combinedSelectedIds,
-      solidFill: true
+      solidFill: true,
+      labelOptions: { hideDrawing: true }
     });
     if (!img) {
       alert('Unable to render floorplan.');
@@ -4551,6 +10002,8 @@ useEffect(() => {
       clearScenario();
     } else {
       setScenarioPanelVisible(true);
+      setScenarioPanelPos(null);
+      setScenarioPanelTop(20);
     }
   }, [clearScenario, moveScenarioMode, setScenarioPanelVisible]);
 
@@ -4612,7 +10065,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
         const merged = patch ? { ...props, ...patch } : props;
         const roomNum = merged.Number ?? merged.RoomNumber ?? merged.number ?? merged.Room ?? '';
-        const typeVal = merged.RoomType ?? merged.Type ?? merged.type ?? merged.Name ?? '';
+        const typeVal = getRoomTypeLabelFromProps(merged) || merged.Name || '';
         const deptVal = (merged.department ?? merged.Department ?? merged.Dept ?? '').toString().trim();
         if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
         const areaVal = resolvePatchedArea(merged);
@@ -4728,14 +10181,28 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const request = (aiCreateScenarioText || '').trim();
       if (!request) throw new Error('Enter a short request for the move scenario.');
 
-      const buildingLabel = activeBuildingName || selectedBuilding || '';
+      const allRooms = (campusRoomsLoaded && Array.isArray(campusRooms)) ? campusRooms : [];
+      const deptCandidates = getDeptCandidates(allRooms);
+      const inferredDept = scenarioAssignedDept || findDeptInText(request, deptCandidates) || '';
+      const excludeBuildings = inferredDept ? getDeptCurrentBuildings(allRooms, inferredDept) : [];
+      const excludeBuildingKeys = new Set(
+        (excludeBuildings || []).map((name) => normalizeDashboardKey(name)).filter(Boolean)
+      );
+      const buildingCandidates = getBuildingCandidates(allRooms);
+      const inferredBuilding = findBuildingInText(request, buildingCandidates) || '';
+
+      const buildingLabel = inferredBuilding || activeBuildingName || selectedBuilding || '';
       const floorId = ''; // avoid biasing to a single floor; inventory is campus-wide
 
       let inventory = [];
-      try {
-        const rows = await collectSpaceRows('__all__', '');
-        inventory = buildInventoryFromRoomRows(rows, 250) || [];
-      } catch {}
+      if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+        inventory = buildInventoryFromRoomRows(campusRooms, 2000) || [];
+      } else {
+        try {
+          const rows = await collectSpaceRows('__all__', '');
+          inventory = buildInventoryFromRoomRows(rows, 250) || [];
+        } catch {}
+      }
 
       if (!inventory.length) {
         const featureList =
@@ -4748,19 +10215,224 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         throw new Error('No room inventory loaded yet. Load Space Data or a floorplan first.');
       }
 
+      if (inferredBuilding) {
+        const targetKey = normalizeDashboardKey(inferredBuilding);
+        const filteredInventory = inventory.filter((room) => {
+          const buildingName =
+            room?.buildingLabel ??
+            room?.building ??
+            room?.buildingName ??
+            '';
+          return normalizeDashboardKey(buildingName) === targetKey;
+        });
+        if (!filteredInventory.length) {
+          throw new Error(`No rooms found for ${inferredBuilding}.`);
+        }
+        inventory = filteredInventory;
+      }
+
+      if (excludeBuildingKeys.size) {
+        const filteredInventory = inventory.filter((room) => {
+          const buildingName =
+            room?.buildingLabel ??
+            room?.building ??
+            room?.buildingName ??
+            '';
+          return !excludeBuildingKeys.has(normalizeDashboardKey(buildingName));
+        });
+        if (!filteredInventory.length) {
+          throw new Error(
+            `No rooms available outside the current ${inferredDept || 'department'} home building(s).`
+          );
+        }
+        inventory = filteredInventory;
+      }
+
+      inventory = minifyMoveScenarioInventory(inventory);
+
+      let baselineTotals = null;
+      let baselineBuildingLabel = '';
+      if (inferredDept) {
+        try {
+          const { perBuilding, campusTotals } = await computeDeptTotalsByBuildingAcrossCampus(inferredDept, {
+            ensureFloorsForBuilding,
+            buildFloorUrl,
+            floorCache,
+            fetchGeoJSON
+          });
+          const baselineEntry = Object.entries(perBuilding || {}).sort(
+            (a, b) => (b[1]?.totalSF || 0) - (a[1]?.totalSF || 0) || (b[1]?.rooms || 0) - (a[1]?.rooms || 0)
+          )[0] || null;
+          baselineTotals = baselineEntry ? baselineEntry[1] : campusTotals;
+          baselineBuildingLabel = baselineEntry ? baselineEntry[0] : '';
+          if (baselineTotals) {
+            baselineTotals = { ...baselineTotals, __label: baselineBuildingLabel || 'campus' };
+          }
+        } catch {}
+      }
+
+      const inventoryTrimOptions = inferredBuilding
+        ? { maxTotal: 260, maxPerBuilding: 260, maxPerType: 35 }
+        : { maxTotal: 220, maxPerBuilding: 90, maxPerType: 25 };
+      if (baselineTotals && inventory.length > inventoryTrimOptions.maxTotal) {
+        inventory = selectScenarioInventoryByBaseline(inventory, baselineTotals, {
+          maxTotal: inventoryTrimOptions.maxTotal,
+          minPerType: inferredBuilding ? 8 : 5,
+          maxPerType: inferredBuilding ? 45 : 35
+        });
+      } else {
+        inventory = shrinkMoveScenarioInventory(inventory, inventoryTrimOptions);
+      }
+
+      const inventoryLookup = new Map();
+      inventory.forEach((room) => {
+        if (!room) return;
+        const keys = [room.roomId, room.id, room.revitId].filter((v) => v != null).map((v) => String(v));
+        keys.forEach((key) => {
+          if (!inventoryLookup.has(key)) inventoryLookup.set(key, room);
+        });
+      });
+      const findInventoryMatchForCandidate = (candidate) => {
+        if (!candidate || !inventory.length) return null;
+        const buildingKey = normalizeDashboardKey(candidate?.buildingLabel || '');
+        const floorTokens = normalizeFloorTokens(candidate?.floorName || candidate?.floorId || '');
+        const roomLabelKey = normalizeRoomLabelMatch(candidate?.roomLabel || candidate?.roomNumber || '');
+        if (roomLabelKey) {
+          const direct = inventory.find((room) => {
+            const roomBuilding = normalizeDashboardKey(
+              room?.buildingLabel ?? room?.buildingName ?? room?.building ?? ''
+            );
+            if (buildingKey && roomBuilding !== buildingKey) return false;
+            if (floorTokens.length && !floorMatchesTokens(room?.floorName ?? room?.floorId ?? '', floorTokens)) {
+              return false;
+            }
+            const roomLabelMatch = normalizeRoomLabelMatch(room?.roomLabel ?? room?.roomNumber ?? '');
+            return roomLabelMatch && roomLabelMatch === roomLabelKey;
+          });
+          if (direct) return direct;
+        }
+        const typeKey = normalizeTypeMatch(candidate?.type || '');
+        const candidateSf = Number(candidate?.sf || 0);
+        const hasSf = Number.isFinite(candidateSf) && candidateSf > 0;
+        let best = null;
+        let bestScore = Number.POSITIVE_INFINITY;
+        inventory.forEach((room) => {
+          const roomBuilding = normalizeDashboardKey(
+            room?.buildingLabel ?? room?.buildingName ?? room?.building ?? ''
+          );
+          if (buildingKey && roomBuilding !== buildingKey) return;
+          if (floorTokens.length && !floorMatchesTokens(room?.floorName ?? room?.floorId ?? '', floorTokens)) return;
+          const roomTypeKey = normalizeTypeMatch(room?.type || room?.roomType || '');
+          let score = 0;
+          if (typeKey && roomTypeKey) score += (roomTypeKey === typeKey ? 0 : 1000);
+          else if (typeKey) score += 500;
+          if (hasSf) {
+            const roomSf = Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0);
+            if (Number.isFinite(roomSf)) score += Math.abs(roomSf - candidateSf);
+          }
+          if (score < bestScore) {
+            bestScore = score;
+            best = room;
+          }
+        });
+        return best;
+      };
+
       const context = {
         universityId,
         campusLabel: activeUniversityName || universityId || 'Campus',
         buildingLabel,
         floorId,
         moveScenarioMode: true,
-        scenarioDepartment: scenarioAssignedDept || '',
+        scenarioDepartment: scenarioAssignedDept || inferredDept || '',
+        targetDepartment: inferredDept || scenarioAssignedDept || '',
+        excludeBuildings: excludeBuildings || [],
         scenarioLabel: (scenarioLabel || '').trim(),
-        scope: 'campus'
+        scope: inferredBuilding ? 'building' : 'campus'
       };
 
-      const out = await createMoveScenario({ request, context, inventory });
-      setAiCreateScenarioResult(out);
+      const baselineTotalsForConstraints = baselineTotals
+        ? {
+            totalSF: Math.round(baselineTotals.totalSF || 0),
+            rooms: Math.round(baselineTotals.rooms || 0),
+            sfByType: Object.entries(baselineTotals.sfByRoomType || {}).map(([type, sf]) => ({
+              type,
+              sf: Math.round(Number(sf || 0) || 0)
+            })),
+            roomTypes: Object.entries(baselineTotals.roomTypes || {}).map(([type, count]) => ({
+              type,
+              count: Math.round(Number(count || 0) || 0)
+            }))
+          }
+        : null;
+      const scenarioConstraints = baselineTotalsForConstraints
+        ? { baselineTotals: baselineTotalsForConstraints, targetSfTolerance: aiCreateScenarioStrict ? 0.05 : 0.1 }
+        : null;
+
+      const out = await createMoveScenario({ request, context, inventory, constraints: scenarioConstraints });
+      const recommended = Array.isArray(out?.recommendedCandidates)
+        ? out.recommendedCandidates.map((c) => {
+          const keys = [c?.roomId, c?.id, c?.revitId].filter((v) => v != null).map((v) => String(v));
+          const match = keys.map((k) => inventoryLookup.get(k)).find(Boolean) || findInventoryMatchForCandidate(c);
+          if (!match) {
+            return {
+              ...c,
+              floorName: c?.floorName || c?.floorId || '',
+              rationale: sanitizeVacancyLanguage(c?.rationale)
+            };
+          }
+          const matchSf = Number(match.sf ?? match.area ?? match.areaSF ?? 0);
+          const candidateSf = Number(c?.sf ?? 0);
+          return {
+            ...c,
+            roomId: c?.roomId || match.roomId || match.id || '',
+            id: c?.id || match.id || match.roomId || '',
+            revitId: c?.revitId ?? match.revitId ?? null,
+            roomGuid: c?.roomGuid ?? match.roomGuid ?? match.revitId ?? null,
+            buildingLabel: c?.buildingLabel || match.buildingLabel || match.buildingName || match.building || '',
+            roomLabel: c?.roomLabel || match.roomLabel || match.roomNumber || '',
+            type: c?.type || match.type || match.roomType || '',
+            sf: Number.isFinite(candidateSf) && candidateSf > 0
+              ? candidateSf
+              : (Number.isFinite(matchSf) ? matchSf : 0),
+            vacancy: match.vacancy ?? c.vacancy,
+            occupant: match.occupant ?? c.occupant,
+            occupancyStatus: match.occupancyStatus ?? c.occupancyStatus,
+            occupantDept: match.occupantDept ?? c.occupantDept,
+            department: match.department ?? c.department,
+            floorName: c?.floorName || c?.floorId || match.floorName || match.floorId || '',
+            rationale: sanitizeVacancyLanguage(c?.rationale)
+          };
+        })
+        : [];
+      let adjustedCandidates = recommended;
+      let autoFillNote = '';
+      if (baselineTotals) {
+        const { candidates: filled, added } = fillScenarioCandidatesToBaseline(
+          recommended,
+          inventory,
+          baselineTotals,
+          { targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1, maxCandidates: aiCreateScenarioStrict ? 40 : 30 }
+        );
+        if (added > 0) {
+          adjustedCandidates = filled;
+          autoFillNote = `Auto-filled ${added} rooms to better match baseline SF and room-type mix.`;
+        }
+      }
+      const baselineTotalSF = baselineTotals?.totalSF || out?.baselineTotals?.totalSF || 0;
+      const tolerancePct = Math.round(((scenarioConstraints?.targetSfTolerance ?? 0.1) * 100));
+      const baselineCriteria = baselineTotalSF
+        ? [`Aim for total SF within +/-${tolerancePct}% of baseline department total SF (${Math.round(baselineTotalSF).toLocaleString()} SF).`]
+        : [];
+      const cleanedCriteria = Array.isArray(out?.selectionCriteria)
+        ? out.selectionCriteria.filter((c) => !/baseline|total\s*sf|sf within/i.test(c || ''))
+        : [];
+      setAiCreateScenarioResult({
+        ...out,
+        baselineTotals: baselineTotals || out?.baselineTotals,
+        selectionCriteria: [...baselineCriteria, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
+        recommendedCandidates: adjustedCandidates
+      });
       setAiCreateScenarioOpen(false);
     } catch (e) {
       setAiCreateScenarioErr(String(e?.message || e));
@@ -4772,8 +10444,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     activeUniversityName,
     aiCreateScenarioText,
     aiStatus,
+    campusRoomsLoaded,
+    campusRooms,
     collectSpaceRows,
     createMoveScenario,
+    ensureFloorsForBuilding,
+    buildFloorUrl,
+    fetchGeoJSON,
     scenarioAssignedDept,
     scenarioLabel,
     selectedBuilding,
@@ -4790,26 +10467,133 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const q = (askText || '').trim();
       if (!q) throw new Error('Type a question first.');
 
-      const buildingIdVal = selectedBuildingId || selectedBuilding || '';
-      let roomRowsPayload = null;
-      try {
-        const rows = await collectSpaceRows('__all__', '');
-        roomRowsPayload = Array.isArray(rows) ? rows.slice(0, 250) : null;
-      } catch {
-        roomRowsPayload = null;
-      }
+      const allRooms = (campusRoomsLoaded && Array.isArray(campusRooms)) ? campusRooms : [];
+      const deptCandidates = getDeptCandidates(allRooms);
+      const inferredDept = findDeptInText(q, deptCandidates) || '';
+      const buildingCandidates = getBuildingCandidates(allRooms);
+      const inferredBuilding = findBuildingInText(q, buildingCandidates) || '';
+      const relocationQuery =
+        /best new suitable home|suitable home|best home|relocat|move|find space|new home|anywhere|entire campus|campus-wide/i
+          .test(q);
+      const floorMentioned = /\b(basement|ground floor|first floor|second floor|third floor|fourth floor|fifth floor|sixth floor|seventh floor|eighth floor|ninth floor|tenth floor|level\s*\d+|level\s*(one|two|three|four|five|six|seven|eight|nine|ten)|lvl\s*\d+|floor\s*\d+|floor\s*(one|two|three|four|five|six|seven|eight|nine|ten))\b/i
+        .test(q);
+      const campusWideQuery = /\b(entire campus|campus[-\s]?wide|across campus|anywhere on campus)\b/i.test(q) ||
+        ((/\bwhere\s+(is|are)\b|\blocation of\b|\bwhere\b.*\b(located|location)\b|\bwhich building\b|\bwhat building\b/i.test(q)) &&
+          inferredDept && !inferredBuilding);
+      const excludeBuildings = (relocationQuery && inferredDept)
+        ? getDeptCurrentBuildings(allRooms, inferredDept)
+        : [];
+      const excludeBuildingKeys = new Set(
+        (excludeBuildings || []).map((name) => normalizeDashboardKey(name)).filter(Boolean)
+      );
 
+      const buildingIdVal = selectedBuildingId || selectedBuilding || '';
+      const buildingNameForRows =
+        resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding) ||
+        selectedBuilding ||
+        selectedBuildingId ||
+        '';
+      const forceCampusScope = relocationQuery || campusWideQuery;
+      const shouldUseFloorScope = !forceCampusScope && loadedSingleFloor && floorMentioned;
       const context = {
         universityId,
         buildingId: buildingIdVal,
-        buildingLabel: activeUniversityName || activeBuildingName || '',
-        floorId: selectedFloor || ''
+        buildingLabel: forceCampusScope
+          ? (activeUniversityName || universityId || 'Campus')
+          : (activeBuildingName || buildingNameForRows || ''),
+        floorId: shouldUseFloorScope ? (selectedFloor || '') : '',
+        scope: forceCampusScope ? 'campus' : (shouldUseFloorScope ? 'floor' : (buildingIdVal ? 'building' : 'campus')),
+        targetDepartment: inferredDept || '',
+        excludeBuildings: excludeBuildings || []
       };
 
+      const baseScopeRooms = (() => {
+        if (!campusRoomsLoaded) return [];
+        if (forceCampusScope) return campusRooms;
+        const hasBuildingScope = Boolean(selectedBuildingId) || Boolean(selectedBuilding) || loadedSingleFloor;
+        if (!hasBuildingScope) return campusRooms;
+        const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+        if (!buildingLabel) return campusRooms;
+        const buildingKeys = new Set([
+          normalizeDashboardKey(activeBuildingName),
+          normalizeDashboardKey(selectedBuildingId),
+          normalizeDashboardKey(selectedBuilding)
+        ].filter(Boolean));
+        if (!buildingKeys.size) return campusRooms;
+        const buildingRooms = campusRooms.filter((room) => {
+          const roomBuilding =
+            room?.building ??
+            room?.buildingName ??
+            room?.buildingLabel ??
+            '';
+          return buildingKeys.has(normalizeDashboardKey(roomBuilding));
+        });
+        if (!shouldUseFloorScope) return buildingRooms;
+        const floorLabel = (currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+        const floorTokens = normalizeFloorTokens(floorLabel);
+        if (!floorTokens.length) return buildingRooms;
+        return buildingRooms.filter((room) =>
+          floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
+        );
+      })();
+      const scopeRooms = excludeBuildingKeys.size
+        ? baseScopeRooms.filter((room) => {
+          const buildingLabel = getRoomBuildingLabel(room);
+          return !excludeBuildingKeys.has(normalizeDashboardKey(buildingLabel));
+        })
+        : baseScopeRooms;
+      const fallbackSummary = summarizeRoomRowsForPanels(scopeRooms);
+      const floorFallback = (!floorStats && shouldUseFloorScope && fallbackSummary)
+        ? { ...fallbackSummary, floorLabel: selectedFloor || '' }
+        : null;
+      const buildingFallback = (!buildingStats && !shouldUseFloorScope && buildingIdVal && fallbackSummary)
+        ? fallbackSummary
+        : null;
+      let roomRowsPayload = null;
+      if (scopeRooms.length) {
+        roomRowsPayload = scopeRooms.map((room) => {
+          const areaVal = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
+          const seatCountVal = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
+          const roomNumber =
+            room?.roomNumber ??
+            room?.roomLabel ??
+            room?.roomId ??
+            room?.id ??
+            '';
+          return {
+            building: room?.building ?? room?.buildingName ?? room?.buildingLabel ?? buildingNameForRows,
+            floor: room?.floor ?? room?.floorName ?? room?.floorId ?? '',
+            roomNumber: roomNumber || '',
+            type: String(room?.type ?? room?.roomType ?? '').trim(),
+            department: String(room?.department ?? '').trim(),
+            area: Number.isFinite(areaVal) ? areaVal : '',
+            seatCount: Number.isFinite(seatCountVal) && seatCountVal > 0 ? seatCountVal : '',
+            occupant: String(room?.occupant ?? '').trim(),
+            occupancyStatus: String(room?.occupancyStatus ?? '').trim()
+          };
+        });
+      } else {
+        try {
+          const buildingFilter = forceCampusScope ? '__all__' : (buildingNameForRows || '__all__');
+          const rows = await collectSpaceRows(buildingFilter, '');
+          if (Array.isArray(rows)) {
+            const filteredRows = excludeBuildingKeys.size
+              ? rows.filter((row) => !excludeBuildingKeys.has(normalizeDashboardKey(row.building)))
+              : rows;
+            roomRowsPayload = buildingNameForRows ? filteredRows : filteredRows.slice(0, 250);
+          } else {
+            roomRowsPayload = null;
+          }
+        } catch {
+          roomRowsPayload = null;
+        }
+      }
       const data = {
         campusStats,
-        buildingStats,
-        floorStats,
+        buildingStats: buildingStats || buildingFallback || undefined,
+        floorStats: shouldUseFloorScope ? (floorStats || floorFallback || undefined) : undefined,
+        dashboardMetrics: dashboardMetrics || undefined,
+        scopeSummary: fallbackSummary || undefined,
         roomRows: roomRowsPayload || undefined
       };
 
@@ -4828,32 +10612,89 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     selectedBuilding,
     selectedFloor,
     universityId,
+    campusRoomsLoaded,
+    campusRooms,
     campusStats,
     buildingStats,
     floorStats,
+    dashboardMetrics,
+    loadedSingleFloor,
     askMapfluence,
+    resolveBuildingNameFromInput,
     collectSpaceRows
   ]);
 
-  const applyAiMoveCandidatesToScenario = useCallback(() => {
+  useEffect(() => {
+    const pending = pendingScenarioLoadRef.current;
+    if (!pending) return;
+    if (pending.buildingLabel !== selectedBuilding || pending.floorId !== selectedFloor) return;
+    pendingScenarioLoadRef.current = null;
+    const candidates = pendingScenarioCandidatesRef.current || [];
+    pendingScenarioCandidatesRef.current = null;
+    (async () => {
+      try {
+        const loaded = await handleLoadFloorplan();
+        if (!loaded) return;
+      } catch {}
+      applyScenarioCandidates(candidates);
+    })();
+  }, [selectedBuilding, selectedFloor, handleLoadFloorplan, applyScenarioCandidates]);
+
+  const applyAiMoveCandidatesToScenario = useCallback(async () => {
     const candidates = aiCreateScenarioResult?.recommendedCandidates || [];
     if (!candidates.length) return;
+    const deptGuess = aiCreateScenarioResult?.scenarioDept || scenarioAssignedDept || '';
     setMoveScenarioMode(true);
-    candidates.forEach((c, idx) => {
-      const roomId = c.roomId || c.id || [c.buildingLabel, c.floorId, c.roomLabel, idx].filter(Boolean).join('|') || `cand-${idx}`;
-      toggleScenarioRoom({
-        roomId,
-        buildingId: c.buildingLabel || '',
-        buildingName: c.buildingLabel || '',
-        floorName: c.floorId || '',
-        revitId: c.revitId ?? null,
-        roomNumber: c.roomLabel || '',
-        roomType: c.type || 'Unspecified',
-        department: c.department || '',
-        area: Number(c.sf || 0) || 0
-      });
-    });
-  }, [aiCreateScenarioResult?.recommendedCandidates, setMoveScenarioMode, toggleScenarioRoom]);
+    if (deptGuess) setScenarioAssignedDept(deptGuess);
+
+    const first = candidates[0];
+    const targetBuilding = first?.buildingLabel || selectedBuilding;
+    const targetFloor = first?.floorName || first?.floorId || selectedFloor;
+    let resolvedFloor = targetFloor;
+    if (targetBuilding) {
+      const available = await ensureFloorsForBuilding(targetBuilding);
+      const matched = resolveAvailableFloorId(targetFloor, available);
+      resolvedFloor = matched || available?.[0] || targetFloor;
+    }
+    const shouldLoad = targetBuilding && resolvedFloor &&
+      (targetBuilding !== selectedBuilding || resolvedFloor !== selectedFloor);
+    if (shouldLoad) {
+      pendingScenarioLoadRef.current = { buildingLabel: targetBuilding, floorId: resolvedFloor };
+      pendingScenarioCandidatesRef.current = candidates;
+      setSelectedBuilding(targetBuilding);
+      setSelectedFloor(resolvedFloor);
+      return;
+    }
+
+    applyScenarioCandidates(candidates);
+  }, [
+    aiCreateScenarioResult?.recommendedCandidates,
+    aiCreateScenarioResult?.scenarioDept,
+    applyScenarioCandidates,
+    ensureFloorsForBuilding,
+    scenarioAssignedDept,
+    selectedBuilding,
+    selectedFloor,
+    setMoveScenarioMode,
+    setScenarioAssignedDept,
+    setSelectedBuilding,
+    setSelectedFloor
+  ]);
+
+  const applyAiScenarioToComparison = useCallback((aiResult) => {
+    const candidates = aiResult?.recommendedCandidates || [];
+    if (!candidates.length) return;
+    const deptGuess = aiResult?.scenarioDept || scenarioAssignedDept || '';
+    setMoveScenarioMode(true);
+    if (deptGuess) setScenarioAssignedDept(deptGuess);
+    applyScenarioCandidates(candidates);
+    setAiScenarioComparePending(true);
+  }, [
+    applyScenarioCandidates,
+    scenarioAssignedDept,
+    setMoveScenarioMode,
+    setScenarioAssignedDept
+  ]);
 
   const exportSpaceCsv = useCallback(async (explicitBuilding, modeOverride) => {
     const buildingArg = (explicitBuilding && typeof explicitBuilding === 'object') ? null : explicitBuilding;
@@ -4963,6 +10804,61 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
   // Floating panel anchor
   const [panelAnchor, setPanelAnchor] = useState(null);
+  const [spacePanelPos, setSpacePanelPos] = useState(null);
+  const [aiScenarioPos, setAiScenarioPos] = useState(null);
+  const [aiCreateScenarioResultPos, setAiCreateScenarioResultPos] = useState(null);
+  const getMapPageBounds = useCallback(() => {
+    const rect = mapPageRef.current?.getBoundingClientRect();
+    return rect || { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  }, []);
+  const getViewportBounds = useCallback(() => ({
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: window.innerHeight
+  }), []);
+  const handleSpacePanelDragStart = useCallback(
+    (event) => beginPanelDrag(event, spacePanelRef, setSpacePanelPos, getMapPageBounds),
+    [getMapPageBounds]
+  );
+  const handleRoomEditDragStart = useCallback(
+    (event) => beginPanelDrag(event, roomEditPanelRef, setRoomEditPanelPos, getViewportBounds),
+    [getViewportBounds]
+  );
+  const handleScenarioPanelDragStart = useCallback(
+    (event) => beginPanelDrag(event, scenarioPanelRef, setScenarioPanelPos, getMapPageBounds),
+    [getMapPageBounds]
+  );
+  const aiScenarioPanelRef = useRef(null);
+  const aiCreateScenarioResultRef = useRef(null);
+  const handleAiScenarioDragStart = useCallback(
+    (event) => beginPanelDrag(event, aiScenarioPanelRef, setAiScenarioPos, getViewportBounds),
+    [getViewportBounds]
+  );
+  const handleAiCreateScenarioResultDragStart = useCallback(
+    (event) => beginPanelDrag(event, aiCreateScenarioResultRef, setAiCreateScenarioResultPos, getViewportBounds),
+    [getViewportBounds]
+  );
+  const spacePanelDragHandleProps = {
+    onPointerDown: handleSpacePanelDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const roomEditDragHandleProps = {
+    onPointerDown: handleRoomEditDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const scenarioPanelDragHandleProps = {
+    onPointerDown: handleScenarioPanelDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const aiScenarioDragHandleProps = {
+    onPointerDown: handleAiScenarioDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const aiCreateScenarioResultDragHandleProps = {
+    onPointerDown: handleAiCreateScenarioResultDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
 
   // Outdoor polygons data (for export + point-in-polygon)
   const outdoorDataRef = useRef(null);
@@ -5023,15 +10919,19 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const fromSaved = await saveRoomEdits({
         roomId: from.roomId,
         buildingId: from.buildingId,
+        buildingName: from.buildingName,
         floorName: from.floorId,
         revitId: from.revitId,
+        roomLabel: from.roomLabel,
         properties: { occupant: '' }
       });
       const toSaved = await saveRoomEdits({
         roomId: to.roomId,
         buildingId: to.buildingId,
+        buildingName: to.buildingName,
         floorName: to.floorId,
         revitId: to.revitId,
+        roomLabel: to.roomLabel,
         properties: { occupant: occupantName }
       });
       if (fromSaved && toSaved) {
@@ -5156,9 +11056,16 @@ const filteredMarkers = useMemo(() => {
         clearFloors();
         return;
       }
-      const floors = await loadFloorManifest(folderKey);
+      const floorEntries = await loadFloorManifest(folderKey);
       if (cancelled) return;
+      const floors = (floorEntries || []).map((f) => f?.id).filter(Boolean);
+      const urlMap = new Map(
+        (floorEntries || [])
+          .filter((f) => f?.id && f?.url)
+          .map((f) => [f.id, f.url])
+      );
       availableFloorsByBuildingRef.current.set(folderKey, floors);
+      availableFloorUrlsByBuildingRef.current.set(folderKey, urlMap);
       if (floors.length) {
         setAvailableFloors(floors);
         setSelectedFloor((prev) => (prev && floors.includes(prev) ? prev : floors[0]));
@@ -5168,7 +11075,367 @@ const filteredMarkers = useMemo(() => {
     })();
 
     return () => { cancelled = true; };
-}, [selectedBuildingId, selectedBuilding, getBuildingFolderKey]);
+  }, [selectedBuildingId, selectedBuilding, getBuildingFolderKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setDashboardLoading(true);
+      setDashboardError(null);
+      setDashboardTitle('Campus Summary');
+      try {
+        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store' });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {}
+        if (!res.ok) {
+          const msg = data?.error || data?.message || `Rooms fetch failed (${res.status})`;
+          throw new Error(msg);
+        }
+        if (data?.ok && Array.isArray(data.rooms)) {
+          if (!cancelled) {
+            setAirtableRooms(data.rooms);
+            setAirtableLastSyncedAt(new Date());
+          }
+          if (data.rooms.some(hasDashboardRoomArea)) {
+            return;
+          }
+        }
+        throw new Error('Rooms payload missing or invalid');
+      } catch (err) {
+        try {
+          let manifest = dashboardManifestRef.current;
+          if (!manifest) {
+            manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+            dashboardManifestRef.current = manifest;
+          }
+          const rooms = await buildCampusRoomsFromManifest(manifest);
+          if (!rooms.length) throw new Error('No floorplan rooms found for dashboard');
+          if (!cancelled) {
+            setCampusRooms(rooms);
+            setDashboardError(null);
+            setCampusRoomsLoaded(true);
+          }
+        } catch (fallbackErr) {
+          if (!cancelled) setDashboardError(fallbackErr);
+        }
+      } finally {
+        if (!cancelled) {
+          setDashboardLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [universityId]);
+
+  useEffect(() => {
+    const intervalMs = 30 * 60 * 1000;
+    const id = setInterval(() => {
+      refreshCampusRoomsFromApi();
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [refreshCampusRoomsFromApi]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(assetUrl(UTILIZATION_CSV_PATH), { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Utilization CSV fetch failed (${res.status})`);
+        const text = await res.text();
+        const parsed = parseUtilizationCsv(text);
+        if (!cancelled) setUtilizationData(parsed);
+      } catch (err) {
+        console.warn('Unable to load classroom utilization data', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const dashboardScopeRooms = useMemo(() => {
+    if (!campusRoomsLoaded) return [];
+    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
+    if (!hasBuildingScope) return campusRooms;
+    const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+    const hasBuilding = Boolean(buildingLabel);
+    if (!hasBuilding) return campusRooms;
+    const buildingKeys = new Set([
+      normalizeDashboardKey(activeBuildingName),
+      normalizeDashboardKey(selectedBuildingId),
+      normalizeDashboardKey(selectedBuilding)
+    ].filter(Boolean));
+    if (!buildingKeys.size) return campusRooms;
+    const buildingRooms = campusRooms.filter((room) => {
+      const roomBuilding =
+        room?.building ??
+        room?.buildingName ??
+        room?.buildingLabel ??
+        '';
+      return buildingKeys.has(normalizeDashboardKey(roomBuilding));
+    });
+    const hasFloor = Boolean(loadedSingleFloor && buildingLabel);
+    if (!hasFloor) return buildingRooms;
+    const floorLabel = (currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+    const floorTokens = normalizeFloorTokens(floorLabel);
+    if (!floorTokens.length) return buildingRooms;
+    return buildingRooms.filter((room) =>
+      floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
+    );
+  }, [
+    campusRooms,
+    campusRoomsLoaded,
+    activeBuildingName,
+    selectedBuildingId,
+    selectedBuilding,
+    loadedSingleFloor,
+    selectedFloor
+  ]);
+
+  const dashboardScopeLabel = useMemo(() => {
+    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
+    if (!hasBuildingScope) return 'Campus';
+    const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+    const hasBuilding = Boolean(buildingLabel);
+    if (!hasBuilding) return 'Campus';
+    const floorLabel = (floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+    const hasFloor = Boolean(loadedSingleFloor && buildingLabel && floorLabel);
+    return hasFloor ? `${buildingLabel} ${floorLabel}` : buildingLabel;
+  }, [
+    activeBuildingName,
+    selectedBuildingId,
+    selectedBuilding,
+    loadedSingleFloor,
+    selectedFloor,
+    floorStats
+  ]);
+
+  const dashboardUtilization = useMemo(() => {
+    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
+    if (hasBuildingScope) {
+      const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+      if (!buildingLabel) return null;
+      return getUtilizationForBuilding(buildingLabel);
+    }
+    return utilizationCampus;
+  }, [
+    activeBuildingName,
+    selectedBuildingId,
+    selectedBuilding,
+    loadedSingleFloor,
+    utilizationCampus,
+    getUtilizationForBuilding
+  ]);
+
+  const dashboardUtilizationLabel = useMemo(() => {
+    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
+    if (hasBuildingScope) {
+      const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+      return buildingLabel || '';
+    }
+    if (utilizationCampus) return activeUniversityName || 'Campus';
+    return '';
+  }, [
+    activeBuildingName,
+    selectedBuildingId,
+    selectedBuilding,
+    loadedSingleFloor,
+    utilizationCampus,
+    activeUniversityName
+  ]);
+
+  const dashboardRoomFeatures = useMemo(() => {
+    return (dashboardScopeRooms || [])
+      .map(roomRowToDashboardFeature)
+      .filter(Boolean);
+  }, [dashboardScopeRooms]);
+
+  useEffect(() => {
+    if (!airtableRooms.length) return;
+    let cancelled = false;
+    const needsManifest = airtableRooms.some(
+      (room) => isLinkedRecordArray(room?.type) || isLinkedRecordArray(room?.department)
+    );
+    if (!needsManifest) {
+      if (!cancelled) {
+        setCampusRooms(airtableRooms);
+        setCampusRoomsLoaded(true);
+      }
+      return;
+    }
+
+    (async () => {
+      try {
+        let manifest = dashboardManifestRef.current;
+        if (!manifest) {
+          manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+          dashboardManifestRef.current = manifest;
+        }
+        const manifestRooms = await buildCampusRoomsFromManifest(manifest);
+        if (cancelled) return;
+        const merged = mergeAirtableRoomsWithManifest(airtableRooms, manifestRooms);
+        setCampusRooms(merged);
+        setCampusRoomsLoaded(true);
+      } catch (err) {
+        if (!cancelled) {
+          setCampusRooms(airtableRooms);
+          setCampusRoomsLoaded(true);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [airtableRooms]);
+
+  useEffect(() => {
+    if (!campusRoomsLoaded) return;
+    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
+    const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+    const floorLabel = (floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+    const hasBuilding = Boolean(hasBuildingScope && buildingLabel);
+    const hasFloor = Boolean(loadedSingleFloor && buildingLabel && floorLabel);
+    const nextTitle = hasFloor
+      ? `${buildingLabel} ${floorLabel} Summary`
+      : (hasBuilding ? `${buildingLabel} Summary` : 'Campus Summary');
+    setDashboardTitle(nextTitle);
+    try {
+      const metrics = computeSpaceDashboard(dashboardRoomFeatures);
+      setDashboardMetrics(metrics);
+    } catch (err) {
+      setDashboardError(err);
+    }
+  }, [
+    campusRoomsLoaded,
+    dashboardRoomFeatures,
+    activeBuildingName,
+    selectedBuildingId,
+    selectedBuilding,
+    loadedSingleFloor,
+    selectedFloor,
+    floorStats
+  ]);
+
+  useEffect(() => {
+    if (!campusRoomsLoaded || !Array.isArray(campusRooms) || !campusRooms.length) return;
+    if (loadedSingleFloor) return;
+    const buildingId = selectedBuildingId || selectedBuilding;
+    if (!buildingId) return;
+    const buildingKey = normalizeDashboardKey(buildingId);
+    if (!buildingKey) return;
+    const scoped = campusRooms.filter((room) => {
+      const roomBuilding =
+        room?.building ??
+        room?.buildingName ??
+        room?.buildingLabel ??
+        '';
+      return normalizeDashboardKey(roomBuilding) === buildingKey;
+    });
+    const summary = summarizeRoomRowsForPanels(scoped);
+    if (!summary) return;
+    setBuildingStats(summary);
+    setPanelStats(formatSummaryForPanel(summary, 'building'));
+  }, [
+    campusRoomsLoaded,
+    campusRooms,
+    loadedSingleFloor,
+    selectedBuildingId,
+    selectedBuilding
+  ]);
+
+  useEffect(() => {
+    if (!campusRoomsLoaded || !loadedSingleFloor) return;
+    const scoped = Array.isArray(dashboardScopeRooms) ? dashboardScopeRooms : [];
+    if (!scoped.length) return;
+    const ctx = currentFloorContextRef.current || {};
+    const url = ctx.url || currentFloorUrlRef.current;
+    const floorLabel = ctx.floorLabel || selectedFloor || ctx.floor || '';
+    if (!url) return;
+    const summary = summarizeRoomRowsForPanels(scoped);
+    if (!summary) return;
+    const summaryWithLabel = { ...summary, floorLabel };
+    floorStatsCache.current[url] = summary;
+    floorSummaryCacheRef.current.set(url, summary);
+    if (ctx.key) floorSummaryCacheRef.current.set(ctx.key, summary);
+    setFloorStats(summaryWithLabel);
+    setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
+    setPanelStats(formatSummaryForPanel(summary, 'floor'));
+  }, [
+    campusRoomsLoaded,
+    loadedSingleFloor,
+    dashboardScopeRooms,
+    selectedFloor
+  ]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !loadedSingleFloor) return;
+    const hasAirtableLookup = Boolean(airtableRoomLookup?.byGuid?.size || airtableRoomLookup?.byComposite?.size);
+    const hasRoomPatches = roomPatches instanceof Map && roomPatches.size > 0;
+    if (!hasAirtableLookup && !hasRoomPatches) return;
+    const map = mapRef.current;
+    const src = getGeojsonSource(map, FLOOR_SOURCE);
+    if (!src) return;
+    const data = src._data || src.serialize?.()?.data || null;
+    const fc = toFeatureCollection(data);
+    if (!fc?.features?.length) return;
+
+    const ctx = currentFloorContextRef.current || {};
+    const buildingKey = ctx.buildingId || selectedBuildingId || selectedBuilding;
+    const floorKey = ctx.floorLabel || ctx.floorId || ctx.floor || selectedFloor;
+    let changed = false;
+    const nextFeatures = fc.features.map((feature) => {
+      if (!feature) return feature;
+      const props = feature.properties || {};
+      if (detectFeatureKind(props) !== 'room') return feature;
+      let mergedProps = props;
+      let didPatch = false;
+      if (hasAirtableLookup) {
+        const airtablePatch = getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey);
+        if (airtablePatch) {
+          mergedProps = mergePatch(mergedProps, airtablePatch);
+          didPatch = true;
+        }
+      }
+      if (hasRoomPatches && buildingKey && floorKey) {
+        const revitId = feature.id ?? props.RevitId ?? props.id;
+        const rid = revitId != null ? rId(buildingKey, floorKey, revitId) : null;
+        const patch = rid ? roomPatches.get(rid) || null : null;
+        if (patch) {
+          mergedProps = mergePatch(mergedProps, patch);
+          didPatch = true;
+        }
+      }
+      const typeLabel = getRoomTypeLabelFromProps(mergedProps);
+      const nextRoomType = typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '');
+      if (!didPatch && nextRoomType === props.__roomType) return feature;
+      changed = true;
+      return {
+        ...feature,
+        properties: { ...mergedProps, __roomType: nextRoomType }
+      };
+    });
+
+    if (!changed) return;
+    const nextFC = { ...fc, features: nextFeatures };
+    try {
+      src.setData(nextFC);
+    } catch {}
+    if (currentFloorContextRef.current) {
+      currentFloorContextRef.current = { ...currentFloorContextRef.current, fc: nextFC };
+    }
+    try {
+      applyFloorColorMode(floorColorMode);
+    } catch {}
+  }, [
+    airtableRoomLookup,
+    roomPatches,
+    floorColorMode,
+    loadedSingleFloor,
+    mapLoaded,
+    selectedBuildingId,
+    selectedBuilding,
+    selectedFloor,
+    applyFloorColorMode
+  ]);
 
   // ---------- Map init / teardown ----------
 useEffect(() => {
@@ -5227,12 +11494,12 @@ useEffect(() => {
     mapInstance.once('load', () => {
       (async () => {
         try {
-          await loadIcon(mapInstance, 'mf-door-swing', 'icons/door-swing.png');
+          await loadIcon(mapInstance, 'mf-door-swing', '/StakeholderMap/icons/door-swing.png');
         } catch (err) {
           console.warn('Door icon load failed:', err);
         }
         try {
-          await loadIcon(mapInstance, 'mf-stairs-run', 'icons/stairs-run.png');
+          await loadIcon(mapInstance, 'mf-stairs-run', '/StakeholderMap/icons/stairs-run.png');
         } catch (err) {
           console.warn('Stairs icon load failed:', err);
         }
@@ -5437,7 +11704,7 @@ useEffect(() => {
       type: 'fill-extrusion',
       source: 'buildings',
       paint: {
-        'fill-extrusion-color': defaultBuildingColor,
+        'fill-extrusion-color': withNoFloorplanOverride(defaultBuildingColor),
         'fill-extrusion-height': 15,
         'fill-extrusion-opacity': 0.7
       }
@@ -5551,7 +11818,7 @@ useEffect(() => {
       type: 'fill-extrusion',
       source: 'buildings',
       paint: {
-        'fill-extrusion-color': defaultBuildingColor,
+        'fill-extrusion-color': withNoFloorplanOverride(defaultBuildingColor),
         'fill-extrusion-height': 15,
         'fill-extrusion-opacity': 0.7
       }
@@ -5583,7 +11850,7 @@ useEffect(() => {
     let clickedRoom = null;
     try {
       if (map.getLayer(FLOOR_FILL_ID)) {
-        const floorHits = map.queryRenderedFeatures(e.point, { layers: [FLOOR_FILL_ID, DOORS_LAYER, STAIRS_LAYER] });
+        const floorHits = map.queryRenderedFeatures(e.point, { layers: [FLOOR_FILL_ID] });
         clickedRoom = floorHits && floorHits[0];
       }
     } catch {}
@@ -5695,22 +11962,22 @@ useEffect(() => {
   if (mapView === MAP_VIEWS.SPACE_DATA) {
     if (buildingsLayer) {
       if (buildingsLayer.type === 'fill-extrusion') {
-        applyExtrusion('#ffffff', 1.0);
+        applyExtrusion(withNoFloorplanOverride('#ffffff'), 1.0);
       } else {
-        applyFill('buildings-layer', '#ffffff', 1.0);
+        applyFill('buildings-layer', withNoFloorplanOverride('#ffffff'), 1.0);
       }
     }
     applyBuildingStyleForSpace(map);
   } else {
     if (buildingsLayer) {
       if (buildingsLayer.type === 'fill-extrusion') {
-        applyExtrusion(defaultBuildingColor, 0.7);
+        applyExtrusion(withNoFloorplanOverride(defaultBuildingColor), 0.7);
       } else {
-        applyFill('buildings-layer', defaultBuildingColor, 0.7);
+        applyFill('buildings-layer', withNoFloorplanOverride(defaultBuildingColor), 0.7);
       }
     }
     if (buildingsFill) {
-      applyFill('buildings-fill', defaultBuildingColor, 0.2);
+      applyFill('buildings-fill', withNoFloorplanOverride(defaultBuildingColor), 0.2);
       try {
         map.setPaintProperty('buildings-fill', 'fill-outline-color', '#00000000');
     } catch {}
@@ -5772,14 +12039,48 @@ useEffect(() => {
   }, [filteredMarkers, sessionMarkers, markerTypes, mapLoaded, mode, showMarkers]);  // ---------- Recolor buildings based on theme ----------
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
+  const map = mapRef.current;
   if (mapView === MAP_VIEWS.SPACE_DATA) {
-    // in Space Data we keep buildings pure white; do not recolor
-    try {
-      mapRef.current.setPaintProperty('buildings-layer', 'fill-extrusion-color', '#ffffff');
-    } catch {}
+    if (utilizationHeatmapOn && utilizationByBuildingId && Object.keys(utilizationByBuildingId).length > 0) {
+      const matchExpr = ['match', ['get', 'id']];
+      Object.entries(utilizationByBuildingId).forEach(([name, data]) => {
+        const overall = Number.isFinite(data?.overallUtilization) ? data.overallUtilization : null;
+        const color = utilizationColorForPercent(overall);
+        matchExpr.push(name, color);
+      });
+      matchExpr.push('#e5e7eb');
+      const finalExpr = withNoFloorplanOverride(matchExpr);
+      try {
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', finalExpr);
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.2);
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', finalExpr);
+          map.setPaintProperty('buildings-fill', 'fill-opacity', 0.55);
+          map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0)');
+        }
+      } catch {}
+    } else {
+      // in Space Data we keep buildings pure white; do not recolor
+      try {
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride('#ffffff'));
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.7);
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', withNoFloorplanOverride('#ffffff'));
+          map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
+        }
+      } catch {}
+    }
     return;
   }
-  const map = mapRef.current;
+
+  if (map.getLayer('buildings-fill')) {
+    try {
+      map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
+    } catch {}
+  }
+  try {
+    map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.7);
+  } catch {}
 
     const matchExpr = ['match', ['get', 'id']];
     let hasEntries = false;
@@ -5809,13 +12110,14 @@ useEffect(() => {
     }
 
     matchExpr.push(defaultBuildingColor);
+    const finalExpr = withNoFloorplanOverride(matchExpr);
 
     if (hasEntries) {
-      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', matchExpr);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', finalExpr);
     } else {
-      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', defaultBuildingColor);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapView]);
+  }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapView, utilizationHeatmapOn, utilizationByBuildingId]);
 
   // ---------- Map click handlers ----------
   const showMarkerPopup = useCallback((lngLat) => {
@@ -5859,6 +12161,320 @@ useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
 
+    const handleDrawingAlignClick = (e) => {
+      const state = drawingAlignStateRef.current;
+      if (!state) return;
+      try {
+        e.preventDefault?.();
+        if (e.originalEvent) {
+          e.originalEvent.preventDefault?.();
+          e.originalEvent.stopPropagation?.();
+          e.originalEvent.cancelBubble = true;
+        }
+      } catch {}
+
+      const step = Number(state.step) || 0;
+      const isRoomStep = step < 2;
+      const targetLayer = isRoomStep ? FLOOR_FILL_ID : FLOOR_DRAWING_LAYER;
+      const ctx = currentFloorContextRef.current;
+      const fc = ctx?.fc || null;
+      let snappedPoint = null;
+
+      if (isRoomStep) {
+        if (map.getLayer(targetLayer)) {
+          const hits = map.queryRenderedFeatures(e.point, { layers: [targetLayer] }) || [];
+          if (hits.length) {
+            const rawPoint = [e.lngLat.lng, e.lngLat.lat];
+            snappedPoint = snapToNearestVertex(hits[0], rawPoint);
+          }
+        }
+        if (!snappedPoint && fc) {
+          snappedPoint = findNearestVertexInFloor({
+            map,
+            fc,
+            isDrawing: false,
+            screenPoint: e.point,
+            maxPixels: DRAWING_ALIGN_ROOM_RADIUS_PX,
+            maxPoints: DRAWING_ALIGN_POINT_LIMIT
+          });
+        }
+        if (!snappedPoint) {
+          setDrawingAlignNotice('Click closer to a room polygon (or zoom in).');
+          return;
+        }
+      } else {
+        const hasDrawingCandidates = Boolean(
+          fc?.features?.some((f) => {
+            const gt = f?.geometry?.type || '';
+            return isDrawingFeature(f?.properties || {}) || gt === 'LineString' || gt === 'MultiLineString';
+          })
+        );
+        if (fc) {
+          snappedPoint = findNearestVertexInFloor({
+            map,
+            fc,
+            isDrawing: true,
+            screenPoint: e.point,
+            maxPixels: DRAWING_ALIGN_DRAWING_RADIUS_PX,
+            maxPoints: DRAWING_ALIGN_POINT_LIMIT
+          });
+        }
+        if (!snappedPoint && hasDrawingCandidates && fc) {
+          snappedPoint = findNearestVertexInFloor({
+            map,
+            fc,
+            isDrawing: true,
+            screenPoint: e.point,
+            maxPixels: null,
+            maxPoints: DRAWING_ALIGN_POINT_LIMIT
+          });
+        }
+        if (!snappedPoint) {
+          setDrawingAlignNotice(
+            hasDrawingCandidates
+              ? 'No drawing vertex nearby. Zoom in and click closer to linework.'
+              : 'No drawing linework found on this floor.'
+          );
+          return;
+        }
+      }
+      const next = {
+        ...state,
+        roomPts: Array.isArray(state.roomPts) ? [...state.roomPts] : [],
+        drawingPts: Array.isArray(state.drawingPts) ? [...state.drawingPts] : []
+      };
+
+      if (isRoomStep) next.roomPts.push(snappedPoint);
+      else next.drawingPts.push(snappedPoint);
+      next.step = step + 1;
+
+      if (next.step >= DRAWING_ALIGN_STEPS.length) {
+        const align = computeDrawingAlign(next.roomPts, next.drawingPts);
+        if (!align) {
+          setDrawingAlignNotice('Unable to compute alignment from those points.');
+          return;
+        }
+        const ok = saveDrawingAlign(state.buildingLabel, state.floorId, align);
+        if (!ok) {
+          setDrawingAlignNotice('Failed to save alignment in local storage.');
+          return;
+        }
+        setDrawingAlignState(null);
+        setDrawingAlignNotice('');
+        const url = buildFloorUrl(selectedBuilding, state.floorId);
+        if (url) {
+          floorCache.delete(url);
+          floorTransformCache.delete(url);
+        }
+        handleLoadFloorplan(state.floorId);
+        return;
+      }
+
+      setDrawingAlignNotice('');
+      setDrawingAlignState(next);
+    };
+
+    map.on('click', handleDrawingAlignClick);
+    return () => {
+      try { map.off('click', handleDrawingAlignClick); } catch {}
+    };
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, handleLoadFloorplan, computeDrawingAlign]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+
+    const toMetersDelta = (startLngLat, nextLngLat) => {
+      const eastDistKm = turf.distance(
+        turf.point([startLngLat.lng, startLngLat.lat]),
+        turf.point([nextLngLat.lng, startLngLat.lat]),
+        { units: 'kilometers' }
+      );
+      const northDistKm = turf.distance(
+        turf.point([startLngLat.lng, startLngLat.lat]),
+        turf.point([startLngLat.lng, nextLngLat.lat]),
+        { units: 'kilometers' }
+      );
+      const east = (nextLngLat.lng >= startLngLat.lng ? 1 : -1) * eastDistKm * 1000;
+      const north = (nextLngLat.lat >= startLngLat.lat ? 1 : -1) * northDistKm * 1000;
+      return [east, north];
+    };
+
+    const onMouseDown = (e) => {
+      if (!floorAdjustActiveRef.current) return;
+      try {
+        e.preventDefault?.();
+        if (e.originalEvent) {
+          e.originalEvent.preventDefault?.();
+          e.originalEvent.stopPropagation?.();
+          e.originalEvent.cancelBubble = true;
+        }
+      } catch {}
+
+      const mode = floorAdjustModeRef.current;
+      if (!mode) return;
+      const ctx = getFloorAdjustContext();
+      const adjustUrl = ctx.url || buildFloorUrl(selectedBuilding, ctx.floorId);
+      const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
+      const basePivot = currentFloorContextRef.current?.floorAdjustBasePivot || null;
+      const adjustByBase = adjustBasePath ? loadFloorAdjustByBasePath(adjustBasePath, ctx.floorId) : null;
+      const adjustBaseHasAdjust = hasFloorAdjust(adjustByBase);
+      const adjustByUrl = adjustUrl ? loadFloorAdjustByUrl(adjustUrl) : null;
+      const adjustUrlHasAdjust = hasFloorAdjust(adjustByUrl);
+      const adjust = adjustBaseHasAdjust
+        ? adjustByBase
+        : (adjustUrlHasAdjust
+            ? adjustByUrl
+            : loadFloorAdjust(ctx.buildingLabel, ctx.floorId));
+      const startTranslateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : [0, 0];
+      const adjustLabel =
+        currentFloorContextRef.current?.floorAdjustLabel ||
+        (adjustUrl ? getBuildingFolderFromBasePath(adjustUrl) : null) ||
+        ctx.buildingLabel;
+      const src = getGeojsonSource(map, FLOOR_SOURCE);
+      const baseData = src?._data || currentFloorContextRef.current?.fc || null;
+      if (!baseData) {
+        setFloorAdjustNotice('No floor data to adjust.');
+        return;
+      }
+      let pivot = null;
+      try {
+        pivot = turf.centroid(baseData)?.geometry?.coordinates || null;
+      } catch {
+        pivot = null;
+      }
+      if (!pivot) {
+        setFloorAdjustNotice('Unable to find a transform pivot.');
+        return;
+      }
+      const pivotScreen = map.project({ lng: pivot[0], lat: pivot[1] });
+      const startAngle = Math.atan2(e.point.y - pivotScreen.y, e.point.x - pivotScreen.x);
+      floorAdjustDragRef.current = {
+        mode,
+        baseData: JSON.parse(JSON.stringify(baseData)),
+        pivot,
+        pivotScreen,
+        startAngle,
+        startRotation: adjust.rotationDeg || 0,
+        startScale: adjust.scale || 1,
+        startTranslate: adjust.translateMeters || [0, 0],
+        startTranslateLngLat,
+        startLngLat: e.lngLat,
+        buildingLabel: ctx.buildingLabel,
+        floorId: ctx.floorId,
+        adjustUrl,
+        adjustLabel,
+        adjustBasePath,
+        basePivot
+      };
+      try { map.dragPan.disable(); } catch {}
+      try { map.getCanvas().style.cursor = mode === 'move' ? 'grabbing' : 'grabbing'; } catch {}
+    };
+
+    const onMouseMove = (e) => {
+      const drag = floorAdjustDragRef.current;
+      if (!drag) return;
+      const src = getGeojsonSource(map, FLOOR_SOURCE);
+      if (!src) return;
+      if (drag.mode === 'rotate') {
+        const angle = Math.atan2(e.point.y - drag.pivotScreen.y, e.point.x - drag.pivotScreen.x);
+        const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
+        const rotated = turf.transformRotate(drag.baseData, deltaDeg, { pivot: drag.pivot });
+        src.setData(rotated);
+        return;
+      }
+      if (drag.mode === 'move') {
+        const [east, north] = toMetersDelta(drag.startLngLat, e.lngLat);
+        const deltaLng = e.lngLat.lng - drag.startLngLat.lng;
+        const deltaLat = e.lngLat.lat - drag.startLngLat.lat;
+        const moved = applyNudgeLngLat(drag.baseData, [deltaLng, deltaLat]);
+        src.setData(moved);
+      }
+    };
+
+    const onMouseUp = (e) => {
+      const drag = floorAdjustDragRef.current;
+      if (!drag) return;
+      let nextAdjust = loadFloorAdjust(drag.buildingLabel, drag.floorId);
+      if (drag.mode === 'rotate') {
+        const angle = Math.atan2(e.point.y - drag.pivotScreen.y, e.point.x - drag.pivotScreen.x);
+        const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
+        const savePivot =
+          Array.isArray(drag.basePivot) ? drag.basePivot :
+          (Array.isArray(drag.pivot) ? drag.pivot : nextAdjust.pivot);
+        nextAdjust = {
+          ...nextAdjust,
+          rotationDeg: (drag.startRotation || 0) + deltaDeg,
+          pivot: savePivot
+        };
+      } else if (drag.mode === 'move') {
+        const [east, north] = toMetersDelta(drag.startLngLat, e.lngLat);
+        const deltaLng = e.lngLat.lng - drag.startLngLat.lng;
+        const deltaLat = e.lngLat.lat - drag.startLngLat.lat;
+        const savePivot =
+          Array.isArray(drag.basePivot) ? drag.basePivot :
+          (Array.isArray(drag.pivot) ? drag.pivot : nextAdjust.pivot);
+        nextAdjust = {
+          ...nextAdjust,
+          translateMeters: [
+            (drag.startTranslate?.[0] || 0) + east,
+            (drag.startTranslate?.[1] || 0) + north
+          ],
+          translateLngLat: [
+            (drag.startTranslateLngLat?.[0] || 0) + deltaLng,
+            (drag.startTranslateLngLat?.[1] || 0) + deltaLat
+          ],
+          pivot: savePivot
+        };
+      }
+      const src = getGeojsonSource(map, FLOOR_SOURCE);
+      const currentData = src?._data || currentFloorContextRef.current?.fc || null;
+      const anchorLngLat = getFloorAdjustAnchorLngLat(currentData);
+      if (anchorLngLat) {
+        nextAdjust = { ...nextAdjust, anchorLngLat };
+      }
+      const saveLabel = drag.adjustLabel || drag.buildingLabel;
+      saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
+      if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
+      if (drag.adjustBasePath) saveFloorAdjustByBasePath(drag.adjustBasePath, drag.floorId, nextAdjust);
+      try { saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust); } catch {}
+      const sig = getFloorAdjustSignature(nextAdjust);
+      if (sig && currentData) {
+        const cached = { ...currentData, __mfUserAdjustSignature: sig };
+        if (drag.adjustUrl) {
+          floorCache.set(drag.adjustUrl, cached);
+        }
+        currentFloorContextRef.current = {
+          ...(currentFloorContextRef.current || {}),
+          fc: cached
+        };
+      }
+      floorAdjustDragRef.current = null;
+      setFloorAdjustMode(null);
+      setFloorAdjustNotice('');
+      const url = drag.adjustUrl || buildFloorUrl(selectedBuilding, drag.floorId);
+      if (url && !drag.adjustUrl) {
+        floorCache.delete(url);
+        floorTransformCache.delete(url);
+      }
+      try { map.dragPan.enable(); } catch {}
+      try { map.getCanvas().style.cursor = drag.mode === 'move' ? 'move' : 'grab'; } catch {}
+    };
+
+    map.on('mousedown', onMouseDown);
+    map.on('mousemove', onMouseMove);
+    map.on('mouseup', onMouseUp);
+    return () => {
+      try { map.off('mousedown', onMouseDown); } catch {}
+      try { map.off('mousemove', onMouseMove); } catch {}
+      try { map.off('mouseup', onMouseUp); } catch {}
+    };
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+
     const onFloorClick = (e) => {
       try {
         e.preventDefault?.();
@@ -5869,6 +12485,7 @@ useEffect(() => {
         }
       } catch {}
 
+      if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
       currentRoomFeatureRef.current = null;
       const f = e.features?.[0];
       if (!f) return;
@@ -5891,7 +12508,7 @@ useEffect(() => {
             rawProps.Room ??
             '';
 
-          const roomTypeLabel = getRoomTypeLabelFromProps(rawProps);
+          const roomTypeLabel = (getRoomTypeLabelFromProps(rawProps) || rawProps.__roomType || '').trim();
 
           const department =
             rawProps.department ??
@@ -5949,6 +12566,14 @@ useEffect(() => {
 
       const rawProps = f.properties || {};
       const buildingId = selectedBuildingId || selectedBuilding;
+      const buildingName =
+        activeBuildingName ||
+        rawProps.BuildingName ||
+        rawProps.Building ||
+        selectedBuilding ||
+        selectedBuildingId ||
+        buildingId ||
+        '';
       const revitId = f.id ?? rawProps.RevitId ?? null;
       const derivedFloorDefault =
         rawProps.Floor ||
@@ -5972,10 +12597,11 @@ useEffect(() => {
       const overridePatch = roomMergeKey ? roomPatches.get(roomMergeKey) : null;
       const pp = overridePatch ? { ...rawProps, ...overridePatch } : rawProps;
       const roomNum2 = pp.Number ?? pp.RoomNumber ?? pp.number ?? pp.Room ?? '';
-      const initialRoomType = pp.type ?? pp.roomType ?? pp.Name ?? pp.RoomType ?? pp.Type ?? '';
-      const initialDept = pp.department ?? pp.Department ?? pp.Dept ?? '';
+      const initialRoomType = (getRoomTypeLabelFromProps(pp) || pp.__roomType || '').trim();
+      const initialDept = (pp.__dept || getDeptFromProps(pp) || '').trim();
       const initialOccupant = pp.occupant ?? pp.Occupant ?? '';
-      const initialComments = pp.comments ?? pp.Comments ?? '';
+        const initialComments = pp.comments ?? pp.Comments ?? '';
+        const initialOccupancyStatus = resolveOccupancyStatusValue(pp);
       const resolvedArea = resolvePatchedArea(pp);
       let displayRoomType = initialRoomType;
       let displayDept = initialDept;
@@ -5984,13 +12610,53 @@ useEffect(() => {
       const categoryCode = getRoomCategoryCode(pp);
       const seatCount = getSeatCount(pp);
       const typeFlags = detectRoomTypeFlags(pp);
-      const isOffice = isOfficeCategory(categoryCode) || typeFlags.isOfficeText;
-      const isTeaching = isTeachingCategory(categoryCode) || typeFlags.isTeachingText;
+    const isOffice = isOfficeCategory(categoryCode) || typeFlags.isOfficeText;
+    const isTeaching = isScheduledTeachingTypeLabel(initialRoomType) || isTeachingCategory(categoryCode) || typeFlags.isTeachingText;
       const canonicalRoomId = (buildingId && derivedFloorDefault && revitId != null)
         ? rId(buildingId, derivedFloorDefault, revitId)
         : null;
       const movingOccupant = (displayOccupant ?? '').toString().trim();
       const roomLabel = roomNum2 || '-';
+      const roomGuidValue = String(
+        pp.Revit_UniqueId ??
+        pp.RevitUniqueId ??
+        rawProps.Revit_UniqueId ??
+        rawProps.RevitUniqueId ??
+        rawProps['Room GUID'] ??
+        ''
+      ).trim();
+      const buildingKey = normalizeDashboardKey(buildingId);
+      const floorTokens = normalizeFloorTokens(derivedFloorDefault);
+      const roomNumberKey = String(roomNum2 ?? '').trim();
+      const roomsForAirtableMatch = airtableRooms?.length ? airtableRooms : campusRooms;
+      const matchingAirtableRoom = Array.isArray(roomsForAirtableMatch)
+        ? roomsForAirtableMatch.find((room) => {
+            if (!room) return false;
+            const roomIdValue = String(room?.roomId ?? room?.roomNumber ?? room?.roomLabel ?? '').trim();
+            const roomGuidFromRow = String(room?.roomGuid ?? room?.revitUniqueId ?? '').trim();
+            if (
+              roomGuidValue &&
+              (roomGuidFromRow === roomGuidValue || roomIdValue === roomGuidValue)
+            ) {
+              return true;
+            }
+            const roomBuildingKey = normalizeDashboardKey(
+              room?.building ?? room?.buildingName ?? room?.buildingLabel ?? ''
+            );
+            if (buildingKey && roomBuildingKey !== buildingKey) return false;
+            if (floorTokens.length &&
+              !floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
+            ) {
+              return false;
+            }
+            return roomNumberKey && roomIdValue === roomNumberKey;
+          })
+        : null;
+      const airtableIdFromMatch =
+        matchingAirtableRoom?.airtableId ||
+        matchingAirtableRoom?.AirtableId ||
+        matchingAirtableRoom?.['Airtable ID'] ||
+        null;
 
       if (moveMode) {
         if (!pendingMove) {
@@ -6002,6 +12668,7 @@ useEffect(() => {
             roomId: canonicalRoomId,
             roomLabel,
             buildingId,
+            buildingName,
             floorId: derivedFloorDefault,
             occupantName: movingOccupant,
             revitId,
@@ -6035,6 +12702,7 @@ useEffect(() => {
             roomId: canonicalRoomId,
             roomLabel,
             buildingId,
+            buildingName,
             floorId: derivedFloorDefault,
             revitId,
             highlightId: selId
@@ -6054,7 +12722,9 @@ useEffect(() => {
             buildingId,
             floorName,
             revitId,
+            roomGuid: roomGuidValue || null,
             roomLabel,
+            roomNumber: roomNum2 || '',
             feature: f,
             flags: { isOffice, isTeaching },
             highlightId: selId,
@@ -6063,10 +12733,14 @@ useEffect(() => {
               department: displayDept || '',
               area: Number.isFinite(displayAreaValue) ? displayAreaValue : '',
               occupant: displayOccupant || '',
-              comments: initialComments || ''
+              occupancyStatus: initialOccupancyStatus || '',
+              comments: initialComments || '',
+              roomGuid: roomGuidValue || '',
+              Revit_UniqueId: roomGuidValue || '',
+              airtableId: airtableIdFromMatch
             }
           }
-        : null;
+          : null;
       let selectionAfterClick = roomEditSelectionRef.current || [];
       if (editTarget) {
         const current = roomEditSelectionRef.current || [];
@@ -6093,7 +12767,7 @@ useEffect(() => {
         const editLabel = selectionCount > 1 ? `Edit ${selectionCount} Rooms` : 'Edit';
 
         const editButtonHtml = canEditRoom
-          ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ? `<div class="mf-popup-actions" style="margin-top:6px;padding-top:6px;gap:6px;flex-wrap:wrap;width:100%;">
                <button id="mf-room-edit-btn" class="mf-btn tiny">${editLabel}</button>
                ${showClearSelection ? `<button id="mf-clear-edit-selection" class="mf-btn tiny" style="background:#f4f4f4;color:#333;">Clear Selection</button>` : ''}
              </div>`
@@ -6102,39 +12776,65 @@ useEffect(() => {
         // Decide what to show in the "occupancy" row
         const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
         const occupantTrimmed = (displayOccupant ?? '').toString().trim();
+        const isClassroomType = isScheduledTeachingTypeLabel(displayRoomType || '');
 
         const seatCountValue = hasSeatCount ? seatCount.toLocaleString() : '-';
-        const seatCountRowHtml = isTeaching
+        const seatCountRowHtml = isClassroomType
           ? `<div><b>Seat Count:</b> ${seatCountValue}</div>`
           : '';
 
         const occupancyValue = occupantTrimmed.length ? occupantTrimmed : '-';
-        const occupancyRowHtml = isTeaching
+        const occupancyRowHtml = isClassroomType
           ? ''
           : `<div><b>Occupant:</b> ${occupancyValue}</div>`;
+
+        const utilization = isClassroomType
+          ? getUtilizationForRoom(buildingName, roomNum2 || roomLabel || '')
+          : null;
+        const hasUtilization = utilization && (
+          Number.isFinite(utilization.timeUtilization) ||
+          Number.isFinite(utilization.seatUtilization)
+        );
+        const renderUtilizationBarHtml = (label, value, color) => {
+          if (!Number.isFinite(value)) return '';
+          const width = Math.max(0, Math.min(value, 100));
+          return `
+            <div style="margin-top:3px;">
+              <div style="font-size:10px;color:#444;">${label}: ${Math.round(value)}%</div>
+              <div style="height:4px;background:#e4e7ec;border-radius:999px;overflow:hidden;">
+                <div style="width:${width}%;height:100%;background:${color};"></div>
+              </div>
+            </div>
+          `;
+        };
+        const utilizationHtml = hasUtilization
+          ? `
+            <div style="margin-top:6px; width:100%; max-width:220px;">
+              ${renderUtilizationBarHtml('Time Util', utilization.timeUtilization, '#3b82f6')}
+              ${renderUtilizationBarHtml('Seat Util', utilization.seatUtilization, '#f59e0b')}
+            </div>
+          `
+          : '';
 
         const selectionCountHtml = canEditRoom && selectionCount
           ? `<div style="font-size:11px;color:#555;margin-top:6px;">Rooms selected: ${selectionCount}</div>`
           : '';
 
         return `
-          <div class="mf-popup">
-            <div class="mf-popup-body">
+          <div class="mf-popup" style="min-width:340px;max-width:460px;background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:2px;">
+            <div class="mf-popup-body" style="padding:8px 12px 16px 12px;">
               <div class="mf-title">Room ${roomNum2 || '-'}</div>
-              <div><b>Type:</b> ${displayRoomType || '-'}</div>
+              <div><b>Room Type:</b></div>
+              <div style="white-space:normal;word-break:break-word;margin-bottom:2px;">${displayRoomType || '-'}</div>
               <div><b>Department:</b> ${displayDept || '-'}</div>
               <div><b>Area (SF):</b> ${areaText || '-'}</div>
               <div><b>Floor:</b> ${floorName}</div>
               ${seatCountRowHtml}
               ${occupancyRowHtml}
+              ${utilizationHtml}
               ${selectionCountHtml}
+              ${editButtonHtml}
             </div>
-
-            <div style="margin-top:8px">
-              <button id="mf-show-floor" class="mf-btn tiny">Show Floor Data</button>
-            </div>
-
-            ${editButtonHtml}
           </div>`;
       };
 
@@ -6156,7 +12856,7 @@ useEffect(() => {
         closeButton: true,
         offset: popupOffsets,
         anchor: anchorSide,
-        maxWidth: '380px'
+        maxWidth: '520px'
       })
         .setLngLat(e.lngLat)
         .setHTML(renderReadOnlyPopup())
@@ -6216,6 +12916,7 @@ useEffect(() => {
           type: deriveSharedValue('type'),
           department: deriveSharedValue('department'),
           occupant: deriveSharedValue('occupant'),
+          occupancyStatus: deriveSharedValue('occupancyStatus'),
           comments: deriveSharedValue('comments'),
           area: deriveSharedValue('area')
         };
@@ -6316,34 +13017,30 @@ useEffect(() => {
         .addTo(map);
     };
 
-    const onEnter = () => { try { map.getCanvas().style.cursor = 'pointer'; } catch {} };
-    const onLeave = () => { try { map.getCanvas().style.cursor = ''; } catch {} };
+    const onEnter = () => {
+      if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      try { map.getCanvas().style.cursor = 'pointer'; } catch {}
+    };
+    const onLeave = () => {
+      if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      try { map.getCanvas().style.cursor = ''; } catch {}
+    };
 
     map.on('click', FLOOR_FILL_ID, onFloorClick);
     map.on('mouseenter', FLOOR_FILL_ID, onEnter);
     map.on('mouseleave', FLOOR_FILL_ID, onLeave);
-    map.on('click', DOORS_LAYER, onDoorsClick);
-    map.on('mouseenter', DOORS_LAYER, onEnter);
-    map.on('mouseleave', DOORS_LAYER, onLeave);
-    map.on('click', STAIRS_LAYER, onStairsClick);
-    map.on('mouseenter', STAIRS_LAYER, onEnter);
-    map.on('mouseleave', STAIRS_LAYER, onLeave);
+    // Doors/stairs are visual only; keep them non-interactive.
 
     return () => {
       try {
         map.off('click', FLOOR_FILL_ID, onFloorClick);
         map.off('mouseenter', FLOOR_FILL_ID, onEnter);
         map.off('mouseleave', FLOOR_FILL_ID, onLeave);
-        map.off('click', DOORS_LAYER, onDoorsClick);
-        map.off('mouseenter', DOORS_LAYER, onEnter);
-        map.off('mouseleave', DOORS_LAYER, onLeave);
-        map.off('click', STAIRS_LAYER, onStairsClick);
-        map.off('mouseenter', STAIRS_LAYER, onEnter);
-        map.off('mouseleave', STAIRS_LAYER, onLeave);
+        // No door/stair handlers to detach.
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -6352,6 +13049,7 @@ useEffect(() => {
   const onBackgroundClick = (e) => {
     const mapInstance = mapRef.current;
     if (!mapInstance) return;
+    if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
 
     const selectedId = selectedBuildingIdRef.current;
     if (!selectedId) return;
@@ -6364,7 +13062,7 @@ useEffect(() => {
     }
 
     const pt = e.point;
-    const floorHits = mapInstance.queryRenderedFeatures(pt, { layers: [FLOOR_FILL_ID, DOORS_LAYER, STAIRS_LAYER] });
+    const floorHits = mapInstance.queryRenderedFeatures(pt, { layers: [FLOOR_FILL_ID] });
     if (floorHits && floorHits.length) return;
 
     const hasBuildingsLayer = !!mapInstance.getLayer('buildings-fill');
@@ -6406,7 +13104,7 @@ useEffect(() => {
       const data = await fetchGeoJSON(url);
       const fc = toFeatureCollection(data);
       if (!fc?.features?.length) continue;
-      const img = generateFloorplanImageData({ fc, colorMode: floorColorMode, solidFill: true });
+      const img = generateFloorplanImageData({ fc, colorMode: floorColorMode, solidFill: true, labelOptions: { hideDrawing: true } });
       if (!img) continue;
       pages.push({ img, label: `${activeBuildingName} - ${floorId}` });
     }
@@ -6432,7 +13130,7 @@ useEffect(() => {
   }, [availableFloors, activeBuildingName, buildFloorUrl, exportFloorplanDocument, selectedBuilding, selectedBuildingId]);
 
   return (
-  <div className="map-page-container">
+  <div ref={mapPageRef} className="map-page-container">
     {/* Height chain wrappers to ensure container gets height */}
     <div className="page">
       <div className="map-wrapper">
@@ -6467,13 +13165,27 @@ useEffect(() => {
             lineHeight: 1.4
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>Ask Mapfluence</div>
-              <div style={{ fontSize: 12, color: '#555' }}>Ask questions about loaded campus data.</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Ask Mapfluence</div>
+                  <span
+                    title="AI-generated response based on currently loaded space data."
+                    style={{
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      border: '1px solid rgba(0,0,0,0.15)',
+                      background: '#f7f7ff'
+                    }}
+                  >
+                    {"\u2728 AI"}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#555' }}>Ask questions about loaded campus data.</div>
+              </div>
+              <button className="btn" onClick={() => setAskOpen(false)}>Close</button>
             </div>
-            <button className="btn" onClick={() => setAskOpen(false)}>Close</button>
-          </div>
 
 
           <div style={{ marginTop: 10 }}>
@@ -6510,7 +13222,7 @@ useEffect(() => {
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 10001,
+          zIndex: 10004,
           display: 'grid',
           placeItems: 'center',
           background: 'rgba(0,0,0,0.45)'
@@ -6526,10 +13238,24 @@ useEffect(() => {
             lineHeight: 1.45
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Ask Mapfluence</div>
-            <button className="btn" onClick={() => setAskResult(null)}>Close</button>
-          </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>Ask Mapfluence</div>
+                <span
+                  title="AI-generated response based on currently loaded space data."
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    background: '#f7f7ff'
+                  }}
+                >
+                  {"\u2728 AI"}
+                </span>
+              </div>
+              <button className="btn" onClick={() => setAskResult(null)}>Close</button>
+            </div>
 
           <p style={{ marginTop: 10 }}>{askResult.answer}</p>
 
@@ -6573,32 +13299,38 @@ useEffect(() => {
       </div>
     )}
 
-    <div className="logo-panel-right">
-      <div className="logo-box">
-        <div className="mapfluence-title">MAPFLUENCE</div>
-        <img src={assetUrl('Clark_Enersen_Logo.png')} alt="Clark & Enersen Logo" />
+      <div className="mf-right-rail">
+        <div className="mf-right-logos">
+          <div className="logo-box">
+            <div className="mapfluence-title">MAPFLUENCE</div>
+            <img
+              className="mf-logo mf-logo--mapfluence"
+              src={assetUrl('Clark_Enersen_Logo.png')}
+              alt="Clark & Enersen Logo"
+            />
+          </div>
+          <div className="logo-box">
+            <img
+              className="mf-logo mf-logo--hc"
+              src={assetUrl('HC_image.png')}
+              alt="Hastings College"
+            />
+          </div>
+        </div>
+        <div className="dashboard-box">
+          <SpaceDashboardPanel
+            title={dashboardTitle}
+            scopeLabel={dashboardScopeLabel}
+            metrics={dashboardMetrics}
+            loading={dashboardLoading}
+            error={dashboardError}
+            utilization={dashboardUtilization}
+            utilizationScopeLabel={dashboardUtilizationLabel}
+            heatmapOn={utilizationHeatmapOn}
+            onToggleHeatmap={setUtilizationHeatmapOn}
+          />
+        </div>
       </div>
-      <div className="logo-box">
-        <img className="corner-brand" src={assetUrl('HC_image.png')} alt="Hastings College" />
-      </div>
-    </div>
-
-    {showHelp && (
-      <div className="help-panel">
-        <button className="close-button" onClick={() => setShowHelp(false)}>X</button>
-        <h4>How to Use This Map</h4>
-        <ul>
-          <li>Click on the map to add a marker.</li>
-          {mode === 'admin' && (
-            <>
-              <li>Click on a building to select and update its condition.</li>
-              <li>Use the controls to toggle markers.</li>
-            </>
-          )}
-        </ul>
-        <button className="close-button-main" onClick={() => setShowHelp(false)}>Close</button>
-      </div>
-    )}
 
     {mode === 'admin' && (
       <>
@@ -6606,7 +13338,7 @@ useEffect(() => {
           <div
             className="floating-panel"
             style={{
-              position: 'absolute', zIndex: 10,
+              position: 'absolute', zIndex: 40,
               left: Math.max(8, Math.min(panelAnchor.x + 12, (mapContainerRef.current?.clientWidth || 1000) - 360)),
               top: Math.max(8, Math.min(panelAnchor.y + 12, (mapContainerRef.current?.clientHeight || 800) - 260)),
               width: 340
@@ -6648,10 +13380,18 @@ useEffect(() => {
       const PANEL_WIDTH = 360;
       const PANEL_HEIGHT = 420;
       const margin = 16;
+      const rightRailWidth = 260;
+      const rightRailGap = 24;
+      const rightRailOffset = 140;
       const clamp = (val, min, max) => Math.max(min, Math.min(val, max));
       const panelWidth = Math.max(300, Math.min(PANEL_WIDTH, containerWidth - margin * 2));
       const sideMargin = margin + 40;
-      const leftAligned = clamp(containerWidth - panelWidth - sideMargin, 12, containerWidth - panelWidth - 12);
+      const rightAligned = clamp(containerWidth - panelWidth - sideMargin, 12, containerWidth - panelWidth - 12);
+      const leftAligned = clamp(
+        containerWidth - panelWidth - rightRailWidth - rightRailGap - rightRailOffset,
+        320,
+        containerWidth - panelWidth - 12
+      );
       const anchoredTop = 12; // park the panel at the top-right over the logo area
       const anchor = panelAnchor || { x: leftAligned, y: containerHeight * 0.65 };
       const defaultTop = clamp(anchor.y, 8, containerHeight - PANEL_HEIGHT - 8);
@@ -6666,7 +13406,7 @@ useEffect(() => {
             const centerY = (bbox[1] + bbox[3]) / 2;
             const screenPoint = mapRef.current?.project ? mapRef.current.project({ lng: bbox[2], lat: centerY }) : null;
             if (screenPoint) {
-              const left = leftAligned;
+              const left = rightAligned;
               const top = clamp(screenPoint.y - PANEL_HEIGHT * 0.35, 8, containerHeight - PANEL_HEIGHT - 8);
               floorAnchor = { left, top };
             }
@@ -6675,7 +13415,7 @@ useEffect(() => {
       }
       const buildingPanelStyle = {
         position: 'absolute',
-        zIndex: 10,
+        zIndex: 40,
         left: safeLeft,
         top: safeTop,
         width: panelWidth,
@@ -6685,7 +13425,7 @@ useEffect(() => {
       const floorPanelStyle = floorAnchor
         ? {
           position: 'absolute',
-          zIndex: 10,
+          zIndex: 40,
           left: Math.max(12, Math.min(floorAnchor.left, containerWidth - panelWidth - margin)),
           top: anchoredTop,
           width: panelWidth,
@@ -6694,13 +13434,17 @@ useEffect(() => {
         }
         : buildingPanelStyle;
       const panelStyle = popupMode === 'floor' ? floorPanelStyle : buildingPanelStyle;
+      const resolvedPanelStyle = spacePanelPos
+        ? { ...panelStyle, left: spacePanelPos.x, top: spacePanelPos.y }
+        : panelStyle;
       return (
-        <div className="floating-panel" style={panelStyle}>
+        <div ref={spacePanelRef} className="floating-panel" style={resolvedPanelStyle}>
           {popupMode === 'building' && (
             <BuildingPanel
               buildingName={activeBuildingName}
               stats={buildingStats}
               keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
+              utilization={getUtilizationForBuilding(activeBuildingName)}
               floors={availableFloors}
               selectedFloor={panelSelectedFloor}
               onChangeFloor={(fl) => setSelectedFloor(fl)}
@@ -6710,6 +13454,7 @@ useEffect(() => {
                 setIsBuildingPanelCollapsed(true);
                 setSelectedBuildingId(null);
                 setPanelAnchor(null);
+                setSpacePanelPos(null);
                 currentFloorUrlRef.current = null;
                 panelBuildingKeyRef.current = null;
                 selectedBuildingFeatureRef.current = null;
@@ -6723,6 +13468,7 @@ useEffect(() => {
               explainBuildingLoading={aiBuildingLoading}
               explainBuildingDisabled={aiStatus !== 'ok' || !buildingStats}
               explainBuildingError={aiBuildingErr}
+              dragHandleProps={spacePanelDragHandleProps}
             />
           )}
           {popupMode === 'floor' && (
@@ -6763,6 +13509,7 @@ useEffect(() => {
                 setIsBuildingPanelCollapsed(true);
                 setSelectedBuildingId(null);
                 setPanelAnchor(null);
+                setSpacePanelPos(null);
                 currentFloorUrlRef.current = null;
                 panelBuildingKeyRef.current = null;
                 selectedBuildingFeatureRef.current = null;
@@ -6778,6 +13525,108 @@ useEffect(() => {
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
+              rotateActive={floorAdjustMode === 'rotate'}
+              moveActive={floorAdjustMode === 'move'}
+              rotateValue={floorRotateValue}
+              scaleValue={floorScaleValue}
+              rotateNotice={floorAdjustNotice}
+              rotateStored={floorAdjustStored}
+              adjustDebugInfo={floorAdjustDebugInfo}
+              onStartRotate={startFloorRotate}
+              onStartMove={startFloorMove}
+              onCancelRotate={cancelFloorAdjust}
+              onClearRotate={clearFloorAdjustForFloor}
+              onSaveAdjust={async () => {
+                const ctx = getFloorAdjustContext();
+                if (!ctx?.buildingLabel || !ctx?.floorId) return;
+                const adjustLabel =
+                  currentFloorContextRef.current?.floorAdjustLabel ||
+                  ctx.buildingLabel;
+                const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
+                const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
+                const adjust = floorAdjustValue || loadFloorAdjust(adjustLabel, ctx.floorId);
+                const pivot =
+                  currentFloorContextRef.current?.floorAdjustBasePivot ||
+                  (currentFloorContextRef.current?.fc
+                    ? (turf.centroid(currentFloorContextRef.current.fc)?.geometry?.coordinates || null)
+                    : null);
+                const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
+                const currentData = src?._data || currentFloorContextRef.current?.fc || null;
+                const anchorLngLat = getFloorAdjustAnchorLngLat(currentData);
+                const adjustWithPivot = {
+                  ...adjust,
+                  pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
+                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null
+                };
+                saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
+                if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
+                if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, adjustWithPivot);
+                try { await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot); } catch {}
+                if (adjustUrl) {
+                  floorCache.delete(adjustUrl);
+                  floorTransformCache.delete(adjustUrl);
+                }
+              }}
+              saveAdjustDisabled={!floorAdjustStored}
+              onScaleChange={(delta) => {
+                const ctx = getFloorAdjustContext();
+                if (!ctx?.buildingLabel || !ctx?.floorId) return;
+                const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
+                const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
+                const adjustByBase = adjustBasePath ? loadFloorAdjustByBasePath(adjustBasePath, ctx.floorId) : null;
+                const adjustBaseHasAdjust = hasFloorAdjust(adjustByBase);
+                const adjustByUrl = adjustUrl ? loadFloorAdjustByUrl(adjustUrl) : null;
+                const adjustUrlHasAdjust = hasFloorAdjust(adjustByUrl);
+                const adjust = adjustBaseHasAdjust
+                  ? adjustByBase
+                  : (adjustUrlHasAdjust
+                      ? adjustByUrl
+                      : loadFloorAdjust(ctx.buildingLabel, ctx.floorId));
+                const nextScale = Math.max(0.5, Math.min(2.5, (adjust.scale || 1) + delta));
+                const factor = nextScale / (adjust.scale || 1);
+                const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
+                const baseData = src?._data || currentFloorContextRef.current?.fc || null;
+                const scalePivot = baseData ? (turf.centroid(baseData)?.geometry?.coordinates || null) : null;
+                let scaled = null;
+                if (baseData && scalePivot && Number.isFinite(factor) && Math.abs(factor - 1) > 1e-6) {
+                  scaled = turf.transformScale(baseData, factor, { origin: scalePivot });
+                  if (src) src.setData(scaled);
+                }
+                const nextAdjust = { ...adjust, scale: nextScale };
+                const adjustLabel =
+                  currentFloorContextRef.current?.floorAdjustLabel ||
+                  ctx.buildingLabel;
+                const adjustPivot =
+                  currentFloorContextRef.current?.floorAdjustBasePivot ||
+                  (baseData ? (turf.centroid(baseData)?.geometry?.coordinates || null) : null);
+                const nextAdjustWithPivot = {
+                  ...nextAdjust,
+                  pivot: Array.isArray(adjustPivot) ? adjustPivot : nextAdjust.pivot,
+                  anchorLngLat: getFloorAdjustAnchorLngLat(scaled || src?._data || baseData) || nextAdjust.anchorLngLat || null
+                };
+                saveFloorAdjust(adjustLabel, ctx.floorId, nextAdjustWithPivot);
+                if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, nextAdjustWithPivot);
+                if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, nextAdjustWithPivot);
+                try { saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot); } catch {}
+                const sig = getFloorAdjustSignature(nextAdjustWithPivot);
+                const currentData = baseData || currentFloorContextRef.current?.fc || null;
+                if (sig && currentData) {
+                  const cached = { ...currentData, __mfUserAdjustSignature: sig };
+                  if (adjustUrl) {
+                    floorCache.set(adjustUrl, cached);
+                  }
+                  currentFloorContextRef.current = {
+                    ...(currentFloorContextRef.current || {}),
+                    fc: cached
+                  };
+                }
+                const url = adjustUrl || buildFloorUrl(selectedBuilding, ctx.floorId);
+                if (url && !adjustUrl) {
+                  floorCache.delete(url);
+                  floorTransformCache.delete(url);
+                }
+              }}
+              dragHandleProps={spacePanelDragHandleProps}
             />
           )}
         </div>
@@ -6787,12 +13636,14 @@ useEffect(() => {
     {/* Move Scenario Summary Panel */}
     {moveScenarioMode && scenarioPanelVisible && (
       <div
+        ref={scenarioPanelRef}
         className="floating-panel"
         style={{
           position: 'absolute',
-          zIndex: 15,
-          right: 12,
-          top: scenarioPanelTop,
+          zIndex: 60,
+          right: scenarioPanelPos ? 'auto' : 16,
+          left: scenarioPanelPos ? scenarioPanelPos.x : 'auto',
+          top: scenarioPanelPos ? scenarioPanelPos.y : scenarioPanelTop,
           width: 320,
           maxHeight: '70vh',
           overflow: 'auto',
@@ -6803,7 +13654,10 @@ useEffect(() => {
           fontSize: 13
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <div
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
+          {...scenarioPanelDragHandleProps}
+        >
           <div style={{ fontWeight: 600 }}>Move Scenario</div>
           <button
             className="btn"
@@ -6831,14 +13685,14 @@ useEffect(() => {
         </div>
 
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 2 }}>Rooms by Type</div>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>Rooms by Room Type Description</div>
           {combinedScenarioRoomStats.length === 0 ? (
             <div style={{ fontSize: 12, fontStyle: 'italic', color: '#666' }}>No rooms selected.</div>
           ) : (
             <table style={{ width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left' }}>Type</th>
+                  <th style={{ textAlign: 'left' }}>Room Type Description</th>
                   <th style={{ textAlign: 'right' }}>Qty</th>
                   <th style={{ textAlign: 'right' }}>SF</th>
                 </tr>
@@ -6900,7 +13754,10 @@ useEffect(() => {
               const pageWidth = doc.internal.pageSize.getWidth();
               const pageHeight = doc.internal.pageSize.getHeight();
               const margin = 20;
-              const imgData = generateFloorplanImageData(currentFloorContextRef.current);
+              const imgData = generateFloorplanImageData({
+                ...currentFloorContextRef.current,
+                labelOptions: { hideDrawing: true }
+              });
               let imageAdded = false;
               let imgWidth = 0;
               let imgHeight = 0;
@@ -6945,9 +13802,12 @@ useEffect(() => {
               const deptText = `Scenario Dept: ${deptName}`;
               doc.setTextColor('#000000');
               doc.setFont(undefined, 'bold');
-              doc.text(deptText, textX + badgeSize + 6, y + badgeSize - 4, { maxWidth: textWidth - badgeSize - 6 });
+              const deptLines = doc.splitTextToSize(deptText, Math.max(50, textWidth - badgeSize - 6));
+              deptLines.forEach((line, idx) => {
+                doc.text(line, textX + badgeSize + 6, y + badgeSize - 4 + idx * lineHeight);
+              });
               doc.setFont(undefined, 'normal');
-              y += badgeSize + lineHeight / 2;
+              y += Math.max(badgeSize, deptLines.length * lineHeight) + lineHeight / 2;
               doc.setFontSize(12);
               addLine(`Total SF: ${Math.round(scenarioTotals.totalSF).toLocaleString()}`);
               addLine(`Rooms: ${scenarioTotals.rooms}`);
@@ -7103,7 +13963,7 @@ useEffect(() => {
                   background: 'linear-gradient(180deg, rgba(255,247,235,0.9), rgba(255,239,219,0.9))'
                 }}
               >
-                <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Space Data Export (beta)</h4>
+                <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Space Data Export</h4>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <select
                     style={{ width: '100%' }}
@@ -7142,11 +14002,29 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%' }}
+                    onClick={handleRefreshAirtable}
+                    disabled={airtableRefreshPending}
+                  >
+                    {airtableRefreshPending ? 'Refreshing Airtable...' : 'Refresh Airtable Data'}
+                  </button>
                 </div>
                 <div style={{ fontSize: 11, color: '#555', marginTop: 2, minHeight: 0 }}>
                   {exportSpaceMessage || (exportSpaceMode === 'summary'
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
+                </div>
+                {airtableRefreshMessage && (
+                  <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                    {airtableRefreshMessage}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                  Last synced: {airtableLastSyncedAt
+                    ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
+                    : 'Not yet'}
                 </div>
               </div>
             </>
@@ -7358,13 +14236,17 @@ useEffect(() => {
           position: 'fixed',
           inset: 0,
           zIndex: 10000,
-          display: 'grid',
-          placeItems: 'center',
           background: 'rgba(0,0,0,0.35)'
         }}
       >
         <div
+          ref={roomEditPanelRef}
+          className="mf-room-edit-panel"
           style={{
+            position: 'absolute',
+            left: roomEditPanelPos ? roomEditPanelPos.x : '50%',
+            top: roomEditPanelPos ? roomEditPanelPos.y : '50%',
+            transform: roomEditPanelPos ? 'none' : 'translate(-50%, -50%)',
             width: 520,
             maxWidth: '90vw',
             background: '#fff',
@@ -7373,11 +14255,13 @@ useEffect(() => {
             boxShadow: '0 18px 36px rgba(0,0,0,0.2)'
           }}
         >
-                <h4 style={{ margin: '0 0 12px 0' }}>
-                  {roomEditTargets.length > 1
-                    ? `Edit ${roomEditTargets.length} Rooms`
-                    : `Edit Room ${roomEditData.feature?.properties?.name || roomEditData.roomLabel || ''}`}
-                </h4>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }} {...roomEditDragHandleProps}>
+            <h4 style={{ margin: 0 }}>
+              {roomEditTargets.length > 1
+                ? `Edit ${roomEditTargets.length} Rooms`
+                : `Edit Room ${roomEditData.feature?.properties?.name || roomEditData.roomLabel || ''}`}
+            </h4>
+          </div>
 
           {roomEditTargets.length > 1 && (
             <div style={{ marginBottom: 12 }}>
@@ -7401,7 +14285,7 @@ useEffect(() => {
                       <th style={{ padding: '6px 8px', textAlign: 'left' }}>Room</th>
                       <th style={{ padding: '6px 8px', textAlign: 'right' }}>Area (SF)</th>
                       <th style={{ padding: '6px 8px', textAlign: 'left' }}>Department</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Type</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Room Type Description</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7441,7 +14325,7 @@ useEffect(() => {
           )}
 
           <ComboInput
-            label="Type"
+            label="Room Type"
             value={roomEditData.properties?.type ?? roomEditData.feature?.properties?.type ?? ''}
             onChange={(val) =>
               setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, type: val } }) : prev))
@@ -7460,6 +14344,21 @@ useEffect(() => {
             placeholder="Search or choose a department..."
           />
 
+          {editHasOfficeType && (
+            <div className="mf-form-row">
+              <label>Occupant</label>
+              <input
+                className="mf-input"
+                type="text"
+                value={roomEditData.properties?.occupant ?? ''}
+                onChange={(e) =>
+                  setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, occupant: e.target.value } }) : prev))
+                }
+                placeholder="(optional)"
+              />
+            </div>
+          )}
+
           <div className="mf-form-row">
             <label>Area (SF)</label>
             <input
@@ -7470,28 +14369,61 @@ useEffect(() => {
             />
           </div>
 
-          {editHasTeaching && (
+          {editHasSeatCountType && (
             <div className="mf-form-row">
               <label>Seat Count</label>
               <input
                 className="mf-input"
-                value={editSeatCountDisplay}
-                readOnly
-                disabled
+                type="number"
+                min="0"
+                value={seatCountSelectionValue === '__MIXED__' ? '' : seatCountSelectionValue}
+                placeholder={isMultiEdit && seatCountSelectionValue === '__MIXED__' ? 'varies' : ''}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setRoomEditData((prev) => (
+                    prev
+                      ? ({
+                          ...prev,
+                          properties: {
+                            ...prev.properties,
+                            seatCount: nextValue
+                          }
+                        })
+                      : prev
+                  ));
+                }}
               />
             </div>
           )}
 
-          {editHasOffice && (
+          {editHasOfficeType && (
             <div className="mf-form-row">
-              <label>Occupant</label>
-              <input
+              <label>Occupancy Status</label>
+              <select
                 className="mf-input"
-                value={roomEditData.properties?.occupant ?? ''}
-                onChange={(e) =>
-                  setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, occupant: e.target.value } }) : prev))
-                }
-              />
+                value={occupancySelectionValue === '__MIXED__' ? '' : occupancySelectionValue}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setRoomEditData((prev) => (
+                    prev
+                      ? ({
+                          ...prev,
+                          properties: {
+                            ...prev.properties,
+                            occupancyStatus: nextValue || (isMultiEdit ? null : '')
+                          }
+                        })
+                      : prev
+                  ));
+                }}
+              >
+                {isMultiEdit && occupancySelectionValue === '__MIXED__'
+                  ? <option value="">-- Mixed --</option>
+                  : <option value="">--</option>}
+                {OCCUPANCY_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -7518,9 +14450,10 @@ useEffect(() => {
                   : [];
                 if (!targets.length) return;
                 let savedCount = 0;
+                const multiEdit = targets.length > 1;
                 const sharedProps = roomEditData.properties || {};
                 const mapRefCurrent = mapRef.current;
-                const src = mapRefCurrent?.getSource(FLOOR_SOURCE);
+                const src = getGeojsonSource(mapRefCurrent, FLOOR_SOURCE);
                 const sourceData = src ? (src._data || src.serialize?.().data || null) : null;
                 const patchedFeatures = sourceData ? (toFeatureCollection(sourceData)?.features || []) : [];
                 for (const tgt of targets) {
@@ -7528,8 +14461,35 @@ useEffect(() => {
                     type: tgt.properties?.type ?? tgt.feature?.properties?.type ?? '',
                     department: tgt.properties?.department ?? tgt.feature?.properties?.department ?? '',
                     occupant: tgt.properties?.occupant ?? tgt.feature?.properties?.occupant ?? '',
-                    comments: tgt.properties?.comments ?? tgt.feature?.properties?.comments ?? ''
+                    occupancyStatus:
+                      tgt.properties?.occupancyStatus ??
+                      tgt.feature?.properties?.occupancyStatus ??
+                      tgt.properties?.['Occupancy Status'] ??
+                      tgt.feature?.properties?.['Occupancy Status'] ??
+                      tgt.properties?.OccupancyStatus ??
+                      tgt.feature?.properties?.OccupancyStatus ??
+                      '',
+                    comments: tgt.properties?.comments ?? tgt.feature?.properties?.comments ?? '',
+                    seatCount: getSeatCount({ ...(tgt.feature?.properties || {}), ...(tgt.properties || {}) })
                   };
+                  const hasOccupancyOverride =
+                    sharedProps.occupancyStatus != null &&
+                    String(sharedProps.occupancyStatus).trim() !== '';
+                  const occupancyStatusValue = hasOccupancyOverride
+                    ? sharedProps.occupancyStatus
+                    : fallbackProps.occupancyStatus;
+                  const occupantValue = editHasOfficeType
+                    ? (multiEdit
+                        ? (sharedProps.occupant != null && String(sharedProps.occupant).trim() !== ''
+                            ? sharedProps.occupant
+                            : fallbackProps.occupant)
+                        : (sharedProps.occupant ?? fallbackProps.occupant))
+                    : undefined;
+                  const seatCountValue = editHasSeatCountType
+                    ? (sharedProps.seatCount != null
+                        ? sharedProps.seatCount
+                        : fallbackProps.seatCount)
+                    : undefined;
                   const propsForTarget = {
                     ...tgt.properties,
                     ...sharedProps,
@@ -7540,13 +14500,22 @@ useEffect(() => {
                     department:
                       sharedProps.department != null && String(sharedProps.department).trim() !== ''
                         ? sharedProps.department
-                        : fallbackProps.department
+                        : fallbackProps.department,
+                    ...(editHasOfficeType ? { occupancyStatus: occupancyStatusValue, occupant: occupantValue } : {}),
+                    ...(editHasSeatCountType ? { seatCount: seatCountValue } : {})
                   };
+                  if (editHasOfficeType) {
+                    propsForTarget.OccupancyStatus = occupancyStatusValue;
+                    propsForTarget['Occupancy Status'] = occupancyStatusValue;
+                  }
                   const saved = await saveRoomEdits({
                     roomId: tgt.roomId,
                     buildingId: tgt.buildingId,
+                    buildingName: tgt.buildingName,
                     floorName: tgt.floorName,
                     revitId: tgt.revitId,
+                    roomLabel: tgt.roomLabel,
+                    roomNumber: tgt.roomNumber,
                     properties: propsForTarget
                   });
                   if (saved) {
@@ -7562,8 +14531,21 @@ useEffect(() => {
                           feat.properties.type = propsForTarget.type ?? feat.properties.type;
                           feat.properties.Type = feat.properties.type;
                           feat.properties.RoomType = feat.properties.type;
-                          feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
-                          feat.properties.occupant = feat.properties.Occupant;
+                          if (editHasOfficeType) {
+                            feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
+                            feat.properties.occupant = feat.properties.Occupant;
+                            feat.properties.occupancyStatus =
+                              propsForTarget.occupancyStatus ?? feat.properties.occupancyStatus;
+                            feat.properties.OccupancyStatus =
+                              propsForTarget.OccupancyStatus ?? feat.properties.OccupancyStatus;
+                            feat.properties['Occupancy Status'] =
+                              propsForTarget['Occupancy Status'] ?? feat.properties['Occupancy Status'];
+                          }
+                          if (editHasSeatCountType) {
+                            feat.properties.SeatCount = propsForTarget.seatCount ?? feat.properties.SeatCount;
+                            feat.properties['Seat Count'] = propsForTarget.seatCount ?? feat.properties['Seat Count'];
+                            feat.properties.seatCount = propsForTarget.seatCount ?? feat.properties.seatCount;
+                          }
                         }
                       }
                     }
@@ -7802,9 +14784,9 @@ useEffect(() => {
         </div>
       </div>
     )}
-    {aiScenarioOpen && aiScenarioResult && (() => {
-      const rollupRoomTypeCounts = (roomTypes = {}) => {
-        let offices = 0, classrooms = 0, labs = 0;
+      {aiScenarioOpen && aiScenarioResult && (() => {
+        const rollupRoomTypeCounts = (roomTypes = {}) => {
+          let offices = 0, classrooms = 0, labs = 0;
 
         for (const [label, qty] of Object.entries(roomTypes || {})) {
           const s = String(label || "").toLowerCase();
@@ -7818,62 +14800,77 @@ useEffect(() => {
         return { offices, classrooms, labs };
       };
 
-      const b = scenarioBaselineTotals || {};
-      const s = scenarioTotals || {};
+        const b = scenarioBaselineTotals || {};
+        const s = scenarioTotals || {};
+        const scenarioDeptLabel = aiScenarioResult?.scenarioDept || scenarioAssignedDept || 'Selected Dept';
+        const baselineBuildingLabel = scenarioBaselineTotals?.__label || 'baseline';
+        const scenarioBuildingLabel = activeBuildingName || selectedBuilding || selectedBuildingId || 'scenario';
+        const baselineTitle = `Baseline (${scenarioDeptLabel} in ${baselineBuildingLabel})`;
+        const scenarioTitle = `Scenario (${scenarioDeptLabel} to ${scenarioBuildingLabel})`;
 
-      const bCounts = rollupRoomTypeCounts(b.roomTypes);
-      const sCounts = rollupRoomTypeCounts(s.roomTypes);
+        const bCounts = rollupRoomTypeCounts(b.roomTypes);
+        const sCounts = rollupRoomTypeCounts(s.roomTypes);
 
       return (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 10001,
+            zIndex: 10006,
             display: 'grid',
             placeItems: 'center',
             background: 'rgba(0,0,0,0.45)'
           }}
         >
           <div
+            ref={aiScenarioPanelRef}
             style={{
+              position: 'fixed',
+              left: aiScenarioPos ? aiScenarioPos.x : '50%',
+              top: aiScenarioPos ? aiScenarioPos.y : '50%',
+              transform: aiScenarioPos ? 'none' : 'translate(-50%, -50%)',
               width: 'min(760px, 92vw)',
               background: '#fff',
               borderRadius: 12,
               padding: 16,
-              boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+              boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
+              maxHeight: '90vh',
+              overflow: 'auto'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-              <b>
-                {`${scenarioAssignedDept || 'Scenario'} - ${scenarioBaselineTotals?.__label || 'baseline'} to ${activeBuildingName || 'scenario'}${selectedFloor ? ` (${selectedFloor})` : ''}`}
-              </b>
-              <button onClick={() => setAiScenarioOpen(false)}>Close</button>
-            </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                <div {...aiScenarioDragHandleProps} style={{ fontWeight: 700 }}>
+                  {`${scenarioAssignedDept || 'Scenario'} - ${scenarioBaselineTotals?.__label || 'baseline'} to ${activeBuildingName || 'scenario'}${selectedFloor ? ` (${selectedFloor})` : ''}`}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn" onClick={handleExportScenario}>Export Scenario (PDF)</button>
+                  <button className="btn" onClick={() => setAiScenarioOpen(false)}>Close</button>
+                </div>
+              </div>
 
             <p style={{ marginTop: 10 }}>{aiScenarioResult.summary}</p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
-              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                  Baseline (Current)
-                </div>
-                <div style={{ fontSize: 13 }}>SF: {Math.round(scenarioBaselineTotals?.totalSF || 0).toLocaleString()}</div>
-                <div style={{ fontSize: 13 }}>Rooms: {Math.round(scenarioBaselineTotals?.rooms || 0).toLocaleString()}</div>
-                {(bCounts.offices || bCounts.classrooms || bCounts.labs) ? (
+                <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    {baselineTitle}
+                  </div>
+                  <div style={{ fontSize: 13 }}>SF: {Math.round(scenarioBaselineTotals?.totalSF || 0).toLocaleString()}</div>
+                  <div style={{ fontSize: 13 }}>Rooms: {Math.round(scenarioBaselineTotals?.rooms || 0).toLocaleString()}</div>
+                  {(bCounts.offices || bCounts.classrooms || bCounts.labs) ? (
                   <>
                     <div style={{ fontSize: 13 }}>Offices: {bCounts.offices}</div>
                     <div style={{ fontSize: 13 }}>Classrooms: {bCounts.classrooms}</div>
                     <div style={{ fontSize: 13 }}>Labs: {bCounts.labs}</div>
                   </>
                 ) : null}
-              </div>
-              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                  Scenario ({aiScenarioResult?.scenarioDept || scenarioAssignedDept || 'Selected Dept'})
                 </div>
-                <div style={{ fontSize: 13 }}>SF: {Math.round(scenarioTotals?.totalSF || 0).toLocaleString()}</div>
-                <div style={{ fontSize: 13 }}>Rooms: {Math.round(scenarioTotals?.rooms || 0).toLocaleString()}</div>
+                <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    {scenarioTitle}
+                  </div>
+                  <div style={{ fontSize: 13 }}>SF: {Math.round(scenarioTotals?.totalSF || 0).toLocaleString()}</div>
+                  <div style={{ fontSize: 13 }}>Rooms: {Math.round(scenarioTotals?.rooms || 0).toLocaleString()}</div>
                 {(sCounts.offices || sCounts.classrooms || sCounts.labs) ? (
                   <>
                     <div style={{ fontSize: 13 }}>Offices: {sCounts.offices}</div>
@@ -7943,13 +14940,27 @@ useEffect(() => {
             lineHeight: 1.4
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>Create move scenario (AI)</div>
-              <div style={{ fontSize: 12, color: '#555' }}>Uses campus-wide room inventory to suggest candidates.</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Create move scenario (AI)</div>
+                  <span
+                    title="AI-generated scenario plan based on currently loaded space data."
+                    style={{
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      border: '1px solid rgba(0,0,0,0.15)',
+                      background: '#f7f7ff'
+                    }}
+                  >
+                    {"\u2728 AI"}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#555' }}>Uses campus-wide room inventory to suggest candidates.</div>
+              </div>
+              <button className="btn" onClick={() => setAiCreateScenarioOpen(false)}>Close</button>
             </div>
-            <button className="btn" onClick={() => setAiCreateScenarioOpen(false)}>Close</button>
-          </div>
 
           <div style={{ marginTop: 10 }}>
             <label style={{ fontWeight: 600, fontSize: 12 }}>Request</label>
@@ -7968,7 +14979,15 @@ useEffect(() => {
             </div>
           ) : null}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#444' }}>
+              <input
+                type="checkbox"
+                checked={aiCreateScenarioStrict}
+                onChange={(e) => setAiCreateScenarioStrict(e.target.checked)}
+              />
+              Strict fit (±5% target)
+            </label>
             <button
               className="btn"
               disabled={aiCreateScenarioLoading || !aiCreateScenarioText.trim() || aiStatus !== 'ok'}
@@ -7985,40 +15004,71 @@ useEffect(() => {
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 10001,
+          zIndex: 10004,
           display: 'grid',
           placeItems: 'center',
           background: 'rgba(0,0,0,0.45)'
         }}
       >
         <div
+          ref={aiCreateScenarioResultRef}
           style={{
-            width: 'min(820px, 94vw)',
+            position: 'fixed',
+            left: aiCreateScenarioResultPos ? aiCreateScenarioResultPos.x : '50%',
+            top: aiCreateScenarioResultPos ? aiCreateScenarioResultPos.y : '50%',
+            transform: aiCreateScenarioResultPos ? 'none' : 'translate(-50%, -50%)',
+            width: 'min(760px, 92vw)',
             background: '#fff',
             borderRadius: 12,
-            padding: 16,
+            padding: 12,
             boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
-            lineHeight: 1.45
+            lineHeight: 1.35,
+            fontSize: 12,
+            maxHeight: '90vh',
+            overflow: 'auto'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{aiCreateScenarioResult.title || 'Move scenario plan'}</div>
-              {aiCreateScenarioResult.interpretedIntent ? (
-                <div style={{ fontSize: 12, color: '#555' }}>{aiCreateScenarioResult.interpretedIntent}</div>
-              ) : null}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} {...aiCreateScenarioResultDragHandleProps}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>
+                    {aiCreateScenarioResult.title || 'Move scenario plan'}
+                  </div>
+                  <span
+                    title="AI-generated scenario plan based on currently loaded space data."
+                    style={{
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      border: '1px solid rgba(0,0,0,0.15)',
+                      background: '#f7f7ff'
+                    }}
+                  >
+                    {"\u2728 AI"}
+                  </span>
+                </div>
+                {aiCreateScenarioResult.interpretedIntent ? (
+                  <div style={{ fontSize: 12, color: '#555' }}>{aiCreateScenarioResult.interpretedIntent}</div>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn" onClick={() => applyAiScenarioToComparison(aiCreateScenarioResult)}>
+                  Add to Scenario Comparison
+                </button>
+                <button className="btn" onClick={() => setAiCreateScenarioResult(null)}>Close</button>
+              </div>
             </div>
-            <button className="btn" onClick={() => setAiCreateScenarioResult(null)}>Close</button>
-          </div>
 
-          {aiCreateScenarioResult.selectionCriteria?.length ? (
-            <div style={{ marginTop: 10 }}>
-              <b>Selection criteria</b>
-              <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
-                {aiCreateScenarioResult.selectionCriteria.map((c, i) => <li key={i}>{c}</li>)}
-              </ul>
-            </div>
-          ) : null}
+            {aiCreateScenarioResult.selectionCriteria?.filter((c) => !/vacan/i.test(c || '')).length ? (
+              <div style={{ marginTop: 10 }}>
+                <b>Selection criteria</b>
+                <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
+                  {aiCreateScenarioResult.selectionCriteria
+                    .filter((c) => !/vacan/i.test(c || ''))
+                    .map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
+              </div>
+            ) : null}
 
           <div style={{ marginTop: 10 }}>
             <b>Recommended candidates</b>
@@ -8029,13 +15079,13 @@ useEffect(() => {
                     Select these rooms in Move Scenario
                   </button>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 3fr', background: '#f8f9fb', padding: '6px 8px', fontWeight: 600, fontSize: 12 }}>
-                  <div>Location</div>
-                  <div>Room</div>
-                  <div style={{ textAlign: 'right' }}>SF</div>
-                  <div style={{ textAlign: 'right' }}>Vacancy</div>
-                  <div>Rationale</div>
-                </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 3fr', background: '#f8f9fb', padding: '6px 8px', fontWeight: 600, fontSize: 12 }}>
+                      <div>Location</div>
+                      <div>Room</div>
+                      <div style={{ textAlign: 'right' }}>SF</div>
+                    <div style={{ textAlign: 'right' }}>Match / Notes</div>
+                      <div>Rationale</div>
+                    </div>
                 <div>
                   {aiCreateScenarioResult.recommendedCandidates.map((c, i) => (
                     <div
@@ -8057,11 +15107,20 @@ useEffect(() => {
                         <div style={{ opacity: 0.75 }}>{c.type || 'Unspecified'}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>{Math.round(Number(c.sf || 0)).toLocaleString()}</div>
-                      <div style={{ textAlign: 'right' }}>{c.vacancy || (c.occupant ? 'Occupied' : 'Vacant')}</div>
-                      <div>{c.rationale || ''}</div>
-                    </div>
-                  ))}
-                </div>
+                        <div style={{ textAlign: 'right' }}>
+                          {(() => {
+                            const occupant = String(c.occupant || '').trim();
+                            const dept = String(c.occupantDept || c.department || '').trim();
+                            if (occupant) {
+                              return `⚠️ Occupied — requires relocation${dept ? ` of ${dept}` : ''}`;
+                            }
+                            return '';
+                          })()}
+                        </div>
+                        <div>{sanitizeVacancyLanguage(c.rationale) || ''}</div>
+                      </div>
+                    ))}
+                  </div>
               </div>
             ) : (
               <div style={{ marginTop: 6, fontSize: 12, color: '#666' }}>No candidates returned.</div>
@@ -8205,6 +15264,13 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
+
+
+
+
+
 
 
 

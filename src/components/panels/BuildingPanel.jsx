@@ -1,6 +1,7 @@
 // src/components/panels/BuildingPanel.jsx
 import React from "react";
 import { getDeptColor } from "../../style/roomColors";
+import UtilizationBars from "../UtilizationBars";
 
 export default function BuildingPanel({
   buildingName,
@@ -17,14 +18,27 @@ export default function BuildingPanel({
   explainBuildingLoading = false,
   explainBuildingDisabled = false,
   explainBuildingError = '',
+  utilization,
+  dragHandleProps,
 }) {
   const area = (v) =>
     Number.isFinite(v) ? Math.round(v).toLocaleString() : "-";
   const count = (v) => (Number.isFinite(v) ? Number(v).toLocaleString() : "-");
+  const isDraggable = Boolean(dragHandleProps);
+  const { style: dragStyle, ...dragProps } = dragHandleProps || {};
+  const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
+  const headerStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingRight: 6,
+    ...(isDraggable ? { cursor: "grab", userSelect: "none", touchAction: "none" } : {}),
+    ...(dragStyle || {})
+  };
 
   return (
     <div style={{ minWidth: 320, maxWidth: 360, padding: 12, fontSize: 13 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingRight: 6 }}>
+      <div style={headerStyle} {...dragProps}>
         <div style={{ fontWeight: 700 }}>{buildingName}</div>
         <button onClick={onClose} aria-label="Close" style={{ marginRight: 4 }}>
           &times;
@@ -94,6 +108,17 @@ export default function BuildingPanel({
           )}
         </div>
       </div>
+
+      {showUtilization ? (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Classroom Utilization</div>
+          <UtilizationBars
+            timePct={utilization.timeUtilization}
+            seatPct={utilization.seatUtilization}
+            compact
+          />
+        </div>
+      ) : null}
 
       <div
         style={{

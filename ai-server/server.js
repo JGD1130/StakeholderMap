@@ -10,40 +10,141 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+const AI_MODEL =
+  process.env.AI_MODEL ||
+  process.env.ASK_MAPFLUENCE_MODEL ||
+  process.env.OPENAI_ASK_MODEL ||
+  "gpt-4.1";
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const AIRTABLE_TABLE = process.env.AIRTABLE_TABLE;
 const AIRTABLE_VIEW = process.env.AIRTABLE_VIEW;
+const AIRTABLE_BUILDING_FIELD = process.env.AIRTABLE_BUILDING_FIELD || "Building";
+const AIRTABLE_BUILDING_NAME_FIELD = process.env.AIRTABLE_BUILDING_NAME_FIELD || "";
+const AIRTABLE_FLOOR_FIELD = process.env.AIRTABLE_FLOOR_FIELD || "Floor";
+const AIRTABLE_ROOM_ID_FIELD = process.env.AIRTABLE_ROOM_ID_FIELD || "Room ID";
+const AIRTABLE_OCC_STATUS_FIELD = process.env.AIRTABLE_OCC_STATUS_FIELD || "Occupancy Status";
+const AIRTABLE_OCCUPANT_FIELD = process.env.AIRTABLE_OCCUPANT_FIELD || "Occupant";
+const AIRTABLE_DEPT_FIELD = process.env.AIRTABLE_DEPT_FIELD || "Department";
+const AIRTABLE_TYPE_FIELD = process.env.AIRTABLE_TYPE_FIELD || "Type";
+const AIRTABLE_COMMENTS_FIELD = process.env.AIRTABLE_COMMENTS_FIELD || "Comments";
+const AIRTABLE_FIELDS = process.env.AIRTABLE_FIELDS || "";
+const AIRTABLE_ROOM_TYPE_TABLE = process.env.AIRTABLE_ROOM_TYPE_TABLE || "";
+const AIRTABLE_ROOM_TYPE_PRIMARY_FIELD = process.env.AIRTABLE_ROOM_TYPE_PRIMARY_FIELD || "";
+const AIRTABLE_DEPT_TABLE = process.env.AIRTABLE_DEPT_TABLE || "";
+const AIRTABLE_DEPT_PRIMARY_FIELD = process.env.AIRTABLE_DEPT_PRIMARY_FIELD || "";
 
-async function fetchAirtableRows(filterFormula) {
-  const params = new URLSearchParams({
-    view: AIRTABLE_VIEW
-  });
-  if (filterFormula) {
-    params.set("filterByFormula", filterFormula);
+const linkedRecordCache = new Map();
+const tablePrimaryFieldCache = new Map();
+const linkedLabelCache = new Map();
+const LINKED_LABEL_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const isAirtableRecordId = (value) => /^rec[a-z0-9]{6,}$/i.test(String(value || ""));
+const isLinkedRecordArray = (value) =>
+  Array.isArray(value) && value.length > 0 && value.every((v) => isAirtableRecordId(v));
+
+function pickFieldValue(fields = {}, candidates = []) {
+  for (const key of candidates) {
+    if (!key) continue;
+    const val = fields[key];
+    if (val == null) continue;
+    if (typeof val === "string" && !val.trim()) continue;
+    return val;
   }
+  return "";
+}
 
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}?${params}`;
-
-  const resp = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_TOKEN}`
+async function fetchAirtableRows(filterFormula, viewOverride) {
+  const tryFetch = async (viewValue) => {
+    const params = new URLSearchParams();
+    if (viewValue) params.set("view", viewValue);
+    if (filterFormula) {
+      params.set("filterByFormula", filterFormula);
     }
-  });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Airtable error: ${resp.status} ${text}`);
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}?${params}`;
+
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`
+      }
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Airtable error: ${resp.status} ${text}`);
+    }
+
+    const data = await resp.json();
+    return data.records || [];
+  };
+
+  const view = viewOverride || AIRTABLE_VIEW || "Mapfluence_Rooms";
+  try {
+    return await tryFetch(view);
+  } catch (err) {
+    if (view) {
+      return await tryFetch(null);
+    }
+    throw err;
+  }
+}
+
+async function fetchAirtableAllRecords({ table, view, fields }) {
+  const records = [];
+  let offset = null;
+
+  const tryFetch = async (viewValue) => {
+    do {
+      const params = new URLSearchParams();
+      if (viewValue) params.set("view", viewValue);
+      if (Array.isArray(fields)) {
+        fields.forEach((field) => {
+          if (field) params.append("fields[]", field);
+        });
+      }
+      params.set("pageSize", "100");
+      if (offset) params.set("offset", offset);
+
+      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}?${params}`;
+      const resp = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_TOKEN}`
+        }
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Airtable error: ${resp.status} ${text}`);
+      }
+
+      const data = await resp.json();
+      records.push(...(data.records || []));
+      offset = data.offset || null;
+    } while (offset);
+  };
+
+  const viewValue = view === undefined ? (AIRTABLE_VIEW || "Mapfluence_Rooms") : view;
+  try {
+    await tryFetch(viewValue);
+  } catch (err) {
+    if (viewValue) {
+      offset = null;
+      records.length = 0;
+      await tryFetch(null);
+    } else {
+      throw err;
+    }
   }
 
-  const data = await resp.json();
-  return data.records || [];
+  return records;
 }
 
 function filtersToAirtableFormula(filters) {
@@ -70,6 +171,597 @@ function filtersToAirtableFormula(filters) {
 
   return parts.length === 1 ? parts[0] : `AND(${parts.join(",")})`;
 }
+
+function escapeFormulaValue(value) {
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
+function uniqueStrings(values = []) {
+  const seen = new Set();
+  const out = [];
+  values.forEach((value) => {
+    const v = String(value ?? "").trim();
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  });
+  return out;
+}
+
+function buildFieldEqualsClause(fields = [], values = []) {
+  const fieldList = uniqueStrings(fields);
+  const valueList = uniqueStrings(values);
+  if (!fieldList.length || !valueList.length) return null;
+  const clauses = [];
+  fieldList.forEach((field) => {
+    const fieldExpr = `{${field}}`;
+    valueList.forEach((value) => {
+      const escaped = escapeFormulaValue(value);
+      clauses.push(`${fieldExpr}="${escaped}"`);
+    });
+  });
+  if (!clauses.length) return null;
+  return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+}
+
+async function fetchAirtableTableRecords(tableName, { filterFormula, view } = {}) {
+  const params = new URLSearchParams();
+  if (view) params.set("view", view);
+  if (filterFormula) params.set("filterByFormula", filterFormula);
+  params.set("pageSize", "5");
+
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`
+    }
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Airtable error: ${resp.status} ${text}`);
+  }
+  const data = await resp.json();
+  return data.records || [];
+}
+
+async function fetchAirtableBaseSchema() {
+  if (tablePrimaryFieldCache.has("__schema__")) {
+    return tablePrimaryFieldCache.get("__schema__");
+  }
+  const url = `https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`;
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`
+    }
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Airtable schema error: ${resp.status} ${text}`);
+  }
+  const data = await resp.json();
+  tablePrimaryFieldCache.set("__schema__", data);
+  return data;
+}
+
+async function resolvePrimaryFieldName(tableName, explicitField) {
+  if (explicitField) return explicitField;
+  if (tablePrimaryFieldCache.has(tableName)) {
+    return tablePrimaryFieldCache.get(tableName);
+  }
+  try {
+    const schema = await fetchAirtableBaseSchema();
+    const table = (schema?.tables || []).find((t) => t?.name === tableName);
+    const primaryId = table?.primaryFieldId;
+    const primary = (table?.fields || []).find((f) => f?.id === primaryId);
+    const name = primary?.name || "";
+    if (name) {
+      tablePrimaryFieldCache.set(tableName, name);
+      return name;
+    }
+  } catch (err) {
+    console.warn(`Unable to read Airtable schema for ${tableName}`, err?.message || err);
+  }
+  return "";
+}
+
+async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
+  if (!tableName) return null;
+  const raw = String(label ?? "").trim();
+  if (!raw) return null;
+  const normKey = `${tableName}|${normalizeLoose(raw)}`;
+  if (linkedRecordCache.has(normKey)) {
+    return linkedRecordCache.get(normKey);
+  }
+  const primaryField = await resolvePrimaryFieldName(tableName, primaryFieldName);
+  if (!primaryField) return null;
+  const lower = raw.toLowerCase();
+  const filter = `LOWER({${primaryField}})="${escapeFormulaValue(lower)}"`;
+  const records = await fetchAirtableTableRecords(tableName, { filterFormula: filter });
+  const id = records?.[0]?.id || null;
+  if (id) {
+    linkedRecordCache.set(normKey, id);
+  }
+  return id;
+}
+
+async function resolveLinkedFields(updateFields = {}) {
+  const next = { ...updateFields };
+  if (AIRTABLE_TYPE_FIELD in next) {
+    const value = next[AIRTABLE_TYPE_FIELD];
+    if (Array.isArray(value)) {
+      // ok
+    } else if (String(value ?? "").trim()) {
+      if (!AIRTABLE_ROOM_TYPE_TABLE) {
+        throw new Error("AIRTABLE_ROOM_TYPE_TABLE is required for Room Type Description");
+      }
+      const id = await resolveLinkedRecordId(
+        AIRTABLE_ROOM_TYPE_TABLE,
+        AIRTABLE_ROOM_TYPE_PRIMARY_FIELD,
+        value
+      );
+      if (!id) {
+        throw new Error(`Room Type not found: ${value}`);
+      }
+      next[AIRTABLE_TYPE_FIELD] = [id];
+    } else {
+      next[AIRTABLE_TYPE_FIELD] = [];
+    }
+  }
+  if (AIRTABLE_DEPT_FIELD in next) {
+    const value = next[AIRTABLE_DEPT_FIELD];
+    if (Array.isArray(value)) {
+      // ok
+    } else if (String(value ?? "").trim()) {
+      if (!AIRTABLE_DEPT_TABLE) {
+        throw new Error("AIRTABLE_DEPT_TABLE is required for Department");
+      }
+      const id = await resolveLinkedRecordId(
+        AIRTABLE_DEPT_TABLE,
+        AIRTABLE_DEPT_PRIMARY_FIELD,
+        value
+      );
+      if (!id) {
+        throw new Error(`Department not found: ${value}`);
+      }
+      next[AIRTABLE_DEPT_FIELD] = [id];
+    } else {
+      next[AIRTABLE_DEPT_FIELD] = [];
+    }
+  }
+  return next;
+}
+
+async function getLinkedLabelMap(tableName, primaryFieldName) {
+  if (!tableName || !primaryFieldName) return null;
+  const cacheKey = `${tableName}|${primaryFieldName}`;
+  const cached = linkedLabelCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < LINKED_LABEL_CACHE_TTL_MS) {
+    return cached.map;
+  }
+  const records = await fetchAirtableAllRecords({
+    table: tableName,
+    view: null,
+    fields: [primaryFieldName]
+  });
+  const map = new Map();
+  records.forEach((record) => {
+    const label = record?.fields?.[primaryFieldName];
+    const value = String(label ?? "").trim();
+    if (value) map.set(record.id, value);
+  });
+  linkedLabelCache.set(cacheKey, { ts: Date.now(), map });
+  return map;
+}
+
+function resolveLinkedLabel(value, labelMap) {
+  if (!isLinkedRecordArray(value)) return value;
+  const labels = value
+    .map((id) => labelMap?.get(id) || "")
+    .filter(Boolean);
+  return labels.length ? labels[0] : "";
+}
+
+function normalizeLoose(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function parseEnvFieldList(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function expandBuildingValues(values = []) {
+  const out = [];
+  values.forEach((value) => {
+    const v = String(value ?? "").trim();
+    if (!v) return;
+    out.push(v);
+    const noPunct = v.replace(/[-_/]+/g, " ").replace(/\s+/g, " ").trim();
+    if (noPunct && noPunct !== v) out.push(noPunct);
+  });
+  return uniqueStrings(out);
+}
+
+function expandFloorValues(values = []) {
+  const out = [];
+  values.forEach((value) => {
+    const v = String(value ?? "").trim();
+    if (!v) return;
+    out.push(v);
+    const upper = v.toUpperCase();
+    const levelMatch = upper.match(/LEVEL[_\s]*(\d+)/);
+    if (levelMatch?.[1]) {
+      out.push(levelMatch[1]);
+      out.push(`Level ${levelMatch[1]}`);
+      out.push(`LEVEL ${levelMatch[1]}`);
+    }
+    if (upper === "BASEMENT") {
+      out.push("Basement");
+    }
+  });
+  return uniqueStrings(out);
+}
+
+app.get("/api/rooms", async (req, res) => {
+  try {
+    const table = AIRTABLE_TABLE || "Rooms";
+    const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
+
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !table) {
+      return res.status(500).json({ ok: false, error: "Missing Airtable config." });
+    }
+
+    const explicitFields = AIRTABLE_FIELDS
+      ? AIRTABLE_FIELDS.split(",").map((f) => f.trim()).filter(Boolean)
+      : null;
+
+    const records = await fetchAirtableAllRecords({
+      table,
+      view,
+      fields: explicitFields && explicitFields.length ? explicitFields : null
+    });
+
+    const rooms = records.map((r) => {
+      const f = r.fields || {};
+      const buildingRaw = pickFieldValue(f, [
+        AIRTABLE_BUILDING_NAME_FIELD,
+        AIRTABLE_BUILDING_FIELD,
+        "Building Name",
+        "Building"
+      ]);
+      const building = Array.isArray(buildingRaw)
+        ? buildingRaw.join(", ")
+        : String(buildingRaw || "");
+      const type = pickFieldValue(f, [
+        process.env.AIRTABLE_TYPE_FIELD,
+        "NCES Type Description",
+        "NCES_Type",
+        "NCES Type",
+        "Room Type",
+        "Room Type Text",
+        "Type"
+      ]);
+      const dept = pickFieldValue(f, [
+        process.env.AIRTABLE_DEPT_FIELD,
+        "Department",
+        "Department Owner",
+        "Dept",
+        "NCES_Department",
+        "NCES Dept"
+      ]);
+      const areaRaw = pickFieldValue(f, [
+        process.env.AIRTABLE_AREA_FIELD,
+        "AreaSF",
+        "Area_SF",
+        "Area (SF)",
+        "Room Area Sq Ft",
+        "Area SF",
+        "Area",
+        "NetArea",
+        "Net Area"
+      ]);
+      const floor = pickFieldValue(f, [
+        process.env.AIRTABLE_FLOOR_FIELD,
+        "Floor",
+        "Level",
+        "LevelName",
+        "Level Name"
+      ]);
+      const occupancyStatus = pickFieldValue(f, [
+        process.env.AIRTABLE_OCC_STATUS_FIELD,
+        "Occupancy Status",
+        "NCES_Occupancy Status",
+        "Occupancy",
+        "Vacancy"
+      ]);
+      const occupant = pickFieldValue(f, [
+        process.env.AIRTABLE_OCCUPANT_FIELD,
+        "Occupant",
+        "Assigned To",
+        "AssignedTo",
+        "Assignee"
+      ]);
+      const seatCount = pickFieldValue(f, [
+        process.env.AIRTABLE_SEAT_FIELD,
+        "Seat Count",
+        "NCES_Seat Count",
+        "SeatCount"
+      ]);
+      const roomIdFields = parseEnvFieldList(process.env.AIRTABLE_ROOM_ID_FIELD);
+      const roomId = pickFieldValue(f, [
+        ...roomIdFields,
+        "Room ID",
+        "RoomId",
+        "Room ID Text",
+        "Room Number"
+      ]);
+      const roomGuid = pickFieldValue(f, [
+        "Room GUID",
+        "Room Guid",
+        "RoomGuid",
+        "Revit_UniqueId",
+        "Revit Unique Id",
+        "Revit UniqueID",
+        "Revit GUID"
+      ]);
+
+      return {
+        airtableId: r.id,
+        roomId,
+        roomGuid,
+        building,
+        floor,
+        areaSF: Number(areaRaw ?? 0) || 0,
+        type,
+        department: dept,
+        occupant,
+        seatCount: Number(seatCount ?? 0) || 0,
+        occupancyStatus: occupancyStatus || "Unknown"
+      };
+    });
+
+    const needsTypeLabels = rooms.some((room) => isLinkedRecordArray(room?.type));
+    const needsDeptLabels = rooms.some((room) => isLinkedRecordArray(room?.department));
+    let roomTypeLabelMap = null;
+    let deptLabelMap = null;
+    if (needsTypeLabels) {
+      roomTypeLabelMap = await getLinkedLabelMap(
+        AIRTABLE_ROOM_TYPE_TABLE,
+        AIRTABLE_ROOM_TYPE_PRIMARY_FIELD
+      );
+    }
+    if (needsDeptLabels) {
+      deptLabelMap = await getLinkedLabelMap(
+        AIRTABLE_DEPT_TABLE,
+        AIRTABLE_DEPT_PRIMARY_FIELD
+      );
+    }
+    if (roomTypeLabelMap || deptLabelMap) {
+      rooms.forEach((room) => {
+        if (roomTypeLabelMap && isLinkedRecordArray(room?.type)) {
+          room.type = resolveLinkedLabel(room.type, roomTypeLabelMap);
+        }
+        if (deptLabelMap && isLinkedRecordArray(room?.department)) {
+          room.department = resolveLinkedLabel(room.department, deptLabelMap);
+        }
+      });
+    }
+
+    res.json({ ok: true, rooms });
+  } catch (err) {
+    console.error("GET /api/rooms failed", err);
+    res.status(500).json({ ok: false, error: err?.message || "Failed to load rooms" });
+  }
+});
+
+app.patch("/api/rooms/:airtableId", async (req, res) => {
+  try {
+    const table = AIRTABLE_TABLE || "Rooms";
+    const { airtableId } = req.params || {};
+    const body = req.body || {};
+    const {
+      fields,
+      occupancyStatus,
+      occupant,
+      department,
+      type,
+      comments,
+      seatCount
+    } = body;
+    const hasOccupant = Object.prototype.hasOwnProperty.call(body, "occupant");
+    const hasSeatCount = Object.prototype.hasOwnProperty.call(body, "seatCount");
+    const occupantValue = hasOccupant && typeof occupant === "string" ? occupant.trim() : occupant;
+    const normalizedOccupant = hasOccupant && occupantValue === "" ? null : occupantValue;
+    const seatCountValue = hasSeatCount ? seatCount : undefined;
+
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !table) {
+      return res.status(500).json({ ok: false, error: "Missing Airtable config." });
+    }
+    if (!airtableId || (!fields && occupancyStatus == null && !hasOccupant && !hasSeatCount && department == null && type == null && comments == null)) {
+      return res.status(400).json({ ok: false, error: "Missing airtableId or fields" });
+    }
+
+    const updateFields = (fields && typeof fields === "object") ? { ...fields } : {};
+    if (occupancyStatus != null) updateFields[AIRTABLE_OCC_STATUS_FIELD] = occupancyStatus;
+    if (hasOccupant) updateFields[AIRTABLE_OCCUPANT_FIELD] = normalizedOccupant;
+    if (hasSeatCount) updateFields[AIRTABLE_SEAT_FIELD] = seatCountValue;
+    if (department != null) updateFields[AIRTABLE_DEPT_FIELD] = department;
+    if (type != null) updateFields[AIRTABLE_TYPE_FIELD] = type;
+    if (comments != null) updateFields[AIRTABLE_COMMENTS_FIELD] = comments;
+
+    if (!Object.keys(updateFields).length) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+    const resolvedFields = await resolveLinkedFields(updateFields);
+
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${airtableId}`;
+    const resp = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fields: resolvedFields })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error("Airtable PATCH by id failed", { status: resp.status, text });
+      return res.status(500).json({ ok: false, error: text });
+    }
+
+    const data = await resp.json();
+    return res.json({ ok: true, id: data?.id || airtableId });
+  } catch (err) {
+    console.error("PATCH /api/rooms failed", err);
+    res.status(500).json({ ok: false, error: "Failed to update room" });
+  }
+});
+
+app.patch("/api/rooms", async (req, res) => {
+  try {
+    const table = AIRTABLE_TABLE || "Rooms";
+    const body = req.body || {};
+    const {
+      roomGuid,
+      roomId,
+      roomNumber,
+      roomLabel,
+      building,
+      buildingName,
+      floor,
+      fields,
+      occupancyStatus,
+      occupant,
+      department,
+      type,
+      comments,
+      seatCount
+    } = body;
+    const hasOccupant = Object.prototype.hasOwnProperty.call(body, "occupant");
+    const hasSeatCount = Object.prototype.hasOwnProperty.call(body, "seatCount");
+    const occupantValue = hasOccupant && typeof occupant === "string" ? occupant.trim() : occupant;
+    const normalizedOccupant = hasOccupant && occupantValue === "" ? null : occupantValue;
+    const seatCountValue = hasSeatCount ? seatCount : undefined;
+
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !table) {
+      return res.status(500).json({ ok: false, error: "Missing Airtable config." });
+    }
+
+    const roomValue = roomGuid || roomId || roomNumber || roomLabel;
+    const matchField = roomGuid
+      ? "roomGuid"
+      : roomId
+        ? "roomId"
+        : roomNumber
+          ? "roomNumber"
+          : roomLabel
+            ? "roomLabel"
+            : "none";
+    if (roomValue) {
+      console.log(`[rooms] match field=${matchField} value=${roomValue}`);
+    }
+    if (!roomValue) {
+      return res.status(400).json({ ok: false, error: "roomId required" });
+    }
+
+    const updateFields = (fields && typeof fields === "object") ? { ...fields } : {};
+    if (!fields) {
+      if (occupancyStatus != null) updateFields[AIRTABLE_OCC_STATUS_FIELD] = occupancyStatus;
+      if (hasOccupant) updateFields[AIRTABLE_OCCUPANT_FIELD] = normalizedOccupant;
+      if (hasSeatCount) updateFields[AIRTABLE_SEAT_FIELD] = seatCountValue;
+      if (department != null) updateFields[AIRTABLE_DEPT_FIELD] = department;
+      if (type != null) updateFields[AIRTABLE_TYPE_FIELD] = type;
+      if (comments != null) updateFields[AIRTABLE_COMMENTS_FIELD] = comments;
+    }
+
+    if (!Object.keys(updateFields).length) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    const roomFields = parseEnvFieldList(process.env.AIRTABLE_ROOM_ID_FIELD);
+    if (!roomFields.length) {
+      return res.status(400).json({
+        ok: false,
+        error: "AIRTABLE_ROOM_ID_FIELD is required to update by roomId"
+      });
+    }
+    const buildingFields = parseEnvFieldList(process.env.AIRTABLE_BUILDING_FIELD)
+      .concat(parseEnvFieldList(process.env.AIRTABLE_BUILDING_NAME_FIELD));
+    const floorFields = parseEnvFieldList(process.env.AIRTABLE_FLOOR_FIELD);
+
+    const buildingValues = expandBuildingValues([building, buildingName]);
+    const floorValues = expandFloorValues([floor]);
+
+    const roomClause = buildFieldEqualsClause(roomFields, [roomValue]);
+    const buildingClause = buildFieldEqualsClause(buildingFields, buildingValues);
+    const floorClause = buildFieldEqualsClause(floorFields, floorValues);
+    if (!roomClause) {
+      return res.status(400).json({ ok: false, error: "Missing room field mapping" });
+    }
+    const formulaParts = [roomClause, buildingClause, floorClause].filter(Boolean);
+    const formula = formulaParts.length > 1 ? `AND(${formulaParts.join(",")})` : formulaParts[0];
+
+    const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
+    const records = await fetchAirtableRows(formula, view);
+    if (!records.length) {
+      return res.status(404).json({ ok: false, error: "Room not found" });
+    }
+
+    let target = records[0];
+    if (records.length > 1 && (buildingValues.length || floorValues.length)) {
+      const narrowed = records.filter((record) => {
+        const f = record?.fields || {};
+        const recBuilding = pickFieldValue(f, buildingFields);
+        const recFloor = pickFieldValue(f, floorFields);
+        const buildingOk = buildingValues.length
+          ? buildingValues.some((val) => normalizeLoose(val) === normalizeLoose(recBuilding))
+          : true;
+        const floorOk = floorValues.length
+          ? floorValues.some((val) => normalizeLoose(val) === normalizeLoose(recFloor))
+          : true;
+        return buildingOk && floorOk;
+      });
+      if (narrowed.length === 1) {
+        target = narrowed[0];
+      } else if (narrowed.length > 1) {
+        return res.status(409).json({ ok: false, error: "Multiple rooms matched", count: narrowed.length });
+      }
+    }
+
+    const resolvedFields = await resolveLinkedFields(updateFields);
+
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${target.id}`;
+    const resp = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fields: resolvedFields })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error("Airtable PATCH by lookup failed", { status: resp.status, text });
+      return res.status(500).json({ ok: false, error: text });
+    }
+
+    const data = await resp.json();
+    return res.json({ ok: true, id: data?.id || target.id });
+  } catch (err) {
+    console.error("PATCH /api/rooms (by roomId) failed", err);
+    res.status(500).json({ ok: false, error: err?.message || "Failed to update room" });
+  }
+});
 
 
 app.post("/explain-floor", async (req, res) => {
@@ -102,7 +794,7 @@ app.post("/explain-floor", async (req, res) => {
     console.log("OPENAI key loaded?", Boolean(process.env.OPENAI_API_KEY));
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         { role: "system", content: "Use only provided data; do not speculate or invent facts." },
         { role: "user", content: JSON.stringify({ context, floorStats, panelStats }, null, 2) }
@@ -152,7 +844,7 @@ app.post("/explain-building", async (req, res) => {
     };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         { role: "system", content: "Use only provided data; do not speculate or invent facts." },
         { role: "user", content: JSON.stringify({ context, buildingStats, panelStats }, null, 2) }
@@ -202,7 +894,7 @@ app.post("/explain-campus", async (req, res) => {
     };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: process.env.ASK_MAPFLUENCE_MODEL || process.env.OPENAI_ASK_MODEL || "gpt-4.1",
       input: [
         {
           role: "system",
@@ -271,7 +963,7 @@ async function handleCompareScenario(req, res) {
     };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         {
           role: "system",
@@ -316,54 +1008,121 @@ app.post("/create-move-scenario", async (req, res) => {
     const { request, context, inventory, constraints } = req.body || {};
     if (!request || !String(request).trim()) return res.status(400).json({ error: "Missing request" });
 
+    const minifyMoveScenarioInventory = (rooms, options = {}) => {
+      if (!Array.isArray(rooms) || rooms.length === 0) return [];
+      const maxTotal = Number.isFinite(options.maxTotal) ? options.maxTotal : 200;
+      const minimal = rooms.map((room) => ({
+        roomId: room?.roomId ?? room?.id ?? "",
+        id: room?.id ?? room?.roomId ?? "",
+        revitId: room?.revitId ?? room?.roomGuid ?? "",
+        buildingLabel: room?.buildingLabel ?? room?.buildingName ?? room?.building ?? "",
+        floorId: room?.floorId ?? room?.floorName ?? "",
+        floorName: room?.floorName ?? room?.floorId ?? "",
+        roomLabel: room?.roomLabel ?? room?.roomNumber ?? "",
+        type: room?.type ?? room?.roomType ?? "",
+        sf: Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0) || 0
+      })).filter((room) => room.roomId || room.id);
+      if (minimal.length <= maxTotal) return minimal;
+      minimal.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0));
+      return minimal.slice(0, maxTotal);
+    };
+
+    const scope = String(context?.scope || "").toLowerCase();
+    const maxTotal = scope === "building" ? 260 : 220;
+    const safeInventory = minifyMoveScenarioInventory(inventory, { maxTotal });
+
     const schema = {
       name: "move_scenario_plan",
       schema: {
         type: "object",
         additionalProperties: false,
-        properties: {
-          title: { type: "string" },
-          interpretedIntent: { type: "string" },
-          assumptions: { type: "array", items: { type: "string" }, minItems: 0, maxItems: 8 },
-          selectionCriteria: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 10 },
-          recommendedCandidates: {
-            type: "array",
-            items: {
+          properties: {
+            title: { type: "string" },
+            interpretedIntent: { type: "string" },
+            scenarioDept: { type: "string" },
+            baselineTotals: {
               type: "object",
               additionalProperties: false,
               properties: {
-                roomId: { type: "string" },
-                id: { type: "string" },
-                revitId: { type: "string" },
-                buildingLabel: { type: "string" },
-                floorId: { type: "string" },
-                roomLabel: { type: "string" },
-                type: { type: "string" },
-                sf: { type: "number" },
-                rationale: { type: "string" }
+                totalSF: { type: "number" },
+                rooms: { type: "number" },
+                sfByType: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      type: { type: "string" },
+                      sf: { type: "number" }
+                    },
+                    required: ["type", "sf"]
+                  }
+                }
               },
-              required: ["roomId", "id", "revitId", "buildingLabel", "floorId", "roomLabel", "type", "sf", "rationale"]
+              required: ["totalSF", "rooms", "sfByType"]
             },
+            scenarioTotals: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                totalSF: { type: "number" },
+                rooms: { type: "number" },
+                sfByType: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      type: { type: "string" },
+                      sf: { type: "number" }
+                    },
+                    required: ["type", "sf"]
+                  }
+                }
+              },
+              required: ["totalSF", "rooms", "sfByType"]
+            },
+            assumptions: { type: "array", items: { type: "string" }, minItems: 0, maxItems: 8 },
+            selectionCriteria: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 10 },
+            recommendedCandidates: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  roomId: { type: "string" },
+                  id: { type: "string" },
+                  revitId: { type: "string" },
+                  buildingLabel: { type: "string" },
+                  floorId: { type: "string" },
+                  floorName: { type: "string" },
+                  roomLabel: { type: "string" },
+                  type: { type: "string" },
+                  sf: { type: "number" },
+                  rationale: { type: "string" }
+                },
+                required: ["roomId", "id", "revitId", "buildingLabel", "floorId", "floorName", "roomLabel", "type", "sf", "rationale"]
+              },
             minItems: 0,
             maxItems: 25
           },
           nextSteps: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 8 }
-        },
-        required: ["title", "interpretedIntent", "assumptions", "selectionCriteria", "recommendedCandidates", "nextSteps"]
-      }
-    };
+          },
+          required: ["title", "interpretedIntent", "scenarioDept", "baselineTotals", "scenarioTotals", "assumptions", "selectionCriteria", "recommendedCandidates", "nextSteps"]
+        }
+      };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
-        {
-          role: "system",
-          content:
-            "You are helping create a move scenario by selecting candidate rooms from the provided campus-wide inventory. Consider all buildings and floors unless the user explicitly restricts scope. Use only provided inventory/context. Echo back roomId/revitId exactly as provided so the client can map results. If inventory is limited, return fewer candidates and explain assumptions. Do not fabricate rooms."
-        },
+          {
+            role: "system",
+            content:
+              "You are helping create a move scenario by selecting candidate rooms from the provided campus-wide inventory. Consider all buildings and floors unless the user explicitly restricts scope. Use only provided inventory/context. Echo back roomId/revitId exactly as provided so the client can map results. Return each recommendation with revitId and floorName. If inventory is limited, return fewer candidates and explain assumptions. Do not fabricate rooms.\n\nIMPORTANT:\n- Do NOT filter candidates by vacancy/occupancy. Consider ALL rooms in the target building.\n- Do NOT treat current department/occupant assignments as constraints unless the user explicitly asks for it.\n- If context.excludeBuildings is provided, do NOT recommend rooms in those buildings (current home).\n- Primary objective: replicate the source department's footprint as closely as possible:\n  - total SF (+/-10-15% if possible)\n  - room type mix using NCES_Type (match SF by type)\n  - count of key functional types (labs, classrooms, offices if present)\n- If an occupied room is a better functional match, recommend it and clearly note the displacement.\n- Do NOT assume vacant-only unless explicitly stated by the user.\n\nVacancy/occupancy:\n- DO NOT require rooms to be vacant.\n- DO NOT use vacancy as a primary filter.\n- Only mention vacancy if the user explicitly asks for \"vacant only\" or \"avoid displacing\".\n- If you don't have reliable vacancy data, ignore it completely.\n\nBaseline/targets:\n- If constraints.baselineTotals is provided, use it as the target footprint.\n- Aim for total SF within +/- (constraints.targetSfTolerance or 0.10) of baselineTotals.totalSF.\n- Match sfByType / roomTypes mix as closely as possible.\n- Keep adding best-fit rooms until you reach the target range or exhaust the inventory.\n- If no single building can reach the target, select across multiple buildings.\n- If you cannot reach the target range or type mix, say so explicitly in assumptions and selectionCriteria.\n\nReturn:\n- scenarioDept (string)\n- baselineTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for the source department\n- scenarioTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for selected candidates\n\nScore rooms using:\n1. NCES room type similarity (highest weight)\n2. Area match (+/- 20%)\n3. Minimal displacement penalty"
+          },
         {
           role: "user",
-          content: JSON.stringify({ request, context, constraints, inventory }, null, 2)
+          content: JSON.stringify({ request, context, constraints, inventory: safeInventory })
         }
       ],
       text: { format: { type: "json_schema", name: "move_scenario_plan", schema: schema.schema, strict: true } }
@@ -397,7 +1156,7 @@ app.post("/ask", async (req, res) => {
     };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         { role: "system", content: "Answer only using provided stats/context. If missing data, say what is missing. No guessing." },
         { role: "user", content: JSON.stringify({ context, question, campusStats, buildingStats, floorStats, scenarioStats }, null, 2) }
@@ -446,12 +1205,12 @@ app.post("/ask-mapfluence", async (req, res) => {
     };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         {
           role: "system",
           content:
-            "Answer questions using only the provided data. If the question requires data that is not present, say so in missingData and answer with what you can. For vacancy queries, prefer listing rooms when roomRows are provided. Never fabricate."
+            "Answer questions using only the provided data. If the question requires data that is not present, say so in missingData and answer with what you can. For vacancy queries, prefer listing rooms when roomRows are provided. Never fabricate.\n\nWhen the user asks for a \"best new suitable home\" or relocation, do NOT treat current department or occupant assignments as constraints. Search campus-wide unless the user explicitly restricts to a building/floor. If context.excludeBuildings is provided, do not recommend those buildings. Use room type similarity and total SF/room counts to suggest best fits. You may include currently occupied rooms and note the displacement; do not require vacancy unless the user explicitly asks for vacant-only."
         },
         {
           role: "user",
@@ -492,7 +1251,7 @@ app.post("/recommend", async (req, res) => {
     };
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         { role: "system", content: "Provide planning-oriented opportunities using only provided data. If data is insufficient, list assumptions explicitly." },
         { role: "user", content: JSON.stringify({ context, campusStats, buildingStats, floorStats, constraints }, null, 2) }
@@ -567,7 +1326,7 @@ app.post("/ai/query", async (req, res) => {
     console.log("SCHEMA REQUIRED:", schema.schema.required);
 
     const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: AI_MODEL,
       input: [
         {
           role: "system",
@@ -607,7 +1366,7 @@ if (Array.isArray(query.filters)) {
       console.warn("AI query validation failed:", { errors: v.errors, query });
       return res.status(400).json({ ok: false, errors: v.errors, query });
     }
-    // 🔒 Normalize Room Type equality → contains
+    // ?? Normalize Room Type equality ? contains
 if (query.intent === "count" || query.intent === "list" || query.intent === "lookup") {
   for (const f of query.filters || []) {
     if (
@@ -622,7 +1381,7 @@ if (query.intent === "count" || query.intent === "list" || query.intent === "loo
 
 
     const formula = filtersToAirtableFormula(query.filters);
-const rows = await fetchAirtableRows(formula);
+const rows = await fetchAirtableRows(formula, AIRTABLE_VIEW || "Mapfluence_Rooms");
 
 if (query.intent === "count") {
   return res.json({
@@ -708,7 +1467,7 @@ app.get("/demo/count-offices", async (req, res) => {
   }
 });
 
-// 🔍 Sample records demo (THIS IS NEW)
+// ?? Sample records demo (THIS IS NEW)
 app.get("/demo/sample", async (req, res) => {
   try {
     const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
@@ -747,5 +1506,10 @@ app.get("/demo/sample", async (req, res) => {
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.listen(8787, () => {
-  console.log("🧠 AI server running at http://localhost:8787");
+  console.log("?? AI server running at http://localhost:8787");
 });
+
+
+
+
+

@@ -15,13 +15,14 @@ export function computeFloorSummary(featureCollection) {
     const p = f.properties || {};
 
     const sfRaw =
-      p.area ??
-      p.Area ??
-      p['Area (SF)'] ??
-      p.SF ??
-      p.NetArea ??
+      p.__areaSf ??
       p.Area_SF ??
       p['Area_SF'] ??
+      p.area ??
+      p.Area ??
+      p.SF ??
+      p['Area (SF)'] ??
+      p.NetArea ??
       0;
 
     const sf = Number(sfRaw);
@@ -30,26 +31,22 @@ export function computeFloorSummary(featureCollection) {
     rooms += 1;
     totalSf += sf;
 
-    const typeRaw =
-      p.type ??
-      p.Type ??
-      p.RoomType ??
-      p['Room Type'] ??
-      p.RoomTypeName ??
-      '';
-    const type = String(typeRaw).toUpperCase();
+    // ---- TYPE (prefer NCES) ----
+    const type = String(p.__roomType ?? p.NCES_Type ?? '').trim();
 
+    // ---- NAME (keep your existing logic) ----
     const nameRaw =
       p.Name ??
       p.Room ??
       p['Room Name'] ??
-      p.RoomType ??
       '';
     const name = String(nameRaw).toUpperCase();
 
+    // ---- Classroom detection (check NCES type too) ----
+    const typeUpper = type.toUpperCase();
     const isClassroom =
-      type.includes('CLASSROOM') ||
-      type.includes('LECTURE') ||
+      typeUpper.includes('CLASSROOM') ||
+      typeUpper.includes('LECTURE') ||
       name.includes('CLASSROOM') ||
       name.includes('LECTURE');
 
@@ -59,6 +56,11 @@ export function computeFloorSummary(featureCollection) {
     }
 
     const deptRaw =
+      p.__dept ??
+      p.NCES_Department ??
+      p['NCES_Department'] ??
+      p.NCES_Dept ??
+      p['NCES Dept'] ??
       p.department ??
       p.Department ??
       p.Dept ??

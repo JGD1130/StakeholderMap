@@ -1,4 +1,4 @@
-;Created by AutoCAD on 23/12/2025 at 14:37
+;Created by AutoCAD on 29/1/2026 at 13:48
 ;From AutoCAD Drawing C:\Users\jdohrman\Documents\stakeholder-map\public\floorplans\Hastings\Perkins\DXF\LEVEL_2_-_Map_Export.pcp
 ;For the driver: System Printer ADI 4.3 - by Autodesk, Inc
 ;For the device:
@@ -678,7 +678,7 @@ END_COLOR
 BEGIN_COLOR = 111
 PEN_NUMBER  = 111
 HW_LINETYPE = 0
-PEN_WEIGHT = 0.12
+PEN_WEIGHT = 0.003
 END_COLOR
 
 BEGIN_COLOR = 112

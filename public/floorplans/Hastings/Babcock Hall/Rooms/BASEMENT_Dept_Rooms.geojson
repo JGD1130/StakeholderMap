@@ -1,0 +1,7269 @@
+{
+  "type": "FeatureCollection", 
+  "features": [
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5162644, 
+        "NCES_Type": "Storage Room - Central", 
+        "NCES_Department": "Housing", 
+        "Name": "STORAGE", 
+        "Area_SF": 64.719999999999999, 
+        "Revit_UniqueId": "832e4e34-97c8-4890-a426-34a338f57942-004ec694", 
+        "Element": "Room", 
+        "Number": "02", 
+        "Level": "BASEMENT"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              -61.494103734270553, 
+              -88.200180957891590
+            ], 
+            [
+              -51.452437067603540, 
+              -88.200180957891618
+            ], 
+            [
+              -51.452437067603505, 
+              -80.721014291224947
+            ], 
+            [
+              -57.202437067603533, 
+              -80.721014291224918
+            ], 
+            [
+              -61.369103734270517, 
+              -80.721014291224904
+            ], 
+            [
+              -61.369103734270531, 
+              -82.903280458429947
+            ], 
+            [
+              -61.369103734270531, 
+              -83.241847624558261
+            ], 
+            [
+              -61.494103734270524, 
+              -83.241847624558261
+            ], 
+            [
+              -61.494103734270553, 
+              -88.200180957891590
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5162645, 
+        "NCES_Type": "Storage Room - Central", 
+        "NCES_Department": "Housing", 
+        "Name": "STORAGE", 
+        "Area_SF": 2083.1999999999998, 
+        "Revit_UniqueId": "832e4e34-97c8-4890-a426-34a338f57942-004ec695", 
+        "Element": "Room", 
+        "Number": "01", 
+        "Level": "BASEMENT"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              -83.369103734270396, 
+              -61.721014291224890
+            ], 
+            [
+              -83.369103734270539, 
+              -88.200180957891561
+            ], 
+            [
+              -66.827437067603881, 
+              -88.200180957891590
+            ], 
+            [
+              -66.827437067603853, 
+              -83.241847624558261
+            ], 
+            [
+              -61.369103734270531, 
+              -83.241847624558275
+            ], 
+            [
+              -61.369103734270517, 
+              -80.721014291224904
+            ], 
+            [
+              -57.202437067603533, 
+              -80.721014291224932
+            ], 
+            [
+              -57.202437067603512, 
+              -75.991847624558261
+            ], 
+            [
+              -58.254520400937103, 
+              -75.991847624558261
+            ], 
+            [
+              -67.160770400937139, 
+              -75.991847624558233
+            ], 
+            [
+              -67.160770400936926, 
+              -33.616847624558211
+            ], 
+            [
+              -67.160770400936883, 
+              -25.950180957891554
+            ], 
+            [
+              -44.952437067603434, 
+              -25.950180957891632
+            ], 
+            [
+              -44.952437067603377, 
+              10.216485708775030
+            ], 
+            [
+              -71.369103734270041, 
+              10.216485708775078
+            ], 
+            [
+              -71.369103734270112, 
+              -5.7001809578915870
+            ], 
+            [
+              -83.369103734270112, 
+              -5.700180957891547
+            ], 
+            [
+              -83.369103734270254, 
+              -34.262680957891561
+            ], 
+            [
+              -80.327437067603597, 
+              -34.262680957891575
+            ], 
+            [
+              -80.327437067603626, 
+              -47.991847624558240
+            ], 
+            [
+              -80.327437067603654, 
+              -61.721014291224911
+            ], 
+            [
+              -83.369103734270396, 
+              -61.721014291224890
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5162647, 
+        "NCES_Type": "Mechanical Area", 
+        "NCES_Department": "", 
+        "Name": "MECH", 
+        "Area_SF": 695.74000000000001, 
+        "Revit_UniqueId": "832e4e34-97c8-4890-a426-34a338f57942-004ec697", 
+        "Element": "Room", 
+        "Number": "03", 
+        "Level": "BASEMENT"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              -47.952437067603711, 
+              -61.991847624558289
+            ], 
+            [
+              -47.952437067603690, 
+              -47.775523649108621
+            ], 
+            [
+              -53.327437067603455, 
+              -42.400523649108827
+            ], 
+            [
+              -53.327437067603441, 
+              -33.616847624558268
+            ], 
+            [
+              -67.160770400936926, 
+              -33.616847624558226
+            ], 
+            [
+              -67.160770400937139, 
+              -75.991847624558233
+            ], 
+            [
+              -58.254520400937103, 
+              -75.991847624558261
+            ], 
+            [
+              -58.254520400937096, 
+              -73.866847624558261
+            ], 
+            [
+              -47.952437067603732, 
+              -73.866847624558289
+            ], 
+            [
+              -47.952437067603711, 
+              -61.991847624558289
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5190536, 
+        "NCES_Type": "Stairway", 
+        "NCES_Department": "", 
+        "Name": "STAIR", 
+        "Area_SF": 132.65000000000001, 
+        "Revit_UniqueId": "715c710c-9b71-4217-9c6f-7a23aaefca39-004f3388", 
+        "Element": "Room", 
+        "Number": "0ST1", 
+        "Level": "BASEMENT"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              -40.952437067603810, 
+              -75.783514291224989
+            ], 
+            [
+              -47.952437067603739, 
+              -75.783514291224975
+            ], 
+            [
+              -47.952437067603739, 
+              -75.991847624558289
+            ], 
+            [
+              -48.416004233732075, 
+              -75.991847624558289
+            ], 
+            [
+              -57.202437067603512, 
+              -75.991847624558261
+            ], 
+            [
+              -57.202437067603533, 
+              -80.721014291224918
+            ], 
+            [
+              -51.452437067603505, 
+              -80.721014291224947
+            ], 
+            [
+              -51.452437067603540, 
+              -88.200180957891618
+            ], 
+            [
+              -40.952437067603874, 
+              -88.200180957891632
+            ], 
+            [
+              -40.952437067603810, 
+              -75.783514291224989
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5198628, 
+        "NCES_Type": "Server Room", 
+        "NCES_Department": "Housing", 
+        "Name": "SERVER", 
+        "Area_SF": 156.18000000000001, 
+        "Revit_UniqueId": "1d6392dc-707f-4eea-93e5-d2227e0e6e5f-004f5324", 
+        "Element": "Room", 
+        "Number": "06", 
+        "Level": "BASEMENT"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              -44.952437067603448, 
+              -34.033514291224975
+            ], 
+            [
+              -44.952437067603434, 
+              -25.950180957891629
+            ], 
+            [
+              -67.160770400936883, 
+              -25.950180957891543
+            ], 
+            [
+              -67.160770400936912, 
+              -33.616847624558226
+            ], 
+            [
+              -53.829437067603443, 
+              -33.616847624558268
+            ], 
+            [
+              -53.327437067603441, 
+              -33.616847624558275
+            ], 
+            [
+              -53.327437067603448, 
+              -34.033514291224940
+            ], 
+            [
+              -44.952437067603448, 
+              -34.033514291224975
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "type": "Feature", 
+      "properties": {
+        "RevitId": 5198848, 
+        "NCES_Type": "Storage Room - Central", 
+        "NCES_Department": "Housing", 
+        "Name": "STORAGE", 
+        "Area_SF": 172.83000000000001, 
+        "Revit_UniqueId": "1d6392dc-707f-4eea-93e5-d2227e0e6e5f-004f5400", 
+        "Element": "Room", 
+        "Number": "05", 
+        "Level": "BASEMENT"
+      }, 
+      "geometry": {
+        "type": "Polygon", 
+        "coordinates": [
+          [
+            [
+              -83.369103734270041, 
+              10.216485708775096
+            ], 
+            [
+              -83.369103734270126, 
+              -5.7001809578915461
+            ], 
+            [
+              -71.369103734270112, 
+              -5.7001809578915870
+            ], 
+            [
+              -71.369103734270041, 
+              10.216485708775078
+            ], 
+            [
+              -83.369103734270041, 
+              10.216485708775096
+            ]
+          ]
+        ]
+      }
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400937182, 
+              -87.741847624558162
+            ], 
+            [
+              -82.910770400937054, 
+              -62.221014291224890
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400937039, 
+              -61.221014291224883
+            ], 
+            [
+              -82.910770400936983, 
+              -48.616847624558204
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936983, 
+              -47.366847624558211
+            ], 
+            [
+              -82.910770400936897, 
+              -34.762680957891554
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936897, 
+              -33.762680957891554
+            ], 
+            [
+              -82.910770400936869, 
+              -25.721014291226169
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936869, 
+              -25.721014291226169
+            ], 
+            [
+              -83.827437067603498, 
+              -25.721014291226169
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -83.827437067603498, 
+              -25.721014291226169
+            ], 
+            [
+              -83.827437067603839, 
+              -88.658514291224833
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "8F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936840, 
+              -22.387680957892837
+            ], 
+            [
+              -82.910770400936769, 
+              -5.9085142912248854
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "91", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936769, 
+              -5.4918476245582175
+            ], 
+            [
+              -82.910770400936698, 
+              9.7581523754417585
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "92", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -83.827437067603327, 
+              10.674819042108433
+            ], 
+            [
+              -83.827437067603498, 
+              -22.387680957892837
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "94", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -83.827437067603498, 
+              -22.387680957892837
+            ], 
+            [
+              -82.910770400936840, 
+              -22.387680957892837
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "95", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936684, 
+              9.7581523754417585
+            ], 
+            [
+              -71.577437067603356, 
+              9.7581523754417407
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "96", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -71.160770400936670, 
+              9.7581523754417407
+            ], 
+            [
+              -45.410770400936684, 
+              9.7581523754416999
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "97", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -44.494103734270027, 
+              10.674819042108359
+            ], 
+            [
+              -83.827437067603327, 
+              10.674819042108433
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "99", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936684, 
+              9.7581523754416910
+            ], 
+            [
+              -45.410770400936748, 
+              -25.741847624558289
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936748, 
+              -26.158514291224964
+            ], 
+            [
+              -45.410770400936777, 
+              -33.408514291224954
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9B", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936777, 
+              -34.658514291224954
+            ], 
+            [
+              -45.410770400936791, 
+              -47.366847624558282
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -44.494103734270119, 
+              -48.616847624558289
+            ], 
+            [
+              -44.494103734270027, 
+              10.674819042108359
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936791, 
+              -47.366847624558297
+            ], 
+            [
+              -47.771857441165217, 
+              -47.366847624558282
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "9F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -47.494103734270347, 
+              -48.616847624558282
+            ], 
+            [
+              -44.494103734270119, 
+              -48.616847624558289
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400936997, 
+              -47.906445966764075
+            ], 
+            [
+              -48.410770400937054, 
+              -73.658514291224932
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400937054, 
+              -74.075180957891618
+            ], 
+            [
+              -48.410770400937054, 
+              -75.783514291224932
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400937054, 
+              -76.200180957891604
+            ], 
+            [
+              -48.410770400937054, 
+              -76.241847624558304
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -47.494103734270389, 
+              -75.325180957891618
+            ], 
+            [
+              -47.494103734270375, 
+              -62.616847624558268
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -47.494103734270375, 
+              -61.366847624558268
+            ], 
+            [
+              -47.494103734270347, 
+              -48.616847624558282
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400937054, 
+              -76.241847624558304
+            ], 
+            [
+              -41.410770400937132, 
+              -76.241847624558318
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "A8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -40.494103734270467, 
+              -75.325180957891646
+            ], 
+            [
+              -47.494103734270389, 
+              -75.325180957891618
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -41.410770400937132, 
+              -76.241847624558318
+            ], 
+            [
+              -41.410770400937189, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -40.494103734270531, 
+              -88.658514291224904
+            ], 
+            [
+              -40.494103734270467, 
+              -75.325180957891646
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -41.410770400937189, 
+              -87.741847624558247
+            ], 
+            [
+              -51.244103734270205, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -51.660770400936855, 
+              -87.741847624558247
+            ], 
+            [
+              -61.160770400937196, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "AF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.827437067603860, 
+              -87.741847624558247
+            ], 
+            [
+              -66.494103734270524, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -67.160770400937196, 
+              -87.741847624558247
+            ], 
+            [
+              -82.910770400937182, 
+              -87.741847624558162
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -83.827437067603839, 
+              -88.658514291224833
+            ], 
+            [
+              -40.494103734270531, 
+              -88.658514291224904
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400937054, 
+              -62.221014291224890
+            ], 
+            [
+              -79.910770400936983, 
+              -62.221014291224897
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -80.744103734270297, 
+              -61.221014291224890
+            ], 
+            [
+              -82.910770400937039, 
+              -61.221014291224890
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -79.910770400936983, 
+              -62.221014291224897
+            ], 
+            [
+              -79.910770400936926, 
+              -33.762680957891568
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -80.744103734270254, 
+              -34.762680957891568
+            ], 
+            [
+              -80.744103734270269, 
+              -47.366847624558211
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -80.744103734270283, 
+              -48.616847624558211
+            ], 
+            [
+              -80.744103734270311, 
+              -61.221014291224890
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "B9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -79.910770400936926, 
+              -33.762680957891568
+            ], 
+            [
+              -82.910770400936897, 
+              -33.762680957891554
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936897, 
+              -34.762680957891554
+            ], 
+            [
+              -80.744103734270269, 
+              -34.762680957891568
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936769, 
+              -33.408514291224954
+            ], 
+            [
+              -53.744103734270105, 
+              -33.408514291224925
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -52.910770400936769, 
+              -34.658514291224932
+            ], 
+            [
+              -45.410770400936769, 
+              -34.658514291224954
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -53.744103734270105, 
+              -33.825180957891583
+            ], 
+            [
+              -53.744103734270112, 
+              -42.573112633430945
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "BF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -52.910770400936777, 
+              -42.227934664786702
+            ], 
+            [
+              -52.910770400936769, 
+              -34.658514291224932
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -53.744103734270112, 
+              -42.573112633430945
+            ], 
+            [
+              -48.410770400937018, 
+              -47.906445966764075
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -47.771857441165217, 
+              -47.366847624558297
+            ], 
+            [
+              -52.910770400936777, 
+              -42.227934664786702
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -47.494103734270375, 
+              -62.616847624558268
+            ], 
+            [
+              -44.494103734270169, 
+              -62.616847624558297
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -44.494103734270169, 
+              -62.616847624558297
+            ], 
+            [
+              -44.494103734270162, 
+              -61.366847624558289
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -44.494103734270162, 
+              -61.366847624558289
+            ], 
+            [
+              -47.494103734270361, 
+              -61.366847624558268
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936983, 
+              -48.616847624558204
+            ], 
+            [
+              -80.744103734270283, 
+              -48.616847624558211
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -80.744103734270283, 
+              -47.366847624558211
+            ], 
+            [
+              -82.910770400936954, 
+              -47.366847624558211
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.494103734270524, 
+              -87.741847624558247
+            ], 
+            [
+              -66.494103734270496, 
+              -83.575180957891590
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "C9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -67.160770400937167, 
+              -82.908514291224918
+            ], 
+            [
+              -67.160770400937196, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "CB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.494103734270496, 
+              -83.575180957891590
+            ], 
+            [
+              -61.827437067603846, 
+              -83.575180957891590
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "CC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.577437067603853, 
+              -82.908514291224932
+            ], 
+            [
+              -67.160770400937167, 
+              -82.908514291224918
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "CE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.827437067603846, 
+              -83.575180957891590
+            ], 
+            [
+              -61.827437067603860, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "CF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.160770400937196, 
+              -87.741847624558247
+            ], 
+            [
+              -61.160770400937174, 
+              -82.908514291224932
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "A-WALL", 
+        "EntityHandle": "D0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603782, 
+              -75.783514291224876
+            ], 
+            [
+              -66.952437067603555, 
+              -33.825180957891554
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -67.369103734270212, 
+              -31.908514291223625
+            ], 
+            [
+              -67.369103734270467, 
+              -76.200180957891533
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -67.369103734270467, 
+              -76.200180957891533
+            ], 
+            [
+              -66.702437067602560, 
+              -76.200180957891533
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603555, 
+              -33.825180957891540
+            ], 
+            [
+              -53.744103734270105, 
+              -33.825180957891583
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -53.744103734270105, 
+              -33.408514291224925
+            ], 
+            [
+              -66.952437067603555, 
+              -33.408514291224883
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -58.046187067603768, 
+              -75.783514291224904
+            ], 
+            [
+              -58.046187067603761, 
+              -74.075180957891590
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -58.462853734270425, 
+              -73.658514291224932
+            ], 
+            [
+              -58.462853734270425, 
+              -75.783514291224904
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -58.046187067603761, 
+              -74.075180957891590
+            ], 
+            [
+              -48.410770400937054, 
+              -74.075180957891618
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "D9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400937054, 
+              -73.658514291224932
+            ], 
+            [
+              -58.462853734270425, 
+              -73.658514291224932
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "DA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -51.244103734270205, 
+              -87.741847624558247
+            ], 
+            [
+              -51.244103734270176, 
+              -80.929347624558261
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "DB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -51.660770400936833, 
+              -80.929347624558247
+            ], 
+            [
+              -51.660770400936855, 
+              -87.741847624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "DC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -49.900436921770002, 
+              -83.548585385853173
+            ], 
+            [
+              -45.233770255103337, 
+              -83.548585385853173
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "DD", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.650436921770002, 
+              -83.131918719186530
+            ], 
+            [
+              -49.900436921770002, 
+              -83.131918719186487
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "DF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -49.900436921770002, 
+              -83.131918719186487
+            ], 
+            [
+              -49.900436921770002, 
+              -83.548585385853173
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.233770255103337, 
+              -83.548585385853173
+            ], 
+            [
+              -45.233770255103337, 
+              -80.512680957891604
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.650436921770002, 
+              -80.929347624558275
+            ], 
+            [
+              -45.650436921770002, 
+              -83.131918719186530
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.233770255103337, 
+              -80.512680957891604
+            ], 
+            [
+              -56.994103734270190, 
+              -80.512680957891575
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.410770400936855, 
+              -80.512680957891561
+            ], 
+            [
+              -57.577437067603540, 
+              -80.512680957891561
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.577437067603540, 
+              -80.512680957891561
+            ], 
+            [
+              -57.577437067603540, 
+              -80.929347624558233
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.577437067603540, 
+              -80.929347624558233
+            ], 
+            [
+              -51.660770400936833, 
+              -80.929347624558247
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -51.244103734270176, 
+              -80.929347624558247
+            ], 
+            [
+              -45.650436921770002, 
+              -80.929347624558275
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -60.410770400936777, 
+              -80.512680957891533
+            ], 
+            [
+              -61.577437067603832, 
+              -80.512680957891533
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "E9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.160770400937174, 
+              -80.929347624558218
+            ], 
+            [
+              -60.410770400936777, 
+              -80.929347624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -60.410770400936777, 
+              -80.929347624558218
+            ], 
+            [
+              -60.410770400936777, 
+              -80.512680957891533
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.577437067603832, 
+              -80.512680957891533
+            ], 
+            [
+              -61.577437067603853, 
+              -82.908514291224932
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "ED", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.160770400937189, 
+              -82.908514291224932
+            ], 
+            [
+              -61.160770400937174, 
+              -80.929347624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EE", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -56.994103734270190, 
+              -80.512680957891561
+            ], 
+            [
+              -56.994103734270190, 
+              -80.012680957890367
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "EF", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -56.994103734270190, 
+              -80.012680957890367
+            ], 
+            [
+              -57.410770400936855, 
+              -80.012680957890367
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.410770400936855, 
+              -80.012680957890367
+            ], 
+            [
+              -57.410770400936855, 
+              -80.512680957891561
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -56.994103734270176, 
+              -76.679347624556996
+            ], 
+            [
+              -56.994103734270176, 
+              -76.200180957891575
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F2", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.410770400936833, 
+              -76.200180957891575
+            ], 
+            [
+              -57.410770400936833, 
+              -76.679347624556996
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.410770400936833, 
+              -76.679347624556996
+            ], 
+            [
+              -56.994103734270176, 
+              -76.679347624556996
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400937054, 
+              -75.783514291224932
+            ], 
+            [
+              -58.046187067603768, 
+              -75.783514291224904
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -58.462853734270425, 
+              -75.783514291224876
+            ], 
+            [
+              -63.369103734269210, 
+              -75.783514291224876
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F6", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -63.369103734269210, 
+              -75.783514291224876
+            ], 
+            [
+              -63.369103734269210, 
+              -76.200180957891533
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -63.369103734269210, 
+              -76.200180957891533
+            ], 
+            [
+              -57.410770400936833, 
+              -76.200180957891575
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -56.994103734270176, 
+              -76.200180957891575
+            ], 
+            [
+              -48.410770400937054, 
+              -76.200180957891604
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "F9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.702437067602560, 
+              -75.783514291224876
+            ], 
+            [
+              -66.952437067603782, 
+              -75.783514291224876
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "FA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.702437067602560, 
+              -76.200180957891533
+            ], 
+            [
+              -66.702437067602560, 
+              -75.783514291224876
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "FC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.535770400936116, 
+              -72.741847624558247
+            ], 
+            [
+              -66.329907570940307, 
+              -72.748919209907129
+            ], 
+            [
+              -66.125015258659474, 
+              -72.770100627740845
+            ], 
+            [
+              -65.922059406409389, 
+              -72.805292020590059
+            ], 
+            [
+              -65.721996827277522, 
+              -72.854327482496060
+            ], 
+            [
+              -65.525770694332820, 
+              -72.916975841156173
+            ], 
+            [
+              -65.334306094139876, 
+              -72.992941747760256
+            ], 
+            [
+              -65.148505665539659, 
+              -73.081867069380195
+            ], 
+            [
+              -64.969245344258013, 
+              -73.183332577348338
+            ], 
+            [
+              -64.797370233402660, 
+              -73.296859923664940
+            ], 
+            [
+              -64.633690619317449, 
+              -73.421913896117417
+            ], 
+            [
+              -64.478978151576285, 
+              -73.557904941479492
+            ], 
+            [
+              -64.333962205125957, 
+              -73.704191944895200
+            ], 
+            [
+              -64.199326441727962, 
+              -73.860085252344462
+            ], 
+            [
+              -64.075705586910246, 
+              -74.024849921941339
+            ], 
+            [
+              -63.963682437623284, 
+              -74.197709188736795
+            ], 
+            [
+              -63.863785114707916, 
+              -74.377848126691831
+            ], 
+            [
+              -63.776484573127526, 
+              -74.564417490556863
+            ], 
+            [
+              -63.702192381702666, 
+              -74.756537719545179
+            ], 
+            [
+              -63.641258782814930, 
+              -74.953303083925746
+            ], 
+            [
+              -63.593971041227768, 
+              -75.153785954986645
+            ], 
+            [
+              -63.560552089808219, 
+              -75.357041178238703
+            ], 
+            [
+              -63.541159478534446, 
+              -75.562110529242744
+            ], 
+            [
+              -63.535884631743635, 
+              -75.768027231053367
+            ]
+          ], 
+          [
+            [
+              -66.535770400935874, 
+              -75.741847624558247
+            ], 
+            [
+              -66.535770400935874, 
+              -72.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.535770400935874, 
+              -72.741847624558247
+            ], 
+            [
+              -66.389937067602546, 
+              -72.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.389937067602546, 
+              -72.741847624558247
+            ], 
+            [
+              -66.389937067602546, 
+              -75.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.389937067602546, 
+              -75.741847624558247
+            ], 
+            [
+              -66.535770400935874, 
+              -75.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.535770400935846, 
+              -72.741847624558247
+            ], 
+            [
+              -66.329907570940051, 
+              -72.748919209907129
+            ], 
+            [
+              -66.125015258659218, 
+              -72.770100627740845
+            ], 
+            [
+              -65.922059406409119, 
+              -72.805292020590073
+            ], 
+            [
+              -65.721996827277252, 
+              -72.854327482496060
+            ], 
+            [
+              -65.525770694332564, 
+              -72.916975841156173
+            ], 
+            [
+              -65.334306094139606, 
+              -72.992941747760270
+            ], 
+            [
+              -65.148505665539389, 
+              -73.081867069380209
+            ], 
+            [
+              -64.969245344257743, 
+              -73.183332577348338
+            ], 
+            [
+              -64.797370233402390, 
+              -73.296859923664940
+            ], 
+            [
+              -64.633690619317193, 
+              -73.421913896117431
+            ], 
+            [
+              -64.478978151576015, 
+              -73.557904941479507
+            ], 
+            [
+              -64.333962205125687, 
+              -73.704191944895214
+            ], 
+            [
+              -64.199326441727706, 
+              -73.860085252344476
+            ], 
+            [
+              -64.075705586909990, 
+              -74.024849921941339
+            ], 
+            [
+              -63.963682437623021, 
+              -74.197709188736795
+            ], 
+            [
+              -63.863785114707646, 
+              -74.377848126691845
+            ], 
+            [
+              -63.776484573127256, 
+              -74.564417490556878
+            ], 
+            [
+              -63.702192381702396, 
+              -74.756537719545193
+            ], 
+            [
+              -63.641258782814667, 
+              -74.953303083925761
+            ], 
+            [
+              -63.593971041227498, 
+              -75.153785954986645
+            ], 
+            [
+              -63.560552089807949, 
+              -75.357041178238717
+            ], 
+            [
+              -63.541159478534183, 
+              -75.562110529242759
+            ], 
+            [
+              -63.535884631743365, 
+              -75.768027231053381
+            ]
+          ], 
+          [
+            [
+              -66.702437067602546, 
+              -76.241847624558218
+            ], 
+            [
+              -66.702437067602546, 
+              -75.741847624558218
+            ]
+          ], 
+          [
+            [
+              -66.535770400935888, 
+              -76.241847624558204
+            ], 
+            [
+              -66.702437067602546, 
+              -76.241847624558218
+            ]
+          ], 
+          [
+            [
+              -66.535770400935888, 
+              -76.054347624558190
+            ], 
+            [
+              -66.535770400935888, 
+              -76.241847624558204
+            ]
+          ], 
+          [
+            [
+              -66.494103734269217, 
+              -76.054347624558190
+            ], 
+            [
+              -66.535770400935888, 
+              -76.054347624558190
+            ]
+          ], 
+          [
+            [
+              -66.494103734269217, 
+              -75.887680957891519
+            ], 
+            [
+              -66.494103734269217, 
+              -76.054347624558190
+            ]
+          ], 
+          [
+            [
+              -66.535770400935888, 
+              -75.887680957891519
+            ], 
+            [
+              -66.494103734269217, 
+              -75.887680957891519
+            ]
+          ], 
+          [
+            [
+              -66.535770400935888, 
+              -75.741847624558218
+            ], 
+            [
+              -66.535770400935888, 
+              -75.887680957891519
+            ]
+          ], 
+          [
+            [
+              -66.702437067602546, 
+              -75.741847624558218
+            ], 
+            [
+              -66.535770400935888, 
+              -75.741847624558218
+            ]
+          ], 
+          [
+            [
+              -63.535770400935888, 
+              -75.887680957891504
+            ], 
+            [
+              -63.535770400935888, 
+              -75.741847624558204
+            ]
+          ], 
+          [
+            [
+              -63.577437067602553, 
+              -75.887680957891504
+            ], 
+            [
+              -63.535770400935888, 
+              -75.887680957891504
+            ]
+          ], 
+          [
+            [
+              -63.577437067602553, 
+              -76.054347624558190
+            ], 
+            [
+              -63.577437067602553, 
+              -75.887680957891504
+            ]
+          ], 
+          [
+            [
+              -63.535770400935888, 
+              -76.054347624558190
+            ], 
+            [
+              -63.577437067602553, 
+              -76.054347624558190
+            ]
+          ], 
+          [
+            [
+              -63.535770400935888, 
+              -76.241847624558204
+            ], 
+            [
+              -63.535770400935888, 
+              -76.054347624558190
+            ]
+          ], 
+          [
+            [
+              -63.369103734269203, 
+              -76.241847624558190
+            ], 
+            [
+              -63.535770400935888, 
+              -76.241847624558204
+            ]
+          ], 
+          [
+            [
+              -63.369103734269203, 
+              -75.741847624558204
+            ], 
+            [
+              -63.369103734269203, 
+              -76.241847624558190
+            ]
+          ], 
+          [
+            [
+              -63.535770400935888, 
+              -75.741847624558204
+            ], 
+            [
+              -63.369103734269203, 
+              -75.741847624558204
+            ]
+          ], 
+          [
+            [
+              -66.535770400935874, 
+              -72.741847624558247
+            ], 
+            [
+              -66.389937067602531, 
+              -72.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.535770400935874, 
+              -75.741847624558247
+            ], 
+            [
+              -66.535770400935874, 
+              -72.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.389937067602531, 
+              -72.741847624558247
+            ], 
+            [
+              -66.389937067602546, 
+              -75.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.535770400935874, 
+              -75.741847624558247
+            ], 
+            [
+              -66.389937067602546, 
+              -75.741847624558247
+            ]
+          ], 
+          [
+            [
+              -66.535770400935846, 
+              -72.741847624558247
+            ], 
+            [
+              -66.329907570940051, 
+              -72.748919209907129
+            ], 
+            [
+              -66.125015258659218, 
+              -72.770100627740845
+            ], 
+            [
+              -65.922059406409133, 
+              -72.805292020590059
+            ], 
+            [
+              -65.721996827277266, 
+              -72.854327482496060
+            ], 
+            [
+              -65.525770694332593, 
+              -72.916975841156173
+            ], 
+            [
+              -65.334306094139635, 
+              -72.992941747760241
+            ], 
+            [
+              -65.148505665539432, 
+              -73.081867069380181
+            ], 
+            [
+              -64.969245344257800, 
+              -73.183332577348310
+            ], 
+            [
+              -64.797370233402447, 
+              -73.296859923664911
+            ], 
+            [
+              -64.633690619317221, 
+              -73.421913896117388
+            ], 
+            [
+              -64.478978151576072, 
+              -73.557904941479464
+            ], 
+            [
+              -64.333962205125744, 
+              -73.704191944895157
+            ], 
+            [
+              -64.199326441727763, 
+              -73.860085252344405
+            ], 
+            [
+              -64.075705586910033, 
+              -74.024849921941282
+            ], 
+            [
+              -63.963682437623071, 
+              -74.197709188736724
+            ], 
+            [
+              -63.863785114707689, 
+              -74.377848126691759
+            ], 
+            [
+              -63.776484573127298, 
+              -74.564417490556778
+            ], 
+            [
+              -63.702192381702439, 
+              -74.756537719545079
+            ], 
+            [
+              -63.641258782814695, 
+              -74.953303083925647
+            ], 
+            [
+              -63.593971041227519, 
+              -75.153785954986532
+            ], 
+            [
+              -63.560552089807970, 
+              -75.357041178238589
+            ], 
+            [
+              -63.541159478534190, 
+              -75.562110529242617
+            ], 
+            [
+              -63.535884631743365, 
+              -75.768027231053239
+            ]
+          ], 
+          [
+            [
+              -66.535770400935846, 
+              -72.741847624558247
+            ], 
+            [
+              -66.329907570940051, 
+              -72.748919209907129
+            ], 
+            [
+              -66.125015258659232, 
+              -72.770100627740845
+            ], 
+            [
+              -65.922059406409133, 
+              -72.805292020590059
+            ], 
+            [
+              -65.721996827277266, 
+              -72.854327482496060
+            ], 
+            [
+              -65.525770694332593, 
+              -72.916975841156173
+            ], 
+            [
+              -65.334306094139649, 
+              -72.992941747760241
+            ], 
+            [
+              -65.148505665539446, 
+              -73.081867069380181
+            ], 
+            [
+              -64.969245344257800, 
+              -73.183332577348310
+            ], 
+            [
+              -64.797370233402447, 
+              -73.296859923664911
+            ], 
+            [
+              -64.633690619317235, 
+              -73.421913896117374
+            ], 
+            [
+              -64.478978151576072, 
+              -73.557904941479450
+            ], 
+            [
+              -64.333962205125758, 
+              -73.704191944895143
+            ], 
+            [
+              -64.199326441727763, 
+              -73.860085252344405
+            ], 
+            [
+              -64.075705586910047, 
+              -74.024849921941254
+            ], 
+            [
+              -63.963682437623078, 
+              -74.197709188736710
+            ], 
+            [
+              -63.863785114707696, 
+              -74.377848126691745
+            ], 
+            [
+              -63.776484573127306, 
+              -74.564417490556764
+            ], 
+            [
+              -63.702192381702439, 
+              -74.756537719545065
+            ], 
+            [
+              -63.641258782814702, 
+              -74.953303083925633
+            ], 
+            [
+              -63.593971041227526, 
+              -75.153785954986503
+            ], 
+            [
+              -63.560552089807970, 
+              -75.357041178238561
+            ], 
+            [
+              -63.541159478534190, 
+              -75.562110529242588
+            ], 
+            [
+              -63.535884631743365, 
+              -75.768027231053196
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-DOOR", 
+        "EntityHandle": "11D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -57.744198926608725, 
+              -80.949197952478954
+            ], 
+            [
+              -57.748594632267732, 
+              -81.120795203987811
+            ], 
+            [
+              -57.764755141662540, 
+              -81.291686329824515
+            ], 
+            [
+              -57.792604267845512, 
+              -81.461065682534596
+            ], 
+            [
+              -57.832010719168153, 
+              -81.628134741752007
+            ], 
+            [
+              -57.882788718241272, 
+              -81.792105878735825
+            ], 
+            [
+              -57.944698877762001, 
+              -81.952206069559423
+            ], 
+            [
+              -58.017449329079000, 
+              -82.107680539446960
+            ], 
+            [
+              -58.100697098175154, 
+              -82.257796321076171
+            ], 
+            [
+              -58.194049722580978, 
+              -82.401845710072394
+            ], 
+            [
+              -58.297067101595758, 
+              -82.539149601403111
+            ], 
+            [
+              -58.409263571094094, 
+              -82.669060690944178
+            ], 
+            [
+              -58.530110193136046, 
+              -82.790966527123928
+            ], 
+            [
+              -58.659037249587037, 
+              -82.904292398258988
+            ], 
+            [
+              -58.795436927991396, 
+              -83.008504041969402
+            ], 
+            [
+              -58.938666187037533, 
+              -83.103110163899899
+            ], 
+            [
+              -59.088049788105593, 
+              -83.187664753873335
+            ], 
+            [
+              -59.242883478605783, 
+              -83.261769188556613
+            ], 
+            [
+              -59.402437312099927, 
+              -83.325074110726675
+            ], 
+            [
+              -59.565959089553850, 
+              -83.377281076276759
+            ], 
+            [
+              -59.732677905497091, 
+              -83.418143961198410
+            ], 
+            [
+              -59.901807782372181, 
+              -83.447470121906079
+            ], 
+            [
+              -60.072551375939554, 
+              -83.465121303434159
+            ], 
+            [
+              -60.244103734269409, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.971014291224861
+            ], 
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ], 
+            [
+              -60.098270400935547, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -60.098270400935547, 
+              -83.471014291224861
+            ], 
+            [
+              -60.098270400935547, 
+              -80.971014291224861
+            ]
+          ], 
+          [
+            [
+              -60.098270400935547, 
+              -80.971014291224861
+            ], 
+            [
+              -60.244103734268883, 
+              -80.971014291224861
+            ]
+          ], 
+          [
+            [
+              -57.744198926608455, 
+              -80.949197952478940
+            ], 
+            [
+              -57.748594632267469, 
+              -81.120795203987797
+            ], 
+            [
+              -57.764755141662278, 
+              -81.291686329824486
+            ], 
+            [
+              -57.792604267845235, 
+              -81.461065682534553
+            ], 
+            [
+              -57.832010719167876, 
+              -81.628134741751950
+            ], 
+            [
+              -57.882788718240988, 
+              -81.792105878735768
+            ], 
+            [
+              -57.944698877761709, 
+              -81.952206069559352
+            ], 
+            [
+              -58.017449329078694, 
+              -82.107680539446889
+            ], 
+            [
+              -58.100697098174841, 
+              -82.257796321076086
+            ], 
+            [
+              -58.194049722580644, 
+              -82.401845710072294
+            ], 
+            [
+              -58.297067101595417, 
+              -82.539149601403025
+            ], 
+            [
+              -58.409263571093739, 
+              -82.669060690944079
+            ], 
+            [
+              -58.530110193135677, 
+              -82.790966527123828
+            ], 
+            [
+              -58.659037249586646, 
+              -82.904292398258903
+            ], 
+            [
+              -58.795436927990998, 
+              -83.008504041969289
+            ], 
+            [
+              -58.938666187037121, 
+              -83.103110163899800
+            ], 
+            [
+              -59.088049788105167, 
+              -83.187664753873250
+            ], 
+            [
+              -59.242883478605336, 
+              -83.261769188556528
+            ], 
+            [
+              -59.402437312099465, 
+              -83.325074110726590
+            ], 
+            [
+              -59.565959089553367, 
+              -83.377281076276688
+            ], 
+            [
+              -59.732677905496594, 
+              -83.418143961198354
+            ], 
+            [
+              -59.901807782371684, 
+              -83.447470121906036
+            ], 
+            [
+              -60.072551375939035, 
+              -83.465121303434131
+            ], 
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -57.744103734268883, 
+              -80.971014291224904
+            ], 
+            [
+              -57.577437067603562, 
+              -80.971014291224904
+            ]
+          ], 
+          [
+            [
+              -57.577437067603562, 
+              -80.971014291224904
+            ], 
+            [
+              -57.577437067603562, 
+              -80.471014291224904
+            ]
+          ], 
+          [
+            [
+              -57.577437067603562, 
+              -80.471014291224904
+            ], 
+            [
+              -57.744103734268883, 
+              -80.471014291224904
+            ]
+          ], 
+          [
+            [
+              -57.744103734268883, 
+              -80.471014291224904
+            ], 
+            [
+              -57.744103734268883, 
+              -80.658514291224932
+            ]
+          ], 
+          [
+            [
+              -57.744103734268883, 
+              -80.658514291224932
+            ], 
+            [
+              -57.785770400935547, 
+              -80.658514291224932
+            ]
+          ], 
+          [
+            [
+              -57.785770400935547, 
+              -80.658514291224932
+            ], 
+            [
+              -57.785770400935547, 
+              -80.825180957891590
+            ]
+          ], 
+          [
+            [
+              -57.785770400935547, 
+              -80.825180957891590
+            ], 
+            [
+              -57.744103734268883, 
+              -80.825180957891590
+            ]
+          ], 
+          [
+            [
+              -57.744103734268883, 
+              -80.825180957891590
+            ], 
+            [
+              -57.744103734268883, 
+              -80.971014291224904
+            ]
+          ], 
+          [
+            [
+              -60.410770400936805, 
+              -80.971014291224904
+            ], 
+            [
+              -60.244103734268883, 
+              -80.971014291224904
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.971014291224904
+            ], 
+            [
+              -60.244103734268883, 
+              -80.825180957891590
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.825180957891590
+            ], 
+            [
+              -60.202437067602212, 
+              -80.825180957891590
+            ]
+          ], 
+          [
+            [
+              -60.202437067602212, 
+              -80.825180957891590
+            ], 
+            [
+              -60.202437067602212, 
+              -80.658514291224918
+            ]
+          ], 
+          [
+            [
+              -60.202437067602212, 
+              -80.658514291224918
+            ], 
+            [
+              -60.244103734268883, 
+              -80.658514291224918
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.658514291224918
+            ], 
+            [
+              -60.244103734268883, 
+              -80.471014291224904
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.471014291224904
+            ], 
+            [
+              -60.410770400936805, 
+              -80.471014291224904
+            ]
+          ], 
+          [
+            [
+              -60.410770400936805, 
+              -80.471014291224904
+            ], 
+            [
+              -60.410770400936805, 
+              -80.971014291224904
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ], 
+            [
+              -60.098270400935547, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.971014291224861
+            ], 
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -60.098270400935547, 
+              -83.471014291224861
+            ], 
+            [
+              -60.098270400935547, 
+              -80.971014291224861
+            ]
+          ], 
+          [
+            [
+              -60.244103734268883, 
+              -80.971014291224861
+            ], 
+            [
+              -60.098270400935547, 
+              -80.971014291224861
+            ]
+          ], 
+          [
+            [
+              -57.744217965076359, 
+              -80.947115735018883
+            ], 
+            [
+              -57.748476092657960, 
+              -81.118806965019971
+            ], 
+            [
+              -57.764511989543109, 
+              -81.289800707948999
+            ], 
+            [
+              -57.792249976535565, 
+              -81.459289982498746
+            ], 
+            [
+              -57.831559148044136, 
+              -81.626474907492295
+            ], 
+            [
+              -57.882253989873618, 
+              -81.790566476811605
+            ], 
+            [
+              -57.944095254733249, 
+              -81.950790283002675
+            ], 
+            [
+              -58.016791091331278, 
+              -82.106390171984330
+            ], 
+            [
+              -58.099998421726717, 
+              -82.256631811612806
+            ], 
+            [
+              -58.193324560438178, 
+              -82.400806157260703
+            ], 
+            [
+              -58.296329067668722, 
+              -82.538232798054921
+            ], 
+            [
+              -58.408525827900490, 
+              -82.668263167981664
+            ], 
+            [
+              -58.529385344049622, 
+              -82.790283606703980
+            ], 
+            [
+              -58.658337236354498, 
+              -82.903718255646808
+            ], 
+            [
+              -58.794772934204047, 
+              -83.008031775681829
+            ], 
+            [
+              -58.938048548202580, 
+              -83.102731873586393
+            ], 
+            [
+              -59.087487908916664, 
+              -83.187371625353265
+            ], 
+            [
+              -59.242385757963177, 
+              -83.261551585386641
+            ], 
+            [
+              -59.402011076378699, 
+              -83.324921671630349
+            ], 
+            [
+              -59.565610534562296, 
+              -83.377182817731665
+            ], 
+            [
+              -59.732412047510373, 
+              -83.418088384443578
+            ], 
+            [
+              -59.901628418564968, 
+              -83.447445323604626
+            ], 
+            [
+              -60.072461054479454, 
+              -83.465115089202897
+            ], 
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ]
+          ], 
+          [
+            [
+              -57.744217965076359, 
+              -80.947115735018912
+            ], 
+            [
+              -57.748476092657967, 
+              -81.118806965020013
+            ], 
+            [
+              -57.764511989543116, 
+              -81.289800707949041
+            ], 
+            [
+              -57.792249976535565, 
+              -81.459289982498774
+            ], 
+            [
+              -57.831559148044143, 
+              -81.626474907492323
+            ], 
+            [
+              -57.882253989873625, 
+              -81.790566476811634
+            ], 
+            [
+              -57.944095254733263, 
+              -81.950790283002689
+            ], 
+            [
+              -58.016791091331299, 
+              -82.106390171984344
+            ], 
+            [
+              -58.099998421726724, 
+              -82.256631811612820
+            ], 
+            [
+              -58.193324560438192, 
+              -82.400806157260718
+            ], 
+            [
+              -58.296329067668744, 
+              -82.538232798054935
+            ], 
+            [
+              -58.408525827900512, 
+              -82.668263167981678
+            ], 
+            [
+              -58.529385344049643, 
+              -82.790283606703994
+            ], 
+            [
+              -58.658337236354505, 
+              -82.903718255646822
+            ], 
+            [
+              -58.794772934204055, 
+              -83.008031775681843
+            ], 
+            [
+              -58.938048548202595, 
+              -83.102731873586407
+            ], 
+            [
+              -59.087487908916671, 
+              -83.187371625353265
+            ], 
+            [
+              -59.242385757963184, 
+              -83.261551585386641
+            ], 
+            [
+              -59.402011076378706, 
+              -83.324921671630349
+            ], 
+            [
+              -59.565610534562303, 
+              -83.377182817731665
+            ], 
+            [
+              -59.732412047510373, 
+              -83.418088384443578
+            ], 
+            [
+              -59.901628418564968, 
+              -83.447445323604612
+            ], 
+            [
+              -60.072461054479454, 
+              -83.465115089202897
+            ], 
+            [
+              -60.244103734268883, 
+              -83.471014291224861
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-DOOR", 
+        "EntityHandle": "13D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -56.978616674098646, 
+              -76.846128522031435
+            ], 
+            [
+              -56.772699972288024, 
+              -76.851403368822247
+            ], 
+            [
+              -56.567630621283989, 
+              -76.870795980096020
+            ], 
+            [
+              -56.364375398031918, 
+              -76.904214931515568
+            ], 
+            [
+              -56.163892526971040, 
+              -76.951502673102738
+            ], 
+            [
+              -55.967127162590465, 
+              -77.012436271990467
+            ], 
+            [
+              -55.775006933602150, 
+              -77.086728463415341
+            ], 
+            [
+              -55.588437569737124, 
+              -77.174029004995731
+            ], 
+            [
+              -55.408298631782081, 
+              -77.273926327911113
+            ], 
+            [
+              -55.235439364986625, 
+              -77.385949477198068
+            ], 
+            [
+              -55.070674695389755, 
+              -77.509570332015798
+            ], 
+            [
+              -54.914781387940486, 
+              -77.644206095413779
+            ], 
+            [
+              -54.768494384524786, 
+              -77.789222041864107
+            ], 
+            [
+              -54.632503339162717, 
+              -77.943934509605285
+            ], 
+            [
+              -54.507449366710233, 
+              -78.107614123690496
+            ], 
+            [
+              -54.393922020393624, 
+              -78.279489234545849
+            ], 
+            [
+              -54.292456512425495, 
+              -78.458749555827495
+            ], 
+            [
+              -54.203531190805556, 
+              -78.644549984427712
+            ], 
+            [
+              -54.127565284201474, 
+              -78.836014584620671
+            ], 
+            [
+              -54.064916925541361, 
+              -79.032240717565358
+            ], 
+            [
+              -54.015881463635367, 
+              -79.232303296697225
+            ], 
+            [
+              -53.980690070786153, 
+              -79.435259148947310
+            ], 
+            [
+              -53.959508652952429, 
+              -79.640151461228143
+            ], 
+            [
+              -53.952437067603569, 
+              -79.846014291223952
+            ]
+          ], 
+          [
+            [
+              -56.952437067603569, 
+              -79.846014291223682
+            ], 
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ], 
+            [
+              -53.952437067603569, 
+              -79.700180957890353
+            ]
+          ], 
+          [
+            [
+              -53.952437067603569, 
+              -79.700180957890353
+            ], 
+            [
+              -56.952437067603569, 
+              -79.700180957890339
+            ]
+          ], 
+          [
+            [
+              -56.952437067603569, 
+              -79.700180957890339
+            ], 
+            [
+              -56.952437067603569, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -56.978616674098646, 
+              -76.846128522031165
+            ], 
+            [
+              -56.772699972288024, 
+              -76.851403368821977
+            ], 
+            [
+              -56.567630621283996, 
+              -76.870795980095764
+            ], 
+            [
+              -56.364375398031932, 
+              -76.904214931515313
+            ], 
+            [
+              -56.163892526971040, 
+              -76.951502673102468
+            ], 
+            [
+              -55.967127162590465, 
+              -77.012436271990211
+            ], 
+            [
+              -55.775006933602157, 
+              -77.086728463415071
+            ], 
+            [
+              -55.588437569737124, 
+              -77.174029004995461
+            ], 
+            [
+              -55.408298631782088, 
+              -77.273926327910843
+            ], 
+            [
+              -55.235439364986632, 
+              -77.385949477197798
+            ], 
+            [
+              -55.070674695389762, 
+              -77.509570332015528
+            ], 
+            [
+              -54.914781387940501, 
+              -77.644206095413509
+            ], 
+            [
+              -54.768494384524793, 
+              -77.789222041863852
+            ], 
+            [
+              -54.632503339162717, 
+              -77.943934509605015
+            ], 
+            [
+              -54.507449366710240, 
+              -78.107614123690226
+            ], 
+            [
+              -54.393922020393632, 
+              -78.279489234545579
+            ], 
+            [
+              -54.292456512425503, 
+              -78.458749555827225
+            ], 
+            [
+              -54.203531190805563, 
+              -78.644549984427442
+            ], 
+            [
+              -54.127565284201488, 
+              -78.836014584620401
+            ], 
+            [
+              -54.064916925541375, 
+              -79.032240717565074
+            ], 
+            [
+              -54.015881463635374, 
+              -79.232303296696955
+            ], 
+            [
+              -53.980690070786160, 
+              -79.435259148947054
+            ], 
+            [
+              -53.959508652952444, 
+              -79.640151461227887
+            ], 
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -56.952437067603533, 
+              -80.012680957890339
+            ], 
+            [
+              -56.952437067603533, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -56.952437067603533, 
+              -79.846014291223682
+            ], 
+            [
+              -57.098270400936833, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -57.098270400936833, 
+              -79.846014291223682
+            ], 
+            [
+              -57.098270400936833, 
+              -79.804347624557010
+            ]
+          ], 
+          [
+            [
+              -57.098270400936833, 
+              -79.804347624557010
+            ], 
+            [
+              -57.264937067603512, 
+              -79.804347624557010
+            ]
+          ], 
+          [
+            [
+              -57.264937067603512, 
+              -79.804347624557010
+            ], 
+            [
+              -57.264937067603512, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -57.264937067603512, 
+              -79.846014291223682
+            ], 
+            [
+              -57.452437067603519, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -57.452437067603519, 
+              -79.846014291223682
+            ], 
+            [
+              -57.452437067603533, 
+              -80.012680957890339
+            ]
+          ], 
+          [
+            [
+              -57.452437067603533, 
+              -80.012680957890339
+            ], 
+            [
+              -56.952437067603533, 
+              -80.012680957890339
+            ]
+          ], 
+          [
+            [
+              -56.952437067603505, 
+              -76.846014291223682
+            ], 
+            [
+              -56.952437067603505, 
+              -76.679347624556996
+            ]
+          ], 
+          [
+            [
+              -56.952437067603505, 
+              -76.679347624556996
+            ], 
+            [
+              -57.452437067603491, 
+              -76.679347624556996
+            ]
+          ], 
+          [
+            [
+              -57.452437067603491, 
+              -76.679347624556996
+            ], 
+            [
+              -57.452437067603505, 
+              -76.846014291223682
+            ]
+          ], 
+          [
+            [
+              -57.452437067603505, 
+              -76.846014291223682
+            ], 
+            [
+              -57.264937067603483, 
+              -76.846014291223682
+            ]
+          ], 
+          [
+            [
+              -57.264937067603483, 
+              -76.846014291223682
+            ], 
+            [
+              -57.264937067603483, 
+              -76.887680957890353
+            ]
+          ], 
+          [
+            [
+              -57.264937067603483, 
+              -76.887680957890353
+            ], 
+            [
+              -57.098270400936819, 
+              -76.887680957890353
+            ]
+          ], 
+          [
+            [
+              -57.098270400936819, 
+              -76.887680957890353
+            ], 
+            [
+              -57.098270400936819, 
+              -76.846014291223682
+            ]
+          ], 
+          [
+            [
+              -57.098270400936819, 
+              -76.846014291223682
+            ], 
+            [
+              -56.952437067603505, 
+              -76.846014291223682
+            ]
+          ], 
+          [
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ], 
+            [
+              -53.952437067603569, 
+              -79.700180957890353
+            ]
+          ], 
+          [
+            [
+              -56.952437067603569, 
+              -79.846014291223682
+            ], 
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -53.952437067603569, 
+              -79.700180957890353
+            ], 
+            [
+              -56.952437067603569, 
+              -79.700180957890339
+            ]
+          ], 
+          [
+            [
+              -56.952437067603569, 
+              -79.846014291223682
+            ], 
+            [
+              -56.952437067603569, 
+              -79.700180957890339
+            ]
+          ], 
+          [
+            [
+              -56.978616674098504, 
+              -76.846128522031165
+            ], 
+            [
+              -56.772699972287889, 
+              -76.851403368821991
+            ], 
+            [
+              -56.567630621283875, 
+              -76.870795980095764
+            ], 
+            [
+              -56.364375398031804, 
+              -76.904214931515327
+            ], 
+            [
+              -56.163892526970926, 
+              -76.951502673102496
+            ], 
+            [
+              -55.967127162590366, 
+              -77.012436271990239
+            ], 
+            [
+              -55.775006933602064, 
+              -77.086728463415113
+            ], 
+            [
+              -55.588437569737039, 
+              -77.174029004995504
+            ], 
+            [
+              -55.408298631782003, 
+              -77.273926327910900
+            ], 
+            [
+              -55.235439364986554, 
+              -77.385949477197855
+            ], 
+            [
+              -55.070674695389698, 
+              -77.509570332015571
+            ], 
+            [
+              -54.914781387940444, 
+              -77.644206095413566
+            ], 
+            [
+              -54.768494384524750, 
+              -77.789222041863894
+            ], 
+            [
+              -54.632503339162675, 
+              -77.943934509605057
+            ], 
+            [
+              -54.507449366710205, 
+              -78.107614123690269
+            ], 
+            [
+              -54.393922020393603, 
+              -78.279489234545622
+            ], 
+            [
+              -54.292456512425481, 
+              -78.458749555827268
+            ], 
+            [
+              -54.203531190805542, 
+              -78.644549984427471
+            ], 
+            [
+              -54.127565284201474, 
+              -78.836014584620429
+            ], 
+            [
+              -54.064916925541361, 
+              -79.032240717565102
+            ], 
+            [
+              -54.015881463635367, 
+              -79.232303296696969
+            ], 
+            [
+              -53.980690070786153, 
+              -79.435259148947054
+            ], 
+            [
+              -53.959508652952444, 
+              -79.640151461227887
+            ], 
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ]
+          ], 
+          [
+            [
+              -56.978616674098475, 
+              -76.846128522031165
+            ], 
+            [
+              -56.772699972287860, 
+              -76.851403368821991
+            ], 
+            [
+              -56.567630621283847, 
+              -76.870795980095778
+            ], 
+            [
+              -56.364375398031775, 
+              -76.904214931515341
+            ], 
+            [
+              -56.163892526970905, 
+              -76.951502673102510
+            ], 
+            [
+              -55.967127162590344, 
+              -77.012436271990254
+            ], 
+            [
+              -55.775006933602043, 
+              -77.086728463415128
+            ], 
+            [
+              -55.588437569737017, 
+              -77.174029004995518
+            ], 
+            [
+              -55.408298631781982, 
+              -77.273926327910900
+            ], 
+            [
+              -55.235439364986547, 
+              -77.385949477197869
+            ], 
+            [
+              -55.070674695389691, 
+              -77.509570332015599
+            ], 
+            [
+              -54.914781387940423, 
+              -77.644206095413580
+            ], 
+            [
+              -54.768494384524736, 
+              -77.789222041863908
+            ], 
+            [
+              -54.632503339162668, 
+              -77.943934509605072
+            ], 
+            [
+              -54.507449366710198, 
+              -78.107614123690283
+            ], 
+            [
+              -54.393922020393603, 
+              -78.279489234545636
+            ], 
+            [
+              -54.292456512425474, 
+              -78.458749555827282
+            ], 
+            [
+              -54.203531190805542, 
+              -78.644549984427485
+            ], 
+            [
+              -54.127565284201467, 
+              -78.836014584620429
+            ], 
+            [
+              -54.064916925541361, 
+              -79.032240717565116
+            ], 
+            [
+              -54.015881463635367, 
+              -79.232303296696969
+            ], 
+            [
+              -53.980690070786153, 
+              -79.435259148947068
+            ], 
+            [
+              -53.959508652952444, 
+              -79.640151461227887
+            ], 
+            [
+              -53.952437067603569, 
+              -79.846014291223682
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-DOOR", 
+        "EntityHandle": "15D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603753, 
+              -71.366847624558190
+            ], 
+            [
+              -66.785770400937068, 
+              -71.366847624558190
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "15E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.785770400937068, 
+              -68.616847624558190
+            ], 
+            [
+              -66.952437067603739, 
+              -68.616847624558190
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "15F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -62.952437067603739, 
+              -71.366847624558218
+            ], 
+            [
+              -62.785770400937082, 
+              -71.366847624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "160", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -62.785770400937075, 
+              -68.616847624558218
+            ], 
+            [
+              -62.952437067603732, 
+              -68.616847624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "161", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -62.785770400937075, 
+              -68.616847624558218
+            ], 
+            [
+              -62.785770400937082, 
+              -71.366847624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "162", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -63.119103734270404, 
+              -71.366847624558204
+            ], 
+            [
+              -66.619103734270411, 
+              -71.366847624558204
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "163", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -63.119103734270404, 
+              -68.616847624558204
+            ], 
+            [
+              -66.619103734270411, 
+              -68.616847624558204
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "164", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -63.119103734270404, 
+              -70.450180957891561
+            ], 
+            [
+              -66.619103734270411, 
+              -70.450180957891504
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "165", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -63.119103734270404, 
+              -69.533514291224876
+            ], 
+            [
+              -66.619103734270411, 
+              -69.533514291224876
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "S-STRS", 
+        "EntityHandle": "166", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.619103734270411, 
+              -71.366847624558190
+            ], 
+            [
+              -66.785770400937068, 
+              -71.366847624558190
+            ]
+          ], 
+          [
+            [
+              -66.619103734270411, 
+              -68.616847624558204
+            ], 
+            [
+              -66.619103734270411, 
+              -71.366847624558190
+            ]
+          ], 
+          [
+            [
+              -66.785770400937068, 
+              -68.616847624558204
+            ], 
+            [
+              -66.619103734270411, 
+              -68.616847624558204
+            ]
+          ], 
+          [
+            [
+              -66.785770400937068, 
+              -68.616847624558204
+            ], 
+            [
+              -66.785770400937068, 
+              -71.366847624558190
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-FLOR-HRAL", 
+        "EntityHandle": "16E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -62.952437067603739, 
+              -71.366847624558218
+            ], 
+            [
+              -63.119103734270418, 
+              -71.366847624558218
+            ]
+          ], 
+          [
+            [
+              -62.952437067603718, 
+              -68.616847624558204
+            ], 
+            [
+              -62.952437067603739, 
+              -71.366847624558218
+            ]
+          ], 
+          [
+            [
+              -63.119103734270404, 
+              -68.616847624558204
+            ], 
+            [
+              -62.952437067603718, 
+              -68.616847624558204
+            ]
+          ], 
+          [
+            [
+              -63.119103734270404, 
+              -68.616847624558204
+            ], 
+            [
+              -63.119103734270418, 
+              -71.366847624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-FLOR-HRAL", 
+        "EntityHandle": "176", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -83.842924127775035, 
+              -25.554233393751733
+            ], 
+            [
+              -84.048840829585657, 
+              -25.548958546960918
+            ], 
+            [
+              -84.253910180589699, 
+              -25.529565935687145
+            ], 
+            [
+              -84.457165403841756, 
+              -25.496146984267597
+            ], 
+            [
+              -84.657648274902641, 
+              -25.448859242680427
+            ], 
+            [
+              -84.854413639283209, 
+              -25.387925643792695
+            ], 
+            [
+              -85.046533868271538, 
+              -25.313633452367824
+            ], 
+            [
+              -85.233103232136557, 
+              -25.226332910787438
+            ], 
+            [
+              -85.413242170091607, 
+              -25.126435587872056
+            ], 
+            [
+              -85.586101436887063, 
+              -25.014412438585097
+            ], 
+            [
+              -85.750866106483912, 
+              -24.890791583767371
+            ], 
+            [
+              -85.906759413933187, 
+              -24.756155820369386
+            ], 
+            [
+              -86.053046417348881, 
+              -24.611139873919054
+            ], 
+            [
+              -86.189037462710971, 
+              -24.456427406177891
+            ], 
+            [
+              -86.314091435163448, 
+              -24.292747792092673
+            ], 
+            [
+              -86.427618781480064, 
+              -24.120872681237319
+            ], 
+            [
+              -86.529084289448178, 
+              -23.941612359955670
+            ], 
+            [
+              -86.618009611068132, 
+              -23.755811931355463
+            ], 
+            [
+              -86.693975517672200, 
+              -23.564347331162498
+            ], 
+            [
+              -86.756623876332313, 
+              -23.368121198217818
+            ], 
+            [
+              -86.805659338238300, 
+              -23.168058619085951
+            ], 
+            [
+              -86.840850731087528, 
+              -22.965102766835852
+            ], 
+            [
+              -86.862032148921244, 
+              -22.760210454555022
+            ], 
+            [
+              -86.869103734270126, 
+              -22.554347624559213
+            ]
+          ], 
+          [
+            [
+              -83.869103734270112, 
+              -22.554347624559487
+            ], 
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ]
+          ], 
+          [
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ], 
+            [
+              -86.869103734270098, 
+              -22.700180957892812
+            ]
+          ], 
+          [
+            [
+              -86.869103734270098, 
+              -22.700180957892812
+            ], 
+            [
+              -83.869103734270112, 
+              -22.700180957892822
+            ]
+          ], 
+          [
+            [
+              -83.869103734270112, 
+              -22.700180957892822
+            ], 
+            [
+              -83.869103734270112, 
+              -22.554347624559487
+            ]
+          ], 
+          [
+            [
+              -83.842924127775035, 
+              -25.554233393752003
+            ], 
+            [
+              -84.048840829585657, 
+              -25.548958546961185
+            ], 
+            [
+              -84.253910180589685, 
+              -25.529565935687412
+            ], 
+            [
+              -84.457165403841756, 
+              -25.496146984267863
+            ], 
+            [
+              -84.657648274902641, 
+              -25.448859242680694
+            ], 
+            [
+              -84.854413639283209, 
+              -25.387925643792958
+            ], 
+            [
+              -85.046533868271524, 
+              -25.313633452368091
+            ], 
+            [
+              -85.233103232136557, 
+              -25.226332910787704
+            ], 
+            [
+              -85.413242170091607, 
+              -25.126435587872326
+            ], 
+            [
+              -85.586101436887034, 
+              -25.014412438585364
+            ], 
+            [
+              -85.750866106483912, 
+              -24.890791583767637
+            ], 
+            [
+              -85.906759413933187, 
+              -24.756155820369653
+            ], 
+            [
+              -86.053046417348881, 
+              -24.611139873919317
+            ], 
+            [
+              -86.189037462710971, 
+              -24.456427406178154
+            ], 
+            [
+              -86.314091435163448, 
+              -24.292747792092939
+            ], 
+            [
+              -86.427618781480035, 
+              -24.120872681237586
+            ], 
+            [
+              -86.529084289448178, 
+              -23.941612359955936
+            ], 
+            [
+              -86.618009611068132, 
+              -23.755811931355726
+            ], 
+            [
+              -86.693975517672200, 
+              -23.564347331162768
+            ], 
+            [
+              -86.756623876332313, 
+              -23.368121198218088
+            ], 
+            [
+              -86.805659338238300, 
+              -23.168058619086214
+            ], 
+            [
+              -86.840850731087528, 
+              -22.965102766836115
+            ], 
+            [
+              -86.862032148921230, 
+              -22.760210454555288
+            ], 
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ]
+          ], 
+          [
+            [
+              -83.869103734270183, 
+              -25.554347624559480
+            ], 
+            [
+              -83.869103734270183, 
+              -25.721014291226165
+            ]
+          ], 
+          [
+            [
+              -83.869103734270183, 
+              -25.721014291226165
+            ], 
+            [
+              -82.869103734270183, 
+              -25.721014291226172
+            ]
+          ], 
+          [
+            [
+              -82.869103734270183, 
+              -25.721014291226172
+            ], 
+            [
+              -82.869103734270183, 
+              -25.554347624559487
+            ]
+          ], 
+          [
+            [
+              -82.869103734270183, 
+              -25.554347624559487
+            ], 
+            [
+              -83.556603734270197, 
+              -25.554347624559483
+            ]
+          ], 
+          [
+            [
+              -83.556603734270197, 
+              -25.554347624559483
+            ], 
+            [
+              -83.556603734270197, 
+              -25.512680957892815
+            ]
+          ], 
+          [
+            [
+              -83.556603734270197, 
+              -25.512680957892815
+            ], 
+            [
+              -83.723270400936869, 
+              -25.512680957892815
+            ]
+          ], 
+          [
+            [
+              -83.723270400936869, 
+              -25.512680957892815
+            ], 
+            [
+              -83.723270400936869, 
+              -25.554347624559480
+            ]
+          ], 
+          [
+            [
+              -83.723270400936869, 
+              -25.554347624559480
+            ], 
+            [
+              -83.869103734270183, 
+              -25.554347624559480
+            ]
+          ], 
+          [
+            [
+              -83.869103734270155, 
+              -22.387680957892822
+            ], 
+            [
+              -83.869103734270155, 
+              -22.554347624559483
+            ]
+          ], 
+          [
+            [
+              -83.869103734270155, 
+              -22.554347624559483
+            ], 
+            [
+              -83.723270400936840, 
+              -22.554347624559483
+            ]
+          ], 
+          [
+            [
+              -83.723270400936840, 
+              -22.554347624559483
+            ], 
+            [
+              -83.723270400936840, 
+              -22.596014291226158
+            ]
+          ], 
+          [
+            [
+              -83.723270400936840, 
+              -22.596014291226158
+            ], 
+            [
+              -83.556603734270169, 
+              -22.596014291226158
+            ]
+          ], 
+          [
+            [
+              -83.556603734270169, 
+              -22.596014291226158
+            ], 
+            [
+              -83.556603734270169, 
+              -22.554347624559487
+            ]
+          ], 
+          [
+            [
+              -83.556603734270169, 
+              -22.554347624559487
+            ], 
+            [
+              -82.869103734270155, 
+              -22.554347624559494
+            ]
+          ], 
+          [
+            [
+              -82.869103734270155, 
+              -22.554347624559494
+            ], 
+            [
+              -82.869103734270155, 
+              -22.387680957892830
+            ]
+          ], 
+          [
+            [
+              -82.869103734270155, 
+              -22.387680957892830
+            ], 
+            [
+              -83.869103734270155, 
+              -22.387680957892822
+            ]
+          ], 
+          [
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ], 
+            [
+              -86.869103734270098, 
+              -22.700180957892812
+            ]
+          ], 
+          [
+            [
+              -83.869103734270112, 
+              -22.554347624559487
+            ], 
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ]
+          ], 
+          [
+            [
+              -86.869103734270098, 
+              -22.700180957892812
+            ], 
+            [
+              -83.869103734270112, 
+              -22.700180957892822
+            ]
+          ], 
+          [
+            [
+              -83.869103734270112, 
+              -22.554347624559487
+            ], 
+            [
+              -83.869103734270112, 
+              -22.700180957892822
+            ]
+          ], 
+          [
+            [
+              -83.842924127775177, 
+              -25.554233393752003
+            ], 
+            [
+              -84.048840829585785, 
+              -25.548958546961174
+            ], 
+            [
+              -84.253910180589813, 
+              -25.529565935687398
+            ], 
+            [
+              -84.457165403841870, 
+              -25.496146984267838
+            ], 
+            [
+              -84.657648274902755, 
+              -25.448859242680665
+            ], 
+            [
+              -84.854413639283322, 
+              -25.387925643792922
+            ], 
+            [
+              -85.046533868271624, 
+              -25.313633452368052
+            ], 
+            [
+              -85.233103232136642, 
+              -25.226332910787661
+            ], 
+            [
+              -85.413242170091678, 
+              -25.126435587872276
+            ], 
+            [
+              -85.586101436887120, 
+              -25.014412438585310
+            ], 
+            [
+              -85.750866106483969, 
+              -24.890791583767591
+            ], 
+            [
+              -85.906759413933244, 
+              -24.756155820369599
+            ], 
+            [
+              -86.053046417348924, 
+              -24.611139873919271
+            ], 
+            [
+              -86.189037462710999, 
+              -24.456427406178108
+            ], 
+            [
+              -86.314091435163462, 
+              -24.292747792092896
+            ], 
+            [
+              -86.427618781480078, 
+              -24.120872681237543
+            ], 
+            [
+              -86.529084289448193, 
+              -23.941612359955897
+            ], 
+            [
+              -86.618009611068132, 
+              -23.755811931355694
+            ], 
+            [
+              -86.693975517672200, 
+              -23.564347331162740
+            ], 
+            [
+              -86.756623876332313, 
+              -23.368121198218063
+            ], 
+            [
+              -86.805659338238300, 
+              -23.168058619086196
+            ], 
+            [
+              -86.840850731087528, 
+              -22.965102766836100
+            ], 
+            [
+              -86.862032148921230, 
+              -22.760210454555281
+            ], 
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ]
+          ], 
+          [
+            [
+              -83.842924127775206, 
+              -25.554233393752003
+            ], 
+            [
+              -84.048840829585814, 
+              -25.548958546961174
+            ], 
+            [
+              -84.253910180589841, 
+              -25.529565935687391
+            ], 
+            [
+              -84.457165403841898, 
+              -25.496146984267835
+            ], 
+            [
+              -84.657648274902769, 
+              -25.448859242680655
+            ], 
+            [
+              -84.854413639283337, 
+              -25.387925643792915
+            ], 
+            [
+              -85.046533868271638, 
+              -25.313633452368041
+            ], 
+            [
+              -85.233103232136656, 
+              -25.226332910787651
+            ], 
+            [
+              -85.413242170091692, 
+              -25.126435587872265
+            ], 
+            [
+              -85.586101436887134, 
+              -25.014412438585300
+            ], 
+            [
+              -85.750866106483997, 
+              -24.890791583767577
+            ], 
+            [
+              -85.906759413933244, 
+              -24.756155820369589
+            ], 
+            [
+              -86.053046417348938, 
+              -24.611139873919260
+            ], 
+            [
+              -86.189037462710999, 
+              -24.456427406178097
+            ], 
+            [
+              -86.314091435163490, 
+              -24.292747792092886
+            ], 
+            [
+              -86.427618781480078, 
+              -24.120872681237532
+            ], 
+            [
+              -86.529084289448193, 
+              -23.941612359955894
+            ], 
+            [
+              -86.618009611068146, 
+              -23.755811931355691
+            ], 
+            [
+              -86.693975517672200, 
+              -23.564347331162733
+            ], 
+            [
+              -86.756623876332313, 
+              -23.368121198218052
+            ], 
+            [
+              -86.805659338238300, 
+              -23.168058619086192
+            ], 
+            [
+              -86.840850731087528, 
+              -22.965102766836100
+            ], 
+            [
+              -86.862032148921230, 
+              -22.760210454555281
+            ], 
+            [
+              -86.869103734270098, 
+              -22.554347624559480
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-DOOR", 
+        "EntityHandle": "196", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603555, 
+              -33.408514291224883
+            ], 
+            [
+              -66.952437067603555, 
+              -31.908514291223625
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "197", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603555, 
+              -31.908514291223625
+            ], 
+            [
+              -67.369103734270212, 
+              -31.908514291223625
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "198", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603526, 
+              -28.575180957890300
+            ], 
+            [
+              -66.952437067603526, 
+              -26.158514291224890
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "19A", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -67.369103734270183, 
+              -25.741847624558218
+            ], 
+            [
+              -67.369103734270212, 
+              -28.575180957890300
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "19C", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -67.369103734270212, 
+              -28.575180957890300
+            ], 
+            [
+              -66.952437067603526, 
+              -28.575180957890300
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "19D", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -66.952437067603526, 
+              -26.158514291224890
+            ], 
+            [
+              -45.410770400936748, 
+              -26.158514291224957
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "19E", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936748, 
+              -25.741847624558289
+            ], 
+            [
+              -67.369103734270183, 
+              -25.741847624558218
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "19F", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -70.410770400936869, 
+              -31.741847624557192
+            ], 
+            [
+              -70.403698815588001, 
+              -31.535984794561376
+            ], 
+            [
+              -70.382517397754285, 
+              -31.331092482280550
+            ], 
+            [
+              -70.347326004905057, 
+              -31.128136630030454
+            ], 
+            [
+              -70.298290542999055, 
+              -30.928074050898587
+            ], 
+            [
+              -70.235642184338943, 
+              -30.731847917953900
+            ], 
+            [
+              -70.159676277734860, 
+              -30.540383317760941
+            ], 
+            [
+              -70.070750956114921, 
+              -30.354582889160739
+            ], 
+            [
+              -69.969285448146778, 
+              -30.175322567879089
+            ], 
+            [
+              -69.855758101830176, 
+              -30.003447457023739
+            ], 
+            [
+              -69.730704129377699, 
+              -29.839767842938524
+            ], 
+            [
+              -69.594713084015623, 
+              -29.685055375197361
+            ], 
+            [
+              -69.448426080599916, 
+              -29.540039428747033
+            ], 
+            [
+              -69.292532773150640, 
+              -29.405403665349052
+            ], 
+            [
+              -69.127768103553777, 
+              -29.281782810531329
+            ], 
+            [
+              -68.954908836758321, 
+              -29.169759661244370
+            ], 
+            [
+              -68.774769898803271, 
+              -29.069862338328992
+            ], 
+            [
+              -68.588200534938238, 
+              -28.982561796748609
+            ], 
+            [
+              -68.396080305949923, 
+              -28.908269605323749
+            ], 
+            [
+              -68.199314941569355, 
+              -28.847336006436013
+            ], 
+            [
+              -67.998832070508470, 
+              -28.800048264848844
+            ], 
+            [
+              -67.795576847256399, 
+              -28.766629313429302
+            ], 
+            [
+              -67.590507496252357, 
+              -28.747236702155533
+            ], 
+            [
+              -67.384590794441735, 
+              -28.741961855364721
+            ]
+          ], 
+          [
+            [
+              -67.410770400936869, 
+              -31.741847624556968
+            ], 
+            [
+              -70.410770400936869, 
+              -31.741847624556943
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.741847624556943
+            ], 
+            [
+              -70.410770400936869, 
+              -31.596014291223611
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.596014291223611
+            ], 
+            [
+              -67.410770400936869, 
+              -31.596014291223636
+            ]
+          ], 
+          [
+            [
+              -67.410770400936869, 
+              -31.596014291223636
+            ], 
+            [
+              -67.410770400936869, 
+              -31.741847624556968
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.741847624556925
+            ], 
+            [
+              -70.403698815587987, 
+              -31.535984794561113
+            ], 
+            [
+              -70.382517397754270, 
+              -31.331092482280283
+            ], 
+            [
+              -70.347326004905057, 
+              -31.128136630030188
+            ], 
+            [
+              -70.298290542999055, 
+              -30.928074050898317
+            ], 
+            [
+              -70.235642184338943, 
+              -30.731847917953633
+            ], 
+            [
+              -70.159676277734846, 
+              -30.540383317760675
+            ], 
+            [
+              -70.070750956114907, 
+              -30.354582889160469
+            ], 
+            [
+              -69.969285448146778, 
+              -30.175322567878823
+            ], 
+            [
+              -69.855758101830176, 
+              -30.003447457023473
+            ], 
+            [
+              -69.730704129377685, 
+              -29.839767842938258
+            ], 
+            [
+              -69.594713084015609, 
+              -29.685055375197095
+            ], 
+            [
+              -69.448426080599901, 
+              -29.540039428746766
+            ], 
+            [
+              -69.292532773150640, 
+              -29.405403665348782
+            ], 
+            [
+              -69.127768103553763, 
+              -29.281782810531066
+            ], 
+            [
+              -68.954908836758307, 
+              -29.169759661244104
+            ], 
+            [
+              -68.774769898803257, 
+              -29.069862338328722
+            ], 
+            [
+              -68.588200534938224, 
+              -28.982561796748342
+            ], 
+            [
+              -68.396080305949923, 
+              -28.908269605323479
+            ], 
+            [
+              -68.199314941569341, 
+              -28.847336006435750
+            ], 
+            [
+              -67.998832070508456, 
+              -28.800048264848581
+            ], 
+            [
+              -67.795576847256385, 
+              -28.766629313429036
+            ], 
+            [
+              -67.590507496252357, 
+              -28.747236702155266
+            ], 
+            [
+              -67.384590794441735, 
+              -28.741961855364455
+            ]
+          ], 
+          [
+            [
+              -66.910770400936912, 
+              -31.908514291223636
+            ], 
+            [
+              -67.410770400936912, 
+              -31.908514291223636
+            ]
+          ], 
+          [
+            [
+              -66.910770400936912, 
+              -31.741847624556971
+            ], 
+            [
+              -66.910770400936912, 
+              -31.908514291223636
+            ]
+          ], 
+          [
+            [
+              -67.098270400936926, 
+              -31.741847624556971
+            ], 
+            [
+              -66.910770400936912, 
+              -31.741847624556971
+            ]
+          ], 
+          [
+            [
+              -67.098270400936926, 
+              -31.700180957890296
+            ], 
+            [
+              -67.098270400936926, 
+              -31.741847624556971
+            ]
+          ], 
+          [
+            [
+              -67.264937067603597, 
+              -31.700180957890296
+            ], 
+            [
+              -67.098270400936926, 
+              -31.700180957890296
+            ]
+          ], 
+          [
+            [
+              -67.264937067603597, 
+              -31.741847624556971
+            ], 
+            [
+              -67.264937067603597, 
+              -31.700180957890296
+            ]
+          ], 
+          [
+            [
+              -67.410770400936912, 
+              -31.741847624556971
+            ], 
+            [
+              -67.264937067603597, 
+              -31.741847624556971
+            ]
+          ], 
+          [
+            [
+              -67.410770400936912, 
+              -31.908514291223636
+            ], 
+            [
+              -67.410770400936912, 
+              -31.741847624556971
+            ]
+          ], 
+          [
+            [
+              -67.264937067603597, 
+              -28.741847624556979
+            ], 
+            [
+              -67.410770400936897, 
+              -28.741847624556979
+            ]
+          ], 
+          [
+            [
+              -67.264937067603597, 
+              -28.783514291223643
+            ], 
+            [
+              -67.264937067603597, 
+              -28.741847624556979
+            ]
+          ], 
+          [
+            [
+              -67.098270400936926, 
+              -28.783514291223643
+            ], 
+            [
+              -67.264937067603597, 
+              -28.783514291223643
+            ]
+          ], 
+          [
+            [
+              -67.098270400936926, 
+              -28.741847624556979
+            ], 
+            [
+              -67.098270400936926, 
+              -28.783514291223643
+            ]
+          ], 
+          [
+            [
+              -66.910770400936912, 
+              -28.741847624556979
+            ], 
+            [
+              -67.098270400936926, 
+              -28.741847624556979
+            ]
+          ], 
+          [
+            [
+              -66.910770400936912, 
+              -28.575180957890293
+            ], 
+            [
+              -66.910770400936912, 
+              -28.741847624556979
+            ]
+          ], 
+          [
+            [
+              -67.410770400936897, 
+              -28.575180957890293
+            ], 
+            [
+              -66.910770400936912, 
+              -28.575180957890293
+            ]
+          ], 
+          [
+            [
+              -67.410770400936897, 
+              -28.741847624556979
+            ], 
+            [
+              -67.410770400936897, 
+              -28.575180957890293
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.741847624556943
+            ], 
+            [
+              -70.410770400936869, 
+              -31.596014291223611
+            ]
+          ], 
+          [
+            [
+              -67.410770400936869, 
+              -31.741847624556968
+            ], 
+            [
+              -70.410770400936869, 
+              -31.741847624556943
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.596014291223611
+            ], 
+            [
+              -67.410770400936869, 
+              -31.596014291223636
+            ]
+          ], 
+          [
+            [
+              -67.410770400936869, 
+              -31.741847624556968
+            ], 
+            [
+              -67.410770400936869, 
+              -31.596014291223636
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.741847624556922
+            ], 
+            [
+              -70.403698815587987, 
+              -31.535984794561116
+            ], 
+            [
+              -70.382517397754270, 
+              -31.331092482280297
+            ], 
+            [
+              -70.347326004905057, 
+              -31.128136630030209
+            ], 
+            [
+              -70.298290542999055, 
+              -30.928074050898342
+            ], 
+            [
+              -70.235642184338943, 
+              -30.731847917953662
+            ], 
+            [
+              -70.159676277734874, 
+              -30.540383317760710
+            ], 
+            [
+              -70.070750956114935, 
+              -30.354582889160511
+            ], 
+            [
+              -69.969285448146806, 
+              -30.175322567878865
+            ], 
+            [
+              -69.855758101830205, 
+              -30.003447457023515
+            ], 
+            [
+              -69.730704129377727, 
+              -29.839767842938304
+            ], 
+            [
+              -69.594713084015652, 
+              -29.685055375197148
+            ], 
+            [
+              -69.448426080599958, 
+              -29.540039428746820
+            ], 
+            [
+              -69.292532773150697, 
+              -29.405403665348832
+            ], 
+            [
+              -69.127768103553834, 
+              -29.281782810531112
+            ], 
+            [
+              -68.954908836758378, 
+              -29.169759661244147
+            ], 
+            [
+              -68.774769898803356, 
+              -29.069862338328772
+            ], 
+            [
+              -68.588200534938338, 
+              -28.982561796748382
+            ], 
+            [
+              -68.396080305950022, 
+              -28.908269605323515
+            ], 
+            [
+              -68.199314941569455, 
+              -28.847336006435778
+            ], 
+            [
+              -67.998832070508584, 
+              -28.800048264848602
+            ], 
+            [
+              -67.795576847256513, 
+              -28.766629313429050
+            ], 
+            [
+              -67.590507496252499, 
+              -28.747236702155277
+            ], 
+            [
+              -67.384590794441877, 
+              -28.741961855364451
+            ]
+          ], 
+          [
+            [
+              -70.410770400936869, 
+              -31.741847624556922
+            ], 
+            [
+              -70.403698815587987, 
+              -31.535984794561120
+            ], 
+            [
+              -70.382517397754270, 
+              -31.331092482280297
+            ], 
+            [
+              -70.347326004905057, 
+              -31.128136630030212
+            ], 
+            [
+              -70.298290542999055, 
+              -30.928074050898346
+            ], 
+            [
+              -70.235642184338943, 
+              -30.731847917953672
+            ], 
+            [
+              -70.159676277734874, 
+              -30.540383317760718
+            ], 
+            [
+              -70.070750956114935, 
+              -30.354582889160515
+            ], 
+            [
+              -69.969285448146806, 
+              -30.175322567878869
+            ], 
+            [
+              -69.855758101830205, 
+              -30.003447457023526
+            ], 
+            [
+              -69.730704129377742, 
+              -29.839767842938315
+            ], 
+            [
+              -69.594713084015666, 
+              -29.685055375197155
+            ], 
+            [
+              -69.448426080599972, 
+              -29.540039428746827
+            ], 
+            [
+              -69.292532773150711, 
+              -29.405403665348842
+            ], 
+            [
+              -69.127768103553848, 
+              -29.281782810531123
+            ], 
+            [
+              -68.954908836758406, 
+              -29.169759661244161
+            ], 
+            [
+              -68.774769898803370, 
+              -29.069862338328779
+            ], 
+            [
+              -68.588200534938352, 
+              -28.982561796748389
+            ], 
+            [
+              -68.396080305950036, 
+              -28.908269605323525
+            ], 
+            [
+              -68.199314941569483, 
+              -28.847336006435786
+            ], 
+            [
+              -67.998832070508612, 
+              -28.800048264848609
+            ], 
+            [
+              -67.795576847256555, 
+              -28.766629313429053
+            ], 
+            [
+              -67.590507496252528, 
+              -28.747236702155277
+            ], 
+            [
+              -67.384590794441905, 
+              -28.741961855364451
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbBlockReference", 
+        "Layer": "A-DOOR", 
+        "EntityHandle": "1A0", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936755, 
+              -5.9085142912248800
+            ], 
+            [
+              -71.160770400936755, 
+              -5.9085142912249191
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "1A1", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -71.577437067603427, 
+              -5.4918476245582530
+            ], 
+            [
+              -82.910770400936755, 
+              -5.4918476245582140
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "1A3", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -71.160770400936755, 
+              -5.9085142912249191
+            ], 
+            [
+              -71.160770400936670, 
+              9.7581523754417407
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "1A4", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -71.577437067603356, 
+              9.7581523754417407
+            ], 
+            [
+              -71.577437067603427, 
+              -5.4918476245582530
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbLine", 
+        "Layer": "I-WALL", 
+        "EntityHandle": "1A5", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -61.160770400937260, 
+              -87.741847624558332
+            ], 
+            [
+              -51.660770400936919, 
+              -87.741847624558332
+            ], 
+            [
+              -51.660770400936883, 
+              -80.929347624558346
+            ], 
+            [
+              -57.202437067603590, 
+              -80.929347624558332
+            ], 
+            [
+              -61.160770400937245, 
+              -80.929347624558304
+            ], 
+            [
+              -61.160770400937253, 
+              -82.903280458430018
+            ], 
+            [
+              -61.160770400937245, 
+              -83.241847624558332
+            ], 
+            [
+              -61.160770400937260, 
+              -87.741847624558332
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1A7", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400937153, 
+              -62.221014291224954
+            ], 
+            [
+              -82.910770400937295, 
+              -87.741847624558332
+            ], 
+            [
+              -67.160770400937267, 
+              -87.741847624558332
+            ], 
+            [
+              -67.160770400937238, 
+              -82.908514291225018
+            ], 
+            [
+              -61.577437067603931, 
+              -82.908514291225032
+            ], 
+            [
+              -61.577437067603917, 
+              -80.512680957891661
+            ], 
+            [
+              -57.410770400936919, 
+              -80.512680957891661
+            ], 
+            [
+              -57.410770400936890, 
+              -76.200180957891675
+            ], 
+            [
+              -58.254520400937146, 
+              -76.200180957891675
+            ], 
+            [
+              -67.369103734270524, 
+              -76.200180957891632
+            ], 
+            [
+              -67.369103734270311, 
+              -33.616847624558240
+            ], 
+            [
+              -67.369103734270269, 
+              -25.741847624558250
+            ], 
+            [
+              -45.410770400936819, 
+              -25.741847624558329
+            ], 
+            [
+              -45.410770400936748, 
+              9.7581523754416999
+            ], 
+            [
+              -71.160770400936784, 
+              9.7581523754417496
+            ], 
+            [
+              -71.160770400936840, 
+              -5.9085142912249280
+            ], 
+            [
+              -82.910770400936869, 
+              -5.9085142912248889
+            ], 
+            [
+              -82.910770400937011, 
+              -33.762680957891590
+            ], 
+            [
+              -79.910770400936983, 
+              -33.762680957891597
+            ], 
+            [
+              -79.910770400937039, 
+              -47.991847624558268
+            ], 
+            [
+              -79.910770400937068, 
+              -62.221014291224968
+            ], 
+            [
+              -82.910770400937153, 
+              -62.221014291224954
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1A8", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -48.410770400937089, 
+              -61.991847624558339
+            ], 
+            [
+              -48.410770400937054, 
+              -47.906445966764132
+            ], 
+            [
+              -53.744103734270169, 
+              -42.573112633431002
+            ], 
+            [
+              -53.744103734270148, 
+              -33.825180957891639
+            ], 
+            [
+              -66.952437067603654, 
+              -33.825180957891590
+            ], 
+            [
+              -66.952437067603867, 
+              -75.783514291224989
+            ], 
+            [
+              -58.462853734270489, 
+              -75.783514291225003
+            ], 
+            [
+              -58.462853734270489, 
+              -73.658514291225003
+            ], 
+            [
+              -48.410770400937110, 
+              -73.658514291225018
+            ], 
+            [
+              -48.410770400937089, 
+              -61.991847624558339
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1A9", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -41.410770400937182, 
+              -76.241847624558389
+            ], 
+            [
+              -47.952437067603789, 
+              -76.241847624558375
+            ], 
+            [
+              -47.952437067603789, 
+              -76.200180957891689
+            ], 
+            [
+              -48.416004233732117, 
+              -76.200180957891689
+            ], 
+            [
+              -56.994103734270233, 
+              -76.200180957891675
+            ], 
+            [
+              -56.994103734270247, 
+              -80.512680957891661
+            ], 
+            [
+              -51.452437067603540, 
+              -80.512680957891689
+            ], 
+            [
+              -45.233770255103373, 
+              -80.512680957891718
+            ], 
+            [
+              -45.233770255103387, 
+              -83.548585385853258
+            ], 
+            [
+              -49.900436921770059, 
+              -83.548585385853258
+            ], 
+            [
+              -49.900436921770059, 
+              -83.131918719186601
+            ], 
+            [
+              -45.650436921770051, 
+              -83.131918719186601
+            ], 
+            [
+              -45.650436921770051, 
+              -80.929347624558361
+            ], 
+            [
+              -51.244103734270219, 
+              -80.929347624558346
+            ], 
+            [
+              -51.244103734270254, 
+              -87.741847624558332
+            ], 
+            [
+              -41.410770400937245, 
+              -87.741847624558332
+            ], 
+            [
+              -41.410770400937182, 
+              -76.241847624558389
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1AA", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -45.410770400936819, 
+              -33.408514291224996
+            ], 
+            [
+              -45.410770400936819, 
+              -26.158514291224986
+            ], 
+            [
+              -66.952437067603611, 
+              -26.158514291224918
+            ], 
+            [
+              -66.952437067603654, 
+              -33.408514291224918
+            ], 
+            [
+              -53.829437067603493, 
+              -33.408514291224954
+            ], 
+            [
+              -53.327437067603505, 
+              -33.408514291224968
+            ], 
+            [
+              -45.410770400936819, 
+              -33.408514291224996
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1AB", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "type": "MultiLineString", 
+        "coordinates": [
+          [
+            [
+              -82.910770400936784, 
+              9.7581523754417745
+            ], 
+            [
+              -82.910770400936869, 
+              -5.4918476245582193
+            ], 
+            [
+              -71.577437067603498, 
+              -5.4918476245582584
+            ], 
+            [
+              -71.577437067603441, 
+              9.7581523754417496
+            ], 
+            [
+              -82.910770400936784, 
+              9.7581523754417745
+            ]
+          ]
+        ]
+      }, 
+      "properties": {
+        "level": "BASEMENT", 
+        "source": "BASEMENT_Map_Export.dxf", 
+        "interactive": false, 
+        "SubClasses": "AcDbEntity:AcDbPolyline", 
+        "Layer": "A-AREA-BNDY", 
+        "EntityHandle": "1AC", 
+        "type": "drawing"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "name": "686001_HCMFP_BabcockHall_A25_Rotated - BASEMENT"
+}

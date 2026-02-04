@@ -26,14 +26,37 @@ export default function FloorPanel({
   explainError = '',
   moveScenarioMode = false,
   onToggleMoveScenarioMode,
+  rotateActive = false,
+  moveActive = false,
+  rotateValue = 0,
+  scaleValue = 1,
+  rotateNotice = '',
+  rotateStored = false,
+  adjustDebugInfo = null,
+  onStartRotate,
+  onStartMove,
+  onCancelRotate,
+  onClearRotate,
+  onScaleChange,
+  onSaveAdjust,
+  saveAdjustDisabled = false,
+  dragHandleProps,
 }) {
   const area = (v) =>
     Number.isFinite(v) ? Math.round(v).toLocaleString() : "-";
   const count = (v) => (Number.isFinite(v) ? Number(v).toLocaleString() : "-");
+  const isDraggable = Boolean(dragHandleProps);
+  const { style: dragStyle, ...dragProps } = dragHandleProps || {};
+  const headerStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    ...(isDraggable ? { cursor: "grab", userSelect: "none", touchAction: "none" } : {}),
+    ...(dragStyle || {})
+  };
 
   return (
     <div style={{ minWidth: 340, maxWidth: 380, padding: 12, fontSize: 13 }}>
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <div style={headerStyle} {...dragProps}>
         <div style={{ fontWeight: 700 }}>{buildingName}</div>
         <button onClick={onClose} aria-label="Close">
           &times;
@@ -156,8 +179,7 @@ export default function FloorPanel({
             {[
               { key: 'department', label: 'Department' },
               { key: 'type', label: 'Type' },
-              { key: 'occupancy', label: 'Occupancy' },
-              { key: 'vacancy', label: 'Vacancy' },
+              { key: 'occupancy', label: 'Occupancy' }
             ].map((opt) => (
               <label key={opt.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <input
@@ -183,6 +205,75 @@ export default function FloorPanel({
             <div style={{ marginTop: 4, fontSize: 11, color: "#555", textAlign: "center" }}>
               Click rooms to add/remove them from a what-if scenario. Real data is not changed.
             </div>
+          </div>
+        ) : null}
+        {onStartRotate ? (
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #e5e5e5" }}>
+            <div style={{ fontWeight: 600 }}>Adjust Floorplan</div>
+            <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>
+              {rotateActive || moveActive
+                ? "Drag on the map. Release to save."
+                : "Use Rotate or Move, then drag on the map to adjust rooms + linework together."}
+            </div>
+            <div style={{ fontSize: 12, marginTop: 2 }}>
+              Rotation: {Number.isFinite(rotateValue) ? `${rotateValue.toFixed(1)}°` : "0°"} ·
+              Scale: {Number.isFinite(scaleValue) ? scaleValue.toFixed(2) : "1.00"}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+              <button onClick={rotateActive ? onCancelRotate : onStartRotate}>
+                {rotateActive ? "Cancel Rotate" : "Rotate"}
+              </button>
+              {onStartMove ? (
+                <button onClick={moveActive ? onCancelRotate : onStartMove}>
+                  {moveActive ? "Cancel Move" : "Move"}
+                </button>
+              ) : null}
+              {onScaleChange ? (
+                <>
+                  <button onClick={() => onScaleChange(-0.02)}>- Scale</button>
+                  <button onClick={() => onScaleChange(0.02)}>+ Scale</button>
+                </>
+              ) : null}
+              {onSaveAdjust ? (
+                <button onClick={onSaveAdjust} disabled={saveAdjustDisabled}>
+                  Save Adjust
+                </button>
+              ) : null}
+              {onClearRotate ? (
+                <button onClick={onClearRotate} disabled={!rotateStored}>
+                  Clear Adjust
+                </button>
+              ) : null}
+            </div>
+            {rotateNotice ? (
+              <div style={{ color: "crimson", fontSize: 12, marginTop: 4 }}>
+                {rotateNotice}
+              </div>
+            ) : null}
+            {adjustDebugInfo ? (
+              <div style={{ fontSize: 11, color: "#666", marginTop: 6 }}>
+                <div style={{ fontWeight: 600 }}>Adjust debug</div>
+                <div>source: {adjustDebugInfo.source || '-'}</div>
+                <div>labelKey: {adjustDebugInfo.labelKey || '-'}</div>
+                <div>baseKey: {adjustDebugInfo.baseKey || '-'}</div>
+                <div>urlKey: {adjustDebugInfo.urlKey || '-'}</div>
+                <div>floorId: {adjustDebugInfo.floorId || '-'}</div>
+                <div>savedAt: {adjustDebugInfo.savedAt ? new Date(adjustDebugInfo.savedAt).toLocaleTimeString() : '-'}</div>
+                <div>rot: {Number.isFinite(adjustDebugInfo.rotationDeg) ? adjustDebugInfo.rotationDeg.toFixed(2) : '0'}</div>
+                <div>scale: {Number.isFinite(adjustDebugInfo.scale) ? adjustDebugInfo.scale.toFixed(3) : '1.000'}</div>
+                <div>move: {Array.isArray(adjustDebugInfo.translateMeters) ? `${adjustDebugInfo.translateMeters[0].toFixed(2)}, ${adjustDebugInfo.translateMeters[1].toFixed(2)}` : '0, 0'}</div>
+                <div>moveLngLat: {Array.isArray(adjustDebugInfo.translateLngLat) ? `${adjustDebugInfo.translateLngLat[0].toFixed(6)}, ${adjustDebugInfo.translateLngLat[1].toFixed(6)}` : '-'}</div>
+                <div>pivot: {Array.isArray(adjustDebugInfo.pivot) ? `${adjustDebugInfo.pivot[0].toFixed(6)}, ${adjustDebugInfo.pivot[1].toFixed(6)}` : '-'}</div>
+                {Array.isArray(adjustDebugInfo.storedKeys) && adjustDebugInfo.storedKeys.length ? (
+                  <div style={{ marginTop: 4 }}>
+                    keys: {adjustDebugInfo.storedKeys.slice(0, 3).join(' | ')}
+                    {adjustDebugInfo.storedKeys.length > 3 ? ` +${adjustDebugInfo.storedKeys.length - 3} more` : ''}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 4 }}>keys: none</div>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : null}
         </div>

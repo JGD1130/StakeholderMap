@@ -1,36 +1,465 @@
 {
-  "buildings": [
-    { "id": "Hurley-McDonald Hall", "name": "Hurley-McDonald Hall" },
-    { "id": "Gray Center", "name": "Gray Center" },
-    { "id": "Morrison-Reeves Science Center", "name": "Morrison-Reeves Science Center" },
-    { "id": "Daugherty Student Engagement Center", "name": "Daugherty Student Engagement Center" }
-  ],
-  "floorsByBuilding": {
-    "Hurley-McDonald Hall": [
-      {
-        "id": "FL1",
-        "url": "floorplans/Hastings/HurleyMcDonald/fl1.geojson"
-      }
-    ],
-    "Gray Center": [
-      {
-        "id": "FL1",
-        "url": "floorplans/Hastings/GrayCenter/fl1.geojson"
-      }
-    ],
-    "Morrison-Reeves Science Center": [
-      {
-        "id": "LEVEL_1",
-        "url": "floorplans/Hastings/MorrisonReeves/LEVEL_1_Dept.geojson"
-      },
-      {
-        "id": "LEVEL_2",
-        "url": "floorplans/Hastings/MorrisonReeves/LEVEL_2_Dept.geojson"
-      }
-    ],
-      "Daugherty Student Engagement Center": [
-      { "id": "BASEMENT", "url": "/stakeholder-map/floorplans/Hastings/Daugherty/BASEMENT_Dept.geojson" },
-      { "id": "LEVEL_1", "url": "/stakeholder-map/floorplans/Hastings/Daugherty/LEVEL_1_Dept.geojson" }
-    ]
-  }
+    "buildings":  [
+                      {
+                          "id":  "1882",
+                          "name":  "1882"
+                      },
+                      {
+                          "id":  "Altman Hall",
+                          "name":  "Altman Hall"
+                      },
+                      {
+                          "id":  "Babcock Hall",
+                          "name":  "Babcock Hall"
+                      },
+                      {
+                          "id":  "Barrett Alumni",
+                          "name":  "Barrett Alumni"
+                      },
+                      {
+                          "id":  "Batchelder",
+                          "name":  "Batchelder Services Bldg"
+                      },
+                      {
+                          "id":  "Bronc Hall",
+                          "name":  "Bronc Hall"
+                      },
+                      {
+                          "id":  "Bronco Village Apt 911",
+                          "name":  "Bronco Village Apt 911"
+                      },
+                      {
+                          "id":  "Bronco Village Apt 915",
+                          "name":  "Bronco Village Apt 915"
+                      },
+                      {
+                          "id":  "Bronco Village Apt 917",
+                          "name":  "Bronco Village Apt 917"
+                      },
+                      {
+                          "id":  "Bronco Village Apt 919",
+                          "name":  "Bronco Village Apt 919"
+                      },
+                      {
+                          "id":  "Bronco Village Apt 921",
+                          "name":  "Bronco Village Apt 921"
+                      },
+                      {
+                          "id":  "Bronco Village Apt 923",
+                          "name":  "Bronco Village Apt 923"
+                      },
+                      {
+                          "id":  "Calvin French Chapel",
+                          "name":  "Calvin H. French Chapel"
+                      },
+                      {
+                          "id":  "Daugherty",
+                          "name":  "Daugherty Student Engagement Center"
+                      },
+                      {
+                          "id":  "Fleharty",
+                          "name":  "Farrell-Fleharty"
+                      },
+                      {
+                          "id":  "Gray Center",
+                          "name":  "Gray Center"
+                      },
+                      {
+                          "id":  "Hazzelrig",
+                          "name":  "Hazelrigg Student Union"
+                      },
+                      {
+                          "id":  "HurleyMcDonald",
+                          "name":  "Hurley-McDonald Hall"
+                      },
+                      {
+                          "id":  "Jackson Dinsdale",
+                          "name":  "Jackson Dinsdale Art Center"
+                      },
+                      {
+                          "id":  "Kiewit",
+                          "name":  "Kiewit Building"
+                      },
+                      {
+                          "id":  "Lloyd Wilson Stadium",
+                          "name":  "Lloyd Wilson Stadium"
+                      },
+                      {
+                          "id":  "McCormick",
+                          "name":  "McCormick Hall"
+                      },
+                      {
+                          "id":  "Morrison Reeves",
+                          "name":  "Morrison-Reeves Science Center"
+                      },
+                      {
+                          "id":  "Perkins",
+                          "name":  "Perkins Library"
+                      },
+                      {
+                          "id":  "Physical Fitness Facility",
+                          "name":  "Physical Fitness Facility"
+                      },
+                      {
+                          "id":  "Scott Theater",
+                          "name":  "Scott Studio Theater"
+                      },
+                      {
+                          "id":  "Stone Health Center",
+                          "name":  "Stone Health Center"
+                      },
+                      {
+                          "id":  "Taylor Hall",
+                          "name":  "Taylor Hall"
+                      },
+                      {
+                          "id":  "WilsonCenter",
+                          "name":  "Wilson Center"
+                      }
+                  ],
+    "floorsByBuilding":  {
+                             "1882":  [
+
+                                      ],
+                             "Altman Hall":  [
+                                                 {
+                                                     "id":  "BASEMENT",
+                                                     "url":  "floorplans/Hastings/Altman Hall/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                 },
+                                                 {
+                                                     "id":  "LEVEL_1",
+                                                     "url":  "floorplans/Hastings/Altman Hall/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                 },
+                                                 {
+                                                     "id":  "LEVEL_2",
+                                                     "url":  "floorplans/Hastings/Altman Hall/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                 },
+                                                 {
+                                                     "id":  "LEVEL_3",
+                                                     "url":  "floorplans/Hastings/Altman Hall/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                 }
+                                             ],
+                             "Babcock Hall":  [
+                                                  {
+                                                      "id":  "BASEMENT",
+                                                      "url":  "floorplans/Hastings/Babcock Hall/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                  },
+                                                  {
+                                                      "id":  "LEVEL_1",
+                                                      "url":  "floorplans/Hastings/Babcock Hall/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                  },
+                                                  {
+                                                      "id":  "LEVEL_2",
+                                                      "url":  "floorplans/Hastings/Babcock Hall/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                  },
+                                                  {
+                                                      "id":  "LEVEL_3",
+                                                      "url":  "floorplans/Hastings/Babcock Hall/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                  }
+                                              ],
+                             "Barrett Alumni":  [
+                                                    {
+                                                        "id":  "LEVEL_1",
+                                                        "url":  "floorplans/Hastings/Barrett Alumni/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                    }
+                                                ],
+                             "Batchelder":  [
+                                                {
+                                                    "id":  "LEVEL_1",
+                                                    "url":  "floorplans/Hastings/Batchelder/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                }
+                                            ],
+                             "Bronc Hall":  [
+                                                {
+                                                    "id":  "BASEMENT",
+                                                    "url":  "floorplans/Hastings/Bronc Hall/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                },
+                                                {
+                                                    "id":  "LEVEL_1",
+                                                    "url":  "floorplans/Hastings/Bronc Hall/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                },
+                                                {
+                                                    "id":  "LEVEL_2",
+                                                    "url":  "floorplans/Hastings/Bronc Hall/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                },
+                                                {
+                                                    "id":  "LEVEL_3",
+                                                    "url":  "floorplans/Hastings/Bronc Hall/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                }
+                                            ],
+                             "Bronco Village Apt 911":  [
+                                                            {
+                                                                "id":  "LEVEL_1",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 911/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_2",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 911/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_3",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 911/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                            }
+                                                        ],
+                             "Bronco Village Apt 915":  [
+                                                            {
+                                                                "id":  "LEVEL_1",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 915/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_2",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 915/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_3",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 915/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                            }
+                                                        ],
+                             "Bronco Village Apt 917":  [
+                                                            {
+                                                                "id":  "LEVEL_1",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 917/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_2",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 917/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_3",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 917/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                            }
+                                                        ],
+                             "Bronco Village Apt 919":  [
+                                                            {
+                                                                "id":  "LEVEL_1",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 919/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_2",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 919/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_3",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 919/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                            }
+                                                        ],
+                             "Bronco Village Apt 921":  [
+                                                            {
+                                                                "id":  "LEVEL_1",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 921/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_2",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 921/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_3",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 921/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                            }
+                                                        ],
+                             "Bronco Village Apt 923":  [
+                                                            {
+                                                                "id":  "LEVEL_1",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 923/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_2",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 923/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                            },
+                                                            {
+                                                                "id":  "LEVEL_3",
+                                                                "url":  "floorplans/Hastings/Bronco Village Apt 923/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                            }
+                                                        ],
+                             "Calvin French Chapel":  [
+                                                          {
+                                                              "id":  "BASEMENT",
+                                                              "url":  "floorplans/Hastings/Calvin French Chapel/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                          },
+                                                          {
+                                                              "id":  "LEVEL_1",
+                                                              "url":  "floorplans/Hastings/Calvin French Chapel/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                          },
+                                                          {
+                                                              "id":  "LEVEL_2",
+                                                              "url":  "floorplans/Hastings/Calvin French Chapel/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                          },
+                                                          {
+                                                              "id":  "LEVEL_3",
+                                                              "url":  "floorplans/Hastings/Calvin French Chapel/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                          }
+                                                      ],
+                             "Daugherty":  [
+                                               {
+                                                   "id":  "BASEMENT",
+                                                   "url":  "floorplans/Hastings/Daugherty/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                               },
+                                               {
+                                                   "id":  "LEVEL_1",
+                                                   "url":  "floorplans/Hastings/Daugherty/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                               }
+                                           ],
+                             "Fleharty":  [
+                                              {
+                                                  "id":  "BASEMENT",
+                                                  "url":  "floorplans/Hastings/Fleharty/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                              },
+                                              {
+                                                  "id":  "LEVEL_1",
+                                                  "url":  "floorplans/Hastings/Fleharty/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                              }
+                                          ],
+                             "Gray Center":  [
+                                                 {
+                                                     "id":  "LEVEL_1",
+                                                     "url":  "floorplans/Hastings/Gray Center/LEVEL_1_Dept.geojson"
+                                                 }
+                                             ],
+                             "Hazzelrig":  [
+                                               {
+                                                   "id":  "LEVEL_1",
+                                                   "url":  "floorplans/Hastings/Hazzelrig/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                               }
+                                           ],
+                             "HurleyMcDonald":  [
+                                                    {
+                                                        "id":  "BASEMENT",
+                                                        "url":  "floorplans/Hastings/HurleyMcDonald/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                    },
+                                                    {
+                                                        "id":  "LEVEL_1",
+                                                        "url":  "floorplans/Hastings/HurleyMcDonald/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                    },
+                                                    {
+                                                        "id":  "LEVEL_2",
+                                                        "url":  "floorplans/Hastings/HurleyMcDonald/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                    }
+                                                ],
+                             "Jackson Dinsdale":  [
+                                                      {
+                                                          "id":  "LEVEL_1",
+                                                          "url":  "floorplans/Hastings/Jackson Dinsdale/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                      }
+                                                  ],
+                             "Kiewit":  [
+                                            {
+                                                "id":  "LEVEL_1",
+                                                "url":  "floorplans/Hastings/Kiewit/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                            },
+                                            {
+                                                "id":  "LEVEL_2",
+                                                "url":  "floorplans/Hastings/Kiewit/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                            }
+                                        ],
+                             "Lloyd Wilson Stadium":  [
+                                                          {
+                                                              "id":  "BASEMENT",
+                                                              "url":  "floorplans/Hastings/Lloyd Wilson Stadium/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                          },
+                                                          {
+                                                              "id":  "LEVEL_1",
+                                                              "url":  "floorplans/Hastings/Lloyd Wilson Stadium/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                          },
+                                                          {
+                                                              "id":  "LEVEL_2",
+                                                              "url":  "floorplans/Hastings/Lloyd Wilson Stadium/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                          },
+                                                          {
+                                                              "id":  "LEVEL_3",
+                                                              "url":  "floorplans/Hastings/Lloyd Wilson Stadium/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                          }
+                                                      ],
+                             "McCormick":  [
+                                               {
+                                                   "id":  "BASEMENT",
+                                                   "url":  "floorplans/Hastings/McCormick/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                               },
+                                               {
+                                                   "id":  "LEVEL_1",
+                                                   "url":  "floorplans/Hastings/McCormick/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                               },
+                                               {
+                                                   "id":  "LEVEL_2",
+                                                   "url":  "floorplans/Hastings/McCormick/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                               },
+                                               {
+                                                   "id":  "LEVEL_3",
+                                                   "url":  "floorplans/Hastings/McCormick/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                               }
+                                           ],
+                             "Morrison Reeves":  [
+                                                     {
+                                                         "id":  "LEVEL_1",
+                                                         "url":  "floorplans/Hastings/Morrison Reeves/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                     },
+                                                     {
+                                                         "id":  "LEVEL_2",
+                                                         "url":  "floorplans/Hastings/Morrison Reeves/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                     }
+                                                 ],
+                             "Perkins":  [
+                                             {
+                                                 "id":  "LEVEL_1",
+                                                 "url":  "floorplans/Hastings/Perkins/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_2",
+                                                 "url":  "floorplans/Hastings/Perkins/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_3",
+                                                 "url":  "floorplans/Hastings/Perkins/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                             }
+                                         ],
+                             "Physical Fitness Facility":  [
+                                                               {
+                                                                   "id":  "LEVEL_1",
+                                                                   "url":  "floorplans/Hastings/Physical Fitness Facility/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                               }
+                                                           ],
+                             "Scott Theater":  [
+                                                   {
+                                                       "id":  "LEVEL_1",
+                                                       "url":  "floorplans/Hastings/Scott Theater/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                   },
+                                                   {
+                                                       "id":  "LEVEL_2",
+                                                       "url":  "floorplans/Hastings/Scott Theater/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                   }
+                                               ],
+                             "Stone Health Center":  [
+                                                         {
+                                                             "id":  "LEVEL_1",
+                                                             "url":  "floorplans/Hastings/Stone Health Center/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                         }
+                                                     ],
+                             "Taylor Hall":  [
+                                                 {
+                                                     "id":  "BASEMENT",
+                                                     "url":  "floorplans/Hastings/Taylor Hall/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                 },
+                                                 {
+                                                     "id":  "LEVEL_1",
+                                                     "url":  "floorplans/Hastings/Taylor Hall/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                 },
+                                                 {
+                                                     "id":  "LEVEL_2",
+                                                     "url":  "floorplans/Hastings/Taylor Hall/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                 },
+                                                 {
+                                                     "id":  "LEVEL_3",
+                                                     "url":  "floorplans/Hastings/Taylor Hall/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                 }
+                                             ],
+                             "WilsonCenter":  [
+                                                  {
+                                                      "id":  "BASEMENT",
+                                                      "url":  "floorplans/Hastings/WilsonCenter/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                  },
+                                                  {
+                                                      "id":  "LEVEL_1",
+                                                      "url":  "floorplans/Hastings/WilsonCenter/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                  }
+                                              ]
+                         }
 }

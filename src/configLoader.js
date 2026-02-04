@@ -1,4 +1,4 @@
-import hastingsConfigData from './Configs/Hastings.json';
+﻿import hastingsConfigData from './Configs/Hastings.json';
 import rockhurstConfigData from './Configs/Rockhurst.json';
 
 // Import raw GeoJSONs and parse them
@@ -10,12 +10,16 @@ import rockhurstBuildingsRaw from './Configs/geojson/RockhurstU_Buildings.geojso
 import rockhurstBoundaryRaw from './Configs/geojson/RockhurstU_Boundary.geojson?raw';
 
 // Parse into JS objects
-const hastingsBuildings = JSON.parse(hastingsBuildingsRaw);
-const hastingsBoundary = JSON.parse(hastingsBoundaryRaw);
-const hastingsOutdoorSpaces = JSON.parse(hastingsOutdoorRaw);
+function stripBom(text) {
+  return (typeof text === 'string') ? text.replace(/^\uFEFF/, '') : text;
+}
 
-const rockhurstBuildings = JSON.parse(rockhurstBuildingsRaw);
-const rockhurstBoundary = JSON.parse(rockhurstBoundaryRaw);
+const hastingsBuildings = JSON.parse(stripBom(hastingsBuildingsRaw));
+const hastingsBoundary = JSON.parse(stripBom(hastingsBoundaryRaw));
+const hastingsOutdoorSpaces = JSON.parse(stripBom(hastingsOutdoorRaw));
+
+const rockhurstBuildings = JSON.parse(stripBom(rockhurstBuildingsRaw));
+const rockhurstBoundary = JSON.parse(stripBom(rockhurstBoundaryRaw));
 
 function asConfig(objOrArray) {
   if (Array.isArray(objOrArray)) {
