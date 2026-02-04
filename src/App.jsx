@@ -51,7 +51,8 @@ function App() {
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
         {/* THIS IS THE LINE TO FIX */}
         <Route path="/:universityId/:persona" element={<UniversityMapLoader />} /> 
-        <Route path="/:universityId" element={<UniversityLandingPage />} />
+        <Route path="/:universityId/survey" element={<UniversityLandingPage />} />
+        <Route path="/:universityId" element={<UniversityMapLoader />} />
         <Route path="/" element={<div>Please select a university by navigating to its URL (e.g., /hastings)</div>} />
       </Routes>
     </Router>

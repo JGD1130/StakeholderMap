@@ -2844,7 +2844,11 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
 
 
 // --- Mapbox token from Vite env (required for mapbox:// styles) ---
-mapboxgl.accessToken = (import.meta.env.VITE_MAPBOX_TOKEN || '').trim();
+mapboxgl.accessToken = (
+  import.meta.env.VITE_MAPBOX_TOKEN ||
+  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ||
+  ''
+).trim();
 
 // Optional sanity-check
 console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
