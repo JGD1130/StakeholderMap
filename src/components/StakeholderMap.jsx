@@ -868,8 +868,11 @@ function buildFloorplanCanvas(fc, options = {}) {
       outline = '#202020';
     }
     if (isSelected) {
-      // Keep the original fill; emphasize selection with a cyan stroke only.
-      outline = '#00ffff';
+      // Emphasize selection with a cyan fill + stroke for stronger PDF visibility.
+      if (kind === 'room') {
+        fill = 'rgba(0, 200, 255, 0.35)';
+      }
+      outline = '#00c8ff';
       outlineWidth = 4;
     }
     const geom = feature?.geometry;
@@ -1688,6 +1691,98 @@ function pruneDrawingOutsideRooms(fc, marginRatio = 0.12) {
   return keep.length === fc.features.length ? fc : { ...fc, features: keep };
 }
 
+function autoAlignDrawingToRooms(fc, context = {}) {
+  if (!fc?.features?.length || fc.__mfAutoDrawingAlign) return fc;
+  const drawing = fc.features.filter((f) => isDrawingFeature(f?.properties || {}));
+  const rooms = fc.features.filter((f) => !isDrawingFeature(f?.properties || {}));
+  if (!drawing.length || !rooms.length) return fc;
+
+  const collectBbox = (list, limit = 20000) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let count = 0;
+    for (const f of list) {
+      const pts = extractLngLatPairs(f?.geometry, Math.max(0, limit - count));
+      count += pts.length;
+      for (const [x, y] of pts) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+      if (count >= limit) break;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      return null;
+    }
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      spanX: maxX - minX,
+      spanY: maxY - minY,
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2
+    };
+  };
+
+  const roomBox = collectBbox(rooms);
+  const drawBox = collectBbox(drawing);
+  if (!roomBox || !drawBox) return fc;
+
+  const overlaps = !(
+    drawBox.maxX < roomBox.minX ||
+    drawBox.minX > roomBox.maxX ||
+    drawBox.maxY < roomBox.minY ||
+    drawBox.minY > roomBox.maxY
+  );
+  if (overlaps) return fc;
+
+  const spanXRatio = roomBox.spanX > 0 ? drawBox.spanX / roomBox.spanX : 0;
+  const spanYRatio = roomBox.spanY > 0 ? drawBox.spanY / roomBox.spanY : 0;
+  if (spanXRatio < 0.5 || spanXRatio > 2.0 || spanYRatio < 0.5 || spanYRatio > 2.0) return fc;
+
+  const forceRotate180 = shouldRotateDrawing180(context.buildingLabel, context.floorId);
+  let nextFeatures = fc.features;
+  if (forceRotate180) {
+    const pivot = [drawBox.cx, drawBox.cy];
+    nextFeatures = nextFeatures.map((f) => {
+      if (!isDrawingFeature(f?.properties || {})) return f;
+      if (!f?.geometry) return f;
+      return {
+        ...f,
+        geometry: {
+          ...f.geometry,
+          coordinates: mapCoords(f.geometry.coordinates, (pt) => rotatePoint(pt, pivot, 180))
+        }
+      };
+    });
+  }
+
+  const drawBoxUpdated = collectBbox(nextFeatures.filter((f) => isDrawingFeature(f?.properties || {})));
+  if (!drawBoxUpdated) return fc;
+  const dx = roomBox.cx - drawBoxUpdated.cx;
+  const dy = roomBox.cy - drawBoxUpdated.cy;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return fc;
+
+  const next = {
+    ...fc,
+    features: nextFeatures.map((f) => {
+      if (!isDrawingFeature(f?.properties || {})) return f;
+      if (!f?.geometry) return f;
+      return {
+        ...f,
+        geometry: {
+          ...f.geometry,
+          coordinates: mapCoords(f.geometry.coordinates, ([x, y]) => [x + dx, y + dy])
+        }
+      };
+    })
+  };
+  next.__mfAutoDrawingAlign = true;
+  return next;
+}
+
 function findNearestVertexInFloor({ map, fc, isDrawing, screenPoint, maxPixels, maxPoints }) {
   if (!map || !fc?.features?.length || !screenPoint) return null;
   const radius = Number.isFinite(maxPixels) ? maxPixels : null;
@@ -1746,6 +1841,7 @@ const FLOORPLAN_MANIFEST_URL = assetUrl('floorplans/manifest.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
 const DEBUG_OVERLAY_LOGS = false;
 const ENABLE_DOOR_STAIR_OVERLAY = false;
+const ENABLE_WALLS_OVERLAY = false;
 const ROOMS_ONLY_FILTER = ['==', ['get', 'Element'], 'Room'];
 
 async function fetchJSON(url) {
@@ -1826,6 +1922,15 @@ function applyRotationOverride(fc, rotationDeg, pivot) {
     }
   } catch {}
   return fc;
+}
+
+function getBasePathFromFloorUrl(url) {
+  if (!url) return null;
+  const clean = String(url).split('?')[0];
+  const roomsIdx = clean.lastIndexOf('/Rooms/');
+  if (roomsIdx >= 0) return clean.slice(0, roomsIdx);
+  const lastSlash = clean.lastIndexOf('/');
+  return lastSlash > 0 ? clean.slice(0, lastSlash) : null;
 }
 
 function applyNudgeMeters(fc, nudgeMeters) {
@@ -2036,14 +2141,38 @@ function applyDoorSwingDirection(doorsFC, roomsFC, options = {}) {
   return { ...doorsFC, features: nextFeatures };
 }
 
+const FLOORPLAN_PER_FLOOR_AFFINE = new Set([
+  'calvin_french_chapel/basement',
+  'kiewit/level_2'
+]);
+
 async function loadAffineForFloor(basePath, floorId) {
   if (!basePath || !floorId) return null;
-  const candidates = [
-    `${basePath}/${floorId}_Dept.affine.json`,
-    `${basePath}/affine.json`,
-  ];
+  const folder = canon(getBuildingFolderFromBasePath(basePath) || '');
+  const floorKey = fId(floorId);
+  const usePerFloor = folder && floorKey && FLOORPLAN_PER_FLOOR_AFFINE.has(`${folder}/${floorKey}`);
+  const candidates = usePerFloor
+    ? [
+        `${basePath}/${floorId}_Dept.affine.json`,
+        `${basePath}/affine.json`,
+      ]
+    : [
+        `${basePath}/affine.json`,
+      ];
+  const allCandidates = Array.from(
+    new Set([
+      ...candidates,
+      ...candidates.map((u) => {
+        try {
+          return encodeURI(u);
+        } catch {
+          return u;
+        }
+      })
+    ])
+  );
 
-  for (const url of candidates) {
+  for (const url of allCandidates) {
     const data = await fetchJson(url);
     if (data) return data;
   }
@@ -2059,7 +2188,7 @@ async function loadGeoJsonWithFallbacks(urls) {
   return { url: urls?.[0] || "", data: null };
 }
 
-async function loadRoomsFC({ basePath, floorId }) {
+async function loadRoomsFC({ basePath, floorId, skipAffine = false }) {
   const candidates = [
     `${basePath}/Rooms/${floorId}_Dept_Rooms.geojson`,
     `${basePath}/Rooms/${floorId}_Dept.geojson`,
@@ -2069,7 +2198,7 @@ async function loadRoomsFC({ basePath, floorId }) {
 
   const [{ data: raw }, affine] = await Promise.all([
     loadGeoJsonWithFallbacks(candidates),
-    loadAffineForFloor(basePath, floorId),
+    skipAffine ? Promise.resolve(null) : loadAffineForFloor(basePath, floorId),
   ]);
 
   const rawFC = ensureFeatureCollection(raw);
@@ -2793,12 +2922,26 @@ function resolveAiUrl(url) {
   const path = rawPath.startsWith('/ai/') ? rawPath.replace(/^\/ai/, '') : rawPath;
   return `${base}${path}`;
 }
-async function guardedAiFetch(url, opts) {
+async function guardedAiFetch(url, opts = {}) {
   const now = Date.now();
   if (now < aiLockUntil) {
     throw new Error(`Rate limited. Try again in ${Math.ceil((aiLockUntil - now) / 1000)}s`);
   }
-  const res = await fetch(resolveAiUrl(url), opts);
+  const timeoutMs = Number(opts.timeoutMs);
+  const controller = Number.isFinite(timeoutMs) && timeoutMs > 0 ? new AbortController() : null;
+  const fetchOpts = { ...opts };
+  if (controller) fetchOpts.signal = controller.signal;
+  delete fetchOpts.timeoutMs;
+  let timer = null;
+  if (controller) {
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  }
+  let res;
+  try {
+    res = await fetch(resolveAiUrl(url), fetchOpts);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (res.status === 429) {
     aiLockUntil = Date.now() + 60_000; // 60s cooldown
     throw new Error('Rate limited (429). AI paused for 60 seconds.');
@@ -3418,6 +3561,12 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affine = cachedAffine;
     }
   }
+  if (data && !affine && !skipAffine && floorId) {
+    const urlBase = getBasePathFromFloorUrl(url);
+    if (urlBase) {
+      affine = await loadAffineForFloor(urlBase, floorId);
+    }
+  }
   if (data && (data.__mfDrawingAlignSignature || drawingAlignSig)) {
     if (data.__mfDrawingAlignSignature !== drawingAlignSig) {
       floorCache.delete(url);
@@ -3439,13 +3588,19 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   if (!data) {
     if (floorBasePath && floorId) {
-      const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId });
+      const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId, skipAffine });
       if (!roomsLoad.rawFC) {
         console.warn('Floor summary: no data returned', `${floorBasePath}/${floorId}_Dept.geojson`);
         return;
       }
       data = roomsLoad.rawFC;
       affine = roomsLoad.affine;
+      if (!skipAffine && !affine) {
+        const urlBase = getBasePathFromFloorUrl(url);
+        if (urlBase) {
+          affine = await loadAffineForFloor(urlBase, floorId);
+        }
+      }
       if (skipAffine) affine = null;
       if (isFrenchChapelBasement({ buildingLabel: buildingId, floorId, floorBasePath })) {
         const fixed = applyFrenchChapelBasementFix(roomsLoad.rawFC, affine, fitBuilding);
@@ -3466,8 +3621,16 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   if (!fc) {
     fc = ensureFeatureCollection(data) || toFeatureCollection(data);
     if (!fc?.features?.length) return;
-    if (!skipAffine && !affine && floorBasePath && floorId) {
-      affine = await loadAffineForFloor(floorBasePath, floorId);
+    if (!skipAffine && !affine && floorId) {
+      if (floorBasePath) {
+        affine = await loadAffineForFloor(floorBasePath, floorId);
+      }
+      if (!affine) {
+        const urlBase = getBasePathFromFloorUrl(url);
+        if (urlBase) {
+          affine = await loadAffineForFloor(urlBase, floorId);
+        }
+      }
     }
     if (isBabcockHallLevel3({ buildingLabel: buildingId, floorId, floorBasePath })) {
       fc = applyBabcockHallLevel3Fix(fc);
@@ -3478,6 +3641,10 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   if (drawingAlign) {
     fc = applyDrawingAlignment(fc, drawingAlign);
   }
+  fc = autoAlignDrawingToRooms(fc, {
+    buildingLabel: affineBuildingLabel || buildingId || '',
+    floorId: floorId || floor || ''
+  });
   fc = pruneDrawingOutsideRooms(fc);
 
   fc = applyRoomTypeLabel(fc);
@@ -3885,7 +4052,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   ensureFloorRoomLabelLayer(map);
   // ---- WALLS OVERLAY (NEW) ----
-  if (options?.wallsBasePath) {
+  if (options?.enableWalls && options?.wallsBasePath) {
     const floorId = options.wallsFloorId || floor || (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) || null;
     await tryLoadWallsOverlay({
       basePath: options.wallsBasePath,
@@ -6167,6 +6334,11 @@ const FLOORPLAN_DRAWING_SUPPRESS = new Set([
   'calvin_h_french_memorial_chapel/level_2'
 ]);
 
+const FLOORPLAN_DRAWING_ROTATE_180 = new Set([
+  'bronc_hall/basement',
+  'bronc_hall_residence/basement'
+]);
+
 const FLOORPLAN_NO_FIT = new Set([
   'calvin_french_chapel/basement',
   'calvin_h_french_chapel/basement',
@@ -6213,6 +6385,14 @@ function getFloorplanPostRotationOverride(buildingLabel, floorId) {
     FLOORPLAN_POST_ROTATION_OVERRIDES[composite] ??
     FLOORPLAN_POST_ROTATION_OVERRIDES[key];
   return Number.isFinite(override) ? override : null;
+}
+
+function shouldRotateDrawing180(buildingLabel, floorId) {
+  if (!buildingLabel || !floorId) return false;
+  const key = canon(buildingLabel);
+  const floorKey = fId(floorId);
+  if (!key || !floorKey) return false;
+  return FLOORPLAN_DRAWING_ROTATE_180.has(`${key}/${floorKey}`);
 }
 
 function shouldBypassFloorCache(buildingLabel, floorId) {
@@ -7096,6 +7276,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
+  const aiIsDown = aiStatus === 'down';
+  const aiIsOk = aiStatus === 'ok';
+  const aiIsUnknown = aiStatus === 'unknown';
   const FLOOR_COLOR_MODES = useMemo(() => ({
     DEPARTMENT: 'department',
     TYPE: 'type',
@@ -8685,7 +8868,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
-      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store' });
+      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
       let data = null;
       try {
         data = await res.json();
@@ -9485,6 +9668,7 @@ useEffect(() => {
         selectedBuilding,
         floorId
       );
+      const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
@@ -9493,6 +9677,7 @@ useEffect(() => {
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
+        enableWalls: allowOptionalOverlays,
         wallsBasePath: basePath,
         wallsFloorId: floorId,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
@@ -9945,7 +10130,11 @@ useEffect(() => {
   useEffect(() => {
     const aiBase = getAiBaseUrl();
     const isStaticHost = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
-    if (isStaticHost && !aiBase) {
+    if (isStaticHost) {
+      setAiStatus(aiBase ? 'ok' : 'down');
+      return () => {};
+    }
+    if (!aiBase) {
       setAiStatus('down');
       return () => {};
     }
@@ -9953,14 +10142,14 @@ useEffect(() => {
     const healthUrl = resolveAiUrl('/ai/health');
     const ping = async () => {
       try {
-        const r = await fetch(healthUrl, { cache: 'no-store' });
+        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: 3000 });
         setAiStatus(r.ok ? 'ok' : 'down');
       } catch {
         setAiStatus('down');
       }
     };
     ping();
-    const t = setInterval(ping, 10000);
+    const t = setInterval(ping, 30000);
     return () => clearInterval(t);
   }, []);
 
@@ -10214,7 +10403,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setAiCreateScenarioResult(null);
 
     try {
-      if (aiStatus !== 'ok') throw new Error('AI server is offline.');
+      if (aiStatus === 'down') throw new Error('AI server is offline.');
       const request = (aiCreateScenarioText || '').trim();
       if (!request) throw new Error('Enter a short request for the move scenario.');
 
@@ -11121,7 +11310,7 @@ const filteredMarkers = useMemo(() => {
       setDashboardError(null);
       setDashboardTitle('Campus Summary');
       try {
-        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store' });
+        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
         let data = null;
         try {
           data = await res.json();
@@ -13256,7 +13445,7 @@ useEffect(() => {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
             <button
               className="btn"
-              disabled={askLoading || !askText.trim() || aiStatus !== 'ok'}
+              disabled={askLoading || !askText.trim() || aiIsDown}
               onClick={onAskRun}
             >
               {askLoading ? 'Asking...' : 'Ask'}
@@ -13514,7 +13703,7 @@ useEffect(() => {
               onExportPDF={handleExportBuilding}
               onExplainBuilding={onExplainBuilding}
               explainBuildingLoading={aiBuildingLoading}
-              explainBuildingDisabled={aiStatus !== 'ok' || !buildingStats}
+              explainBuildingDisabled={aiIsDown || !buildingStats}
               explainBuildingError={aiBuildingErr}
               dragHandleProps={spacePanelDragHandleProps}
             />
@@ -13569,7 +13758,7 @@ useEffect(() => {
               onExportPDF={handleExportFloor}
               onExplainFloor={onExplain}
               explainLoading={aiLoading}
-              explainDisabled={aiStatus !== 'ok' || !floorStats}
+              explainDisabled={aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
@@ -13779,7 +13968,7 @@ useEffect(() => {
           <button
             className="btn"
             onClick={onCompareScenario}
-            disabled={aiStatus !== 'ok' || aiScenarioLoading || !scenarioAssignedDept || !scenarioTotals}
+            disabled={aiIsDown || aiScenarioLoading || !scenarioAssignedDept || !scenarioTotals}
             title={
               !scenarioAssignedDept
                 ? 'Select a department for the scenario before comparing.'
@@ -14124,7 +14313,7 @@ useEffect(() => {
                       fontWeight: 700,
                       border: '1px solid rgba(0,0,0,0.15)',
                       background: 'rgba(255,255,255,0.9)',
-                      animation: aiStatus === 'ok' ? 'aiSparklePulse 2.8s ease-in-out infinite' : 'none'
+                      animation: aiIsOk ? 'aiSparklePulse 2.8s ease-in-out infinite' : 'none'
                     }}
                   >
                     {"\u2728 AI Summary"}
@@ -14139,11 +14328,11 @@ useEffect(() => {
                         padding: '2px 6px',
                         borderRadius: 999,
                         border: '1px solid rgba(0,0,0,0.15)',
-                        background: aiStatus === 'ok' ? 'rgba(0,255,0,0.10)' : 'rgba(255,0,0,0.08)'
+                        background: aiIsOk ? 'rgba(0,255,0,0.10)' : (aiIsUnknown ? 'rgba(255,193,7,0.18)' : 'rgba(255,0,0,0.08)')
                       }}
-                      title={aiStatus === 'ok' ? 'AI server available' : 'AI server not reachable'}
+                      title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                     >
-                      {aiStatus === 'ok' ? 'Online' : 'Unavailable'}
+                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
                     </span>
                     <button
                       onClick={() => setAiInfoOpen(true)}
@@ -14175,11 +14364,11 @@ useEffect(() => {
                     padding: '2px 6px',
                     borderRadius: 999,
                     border: '1px solid rgba(0,0,0,0.15)',
-                    background: aiStatus === 'ok' ? 'rgba(0,255,0,0.10)' : 'rgba(255,0,0,0.08)'
+                    background: aiIsOk ? 'rgba(0,255,0,0.10)' : (aiIsUnknown ? 'rgba(255,193,7,0.18)' : 'rgba(255,0,0,0.08)')
                   }}
-                  title={aiStatus === 'ok' ? 'AI server available' : 'AI server not reachable'}
+                  title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                 >
-                  {aiStatus === 'ok' ? 'Online' : 'Unavailable'}
+                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
                 </span>
                 <button
                   onClick={() => setAiInfoOpen(true)}
@@ -14207,7 +14396,7 @@ useEffect(() => {
             <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
               <button
                 style={{ padding: '5px 7px', fontSize: 11 }}
-                disabled={aiStatus !== 'ok' || !floorStats || aiLoading}
+                disabled={aiIsDown || !floorStats || aiLoading}
                 onClick={onExplain}
               >
                 {aiLoading ? 'Explaining...' : '\u2728 Explain this floor'}
@@ -14215,7 +14404,7 @@ useEffect(() => {
 
               <button
                 style={{ padding: '5px 7px', fontSize: 11 }}
-                disabled={aiStatus !== 'ok' || !buildingStats || aiBuildingLoading}
+                disabled={aiIsDown || !buildingStats || aiBuildingLoading}
                 onClick={onExplainBuilding}
               >
                 {aiBuildingLoading ? 'Explaining...' : '\u2728 Explain this building'}
@@ -14223,7 +14412,7 @@ useEffect(() => {
 
               <button
                 style={{ padding: '5px 7px', fontSize: 11 }}
-                disabled={aiStatus !== 'ok' || !campusStats || aiCampusLoading}
+                disabled={aiIsDown || !campusStats || aiCampusLoading}
                 onClick={onExplainCampus}
               >
                 {aiCampusLoading ? 'Explaining...' : '\u2728 Explain campus'}
@@ -14239,7 +14428,7 @@ useEffect(() => {
             {mode === 'admin' && (
               <div style={{ marginTop: 6 }}>
                 <button
-                  disabled={aiStatus !== 'ok'}
+                  disabled={aiIsDown}
                   onClick={() => setAiCreateScenarioOpen(true)}
                   style={{ width: '100%', padding: '5px 7px', fontSize: 11 }}
                 >
@@ -15044,7 +15233,7 @@ useEffect(() => {
             </label>
             <button
               className="btn"
-              disabled={aiCreateScenarioLoading || !aiCreateScenarioText.trim() || aiStatus !== 'ok'}
+              disabled={aiCreateScenarioLoading || !aiCreateScenarioText.trim() || aiIsDown}
               onClick={onCreateMoveScenario}
             >
               {aiCreateScenarioLoading ? 'Planning...' : 'Create move scenario'}
