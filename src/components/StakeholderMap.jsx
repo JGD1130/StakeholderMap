@@ -10417,7 +10417,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const buildingCandidates = getBuildingCandidates(allRooms);
       const inferredBuilding = findBuildingInText(request, buildingCandidates) || '';
 
-      const buildingLabel = inferredBuilding || activeBuildingName || selectedBuilding || '';
+      const buildingLabel = inferredBuilding || '';
       const floorId = ''; // avoid biasing to a single floor; inventory is campus-wide
 
       let inventory = [];
@@ -10567,7 +10567,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const context = {
         universityId,
         campusLabel: activeUniversityName || universityId || 'Campus',
-        buildingLabel,
+        buildingLabel: inferredBuilding || '',
         floorId,
         moveScenarioMode: true,
         scenarioDepartment: scenarioAssignedDept || inferredDept || '',
@@ -10699,13 +10699,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const buildingCandidates = getBuildingCandidates(allRooms);
       const inferredBuilding = findBuildingInText(q, buildingCandidates) || '';
       const relocationQuery =
-        /best new suitable home|suitable home|best home|relocat|move|find space|new home|anywhere|entire campus|campus-wide/i
+        /best new suitable home|suitable home|best home|relocat|move|find space|new home|anywhere|entire campus|campus[-\s]?wide|across campus/i
           .test(q);
       const floorMentioned = /\b(basement|ground floor|first floor|second floor|third floor|fourth floor|fifth floor|sixth floor|seventh floor|eighth floor|ninth floor|tenth floor|level\s*\d+|level\s*(one|two|three|four|five|six|seven|eight|nine|ten)|lvl\s*\d+|floor\s*\d+|floor\s*(one|two|three|four|five|six|seven|eight|nine|ten))\b/i
         .test(q);
       const campusWideQuery = /\b(entire campus|campus[-\s]?wide|across campus|anywhere on campus)\b/i.test(q) ||
         ((/\bwhere\s+(is|are)\b|\blocation of\b|\bwhere\b.*\b(located|location)\b|\bwhich building\b|\bwhat building\b/i.test(q)) &&
-          inferredDept && !inferredBuilding);
+          !inferredBuilding);
       const excludeBuildings = (relocationQuery && inferredDept)
         ? getDeptCurrentBuildings(allRooms, inferredDept)
         : [];
@@ -10713,50 +10713,61 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         (excludeBuildings || []).map((name) => normalizeDashboardKey(name)).filter(Boolean)
       );
 
-      const buildingIdVal = selectedBuildingId || selectedBuilding || '';
-      const buildingNameForRows =
-        resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding) ||
-        selectedBuilding ||
-        selectedBuildingId ||
-        '';
-      const forceCampusScope = relocationQuery || campusWideQuery;
-      const shouldUseFloorScope = !forceCampusScope && loadedSingleFloor && floorMentioned;
+      const wordToLevel = {
+        first: 1,
+        second: 2,
+        third: 3,
+        fourth: 4,
+        fifth: 5,
+        sixth: 6,
+        seventh: 7,
+        eighth: 8,
+        ninth: 9,
+        tenth: 10
+      };
+      const inferredFloorLabel = (() => {
+        if (!floorMentioned) return '';
+        const lower = q.toLowerCase();
+        if (lower.includes('basement')) return 'BASEMENT';
+        if (lower.includes('ground floor')) return 'LEVEL_1';
+        const levelMatch = lower.match(/level\s*(\d+)/);
+        if (levelMatch) return `LEVEL_${levelMatch[1]}`;
+        const floorMatch = lower.match(/floor\s*(\d+)/);
+        if (floorMatch) return `LEVEL_${floorMatch[1]}`;
+        const wordMatch = lower.match(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+floor\b/);
+        if (wordMatch) return `LEVEL_${wordToLevel[wordMatch[1]]}`;
+        return '';
+      })();
+      const buildingIdVal = inferredBuilding || '';
+      const buildingNameForRows = inferredBuilding || '';
+      const forceCampusScope = !inferredBuilding || relocationQuery || campusWideQuery;
+      const shouldUseFloorScope = !forceCampusScope && Boolean(inferredBuilding) && Boolean(inferredFloorLabel);
       const context = {
         universityId,
+        campusLabel: activeUniversityName || universityId || 'Campus',
         buildingId: buildingIdVal,
-        buildingLabel: forceCampusScope
-          ? (activeUniversityName || universityId || 'Campus')
-          : (activeBuildingName || buildingNameForRows || ''),
-        floorId: shouldUseFloorScope ? (selectedFloor || '') : '',
-        scope: forceCampusScope ? 'campus' : (shouldUseFloorScope ? 'floor' : (buildingIdVal ? 'building' : 'campus')),
+        buildingLabel: inferredBuilding || '',
+        floorId: shouldUseFloorScope ? inferredFloorLabel : '',
+        scope: forceCampusScope ? 'campus' : (shouldUseFloorScope ? 'floor' : (inferredBuilding ? 'building' : 'campus')),
         targetDepartment: inferredDept || '',
         excludeBuildings: excludeBuildings || []
       };
 
       const baseScopeRooms = (() => {
         if (!campusRoomsLoaded) return [];
-        if (forceCampusScope) return campusRooms;
-        const hasBuildingScope = Boolean(selectedBuildingId) || Boolean(selectedBuilding) || loadedSingleFloor;
-        if (!hasBuildingScope) return campusRooms;
-        const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
-        if (!buildingLabel) return campusRooms;
-        const buildingKeys = new Set([
-          normalizeDashboardKey(activeBuildingName),
-          normalizeDashboardKey(selectedBuildingId),
-          normalizeDashboardKey(selectedBuilding)
-        ].filter(Boolean));
-        if (!buildingKeys.size) return campusRooms;
+        if (forceCampusScope || !inferredBuilding) return campusRooms;
+        const buildingKey = normalizeDashboardKey(inferredBuilding);
+        if (!buildingKey) return campusRooms;
         const buildingRooms = campusRooms.filter((room) => {
           const roomBuilding =
             room?.building ??
             room?.buildingName ??
             room?.buildingLabel ??
             '';
-          return buildingKeys.has(normalizeDashboardKey(roomBuilding));
+          return normalizeDashboardKey(roomBuilding) === buildingKey;
         });
         if (!shouldUseFloorScope) return buildingRooms;
-        const floorLabel = (currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
-        const floorTokens = normalizeFloorTokens(floorLabel);
+        const floorTokens = normalizeFloorTokens(inferredFloorLabel);
         if (!floorTokens.length) return buildingRooms;
         return buildingRooms.filter((room) =>
           floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
@@ -10768,16 +10779,48 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           return !excludeBuildingKeys.has(normalizeDashboardKey(buildingLabel));
         })
         : baseScopeRooms;
+      const trimRoomRowsForAi = (rows, opts = {}) => {
+        if (!Array.isArray(rows)) return [];
+        const maxRows = Number(opts.maxRows || 400);
+        if (rows.length <= maxRows) return rows;
+        const deptKey = normalizeDashboardKey(opts.inferredDept || '');
+        let filtered = rows;
+        if (deptKey) {
+          filtered = rows.filter((room) => {
+            const deptVal = String(room?.department ?? room?.occupantDept ?? '').trim();
+            return normalizeDashboardKey(deptVal) === deptKey;
+          });
+          if (filtered.length <= maxRows) return filtered;
+        }
+        const groups = new Map();
+        filtered.forEach((room) => {
+          const key = normalizeDashboardKey(getRoomBuildingLabel(room));
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(room);
+        });
+        const perGroup = Math.max(1, Math.floor(maxRows / Math.max(1, groups.size || 1)));
+        const out = [];
+        groups.forEach((list) => {
+          out.push(...list.slice(0, perGroup));
+        });
+        if (out.length >= maxRows) return out.slice(0, maxRows);
+        const remaining = filtered.filter((room) => !out.includes(room));
+        return out.concat(remaining.slice(0, Math.max(0, maxRows - out.length)));
+      };
+      const trimmedScopeRooms = trimRoomRowsForAi(scopeRooms, {
+        maxRows: inferredDept ? 600 : 400,
+        inferredDept
+      });
       const fallbackSummary = summarizeRoomRowsForPanels(scopeRooms);
-      const floorFallback = (!floorStats && shouldUseFloorScope && fallbackSummary)
-        ? { ...fallbackSummary, floorLabel: selectedFloor || '' }
+      const floorFallback = shouldUseFloorScope && fallbackSummary
+        ? { ...fallbackSummary, floorLabel: inferredFloorLabel }
         : null;
-      const buildingFallback = (!buildingStats && !shouldUseFloorScope && buildingIdVal && fallbackSummary)
+      const buildingFallback = (!shouldUseFloorScope && inferredBuilding && fallbackSummary)
         ? fallbackSummary
         : null;
       let roomRowsPayload = null;
-      if (scopeRooms.length) {
-        roomRowsPayload = scopeRooms.map((room) => {
+      if (trimmedScopeRooms.length) {
+        roomRowsPayload = trimmedScopeRooms.map((room) => {
           const areaVal = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
           const seatCountVal = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
           const roomNumber =
@@ -10792,7 +10835,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             roomNumber: roomNumber || '',
             type: String(room?.type ?? room?.roomType ?? '').trim(),
             department: String(room?.department ?? '').trim(),
-            area: Number.isFinite(areaVal) ? areaVal : '',
+            area: Number.isFinite(areaVal) ? Math.round(areaVal) : '',
             seatCount: Number.isFinite(seatCountVal) && seatCountVal > 0 ? seatCountVal : '',
             occupant: String(room?.occupant ?? '').trim(),
             occupancyStatus: String(room?.occupancyStatus ?? '').trim()
@@ -10806,7 +10849,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             const filteredRows = excludeBuildingKeys.size
               ? rows.filter((row) => !excludeBuildingKeys.has(normalizeDashboardKey(row.building)))
               : rows;
-            roomRowsPayload = buildingNameForRows ? filteredRows : filteredRows.slice(0, 250);
+            const trimmedRows = trimRoomRowsForAi(filteredRows, {
+              maxRows: inferredDept ? 600 : 400,
+              inferredDept
+            });
+            roomRowsPayload = buildingNameForRows ? trimmedRows : trimmedRows.slice(0, 250);
           } else {
             roomRowsPayload = null;
           }
@@ -10816,9 +10863,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       }
       const data = {
         campusStats,
-        buildingStats: buildingStats || buildingFallback || undefined,
-        floorStats: shouldUseFloorScope ? (floorStats || floorFallback || undefined) : undefined,
-        dashboardMetrics: dashboardMetrics || undefined,
+        buildingStats: (!forceCampusScope && inferredBuilding && !shouldUseFloorScope)
+          ? (buildingFallback || undefined)
+          : undefined,
+        floorStats: shouldUseFloorScope ? (floorFallback || undefined) : undefined,
+        dashboardMetrics: (!forceCampusScope && inferredBuilding) ? (dashboardMetrics || undefined) : undefined,
         scopeSummary: fallbackSummary || undefined,
         roomRows: roomRowsPayload || undefined
       };
@@ -13393,12 +13442,10 @@ useEffect(() => {
         }}
       >
         <div
+          className="mf-ai-modal-panel"
           style={{
             width: 'min(520px, 92vw)',
-            background: '#fff',
-            borderRadius: 12,
             padding: 16,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
             lineHeight: 1.4
           }}
         >
@@ -13466,12 +13513,10 @@ useEffect(() => {
         }}
       >
         <div
+          className="mf-ai-modal-panel"
           style={{
             width: 'min(720px, 94vw)',
-            background: '#fff',
-            borderRadius: 12,
             padding: 16,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
             lineHeight: 1.45
           }}
         >
@@ -13874,7 +13919,7 @@ useEffect(() => {
     {moveScenarioMode && scenarioPanelVisible && (
       <div
         ref={scenarioPanelRef}
-        className="floating-panel"
+        className="floating-panel mf-move-scenario-panel"
         style={{
           position: 'absolute',
           zIndex: 60,
@@ -13884,9 +13929,6 @@ useEffect(() => {
           width: 320,
           maxHeight: '70vh',
           overflow: 'auto',
-          background: '#fff',
-          borderRadius: 10,
-          boxShadow: '0 12px 24px rgba(0,0,0,0.2)',
           padding: 12,
           fontSize: 13
         }}
@@ -13897,7 +13939,7 @@ useEffect(() => {
         >
           <div style={{ fontWeight: 600 }}>Move Scenario</div>
           <button
-            className="btn"
+            className="btn secondary"
             style={{ fontSize: 11, padding: '2px 6px' }}
             onClick={clearScenario}
           >
@@ -13959,14 +14001,14 @@ useEffect(() => {
               <option key={dept} value={dept}>{dept}</option>
             ))}
           </select>
-          <button className="btn" style={{ marginTop: 6 }} onClick={assignDepartmentToSelection} disabled={!scenarioAssignedDept || scenarioSelection.size === 0}>
+          <button className="btn primary" style={{ marginTop: 6 }} onClick={assignDepartmentToSelection} disabled={!scenarioAssignedDept || scenarioSelection.size === 0}>
             Commit
           </button>
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
           <button
-            className="btn"
+            className="btn primary"
             onClick={onCompareScenario}
             disabled={aiIsDown || aiScenarioLoading || !scenarioAssignedDept || !scenarioTotals}
             title={
@@ -13983,7 +14025,7 @@ useEffect(() => {
         </div>
 
         <button
-          className="btn"
+          className="btn secondary"
           style={{ width: '100%', marginTop: 6 }}
           onClick={async () => {
             try {
@@ -14825,13 +14867,11 @@ useEffect(() => {
           background: 'rgba(0,0,0,0.45)'
         }}
       >
-          <div
-            style={{
+        <div
+          className="mf-ai-modal-panel"
+          style={{
             width: 'min(760px, 92vw)',
-            background: '#fff',
-            borderRadius: 12,
-            padding: 16,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+            padding: 16
           }}
           >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -14897,12 +14937,10 @@ useEffect(() => {
         }}
       >
         <div
+          className="mf-ai-modal-panel"
           style={{
             width: 'min(760px, 92vw)',
-            background: '#fff',
-            borderRadius: 12,
-            padding: 16,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+            padding: 16
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -14968,12 +15006,10 @@ useEffect(() => {
         }}
       >
         <div
+          className="mf-ai-modal-panel"
           style={{
             width: 'min(760px, 92vw)',
-            background: '#fff',
-            borderRadius: 12,
-            padding: 16,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)'
+            padding: 16
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -15067,16 +15103,14 @@ useEffect(() => {
         >
           <div
             ref={aiScenarioPanelRef}
+            className="mf-ai-modal-panel"
             style={{
               position: 'fixed',
               left: aiScenarioPos ? aiScenarioPos.x : '50%',
               top: aiScenarioPos ? aiScenarioPos.y : '50%',
               transform: aiScenarioPos ? 'none' : 'translate(-50%, -50%)',
               width: 'min(760px, 92vw)',
-              background: '#fff',
-              borderRadius: 12,
               padding: 16,
-              boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
               maxHeight: '90vh',
               overflow: 'auto'
             }}
@@ -15174,12 +15208,10 @@ useEffect(() => {
         }}
       >
         <div
+          className="mf-ai-modal-panel"
           style={{
             width: 'min(560px, 92vw)',
-            background: '#fff',
-            borderRadius: 12,
             padding: 16,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
             lineHeight: 1.4
           }}
         >
@@ -15255,16 +15287,14 @@ useEffect(() => {
       >
         <div
           ref={aiCreateScenarioResultRef}
+          className="mf-ai-modal-panel"
           style={{
             position: 'fixed',
             left: aiCreateScenarioResultPos ? aiCreateScenarioResultPos.x : '50%',
             top: aiCreateScenarioResultPos ? aiCreateScenarioResultPos.y : '50%',
             transform: aiCreateScenarioResultPos ? 'none' : 'translate(-50%, -50%)',
             width: 'min(760px, 92vw)',
-            background: '#fff',
-            borderRadius: 12,
             padding: 12,
-            boxShadow: '0 22px 44px rgba(0,0,0,0.25)',
             lineHeight: 1.35,
             fontSize: 12,
             maxHeight: '90vh',
