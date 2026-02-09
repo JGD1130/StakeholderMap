@@ -251,30 +251,7 @@ export default function FloorPanel({
                 {rotateNotice}
               </div>
             ) : null}
-            {adjustDebugInfo ? (
-              <div style={{ fontSize: 11, color: "#666", marginTop: 6 }}>
-                <div style={{ fontWeight: 600 }}>Adjust debug</div>
-                <div>source: {adjustDebugInfo.source || '-'}</div>
-                <div>labelKey: {adjustDebugInfo.labelKey || '-'}</div>
-                <div>baseKey: {adjustDebugInfo.baseKey || '-'}</div>
-                <div>urlKey: {adjustDebugInfo.urlKey || '-'}</div>
-                <div>floorId: {adjustDebugInfo.floorId || '-'}</div>
-                <div>savedAt: {adjustDebugInfo.savedAt ? new Date(adjustDebugInfo.savedAt).toLocaleTimeString() : '-'}</div>
-                <div>rot: {Number.isFinite(adjustDebugInfo.rotationDeg) ? adjustDebugInfo.rotationDeg.toFixed(2) : '0'}</div>
-                <div>scale: {Number.isFinite(adjustDebugInfo.scale) ? adjustDebugInfo.scale.toFixed(3) : '1.000'}</div>
-                <div>move: {Array.isArray(adjustDebugInfo.translateMeters) ? `${adjustDebugInfo.translateMeters[0].toFixed(2)}, ${adjustDebugInfo.translateMeters[1].toFixed(2)}` : '0, 0'}</div>
-                <div>moveLngLat: {Array.isArray(adjustDebugInfo.translateLngLat) ? `${adjustDebugInfo.translateLngLat[0].toFixed(6)}, ${adjustDebugInfo.translateLngLat[1].toFixed(6)}` : '-'}</div>
-                <div>pivot: {Array.isArray(adjustDebugInfo.pivot) ? `${adjustDebugInfo.pivot[0].toFixed(6)}, ${adjustDebugInfo.pivot[1].toFixed(6)}` : '-'}</div>
-                {Array.isArray(adjustDebugInfo.storedKeys) && adjustDebugInfo.storedKeys.length ? (
-                  <div style={{ marginTop: 4 }}>
-                    keys: {adjustDebugInfo.storedKeys.slice(0, 3).join(' | ')}
-                    {adjustDebugInfo.storedKeys.length > 3 ? ` +${adjustDebugInfo.storedKeys.length - 3} more` : ''}
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 4 }}>keys: none</div>
-                )}
-              </div>
-            ) : null}
+            {null}
           </div>
         ) : null}
         </div>

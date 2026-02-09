@@ -29,3 +29,5 @@ yarn-error.log*
 .env
 **/.env
 ai-server/.env
+MyTools/
+ai-server/Docs/
