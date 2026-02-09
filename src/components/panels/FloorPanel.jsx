@@ -156,13 +156,14 @@ export default function FloorPanel({
               </option>
             ))}
           </select>
-          <button onClick={onLoadFloorplan}>Load</button>
-          {onUnloadFloorplan ? <button onClick={onUnloadFloorplan}>Unload</button> : null}
+          <button className="btn primary" onClick={onLoadFloorplan}>Load</button>
+          {onUnloadFloorplan ? <button className="btn" onClick={onUnloadFloorplan}>Unload</button> : null}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-          <button onClick={onExportPDF}>Export to PDF</button>
-          {onExportCSV ? <button onClick={onExportCSV}>Export CSV</button> : null}
+          <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
+          {onExportCSV ? <button className="btn" onClick={onExportCSV}>Export CSV</button> : null}
           <button
+            className="btn"
             onClick={onExplainFloor}
             disabled={explainDisabled || explainLoading}
           >
@@ -196,7 +197,7 @@ export default function FloorPanel({
         {onToggleMoveScenarioMode ? (
           <div style={{ marginTop: 6 }}>
             <button
-              className="mf-btn"
+              className="btn"
               style={{ width: "100%", fontWeight: 600 }}
               onClick={onToggleMoveScenarioMode}
             >
@@ -220,27 +221,27 @@ export default function FloorPanel({
               Scale: {Number.isFinite(scaleValue) ? scaleValue.toFixed(2) : "1.00"}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-              <button onClick={rotateActive ? onCancelRotate : onStartRotate}>
+              <button className="btn" onClick={rotateActive ? onCancelRotate : onStartRotate}>
                 {rotateActive ? "Cancel Rotate" : "Rotate"}
               </button>
               {onStartMove ? (
-                <button onClick={moveActive ? onCancelRotate : onStartMove}>
+                <button className="btn" onClick={moveActive ? onCancelRotate : onStartMove}>
                   {moveActive ? "Cancel Move" : "Move"}
                 </button>
               ) : null}
               {onScaleChange ? (
                 <>
-                  <button onClick={() => onScaleChange(-0.02)}>- Scale</button>
-                  <button onClick={() => onScaleChange(0.02)}>+ Scale</button>
+                  <button className="btn" onClick={() => onScaleChange(-0.02)}>- Scale</button>
+                  <button className="btn" onClick={() => onScaleChange(0.02)}>+ Scale</button>
                 </>
               ) : null}
               {onSaveAdjust ? (
-                <button onClick={onSaveAdjust} disabled={saveAdjustDisabled}>
+                <button className="btn primary" onClick={onSaveAdjust} disabled={saveAdjustDisabled}>
                   Save Adjust
                 </button>
               ) : null}
               {onClearRotate ? (
-                <button onClick={onClearRotate} disabled={!rotateStored}>
+                <button className="btn" onClick={onClearRotate} disabled={!rotateStored}>
                   Clear Adjust
                 </button>
               ) : null}

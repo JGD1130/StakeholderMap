@@ -142,10 +142,11 @@ export default function BuildingPanel({
             </option>
           ))}
         </select>
-        <button onClick={onLoadFloorplan}>Load</button>
-        <button onClick={onExportPDF}>Export to PDF</button>
-        <button onClick={onExportCSV}>Export CSV</button>
+        <button className="btn primary" onClick={onLoadFloorplan}>Load</button>
+        <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
+        <button className="btn" onClick={onExportCSV}>Export CSV</button>
         <button
+          className="btn"
           onClick={onExplainBuilding}
           disabled={explainBuildingDisabled || explainBuildingLoading}
         >
