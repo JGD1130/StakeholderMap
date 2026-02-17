@@ -3038,12 +3038,38 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
 }
 
 
-// --- Mapbox token from Vite env (required for mapbox:// styles) ---
-mapboxgl.accessToken = (
-  import.meta.env.VITE_MAPBOX_TOKEN ||
-  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ||
-  ''
-).trim();
+const MAPBOX_TOKENLESS_STYLE = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '\u00a9 OpenStreetMap contributors'
+    }
+  },
+  layers: [
+    {
+      id: 'osm-base',
+      type: 'raster',
+      source: 'osm'
+    }
+  ]
+};
+
+const resolveRuntimeMapboxToken = () => {
+  if (typeof window === 'undefined') return '';
+  const winToken = String(window.__MAPBOX_PUBLIC_TOKEN__ ?? '').trim();
+  if (winToken) return winToken;
+  try {
+    const stored = String(window.localStorage?.getItem('MAPBOX_PUBLIC_TOKEN') ?? '').trim();
+    if (stored) return stored;
+  } catch {}
+  return '';
+};
+
+// Runtime-only token resolution to avoid embedding tokens into built JS bundles.
+mapboxgl.accessToken = resolveRuntimeMapboxToken();
 
 // Optional sanity-check
 console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
@@ -6559,11 +6585,16 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
-const normalizeRoomLookupKey = (value) =>
-  String(value || '')
+const normalizeRoomLookupKey = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const uuidMatch = raw.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i);
+  const normalized = String(uuidMatch ? uuidMatch[0] : raw)
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
+  return normalized;
+};
 
 const normalizeRoomLabelMatch = (value) => {
   const raw = String(value || '').trim();
@@ -6704,14 +6735,17 @@ const normalizeOfficeTypeLabel = (value) =>
     .trim();
 const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
 const isAllowedOfficeType = (value) => OFFICE_TYPE_SET.has(normalizeOfficeTypeLabel(value));
-const GUID_VALUE_REGEX = /^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}[)}]?$/i;
+const GUID_VALUE_REGEX = /^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?[)}]?$/i;
 const LONG_HEX_VALUE_REGEX = /^[0-9a-f]{24,}$/i;
+const GUID_SUBSTRING_REGEX = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?/i;
 const looksLikeMachineRoomIdentifier = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return false;
   if (GUID_VALUE_REGEX.test(raw)) return true;
+  if (GUID_SUBSTRING_REGEX.test(raw) && raw.length >= 24) return true;
   if (LONG_HEX_VALUE_REGEX.test(raw)) return true;
   if (raw.includes('|')) return true;
+  if (/^[a-f0-9-]{24,}$/i.test(raw)) return true;
   if (isAirtableRecordId(raw)) return true;
   return false;
 };
@@ -6874,8 +6908,20 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
     const merged = { ...room };
     if (!merged.roomGuid && manifestMatch.roomGuid) merged.roomGuid = manifestMatch.roomGuid;
     if (!merged.roomId && manifestMatch.roomId) merged.roomId = manifestMatch.roomId;
-    if (!merged.roomNumber && manifestMatch.roomNumber) merged.roomNumber = manifestMatch.roomNumber;
-    if (!merged.roomLabel && manifestMatch.roomLabel) merged.roomLabel = manifestMatch.roomLabel;
+    const mergedRoomNumber = String(merged.roomNumber ?? '').trim();
+    const mergedRoomLabel = String(merged.roomLabel ?? '').trim();
+    if ((!mergedRoomNumber || looksLikeMachineRoomIdentifier(mergedRoomNumber)) && manifestMatch.roomNumber) {
+      const manifestRoomNumber = String(manifestMatch.roomNumber).trim();
+      if (manifestRoomNumber && !looksLikeMachineRoomIdentifier(manifestRoomNumber)) {
+        merged.roomNumber = manifestRoomNumber;
+      }
+    }
+    if ((!mergedRoomLabel || looksLikeMachineRoomIdentifier(mergedRoomLabel)) && manifestMatch.roomLabel) {
+      const manifestRoomLabel = String(manifestMatch.roomLabel).trim();
+      if (manifestRoomLabel && !looksLikeMachineRoomIdentifier(manifestRoomLabel)) {
+        merged.roomLabel = manifestRoomLabel;
+      }
+    }
     if (!merged.building && manifestMatch.building) merged.building = manifestMatch.building;
     if (!merged.floor && manifestMatch.floor) merged.floor = manifestMatch.floor;
 
@@ -12185,12 +12231,20 @@ useEffect(() => {
   const init = () => {
     if (mapRef.current) return; // avoid double init
 
-    const styleUrl = (config && config.style) || 'mapbox://styles/mapbox/streets-v12';
+    const configuredStyle = (config && config.style) || 'mapbox://styles/mapbox/streets-v12';
+    const requiresMapboxToken = typeof configuredStyle === 'string' && /^mapbox:\/\//i.test(configuredStyle);
+    const hasMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
+    const styleUrl = (!hasMapboxToken && requiresMapboxToken)
+      ? MAPBOX_TOKENLESS_STYLE
+      : configuredStyle;
     const initialCenter = config?.initialCenter || [-98.3739, 40.5939];
     const initialZoom = config?.initialZoom ?? 16;
 
     console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
-    console.log('Using style:', styleUrl);
+    console.log('Using style:', typeof styleUrl === 'string' ? styleUrl : 'tokenless-osm-style');
+    if (!hasMapboxToken && requiresMapboxToken) {
+      console.warn('No runtime MAPBOX_PUBLIC_TOKEN found. Falling back to OpenStreetMap base style.');
+    }
 
     let mapInstance = null;
     try {
