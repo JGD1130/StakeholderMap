@@ -6,7 +6,7 @@ import AdminMapPage from './pages/AdminMapPage.jsx';
 import { getConfig } from './configLoader';
 import './App.css';
 
-function UniversityMapLoader() {
+function UniversityMapLoader({ engagementMode = false }) {
   const { universityId, persona } = useParams();
   const config = getConfig(universityId);
 
@@ -20,7 +20,14 @@ function UniversityMapLoader() {
   if (isAdmin) {
     return <AdminMapPage config={config} universityId={universityId} />;
   } else {
-    return <PublicMapPage config={config} universityId={universityId} persona={persona} />;
+    return (
+      <PublicMapPage
+        config={config}
+        universityId={universityId}
+        persona={persona}
+        engagementMode={engagementMode}
+      />
+    );
   }
 }
 
@@ -30,6 +37,7 @@ function App() {
     <Router basename="/StakeholderMap">
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
+        <Route path="/:universityId/engagement" element={<UniversityMapLoader engagementMode />} />
         {/* THIS IS THE LINE TO FIX */}
         <Route path="/:universityId/:persona" element={<UniversityMapLoader />} /> 
         <Route path="/:universityId/survey" element={<UniversityMapLoader />} />

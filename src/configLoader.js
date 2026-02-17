@@ -48,6 +48,7 @@ const finalRockhurstConfig = {
 // Export combined set
 const universityConfigs = {
   hastings: finalHastingsConfig,
+  'hastings-demo': finalHastingsConfig,
   rockhurst: finalRockhurstConfig,
 };
 

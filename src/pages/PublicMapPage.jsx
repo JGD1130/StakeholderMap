@@ -2,11 +2,12 @@
 import React from 'react';
 import StakeholderMap from '../components/StakeholderMap';
 
-const PublicMapPage = ({ config, universityId, persona }) => (
+const PublicMapPage = ({ config, universityId, persona, engagementMode = false }) => (
   <StakeholderMap
     config={config}
     universityId={universityId}
     persona={persona}
+    engagementMode={engagementMode}
   />
 );
 

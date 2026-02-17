@@ -450,6 +450,40 @@ const DEPARTMENT_NAMES = DEPARTMENTS;
 
 const norm = (s) => (s ?? '').toString().trim();
 
+const normalizeFloorIdValue = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (typeof value === 'object') {
+    const candidate =
+      value.id ??
+      value.floorId ??
+      value.floor ??
+      value.name ??
+      value.label ??
+      value.value ??
+      '';
+    return candidate != null ? String(candidate).trim() : '';
+  }
+  return String(value).trim();
+};
+
+const resolveBuildingFolderKeyFromAny = (value, getBuildingFolderKeyFn) => {
+  if (!value) return null;
+  const candidate = (typeof value === 'object')
+    ? (value.id ?? value.buildingId ?? value.name ?? value.label ?? value.value ?? '')
+    : value;
+  if (!candidate) return null;
+  return getBuildingFolderKeyFn(candidate);
+};
+
+const resolveFirstBuildingInput = (values = [], getBuildingFolderKeyFn) => {
+  for (const value of values) {
+    const key = resolveBuildingFolderKeyFromAny(value, getBuildingFolderKeyFn);
+    if (key) return value;
+  }
+  return null;
+};
+
 function getDeptFromProps(props = {}) {
   return (
     props.Department ||
@@ -2957,12 +2991,13 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '');
   const normalizeFloorEntries = (floors = []) => {
-    if (!Array.isArray(floors)) return [];
-    return floors
+    const entries = Array.isArray(floors) ? floors : (floors ? [floors] : []);
+    if (!entries.length) return [];
+    return entries
       .map((f) => {
         if (typeof f === 'string') return { id: f, url: null };
         if (!f) return null;
-        const id = f.id || f.floorId || f.name || f.label;
+        const id = normalizeFloorIdValue(f.id || f.floorId || f.name || f.label);
         const url = f.url || f.path || null;
         if (!id) return null;
         return { id, url };
@@ -2986,24 +3021,20 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
   }
   const normalizedGlobal = normalizeFloorEntries(globalFloors || []);
 
-  if (Array.isArray(manifest?.floors)) {
-    const entries = normalizeFloorEntries(manifest.floors);
-    if (!entries.length) return normalizedGlobal;
-    if (normalizedGlobal.length && entries.some((e) => !e.url)) {
-      const globalMap = new Map(
-        normalizedGlobal
-          .filter((f) => f?.id && f?.url)
-          .map((f) => [f.id, f.url])
-      );
-      return entries.map((entry) => ({
-        ...entry,
-        url: entry.url || globalMap.get(entry.id) || null
-      }));
-    }
-    return entries;
+  const manifestEntries = normalizeFloorEntries(manifest?.floors);
+  if (!manifestEntries.length) return normalizedGlobal;
+  if (normalizedGlobal.length && manifestEntries.some((e) => !e.url)) {
+    const globalMap = new Map(
+      normalizedGlobal
+        .filter((f) => f?.id && f?.url)
+        .map((f) => [f.id, f.url])
+    );
+    return manifestEntries.map((entry) => ({
+      ...entry,
+      url: entry.url || globalMap.get(entry.id) || null
+    }));
   }
-
-  return normalizedGlobal;
+  return manifestEntries;
 }
 
 
@@ -3927,6 +3958,14 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       onOptionsCollected({ typeOptions, deptOptions });
     }
   }
+  if (currentFloorContextRef && typeof currentFloorContextRef === 'object') {
+    currentFloorContextRef.current = {
+      ...(currentFloorContextRef.current || {}),
+      buildingId,
+      floor: floorId || floor || '',
+      fc: patchedFC
+    };
+  }
 
   if (Array.isArray(patchedFC?.features)) {
     roomsEnriched = patchedFC.features.map((feature) => {
@@ -4308,6 +4347,19 @@ function summarizeRoomRowsForPanels(roomRows = []) {
   };
 }
 
+function summarizeFeaturesForPanels(features = []) {
+  const summary = summarizeFeatures(features);
+  if (!summary) return null;
+  const filteredTotals = filterDeptTotals(summary.totalsByDept || summary.deptCounts || {});
+  const sorted = Object.entries(filteredTotals).sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  return {
+    ...summary,
+    deptCounts: filteredTotals,
+    totalsByDept: filteredTotals,
+    keyDepts: sorted.slice(0, 6).map(([name]) => name)
+  };
+}
+
 function toScenarioShape(stats) {
   if (!stats) return null;
 
@@ -4566,6 +4618,7 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
   const targetTolerance = Number.isFinite(options.targetTolerance) ? options.targetTolerance : 0.1;
   const targetMin = baseTotal * (1 - targetTolerance);
   const maxCandidates = Number.isFinite(options.maxCandidates) ? options.maxCandidates : 25;
+  const primaryBuilding = options.primaryBuilding || '';
 
   const next = Array.isArray(candidates) ? [...candidates] : [];
   const totals = computeScenarioTotalsFromCandidates(next);
@@ -4582,11 +4635,24 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
     if (!roomsByType.has(typeKey)) roomsByType.set(typeKey, []);
     roomsByType.get(typeKey).push(room);
   });
-  roomsByType.forEach((rooms) => rooms.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0)));
+  roomsByType.forEach((rooms) =>
+    rooms.sort((a, b) => compareScenarioRoomsByPreference(a, b, primaryBuilding))
+  );
 
-  const baselineTypeOrder = Object.keys(baselineTotals.sfByRoomType || {})
-    .map((t) => normalizeTypeMatch(t))
-    .filter(Boolean);
+  const baselineTypeEntries = Object.entries(baselineTotals.sfByRoomType || {})
+    .map(([label, sf]) => ({
+      key: normalizeTypeMatch(label),
+      label,
+      sf: Number(sf || 0) || 0
+    }))
+    .filter((t) => t.key);
+  baselineTypeEntries.sort((a, b) => {
+    const rankA = getScenarioTypeRank(a.label);
+    const rankB = getScenarioTypeRank(b.label);
+    if (rankA !== rankB) return rankA - rankB;
+    return (b.sf || 0) - (a.sf || 0);
+  });
+  const baselineTypeOrder = baselineTypeEntries.map((t) => t.key);
 
   let added = 0;
   const addRoom = (room, reason) => {
@@ -4620,8 +4686,8 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
   if (totals.totalSF < targetMin && next.length < maxCandidates) {
     const remaining = [];
     roomsByType.forEach((rooms) => rooms.forEach((room) => remaining.push(room)));
-    remaining.sort((a, b) => (Number(b.sf) || 0) - (Number(a.sf) || 0));
-    for (const room of remaining) {
+    const sortedRemaining = sortScenarioRoomsByPreference(remaining, primaryBuilding);
+    for (const room of sortedRemaining) {
       if (totals.totalSF >= targetMin || next.length >= maxCandidates) break;
       addRoom(room, 'Added to reach baseline total SF.');
     }
@@ -4638,6 +4704,60 @@ function sanitizeVacancyLanguage(text) {
     .replace(/\bvacancy status\b/ig, 'availability')
     .replace(/\bvacant\b/ig, 'available');
 }
+
+const getScenarioTypeRank = (value) => {
+  const label = String(value ?? '').toLowerCase();
+  if (!label) return 1;
+  if (/(office|workstation|admin|faculty|staff|suite|open office)/i.test(label)) return 0;
+  if (/(lab|laboratory|studio|shop|clinic|research)/i.test(label)) return 2;
+  if (/(classroom|lecture|seminar|training|teaching)/i.test(label)) return 3;
+  return 1;
+};
+
+const isScenarioLab = (value) => /(lab|laboratory|studio|shop|clinic|research)/i.test(String(value ?? ''));
+const isScenarioClassroom = (value) => /(classroom|lecture|seminar|training|teaching)/i.test(String(value ?? ''));
+
+const getScenarioRoomBuildingKey = (room) =>
+  normalizeDashboardKey(
+    room?.buildingLabel ?? room?.buildingName ?? room?.building ?? ''
+  );
+
+const compareScenarioRoomsByPreference = (a, b, primaryBuilding) => {
+  const primaryKey = normalizeDashboardKey(primaryBuilding || '');
+  const aKey = getScenarioRoomBuildingKey(a);
+  const bKey = getScenarioRoomBuildingKey(b);
+  if (primaryKey) {
+    const aIn = aKey === primaryKey;
+    const bIn = bKey === primaryKey;
+    if (aIn !== bIn) return aIn ? -1 : 1;
+  }
+  const aSf = Number(a?.sf ?? a?.area ?? a?.areaSF ?? 0) || 0;
+  const bSf = Number(b?.sf ?? b?.area ?? b?.areaSF ?? 0) || 0;
+  if (aSf !== bSf) return bSf - aSf;
+  const aRank = getScenarioTypeRank(a?.type ?? a?.roomType ?? '');
+  const bRank = getScenarioTypeRank(b?.type ?? b?.roomType ?? '');
+  if (aRank !== bRank) return aRank - bRank;
+  return 0;
+};
+
+const sortScenarioRoomsByPreference = (rooms, primaryBuilding) => {
+  if (!Array.isArray(rooms)) return [];
+  const next = [...rooms];
+  next.sort((a, b) => compareScenarioRoomsByPreference(a, b, primaryBuilding));
+  return next;
+};
+
+const getPrimaryScenarioBuilding = (candidates = []) => {
+  if (!Array.isArray(candidates) || !candidates.length) return '';
+  const totals = new Map();
+  candidates.forEach((c) => {
+    const b = norm(c?.buildingLabel || '');
+    if (!b) return;
+    const sf = Number(c?.sf ?? c?.area ?? c?.areaSF ?? 0) || 0;
+    totals.set(b, (totals.get(b) || 0) + sf);
+  });
+  return Array.from(totals.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+};
 
 function getGeojsonSource(map, id) {
   try {
@@ -6584,6 +6704,86 @@ const normalizeOfficeTypeLabel = (value) =>
     .trim();
 const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
 const isAllowedOfficeType = (value) => OFFICE_TYPE_SET.has(normalizeOfficeTypeLabel(value));
+const GUID_VALUE_REGEX = /^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}[)}]?$/i;
+const LONG_HEX_VALUE_REGEX = /^[0-9a-f]{24,}$/i;
+const looksLikeMachineRoomIdentifier = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (GUID_VALUE_REGEX.test(raw)) return true;
+  if (LONG_HEX_VALUE_REGEX.test(raw)) return true;
+  if (raw.includes('|')) return true;
+  if (isAirtableRecordId(raw)) return true;
+  return false;
+};
+const getDisplayRoomNumber = (room) => {
+  const candidates = [
+    room?.roomNumber,
+    room?.roomLabel,
+    room?.number,
+    room?.Number,
+    room?.RoomNumber,
+    room?.Room
+  ];
+  for (const candidate of candidates) {
+    const text = String(candidate ?? '').trim();
+    if (!text) continue;
+    if (looksLikeMachineRoomIdentifier(text)) continue;
+    return text;
+  }
+  const fallback = String(room?.roomId ?? '').trim();
+  if (fallback && !looksLikeMachineRoomIdentifier(fallback)) return fallback;
+  return '';
+};
+const isVacantOfficeListQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!/\bvacan(t|cy)\b/.test(text)) return false;
+  if (!/\boffice(s)?\b/.test(text)) return false;
+  return /\b(list|show|give|display|return|all|which|what)\b/.test(text);
+};
+const isRoomVacantForListing = (room) => {
+  const status = String(
+    room?.occupancyStatus ??
+    room?.occupancy ??
+    room?.Vacancy ??
+    room?.vacancy ??
+    ''
+  ).toLowerCase();
+  const occupant = String(room?.occupant ?? '').trim();
+  if (occupant) return false;
+  if (status.includes('occupied')) return false;
+  if (status.includes('assigned') && !status.includes('unassigned')) return false;
+  return status.includes('vacant') || status.includes('available');
+};
+const buildVacantOfficeListRows = (rooms = []) => {
+  const seen = new Set();
+  const rows = [];
+  (rooms || []).forEach((room) => {
+    const type = String(room?.type ?? room?.roomType ?? '').trim();
+    if (!type) return;
+    const typeLower = type.toLowerCase();
+    if (!typeLower.includes('office') && !isAllowedOfficeType(type)) return;
+    if (!isRoomVacantForListing(room)) return;
+    const building = String(getRoomBuildingLabel(room) || '').trim();
+    const floor = String(room?.floor ?? room?.floorName ?? room?.floorId ?? '').trim();
+    const roomNumber = getDisplayRoomNumber(room);
+    const areaVal = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
+    const area = Number.isFinite(areaVal) && areaVal > 0 ? Math.round(areaVal) : '';
+    const key = [building, floor, roomNumber, type, area].join('|').toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({
+      Building: building || 'Unknown',
+      'Room Number': roomNumber,
+      'Room Type': type,
+      'Square Feet': area
+    });
+  });
+  rows.sort((a, b) =>
+    String(a.Building || '').localeCompare(String(b.Building || ''), undefined, { sensitivity: 'base' }) ||
+    String(a['Room Number'] || '').localeCompare(String(b['Room Number'] || ''), undefined, { numeric: true, sensitivity: 'base' })
+  );
+  return rows;
+};
 const normalizeTeachingTypeLabel = (value) =>
   String(value || '')
     .toLowerCase()
@@ -6622,9 +6822,10 @@ const floorMatchesTokens = (roomFloor, targetTokens) => {
 };
 
 const resolveAvailableFloorId = (value, availableFloors = []) => {
-  if (!value) return '';
-  if (availableFloors.includes(value)) return value;
-  const tokens = normalizeFloorTokens(value);
+  const rawValue = normalizeFloorIdValue(value);
+  if (!rawValue) return '';
+  if (availableFloors.includes(rawValue)) return rawValue;
+  const tokens = normalizeFloorTokens(rawValue);
   if (!tokens.length) return '';
   return availableFloors.find((floorId) => floorMatchesTokens(floorId, tokens)) || '';
 };
@@ -7118,7 +7319,7 @@ const utilizationColorForPercent = (value) => {
   return '#ef4444';
 };
 
-const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
+const StakeholderMap = ({ config, universityId, mode = 'public', persona, engagementMode = false }) => {
   const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -7144,7 +7345,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     ASSESSMENT: 'assessment',
     TECHNICAL: 'technical'
   };
-  const [mapView, setMapView] = useState(MAP_VIEWS.SPACE_DATA);
+  const defaultMapView = engagementMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA;
+  const [mapView, setMapView] = useState(defaultMapView);
   const MAP_VIEW_OPTIONS = [
     { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
     { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment Progress' },
@@ -7155,6 +7357,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     : MAP_VIEW_OPTIONS.filter((opt) => opt.value === MAP_VIEWS.SPACE_DATA);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   useEffect(() => {
     const target = mapContainerRef.current;
     if (!target) return () => {};
@@ -7180,6 +7383,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
   const [popupMode, setPopupMode] = useState('building');
   const [panelStats, setPanelStats] = useState(null); // legacy stats for existing UI panels
   const [floorStatsByBuilding, setFloorStatsByBuilding] = useState({});
+  const [floorFeatureVersion, setFloorFeatureVersion] = useState(0);
   const [floorLegendItems, setFloorLegendItems] = useState([]);
   const [floorLegendLookup, setFloorLegendLookup] = useState(new Map());
   const [floorLegendSelection, setFloorLegendSelection] = useState(null);
@@ -7714,19 +7918,20 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     return null;
   }, []);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
-    if (!buildingKeyOrName || !floorId) return null;
+    const normalizedFloorId = normalizeFloorIdValue(floorId);
+    if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
     const floors = getAvailableFloors(folderKey);
-    if (!floors.includes(floorId)) return null;
+    if (!floors.includes(normalizedFloorId)) return null;
     const urlMap = availableFloorUrlsByBuildingRef.current.get(folderKey);
-    const manifestUrl = urlMap?.get(floorId);
+    const manifestUrl = urlMap?.get(normalizedFloorId);
     if (manifestUrl) {
       return /^https?:\/\//i.test(manifestUrl) ? manifestUrl : assetUrl(manifestUrl);
     }
     const campusSeg = encodeURIComponent(DEFAULT_FLOORPLAN_CAMPUS);
     const buildingSeg = encodeURIComponent(folderKey);
-    const floorSeg = encodeURIComponent(floorId);
+    const floorSeg = encodeURIComponent(normalizedFloorId);
     return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
   }, [getAvailableFloors, getBuildingFolderKey]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
@@ -7736,7 +7941,9 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona }) => {
     const hasUrls = availableFloorUrlsByBuildingRef.current.has(folderKey);
     if (cached.length && hasUrls) return cached;
     const floorEntries = await loadFloorManifest(folderKey);
-    const floors = (floorEntries || []).map((f) => f?.id).filter(Boolean);
+    const floors = (floorEntries || [])
+      .map((f) => normalizeFloorIdValue(f?.id))
+      .filter(Boolean);
     const urlMap = new Map(
       (floorEntries || [])
         .filter((f) => f?.id && f?.url)
@@ -9557,10 +9764,30 @@ useEffect(() => {
 
   async function handleLoadFloorplan(floorOverride) {
     if (!mapLoaded || !mapRef.current) return false;
-    const floorIdRaw = floorOverride || selectedFloor;
-    const buildingKey = getBuildingFolderKey(selectedBuildingId || selectedBuilding);
-    const buildingFloors = buildingKey ? getAvailableFloors(buildingKey) : availableFloors;
-    const floorId = resolveAvailableFloorId(floorIdRaw, buildingFloors);
+    const isEventLike = Boolean(
+      floorOverride &&
+      typeof floorOverride === 'object' &&
+      ('nativeEvent' in floorOverride || 'target' in floorOverride || 'preventDefault' in floorOverride)
+    );
+    const floorOverrideValue = isEventLike ? null : floorOverride;
+    const floorIdRaw = normalizeFloorIdValue(floorOverrideValue || selectedFloor);
+    const buildingKey =
+      resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
+      resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
+    let buildingFloors = buildingKey ? getAvailableFloors(buildingKey) : availableFloors;
+    if ((!buildingFloors || buildingFloors.length === 0) && buildingKey) {
+      buildingFloors = await ensureFloorsForBuilding(buildingKey);
+    }
+    let floorId = resolveAvailableFloorId(floorIdRaw, buildingFloors);
+    let floorUrl = null;
+    if (!floorId && floorIdRaw && buildingKey) {
+      floorId = floorIdRaw;
+      floorUrl = assetUrl(`floorplans/${DEFAULT_FLOORPLAN_CAMPUS}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
+      if (buildingFloors && !buildingFloors.includes(floorId)) {
+        buildingFloors = [...buildingFloors, floorId];
+        availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
+      }
+    }
     if (!floorId) {
       alert('This floor is not available for this building.');
       return false;
@@ -9568,14 +9795,16 @@ useEffect(() => {
     if (floorId !== selectedFloor) {
       setSelectedFloor(floorId);
     }
-    const url = buildFloorUrl(selectedBuilding, floorId);
+    const url = floorUrl || buildFloorUrl(selectedBuilding, floorId);
     if (!url) { alert('No file mapped for that floor.'); return false; }
     try {
       setPopupMode('floor');
       setFloorStats(null);
       setPanelStats({ loading: true, mode: 'floor' });
       const lastSel = floorSelectionRef.current?.[url];
-      const buildingFolder = getBuildingFolderKey(selectedBuildingId || selectedBuilding);
+      const buildingFolder =
+        resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
+        resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
       const basePath = buildingFolder
         ? assetUrl(`floorplans/Hastings/${buildingFolder}`)
         : null;
@@ -9690,6 +9919,7 @@ useEffect(() => {
         return false;
       }
       setLoadedSingleFloor(true);
+      setFloorFeatureVersion((prev) => prev + 1);
       currentFloorUrlRef.current = url;
       lastFloorUrlRef.current = url;
       const canonicalBuildingId = bId(selectedBuildingId || selectedBuilding || '');
@@ -9975,6 +10205,21 @@ useEffect(() => {
     setAiCampusResult(null);
 
     try {
+      const dashboardAsStats = dashboardMetrics
+        ? {
+            totalSf: Math.round(dashboardMetrics.totalSf || 0),
+            rooms: Math.round(dashboardMetrics.roomCount || 0),
+            totalsByDept: Object.fromEntries(
+              (dashboardMetrics.byDept || []).map((d) => [d.name, Math.round(Number(d.sf || 0))])
+            ),
+            byType: (dashboardMetrics.byType || []).map((d) => ({
+              type: d.name,
+              sf: Math.round(Number(d.sf || 0))
+            })),
+            occupancySummary: dashboardMetrics.occupancySummary || null,
+            officeOccupancy: dashboardMetrics.officeOccupancy || null
+          }
+        : null;
       const context = {
         universityId,
         campusLabel: activeUniversityName || universityId || 'Campus',
@@ -9987,7 +10232,7 @@ useEffect(() => {
 
       const out = await explainCampus({
         context,
-        campusStats,
+        campusStats: dashboardAsStats || campusStats,
         panelStats: campusPanelStats
       });
 
@@ -9998,7 +10243,7 @@ useEffect(() => {
     } finally {
       setAiCampusLoading(false);
     }
-  }, [activeUniversityName, campusPanelStats, campusStats, explainCampus, universityId]);
+  }, [activeUniversityName, campusPanelStats, campusStats, dashboardMetrics, explainCampus, universityId]);
 
   const onCompareScenario = useCallback(async () => {
     setAiScenarioErr('');
@@ -10018,13 +10263,13 @@ useEffect(() => {
       if (!campusTotals) throw new Error('No baseline stats for the selected department on this campus.');
 
       const scenarioBuildingName = activeBuildingName || selectedBuilding || selectedBuildingId || '';
-      const scenarioBuildingLower = scenarioBuildingName.trim().toLowerCase();
+      const scenarioBuildingLower = norm(scenarioBuildingName).toLowerCase();
 
       const candidates = Object.entries(perBuilding || {}).sort(
         (a, b) => (b[1]?.totalSF || 0) - (a[1]?.totalSF || 0) || (b[1]?.rooms || 0) - (a[1]?.rooms || 0)
       );
       const baselineEntry =
-        candidates.find(([name]) => name.trim().toLowerCase() !== scenarioBuildingLower) ||
+        candidates.find(([name]) => norm(name).toLowerCase() !== scenarioBuildingLower) ||
         candidates[0] ||
         null;
       const baselineBuildingName = baselineEntry ? baselineEntry[0] : 'campus';
@@ -10631,6 +10876,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           };
         })
         : [];
+      const preferredBuilding = norm(inferredBuilding || getPrimaryScenarioBuilding(recommended) || '');
       let adjustedCandidates = recommended;
       let autoFillNote = '';
       if (baselineTotals) {
@@ -10638,13 +10884,54 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           recommended,
           inventory,
           baselineTotals,
-          { targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1, maxCandidates: aiCreateScenarioStrict ? 40 : 30 }
+          {
+            targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
+            maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+            primaryBuilding: preferredBuilding
+          }
         );
         if (added > 0) {
           adjustedCandidates = filled;
           autoFillNote = `Auto-filled ${added} rooms to better match baseline SF and room-type mix.`;
         }
       }
+      const isLowPriorityCandidate = (c) =>
+        isScenarioClassroom(c?.type) || isScenarioLab(c?.type);
+      const primaryBuilding = preferredBuilding || getPrimaryScenarioBuilding(adjustedCandidates) || '';
+      if (primaryBuilding) {
+        const constrained = adjustedCandidates.filter((c) => {
+          const b = norm(c?.buildingLabel || '');
+          if (b === primaryBuilding) return true;
+          return isLowPriorityCandidate(c);
+        });
+        if (constrained.length) {
+          adjustedCandidates = constrained;
+          autoFillNote = `${autoFillNote ? autoFillNote + ' ' : ''}Constrained scenario to a single building (${primaryBuilding}), allowing labs/classrooms to remain outside if needed.`;
+        }
+        if (baselineTotals) {
+          const allowedInventory = inventory.filter((room) => {
+            const b = norm(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
+            if (b === primaryBuilding) return true;
+            const t = room?.type ?? room?.roomType ?? '';
+            return isScenarioClassroom(t) || isScenarioLab(t);
+          });
+          const { candidates: refilled, added } = fillScenarioCandidatesToBaseline(
+            adjustedCandidates,
+            allowedInventory,
+            baselineTotals,
+            {
+              targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
+              maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+              primaryBuilding
+            }
+          );
+          if (added > 0) {
+            adjustedCandidates = refilled;
+            autoFillNote = `${autoFillNote ? autoFillNote + ' ' : ''}Auto-filled ${added} rooms to better match baseline SF.`;
+          }
+        }
+      }
+      adjustedCandidates = sortScenarioRoomsByPreference(adjustedCandidates, primaryBuilding);
       const baselineTotalSF = baselineTotals?.totalSF || out?.baselineTotals?.totalSF || 0;
       const tolerancePct = Math.round(((scenarioConstraints?.targetSfTolerance ?? 0.1) * 100));
       const baselineCriteria = baselineTotalSF
@@ -10807,8 +11094,83 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const remaining = filtered.filter((room) => !out.includes(room));
         return out.concat(remaining.slice(0, Math.max(0, maxRows - out.length)));
       };
-      const trimmedScopeRooms = trimRoomRowsForAi(scopeRooms, {
-        maxRows: inferredDept ? 600 : 400,
+      if (isVacantOfficeListQuery(q)) {
+        const rows = buildVacantOfficeListRows(scopeRooms);
+        const scopeLabel = forceCampusScope
+          ? 'campus'
+          : (inferredBuilding ? inferredBuilding : 'selected scope');
+        const answer = rows.length
+          ? `Found ${rows.length.toLocaleString()} vacant offices in ${scopeLabel}.`
+          : `No vacant offices were found in ${scopeLabel} with explicit vacancy data.`;
+        setAskResult({
+          answer,
+          bullets: [
+            'Only rooms marked as vacant/available and not currently assigned to an occupant are included.'
+          ],
+          resultType: rows.length ? 'table' : 'none',
+          columns: rows.length ? ['Building', 'Room Number', 'Room Type', 'Square Feet'] : [],
+          rows,
+          dataUsed: ['roomRows'],
+          missingData: rows.length ? [] : ['Vacancy status', 'Room inventory']
+        });
+        return;
+      }
+      const isLocationQuery =
+        /\bwhere\s+(is|are)\b|\blocation of\b|\bwhere\b.*\b(located|location)\b|\bwhich building\b|\bwhat building\b/i.test(q);
+      const keywordMatches = (() => {
+        const tokens = [];
+        if (inferredDept) tokens.push(inferredDept);
+        if (/\bpresident'?s?\b/i.test(q)) tokens.push('president');
+        if (/\bprovost\b/i.test(q)) tokens.push('provost');
+        if (/\bdean\b/i.test(q)) tokens.push('dean');
+        if (!tokens.length) return [];
+        const tokenKeys = tokens.map((t) => normalizeDashboardKey(t)).filter(Boolean);
+        return scopeRooms.filter((room) => {
+          const deptVal = String(room?.department ?? room?.occupantDept ?? '').trim();
+          const occVal = String(room?.occupant ?? '').trim();
+          const roomVal = String(room?.roomNumber ?? room?.roomLabel ?? '').trim();
+          const text = normalizeDashboardKey(`${deptVal} ${occVal} ${roomVal}`);
+          return tokenKeys.some((key) => key && text.includes(key));
+        });
+      })();
+      if (isLocationQuery && keywordMatches.length) {
+        const grouped = new Map();
+        keywordMatches.forEach((room) => {
+          const bLabel = getRoomBuildingLabel(room) || 'Unknown Building';
+          if (!grouped.has(bLabel)) grouped.set(bLabel, []);
+          grouped.get(bLabel).push(room);
+        });
+        const bullets = Array.from(grouped.entries())
+          .map(([building, rooms]) => {
+            const labels = rooms
+              .map((r) => r?.roomNumber || r?.roomLabel || r?.roomId || r?.id || r?.revitId || '')
+              .filter(Boolean);
+            const uniqueLabels = Array.from(new Set(labels));
+            const occupants = rooms
+              .map((r) => r?.occupant || r?.department || r?.type || '')
+              .filter(Boolean);
+            const uniqueOcc = Array.from(new Set(occupants));
+            const roomText = uniqueLabels.length
+              ? `Rooms: ${uniqueLabels.slice(0, 12).join(', ')}`
+              : uniqueOcc.length
+                ? `Rooms: (not labeled) — ${uniqueOcc.slice(0, 3).join(', ')}`
+                : 'Rooms: (not labeled)';
+            return `${building} — ${roomText}`;
+          });
+        setAskResult({
+          answer: `Here are the rooms matching that request across campus.`,
+          bullets,
+          resultType: 'none',
+          columns: [],
+          rows: [],
+          dataUsed: ['roomRows'],
+          missingData: []
+        });
+        return;
+      }
+      const rowsForAi = keywordMatches.length ? keywordMatches : scopeRooms;
+      const trimmedScopeRooms = trimRoomRowsForAi(rowsForAi, {
+        maxRows: inferredDept ? 180 : 100,
         inferredDept
       });
       const fallbackSummary = summarizeRoomRowsForPanels(scopeRooms);
@@ -10823,12 +11185,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         roomRowsPayload = trimmedScopeRooms.map((room) => {
           const areaVal = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
           const seatCountVal = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
-          const roomNumber =
-            room?.roomNumber ??
-            room?.roomLabel ??
-            room?.roomId ??
-            room?.id ??
-            '';
+          const roomNumber = getDisplayRoomNumber(room);
           return {
             building: room?.building ?? room?.buildingName ?? room?.buildingLabel ?? buildingNameForRows,
             floor: room?.floor ?? room?.floorName ?? room?.floorId ?? '',
@@ -10850,10 +11207,12 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
               ? rows.filter((row) => !excludeBuildingKeys.has(normalizeDashboardKey(row.building)))
               : rows;
             const trimmedRows = trimRoomRowsForAi(filteredRows, {
-              maxRows: inferredDept ? 600 : 400,
+              maxRows: inferredDept ? 180 : 100,
               inferredDept
             });
-            roomRowsPayload = buildingNameForRows ? trimmedRows : trimmedRows.slice(0, 250);
+            roomRowsPayload = buildingNameForRows
+              ? trimmedRows
+              : trimmedRows.slice(0, inferredDept ? 180 : 100);
           } else {
             roomRowsPayload = null;
           }
@@ -10867,7 +11226,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           ? (buildingFallback || undefined)
           : undefined,
         floorStats: shouldUseFloorScope ? (floorFallback || undefined) : undefined,
-        dashboardMetrics: (!forceCampusScope && inferredBuilding) ? (dashboardMetrics || undefined) : undefined,
+        dashboardMetrics: undefined,
         scopeSummary: fallbackSummary || undefined,
         roomRows: roomRowsPayload || undefined
       };
@@ -10898,6 +11257,87 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     resolveBuildingNameFromInput,
     collectSpaceRows
   ]);
+
+  const onExportAskResultPdf = useCallback(() => {
+    if (!askResult) return;
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 24;
+      const maxWidth = pageWidth - margin * 2;
+      const lineHeight = 14;
+      let y = margin;
+
+      const ensureSpace = (required = lineHeight) => {
+        if (y + required <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+
+      const addWrapped = (text, options = {}) => {
+        const value = String(text ?? '').trim();
+        if (!value) return;
+        const fontStyle = options.fontStyle || 'normal';
+        const fontSize = options.fontSize || 11;
+        doc.setFont(undefined, fontStyle);
+        doc.setFontSize(fontSize);
+        const lines = doc.splitTextToSize(value, maxWidth);
+        lines.forEach((line) => {
+          ensureSpace(lineHeight);
+          doc.text(line, margin, y);
+          y += lineHeight;
+        });
+      };
+
+      const addSpacer = (height = 8) => {
+        ensureSpace(height);
+        y += height;
+      };
+
+      addWrapped('Ask Mapfluence', { fontStyle: 'bold', fontSize: 14 });
+      addSpacer(4);
+      addWrapped(`Question: ${askText || '(no question)'}`, { fontSize: 10 });
+      addSpacer(8);
+      addWrapped(`Answer: ${askResult.answer || ''}`);
+
+      if (Array.isArray(askResult.bullets) && askResult.bullets.length) {
+        addSpacer(8);
+        addWrapped('Notes:', { fontStyle: 'bold' });
+        askResult.bullets.forEach((bullet) => addWrapped(`- ${bullet}`));
+      }
+
+      const columns = Array.isArray(askResult.columns) ? askResult.columns : [];
+      const rows = Array.isArray(askResult.rows) ? askResult.rows : [];
+      if (columns.length && rows.length) {
+        addSpacer(10);
+        addWrapped('Table:', { fontStyle: 'bold' });
+        addWrapped(columns.join(' | '), { fontStyle: 'bold', fontSize: 10 });
+        rows.forEach((row) => {
+          const values = columns.map((col) => {
+            const val = row && row[col] != null ? row[col] : '';
+            return String(val);
+          });
+          addWrapped(values.join(' | '), { fontSize: 10 });
+        });
+      }
+
+      if (Array.isArray(askResult.missingData) && askResult.missingData.length) {
+        addSpacer(8);
+        addWrapped(`Missing data: ${askResult.missingData.join(', ')}`, { fontSize: 10 });
+      }
+
+      const slug = String(askText || 'ask-mapfluence')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'ask-mapfluence';
+      doc.save(`${slug}.pdf`);
+    } catch (err) {
+      console.error('Ask Mapfluence PDF export failed', err);
+      alert('PDF export failed - see console for details.');
+    }
+  }, [askResult, askText]);
 
   useEffect(() => {
     const pending = pendingScenarioLoadRef.current;
@@ -11188,7 +11628,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   const handleMoveConfirm = async () => {
     if (!moveConfirmData) return;
     const { from, to, effectiveDate, comments, person } = moveConfirmData;
-    const occupantName = (person || from?.occupantName || '').trim();
+    const occupantName = norm(person || from?.occupantName || '');
     if (!from || !to || !occupantName) return;
     try {
       const fromSaved = await saveRoomEdits({
@@ -11321,19 +11761,18 @@ const filteredMarkers = useMemo(() => {
     };
 
     (async () => {
-      const buildingKeyInput = selectedBuildingId || selectedBuilding;
-      if (!buildingKeyInput) {
-        clearFloors();
-        return;
-      }
-      const folderKey = getBuildingFolderKey(buildingKeyInput);
+      const folderKey =
+        resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
+        resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
       if (!folderKey) {
         clearFloors();
         return;
       }
       const floorEntries = await loadFloorManifest(folderKey);
       if (cancelled) return;
-      const floors = (floorEntries || []).map((f) => f?.id).filter(Boolean);
+      const floors = (floorEntries || [])
+        .map((f) => normalizeFloorIdValue(f?.id))
+        .filter(Boolean);
       const urlMap = new Map(
         (floorEntries || [])
           .filter((f) => f?.id && f?.url)
@@ -11432,7 +11871,7 @@ const filteredMarkers = useMemo(() => {
     if (!campusRoomsLoaded) return [];
     const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
     if (!hasBuildingScope) return campusRooms;
-    const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+    const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
     const hasBuilding = Boolean(buildingLabel);
     if (!hasBuilding) return campusRooms;
     const buildingKeys = new Set([
@@ -11451,7 +11890,7 @@ const filteredMarkers = useMemo(() => {
     });
     const hasFloor = Boolean(loadedSingleFloor && buildingLabel);
     if (!hasFloor) return buildingRooms;
-    const floorLabel = (currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+    const floorLabel = norm(currentFloorContextRef.current?.floorLabel || selectedFloor || '');
     const floorTokens = normalizeFloorTokens(floorLabel);
     if (!floorTokens.length) return buildingRooms;
     return buildingRooms.filter((room) =>
@@ -11470,10 +11909,10 @@ const filteredMarkers = useMemo(() => {
   const dashboardScopeLabel = useMemo(() => {
     const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
     if (!hasBuildingScope) return 'Campus';
-    const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+    const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
     const hasBuilding = Boolean(buildingLabel);
     if (!hasBuilding) return 'Campus';
-    const floorLabel = (floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+    const floorLabel = norm(floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '');
     const hasFloor = Boolean(loadedSingleFloor && buildingLabel && floorLabel);
     return hasFloor ? `${buildingLabel} ${floorLabel}` : buildingLabel;
   }, [
@@ -11488,7 +11927,7 @@ const filteredMarkers = useMemo(() => {
   const dashboardUtilization = useMemo(() => {
     const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
     if (hasBuildingScope) {
-      const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+      const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
       if (!buildingLabel) return null;
       return getUtilizationForBuilding(buildingLabel);
     }
@@ -11505,7 +11944,7 @@ const filteredMarkers = useMemo(() => {
   const dashboardUtilizationLabel = useMemo(() => {
     const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
     if (hasBuildingScope) {
-      const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
+      const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
       return buildingLabel || '';
     }
     if (utilizationCampus) return activeUniversityName || 'Campus';
@@ -11519,11 +11958,31 @@ const filteredMarkers = useMemo(() => {
     activeUniversityName
   ]);
 
+  const dashboardFloorFeatures = useMemo(() => {
+    if (!loadedSingleFloor) return [];
+    const ctx = currentFloorContextRef.current || {};
+    const selectedBuildingKey = normalizeDashboardKey(selectedBuildingId || selectedBuilding || '');
+    const ctxBuildingKey = normalizeDashboardKey(
+      ctx.buildingLabel || ctx.buildingId || ctx.building || ''
+    );
+    if (selectedBuildingKey && ctxBuildingKey && selectedBuildingKey !== ctxBuildingKey) return [];
+    const selectedTokens = normalizeFloorTokens(selectedFloor || '');
+    if (selectedTokens.length) {
+      const ctxFloor = ctx.floorLabel || ctx.floorId || ctx.floor || '';
+      if (!floorMatchesTokens(ctxFloor, selectedTokens)) return [];
+    }
+    const fc = ctx.fc;
+    const feats = Array.isArray(fc?.features) ? fc.features : [];
+    if (!feats.length) return [];
+    return feats.filter((feature) => detectFeatureKind(feature?.properties) === 'room');
+  }, [loadedSingleFloor, floorFeatureVersion, selectedBuildingId, selectedBuilding, selectedFloor]);
+
   const dashboardRoomFeatures = useMemo(() => {
+    if (loadedSingleFloor) return dashboardFloorFeatures;
     return (dashboardScopeRooms || [])
       .map(roomRowToDashboardFeature)
       .filter(Boolean);
-  }, [dashboardScopeRooms]);
+  }, [dashboardScopeRooms, dashboardFloorFeatures, loadedSingleFloor]);
 
   useEffect(() => {
     if (!airtableRooms.length) return;
@@ -11565,8 +12024,8 @@ const filteredMarkers = useMemo(() => {
   useEffect(() => {
     if (!campusRoomsLoaded) return;
     const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
-    const buildingLabel = (activeBuildingName || selectedBuildingId || selectedBuilding || '').trim();
-    const floorLabel = (floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '').trim();
+    const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
+    const floorLabel = norm(floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '');
     const hasBuilding = Boolean(hasBuildingScope && buildingLabel);
     const hasFloor = Boolean(loadedSingleFloor && buildingLabel && floorLabel);
     const nextTitle = hasFloor
@@ -11618,14 +12077,13 @@ const filteredMarkers = useMemo(() => {
   ]);
 
   useEffect(() => {
-    if (!campusRoomsLoaded || !loadedSingleFloor) return;
-    const scoped = Array.isArray(dashboardScopeRooms) ? dashboardScopeRooms : [];
-    if (!scoped.length) return;
+    if (!loadedSingleFloor) return;
+    if (!dashboardFloorFeatures.length) return;
     const ctx = currentFloorContextRef.current || {};
     const url = ctx.url || currentFloorUrlRef.current;
     const floorLabel = ctx.floorLabel || selectedFloor || ctx.floor || '';
     if (!url) return;
-    const summary = summarizeRoomRowsForPanels(scoped);
+    const summary = summarizeFeaturesForPanels(dashboardFloorFeatures);
     if (!summary) return;
     const summaryWithLabel = { ...summary, floorLabel };
     floorStatsCache.current[url] = summary;
@@ -11635,9 +12093,8 @@ const filteredMarkers = useMemo(() => {
     setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
     setPanelStats(formatSummaryForPanel(summary, 'floor'));
   }, [
-    campusRoomsLoaded,
     loadedSingleFloor,
-    dashboardScopeRooms,
+    dashboardFloorFeatures,
     selectedFloor
   ]);
 
@@ -11689,14 +12146,15 @@ const filteredMarkers = useMemo(() => {
       };
     });
 
-    if (!changed) return;
-    const nextFC = { ...fc, features: nextFeatures };
-    try {
-      src.setData(nextFC);
-    } catch {}
-    if (currentFloorContextRef.current) {
-      currentFloorContextRef.current = { ...currentFloorContextRef.current, fc: nextFC };
-    }
+  if (!changed) return;
+  const nextFC = { ...fc, features: nextFeatures };
+  try {
+    src.setData(nextFC);
+  } catch {}
+  if (currentFloorContextRef.current) {
+    currentFloorContextRef.current = { ...currentFloorContextRef.current, fc: nextFC };
+  }
+  setFloorFeatureVersion((prev) => prev + 1);
     try {
       applyFloorColorMode(floorColorMode);
     } catch {}
@@ -11865,7 +12323,7 @@ useEffect(() => {
       try {
         // Markers
         let markersQuery;
-        if (mode === 'admin') {
+        if (mode === 'admin' || engagementMode) {
           markersQuery = query(markersCollection);
         } else {
           if (!persona) {
@@ -11912,7 +12370,7 @@ useEffect(() => {
         }
       }
     })();
-  }, [mode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection]);
+  }, [mode, engagementMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection]);
 
 // Keep floorplan building input in sync with map selection (convenience)
 useEffect(() => {
@@ -11979,6 +12437,7 @@ useEffect(() => {
 
 // ---------- Base layers + Outdoor polygons ----------
 useEffect(() => {
+  if (engagementMode) return;
   if (!mapLoaded || !mapRef.current || !config) return;
   const map = mapRef.current;
 
@@ -12004,9 +12463,9 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#000000',
-        'line-width': 3,
-        'line-opacity': 0.9
+        'line-color': 'rgba(0,0,0,0.35)',
+        'line-width': 1.6,
+        'line-opacity': 0.8
       }
     });
 
@@ -12015,8 +12474,8 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#007bff',
-        'line-width': 4,
+        'line-color': '#1d4ed8',
+        'line-width': 2.6,
         'line-opacity': [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
@@ -12056,8 +12515,8 @@ useEffect(() => {
       },
       paint: {
         'text-color': '#111111',
-        'text-halo-color': 'rgba(255,255,255,0.9)',
-        'text-halo-width': 2
+        'text-halo-color': 'rgba(255,255,255,0.8)',
+        'text-halo-width': 1
       }
     });
 
@@ -12117,8 +12576,8 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#007bff',
-        'line-width': 2.5,
+        'line-color': '#1d4ed8',
+        'line-width': 2.2,
         'line-opacity': [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
@@ -12225,7 +12684,7 @@ useEffect(() => {
       }
     } catch {}
   };
-}, [mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary]);
+}, [engagementMode, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -12311,7 +12770,9 @@ useEffect(() => {
       .querySelectorAll('.custom-mapbox-marker')
       .forEach((el) => el.remove());
 
-    const markersToDraw = mode === 'admin' ? (showMarkers ? filteredMarkers : []) : sessionMarkers;
+    const markersToDraw = mode === 'admin'
+      ? (showMarkers ? filteredMarkers : [])
+      : (engagementMode ? markers : sessionMarkers);
     markersToDraw.forEach((m) => {
       const el = document.createElement('div');
       el.className = 'custom-marker custom-mapbox-marker';
@@ -12322,7 +12783,7 @@ useEffect(() => {
       }
       mk.addTo(map);
     });
-  }, [filteredMarkers, sessionMarkers, markerTypes, mapLoaded, mode, showMarkers]);  // ---------- Recolor buildings based on theme ----------
+  }, [filteredMarkers, sessionMarkers, markers, markerTypes, mapLoaded, mode, showMarkers, engagementMode]);  // ---------- Recolor buildings based on theme ----------
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
   const map = mapRef.current;
@@ -12431,7 +12892,7 @@ useEffect(() => {
         coordinates: new GeoPoint(lngLat.lat, lngLat.lng),
         type,
         comment,
-        persona: persona || 'admin',
+        persona: persona || (engagementMode ? 'student' : 'admin'),
         createdAt: serverTimestamp()
       };
       const docRef = await addDoc(markersCollection, markerData);
@@ -12441,7 +12902,21 @@ useEffect(() => {
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes, markersCollection, persona]);
+  }, [markerTypes, markersCollection, persona, engagementMode]);
+
+  useEffect(() => {
+    if (!engagementMode || mode === 'admin') return;
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    const onEngagementClick = (e) => {
+      if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      showMarkerPopup(e.lngLat);
+    };
+    map.on('click', onEngagementClick);
+    return () => {
+      try { map.off('click', onEngagementClick); } catch {}
+    };
+  }, [engagementMode, mode, mapLoaded, showMarkerPopup]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -12794,7 +13269,7 @@ useEffect(() => {
             rawProps.Room ??
             '';
 
-          const roomTypeLabel = (getRoomTypeLabelFromProps(rawProps) || rawProps.__roomType || '').trim();
+          const roomTypeLabel = norm(getRoomTypeLabelFromProps(rawProps) || rawProps.__roomType || '');
 
           const department =
             rawProps.department ??
@@ -12883,8 +13358,8 @@ useEffect(() => {
       const overridePatch = roomMergeKey ? roomPatches.get(roomMergeKey) : null;
       const pp = overridePatch ? { ...rawProps, ...overridePatch } : rawProps;
       const roomNum2 = pp.Number ?? pp.RoomNumber ?? pp.number ?? pp.Room ?? '';
-      const initialRoomType = (getRoomTypeLabelFromProps(pp) || pp.__roomType || '').trim();
-      const initialDept = (pp.__dept || getDeptFromProps(pp) || '').trim();
+      const initialRoomType = norm(getRoomTypeLabelFromProps(pp) || pp.__roomType || '');
+      const initialDept = norm(pp.__dept || getDeptFromProps(pp) || '');
       const initialOccupant = pp.occupant ?? pp.Occupant ?? '';
         const initialComments = pp.comments ?? pp.Comments ?? '';
         const initialOccupancyStatus = resolveOccupancyStatusValue(pp);
@@ -13517,7 +13992,9 @@ useEffect(() => {
           style={{
             width: 'min(720px, 94vw)',
             padding: 16,
-            lineHeight: 1.45
+            lineHeight: 1.45,
+            maxHeight: '86vh',
+            overflowY: 'auto'
           }}
         >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -13536,7 +14013,10 @@ useEffect(() => {
                   {"\u2728 AI"}
                 </span>
               </div>
-              <button className="btn" onClick={() => setAskResult(null)}>Close</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn" onClick={onExportAskResultPdf}>Export PDF</button>
+                <button className="btn" onClick={() => setAskResult(null)}>Close</button>
+              </div>
             </div>
 
           <p style={{ marginTop: 10 }}>{askResult.answer}</p>
@@ -13599,19 +14079,21 @@ useEffect(() => {
             />
           </div>
         </div>
-        <div className="dashboard-box">
-          <SpaceDashboardPanel
-            title={dashboardTitle}
-            scopeLabel={dashboardScopeLabel}
-            metrics={dashboardMetrics}
-            loading={dashboardLoading}
-            error={dashboardError}
-            utilization={dashboardUtilization}
-            utilizationScopeLabel={dashboardUtilizationLabel}
-            heatmapOn={utilizationHeatmapOn}
-            onToggleHeatmap={setUtilizationHeatmapOn}
-          />
-        </div>
+        {!engagementMode && (
+          <div className="dashboard-box">
+            <SpaceDashboardPanel
+              title={dashboardTitle}
+              scopeLabel={dashboardScopeLabel}
+              metrics={dashboardMetrics}
+              loading={dashboardLoading}
+              error={dashboardError}
+              utilization={dashboardUtilization}
+              utilizationScopeLabel={dashboardUtilizationLabel}
+              heatmapOn={utilizationHeatmapOn}
+              onToggleHeatmap={setUtilizationHeatmapOn}
+            />
+          </div>
+        )}
       </div>
 
     {mode === 'admin' && (
@@ -14158,20 +14640,38 @@ useEffect(() => {
           )}
 
           {/* Map View */}
-          <div className="control-section theme-selector" style={{ marginTop: 6 }}>
-            <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
-            <select
-              id="theme-select"
-              value={mapView}
-              onChange={(e) => setMapView(e.target.value)}
-              disabled={visibleMapViewOptions.length <= 1}
-            >
-              {visibleMapViewOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
+          {!engagementMode && (
+            <div className="control-section theme-selector" style={{ marginTop: 6 }}>
+              <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
+              <select
+                id="theme-select"
+                value={mapView}
+                onChange={(e) => setMapView(e.target.value)}
+                disabled={visibleMapViewOptions.length <= 1}
+              >
+                {visibleMapViewOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
+          {engagementMode && (
+            <div className="legend" style={{ marginTop: 6 }}>
+              <h4>Legend</h4>
+              <div className="legend-section">
+                <h5>Marker Types</h5>
+                {Object.entries(markerTypes || {}).map(([label, color]) => (
+                  <div key={label} className="legend-item">
+                    <span className="legend-color-box" style={{ backgroundColor: color }} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+              {!engagementMode && (
               <div
                 className="floorplans-section"
                 style={{
@@ -14212,7 +14712,7 @@ useEffect(() => {
                     ))}
                   </select>
 
-                  <button className="btn" style={{ width: '100%' }} onClick={handleLoadFloorplan} disabled={!availableFloors.length}>Load</button>
+                  <button className="btn" style={{ width: '100%' }} onClick={() => handleLoadFloorplan()} disabled={!availableFloors.length}>Load</button>
                   <button className="btn" style={{ width: '100%' }} onClick={handleUnloadFloorplan}>Unload</button>
                   <button className="btn" style={{ width: '100%' }} onClick={() => centerOnCurrentFloor(mapRef.current)}>Center</button>
                 </div>
@@ -14232,7 +14732,9 @@ useEffect(() => {
                   )}
                 </div>
               </div>
+              )}
 
+              {!engagementMode && (
               <div
                 className="floorplans-section"
                 style={{
@@ -14311,6 +14813,7 @@ useEffect(() => {
                   </div>
                 )}
               </div>
+              )}
 
           {/* Mode */}
           {/*
@@ -14325,6 +14828,7 @@ useEffect(() => {
           */}
 
 
+            {!engagementMode && (
             <div
               style={{
                 marginTop: 4,
@@ -14434,7 +14938,6 @@ useEffect(() => {
                 </button>
               </div>
             </div>
-
             <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
               <button
                 style={{ padding: '5px 7px', fontSize: 11 }}
@@ -14489,6 +14992,7 @@ useEffect(() => {
               </div>
             ) : null}
           </div>
+        )}
         </div>
       </div>
     )}
@@ -14512,6 +15016,27 @@ useEffect(() => {
           <button className="btn" onClick={exportData}>Export Map Data</button>
           <button className="btn" onClick={clearConditions}>Clear Conditions</button>
         </div>
+      </div>
+    )}
+
+    {engagementMode && showEngagementHelp && (
+      <div className="help-panel" style={{ right: 20, bottom: 20 }}>
+        <button
+          className="close-button"
+          aria-label="Close help"
+          onClick={() => setShowEngagementHelp(false)}
+        >
+          ×
+        </button>
+        <h4>How to Use This Map</h4>
+        <ul>
+          <li>Click anywhere on the map to add a marker.</li>
+          <li>Select a marker type and add an optional comment.</li>
+          <li>Markers are saved to the engagement demo dataset.</li>
+        </ul>
+        <button className="close-button-main" onClick={() => setShowEngagementHelp(false)}>
+          Close
+        </button>
       </div>
     )}
 
