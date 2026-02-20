@@ -1,0 +1,18 @@
+{
+  "universityName": "Hastings College",
+  "enableDrawingEntry": true,
+  "buildings": "Hastings_College_Buildings.geojson",
+  "boundary": "Hastings_College_Boundary.geojson",
+  "outdoorSpaces": "geojson/HC_Outdoor_map.geojson",
+  "style": "mapbox://styles/mapbox/streets-v12",
+  "lng": -98.371164,
+  "lat": 40.592958,
+  "zoom": 15.8,
+  "pitch": 39,
+  "bearing": 0,
+  "logos": {
+    "clarkEnersen": "Clark_Enersen_Logo.png",
+    "university": "HC_image.png"
+  }
+}
+
