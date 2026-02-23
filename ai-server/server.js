@@ -34,6 +34,13 @@ const AI_DOCS_DIR = process.env.AI_DOCS_DIR
   ? path.resolve(process.env.AI_DOCS_DIR)
   : path.join(__dirname, "Docs");
 const AI_DOCS_FILE_PURPOSE = process.env.AI_DOCS_FILE_PURPOSE || "assistants";
+const AI_DOC_FILE_IDS = String(process.env.AI_DOC_FILE_IDS || "")
+  .split(",")
+  .map((v) => v.trim())
+  .filter(Boolean);
+const AI_DOC_FILE_NAMES = String(process.env.AI_DOC_FILE_NAMES || "")
+  .split(",")
+  .map((v) => v.trim());
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
@@ -115,14 +122,19 @@ async function buildUserContentWithAiDocs(payload, { warnLabel = "ai" } = {}) {
     docs = [];
   }
 
-  const referenceDocNames = docs.map((doc) => doc.name);
+  const envDocs = AI_DOC_FILE_IDS.map((fileId, idx) => ({
+    fileId,
+    name: AI_DOC_FILE_NAMES[idx] || `external-doc-${idx + 1}`
+  }));
+  const allDocs = [...docs, ...envDocs];
+  const referenceDocNames = allDocs.map((doc) => doc.name);
   const userContent = [
     {
       type: "input_text",
       text: JSON.stringify({ ...payload, referenceDocs: referenceDocNames }, null, 2)
     }
   ];
-  docs.forEach((doc) => {
+  allDocs.forEach((doc) => {
     if (!doc?.fileId) return;
     userContent.push({ type: "input_file", file_id: doc.fileId });
   });
