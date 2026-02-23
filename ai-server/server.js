@@ -1,8 +1,12 @@
 import "dotenv/config";
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
 import cors from "cors";
 import express from "express";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
+import { fileURLToPath } from "url";
 import { validateAiQuery } from "./validateAiQuery.js";
 
 const app = express();
@@ -16,11 +20,135 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const AI_MODEL =
   process.env.AI_MODEL ||
   process.env.ASK_MAPFLUENCE_MODEL ||
   process.env.OPENAI_ASK_MODEL ||
   "gpt-4.1";
+
+const AI_DOCS_ENABLED = String(process.env.AI_DOCS_ENABLED || "true").toLowerCase() !== "false";
+const AI_DOCS_DIR = process.env.AI_DOCS_DIR
+  ? path.resolve(process.env.AI_DOCS_DIR)
+  : path.join(__dirname, "Docs");
+const AI_DOCS_FILE_PURPOSE = process.env.AI_DOCS_FILE_PURPOSE || "assistants";
+const aiDocsCache = {
+  signature: "",
+  docs: [] // [{ name, fullPath, fileId }]
+};
+
+function isPdfFile(name) {
+  return /\.pdf$/i.test(String(name || ""));
+}
+
+async function listLocalAiDocs() {
+  if (!AI_DOCS_ENABLED) return [];
+  let entries = [];
+  try {
+    entries = await fsp.readdir(AI_DOCS_DIR, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.isFile() && isPdfFile(entry.name))
+    .map((entry) => ({
+      name: entry.name,
+      fullPath: path.join(AI_DOCS_DIR, entry.name)
+    }));
+}
+
+async function buildDocsSignature(docs) {
+  const parts = [];
+  for (const doc of docs) {
+    try {
+      const stat = await fsp.stat(doc.fullPath);
+      parts.push(`${doc.name}:${stat.size}:${Number(stat.mtimeMs || 0)}`);
+    } catch {
+      parts.push(`${doc.name}:missing`);
+    }
+  }
+  return parts.sort().join("|");
+}
+
+async function ensureUploadedAiDocs() {
+  if (!AI_DOCS_ENABLED) return [];
+  if (!process.env.OPENAI_API_KEY) return [];
+
+  const docs = await listLocalAiDocs();
+  if (!docs.length) {
+    aiDocsCache.signature = "";
+    aiDocsCache.docs = [];
+    return [];
+  }
+
+  const signature = await buildDocsSignature(docs);
+  if (aiDocsCache.signature === signature && aiDocsCache.docs.length) {
+    return aiDocsCache.docs;
+  }
+
+  const uploaded = [];
+  for (const doc of docs) {
+    try {
+      const file = await client.files.create({
+        file: fs.createReadStream(doc.fullPath),
+        purpose: AI_DOCS_FILE_PURPOSE
+      });
+      uploaded.push({ ...doc, fileId: file.id });
+    } catch (err) {
+      console.warn(`AI docs upload skipped for ${doc.name}:`, err?.message || err);
+    }
+  }
+
+  aiDocsCache.signature = signature;
+  aiDocsCache.docs = uploaded;
+  return uploaded;
+}
+
+async function buildUserContentWithAiDocs(payload, { warnLabel = "ai" } = {}) {
+  let docs = [];
+  try {
+    docs = await ensureUploadedAiDocs();
+  } catch (err) {
+    console.warn(`AI docs load failed (${warnLabel}); continuing without docs:`, err?.message || err);
+    docs = [];
+  }
+
+  const referenceDocNames = docs.map((doc) => doc.name);
+  const userContent = [
+    {
+      type: "input_text",
+      text: JSON.stringify({ ...payload, referenceDocs: referenceDocNames }, null, 2)
+    }
+  ];
+  docs.forEach((doc) => {
+    if (!doc?.fileId) return;
+    userContent.push({ type: "input_file", file_id: doc.fileId });
+  });
+  return userContent;
+}
+
+function isDocPriorityQuestion(question) {
+  const q = String(question || "").trim().toLowerCase();
+  if (!q) return false;
+  return /(history|historic|origin|background|founded|founded in|built|construction|renovation|renovated|named after|namesake|timeline|master plan|facilities plan|strategic plan|mission|vision)/i.test(q);
+}
+
+function summarizeAskMapData(data) {
+  if (!data || typeof data !== "object") return {};
+  const out = {};
+  Object.entries(data).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      out[`${key}Count`] = value.length;
+    } else if (value && typeof value === "object") {
+      out[`${key}Keys`] = Object.keys(value).length;
+    } else if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") {
+      out[key] = value;
+    }
+  });
+  return out;
+}
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -793,11 +921,19 @@ app.post("/explain-floor", async (req, res) => {
 
     console.log("OPENAI key loaded?", Boolean(process.env.OPENAI_API_KEY));
 
+    const userContent = await buildUserContentWithAiDocs(
+      { context, floorStats, panelStats },
+      { warnLabel: "explain-floor" }
+    );
+
     const resp = await client.responses.create({
       model: AI_MODEL,
       input: [
-        { role: "system", content: "Use only provided data; do not speculate or invent facts." },
-        { role: "user", content: JSON.stringify({ context, floorStats, panelStats }, null, 2) }
+        {
+          role: "system",
+          content: "Use only provided data and attached reference documents; do not speculate or invent facts."
+        },
+        { role: "user", content: userContent }
       ],
       text: {
         format: {
@@ -843,11 +979,19 @@ app.post("/explain-building", async (req, res) => {
       }
     };
 
+    const userContent = await buildUserContentWithAiDocs(
+      { context, buildingStats, panelStats },
+      { warnLabel: "explain-building" }
+    );
+
     const resp = await client.responses.create({
       model: AI_MODEL,
       input: [
-        { role: "system", content: "Use only provided data; do not speculate or invent facts." },
-        { role: "user", content: JSON.stringify({ context, buildingStats, panelStats }, null, 2) }
+        {
+          role: "system",
+          content: "Use only provided data and attached reference documents; do not speculate or invent facts."
+        },
+        { role: "user", content: userContent }
       ],
       text: {
         format: {
@@ -893,17 +1037,22 @@ app.post("/explain-campus", async (req, res) => {
       }
     };
 
+    const userContent = await buildUserContentWithAiDocs(
+      { context, campusStats, panelStats },
+      { warnLabel: "explain-campus" }
+    );
+
     const resp = await client.responses.create({
       model: process.env.ASK_MAPFLUENCE_MODEL || process.env.OPENAI_ASK_MODEL || "gpt-4.1",
       input: [
         {
           role: "system",
           content:
-            "Generate a high-level campus summary using only the provided data. Do not speculate, recommend actions, or assume future changes."
+            "Generate a high-level campus summary using only the provided data and attached reference documents. Do not speculate, recommend actions, or assume future changes."
         },
         {
           role: "user",
-          content: JSON.stringify({ context, campusStats, panelStats }, null, 2)
+          content: userContent
         }
       ],
       text: {
@@ -1112,17 +1261,22 @@ app.post("/create-move-scenario", async (req, res) => {
         }
       };
 
+    const userContent = await buildUserContentWithAiDocs(
+      { request, context, constraints, inventory: safeInventory },
+      { warnLabel: "create-move-scenario" }
+    );
+
     const resp = await client.responses.create({
       model: AI_MODEL,
       input: [
           {
             role: "system",
             content:
-              "You are helping create a move scenario by selecting candidate rooms from the provided campus-wide inventory. Consider all buildings and floors unless the user explicitly restricts scope. Use only provided inventory/context. Echo back roomId/revitId exactly as provided so the client can map results. Return each recommendation with revitId and floorName. If inventory is limited, return fewer candidates and explain assumptions. Do not fabricate rooms.\n\nIMPORTANT:\n- Do NOT filter candidates by vacancy/occupancy. Consider ALL rooms in the target building.\n- Do NOT treat current department/occupant assignments as constraints unless the user explicitly asks for it.\n- If context.excludeBuildings is provided, do NOT recommend rooms in those buildings (current home).\n- Primary objective: replicate the source department's footprint as closely as possible:\n  - total SF (+/-10-15% if possible)\n  - room type mix using NCES_Type (match SF by type)\n  - count of key functional types (labs, classrooms, offices if present)\n- If an occupied room is a better functional match, recommend it and clearly note the displacement.\n- Do NOT assume vacant-only unless explicitly stated by the user.\n\nVacancy/occupancy:\n- DO NOT require rooms to be vacant.\n- DO NOT use vacancy as a primary filter.\n- Only mention vacancy if the user explicitly asks for \"vacant only\" or \"avoid displacing\".\n- If you don't have reliable vacancy data, ignore it completely.\n\nBaseline/targets:\n- If constraints.baselineTotals is provided, use it as the target footprint.\n- Aim for total SF within +/- (constraints.targetSfTolerance or 0.10) of baselineTotals.totalSF.\n- Match sfByType / roomTypes mix as closely as possible.\n- Keep adding best-fit rooms until you reach the target range or exhaust the inventory.\n- If no single building can reach the target, select across multiple buildings.\n- If you cannot reach the target range or type mix, say so explicitly in assumptions and selectionCriteria.\n\nReturn:\n- scenarioDept (string)\n- baselineTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for the source department\n- scenarioTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for selected candidates\n\nScore rooms using:\n1. NCES room type similarity (highest weight)\n2. Area match (+/- 20%)\n3. Minimal displacement penalty"
+              "You are helping create a move scenario by selecting candidate rooms from the provided campus-wide inventory and attached reference documents. Consider all buildings and floors unless the user explicitly restricts scope. Use only provided inventory/context/reference docs. Echo back roomId/revitId exactly as provided so the client can map results. Return each recommendation with revitId and floorName. If inventory is limited, return fewer candidates and explain assumptions. Do not fabricate rooms.\n\nIMPORTANT:\n- Do NOT filter candidates by vacancy/occupancy. Consider ALL rooms in the target building.\n- Do NOT treat current department/occupant assignments as constraints unless the user explicitly asks for it.\n- If context.excludeBuildings is provided, do NOT recommend rooms in those buildings (current home).\n- Primary objective: replicate the source department's footprint as closely as possible:\n  - total SF (+/-10-15% if possible)\n  - room type mix using NCES_Type (match SF by type)\n  - count of key functional types (labs, classrooms, offices if present)\n- If an occupied room is a better functional match, recommend it and clearly note the displacement.\n- Do NOT assume vacant-only unless explicitly stated by the user.\n\nVacancy/occupancy:\n- DO NOT require rooms to be vacant.\n- DO NOT use vacancy as a primary filter.\n- Only mention vacancy if the user explicitly asks for \"vacant only\" or \"avoid displacing\".\n- If you don't have reliable vacancy data, ignore it completely.\n\nBaseline/targets:\n- If constraints.baselineTotals is provided, use it as the target footprint.\n- Aim for total SF within +/- (constraints.targetSfTolerance or 0.10) of baselineTotals.totalSF.\n- Match sfByType / roomTypes mix as closely as possible.\n- Keep adding best-fit rooms until you reach the target range or exhaust the inventory.\n- If no single building can reach the target, select across multiple buildings.\n- If you cannot reach the target range or type mix, say so explicitly in assumptions and selectionCriteria.\n\nReturn:\n- scenarioDept (string)\n- baselineTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for the source department\n- scenarioTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for selected candidates\n\nScore rooms using:\n1. NCES room type similarity (highest weight)\n2. Area match (+/- 20%)\n3. Minimal displacement penalty"
           },
         {
           role: "user",
-          content: JSON.stringify({ request, context, constraints, inventory: safeInventory })
+          content: userContent
         }
       ],
       text: { format: { type: "json_schema", name: "move_scenario_plan", schema: schema.schema, strict: true } }
@@ -1204,23 +1358,60 @@ app.post("/ask-mapfluence", async (req, res) => {
       }
     };
 
+    const questionText = String(question).trim();
+    const docsFirst = isDocPriorityQuestion(questionText);
+    let docsForLog = [];
+    try {
+      docsForLog = await ensureUploadedAiDocs();
+    } catch {
+      docsForLog = [];
+    }
+    const referenceDocNames = docsForLog.map((doc) => doc.name);
+    if (referenceDocNames.length) {
+      console.log(`[ask-mapfluence] docs attached: ${referenceDocNames.join(", ")}`);
+    }
+    const askPayload = docsFirst
+      ? {
+          question: questionText,
+          context,
+          docsFirst: true,
+          dataSummary: summarizeAskMapData(data),
+          note: "This is a narrative/reference-doc question. Prioritize attached docs over structured room data."
+        }
+      : {
+          question: questionText,
+          context,
+          docsFirst: false,
+          data
+        };
+    const userContent = await buildUserContentWithAiDocs(askPayload, { warnLabel: "ask-mapfluence" });
+
     const resp = await client.responses.create({
       model: AI_MODEL,
       input: [
         {
           role: "system",
           content:
-            "Answer questions using only the provided data. If the question requires data that is not present, say so in missingData and answer with what you can. For vacancy queries, prefer listing rooms when roomRows are provided. Never fabricate.\n\nWhen the user asks for a \"best new suitable home\" or relocation, do NOT treat current department or occupant assignments as constraints. Search campus-wide unless the user explicitly restricts to a building/floor. If context.excludeBuildings is provided, do not recommend those buildings. Use room type similarity and total SF/room counts to suggest best fits. You may include currently occupied rooms and note the displacement; do not require vacancy unless the user explicitly asks for vacant-only."
+            "Answer questions using only the provided data and attached reference documents. If the question requires data that is not present, say so in missingData and answer with what you can. For vacancy queries, prefer listing rooms when roomRows are provided. Never fabricate.\n\nPriority rules:\n1) If docsFirst=true (or the question is narrative/history/planning context), prioritize attached reference documents over room tables.\n2) If the question is quantitative space data, prioritize provided structured data.\n3) For doc-based narrative answers, use resultType='none' unless the user explicitly asks for a table.\n\nWhen the user asks for a \"best new suitable home\" or relocation, do NOT treat current department or occupant assignments as constraints. Search campus-wide unless the user explicitly restricts to a building/floor. If context.excludeBuildings is provided, do not recommend those buildings. Use room type similarity and total SF/room counts to suggest best fits. You may include currently occupied rooms and note the displacement; do not require vacancy unless the user explicitly asks for vacant-only.\n\nIf attached reference docs are used, include them in dataUsed by filename."
         },
         {
           role: "user",
-          content: JSON.stringify({ question, context, data }, null, 2)
+          content: userContent
         }
       ],
       text: { format: { type: "json_schema", name: "ask_mapfluence", schema: schema.schema, strict: true } }
     });
 
-    res.json(JSON.parse(resp.output_text || "{}"));
+    const out = JSON.parse(resp.output_text || "{}");
+    if (docsFirst && out?.resultType === "table" && (!Array.isArray(out.rows) || out.rows.length === 0)) {
+      out.resultType = "none";
+    }
+    if (docsFirst && Array.isArray(out?.dataUsed) && referenceDocNames.length) {
+      referenceDocNames.forEach((name) => {
+        if (!out.dataUsed.includes(name)) out.dataUsed.push(name);
+      });
+    }
+    res.json(out);
   } catch (err) {
     console.error("AI ask-mapfluence error:", err);
     res.status(500).json({ error: err?.message || "AI ask failed" });
