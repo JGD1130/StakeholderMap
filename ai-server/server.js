@@ -41,6 +41,8 @@ const AI_DOC_FILE_IDS = String(process.env.AI_DOC_FILE_IDS || "")
 const AI_DOC_FILE_NAMES = String(process.env.AI_DOC_FILE_NAMES || "")
   .split(",")
   .map((v) => v.trim());
+const ASK_DOCS_SKIP_DATA_CHARS = Number(process.env.ASK_DOCS_SKIP_DATA_CHARS || 40000);
+const ASK_DOCS_SKIP_ROOM_ROWS = Number(process.env.ASK_DOCS_SKIP_ROOM_ROWS || 150);
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
@@ -113,19 +115,42 @@ async function ensureUploadedAiDocs() {
   return uploaded;
 }
 
-async function buildUserContentWithAiDocs(payload, { warnLabel = "ai" } = {}) {
-  let docs = [];
-  try {
-    docs = await ensureUploadedAiDocs();
-  } catch (err) {
-    console.warn(`AI docs load failed (${warnLabel}); continuing without docs:`, err?.message || err);
-    docs = [];
-  }
-
-  const envDocs = AI_DOC_FILE_IDS.map((fileId, idx) => ({
+function getConfiguredEnvDocs() {
+  return AI_DOC_FILE_IDS.map((fileId, idx) => ({
     fileId,
     name: AI_DOC_FILE_NAMES[idx] || `external-doc-${idx + 1}`
   }));
+}
+
+function estimateAskPayloadSize(data) {
+  const roomRowsCount = Array.isArray(data?.roomRows) ? data.roomRows.length : 0;
+  let jsonChars = 0;
+  try {
+    jsonChars = JSON.stringify(data || {}).length;
+  } catch {
+    jsonChars = 0;
+  }
+  return { roomRowsCount, jsonChars };
+}
+
+function shouldSkipDocsForAsk({ docsFirst, data }) {
+  if (docsFirst) return false;
+  const { roomRowsCount, jsonChars } = estimateAskPayloadSize(data);
+  return roomRowsCount >= ASK_DOCS_SKIP_ROOM_ROWS || jsonChars >= ASK_DOCS_SKIP_DATA_CHARS;
+}
+
+async function buildUserContentWithAiDocs(payload, { warnLabel = "ai", includeDocs = true } = {}) {
+  let docs = [];
+  if (includeDocs) {
+    try {
+      docs = await ensureUploadedAiDocs();
+    } catch (err) {
+      console.warn(`AI docs load failed (${warnLabel}); continuing without docs:`, err?.message || err);
+      docs = [];
+    }
+  }
+
+  const envDocs = includeDocs ? getConfiguredEnvDocs() : [];
   const allDocs = [...docs, ...envDocs];
   const referenceDocNames = allDocs.map((doc) => doc.name);
   const userContent = [
@@ -1372,14 +1397,23 @@ app.post("/ask-mapfluence", async (req, res) => {
 
     const questionText = String(question).trim();
     const docsFirst = isDocPriorityQuestion(questionText);
+    const skipDocsForDataHeavy = shouldSkipDocsForAsk({ docsFirst, data });
+    const payloadSize = estimateAskPayloadSize(data);
+    const envDocs = getConfiguredEnvDocs();
     let docsForLog = [];
-    try {
-      docsForLog = await ensureUploadedAiDocs();
-    } catch {
-      docsForLog = [];
+    if (!skipDocsForDataHeavy) {
+      try {
+        docsForLog = await ensureUploadedAiDocs();
+      } catch {
+        docsForLog = [];
+      }
     }
-    const referenceDocNames = docsForLog.map((doc) => doc.name);
-    if (referenceDocNames.length) {
+    const referenceDocNames = [...docsForLog, ...envDocs].map((doc) => doc.name);
+    if (skipDocsForDataHeavy) {
+      console.log(
+        `[ask-mapfluence] docs skipped for data-heavy request (roomRows=${payloadSize.roomRowsCount}, jsonChars=${payloadSize.jsonChars})`
+      );
+    } else if (referenceDocNames.length) {
       console.log(`[ask-mapfluence] docs attached: ${referenceDocNames.join(", ")}`);
     }
     const askPayload = docsFirst
@@ -1396,7 +1430,10 @@ app.post("/ask-mapfluence", async (req, res) => {
           docsFirst: false,
           data
         };
-    const userContent = await buildUserContentWithAiDocs(askPayload, { warnLabel: "ask-mapfluence" });
+    const userContent = await buildUserContentWithAiDocs(askPayload, {
+      warnLabel: "ask-mapfluence",
+      includeDocs: !skipDocsForDataHeavy
+    });
 
     const resp = await client.responses.create({
       model: AI_MODEL,
