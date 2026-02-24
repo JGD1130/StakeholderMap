@@ -43,6 +43,14 @@ const AI_DOC_FILE_NAMES = String(process.env.AI_DOC_FILE_NAMES || "")
   .map((v) => v.trim());
 const ASK_DOCS_SKIP_DATA_CHARS = Number(process.env.ASK_DOCS_SKIP_DATA_CHARS || 40000);
 const ASK_DOCS_SKIP_ROOM_ROWS = Number(process.env.ASK_DOCS_SKIP_ROOM_ROWS || 150);
+const EXPLAIN_CAMPUS_MAX_INPUT_CHARS = Number(process.env.EXPLAIN_CAMPUS_MAX_INPUT_CHARS || 20000);
+const EXPLAIN_CAMPUS_MAX_TOP_ITEMS = Number(process.env.EXPLAIN_CAMPUS_MAX_TOP_ITEMS || 60);
+const EXPLAIN_CAMPUS_DEFAULT_MODEL =
+  process.env.EXPLAIN_CAMPUS_MODEL ||
+  process.env.ASK_MAPFLUENCE_MODEL ||
+  process.env.OPENAI_ASK_MODEL ||
+  AI_MODEL;
+const EXPLAIN_CAMPUS_LARGE_MODEL = process.env.EXPLAIN_CAMPUS_LARGE_MODEL || "gpt-4.1-mini";
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
@@ -131,6 +139,84 @@ function estimateAskPayloadSize(data) {
     jsonChars = 0;
   }
   return { roomRowsCount, jsonChars };
+}
+
+function estimateJsonChars(value) {
+  try {
+    return JSON.stringify(value ?? {}).length;
+  } catch {
+    return 0;
+  }
+}
+
+function topNumericEntries(mapLike, maxItems = EXPLAIN_CAMPUS_MAX_TOP_ITEMS) {
+  if (!mapLike || typeof mapLike !== "object") return mapLike;
+  return Object.fromEntries(
+    Object.entries(mapLike)
+      .map(([k, v]) => [k, Number(v) || 0])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, Math.max(1, maxItems))
+  );
+}
+
+function topTypeRows(rows, maxItems = EXPLAIN_CAMPUS_MAX_TOP_ITEMS) {
+  if (!Array.isArray(rows)) return rows;
+  return rows
+    .map((row) => ({
+      type: row?.type ?? row?.name ?? "",
+      sf: Number(row?.sf ?? row?.value ?? 0) || 0,
+      rooms: Number(row?.rooms ?? row?.count ?? 0) || 0
+    }))
+    .filter((row) => row.type || row.sf || row.rooms)
+    .sort((a, b) => (b.sf || 0) - (a.sf || 0) || (b.rooms || 0) - (a.rooms || 0))
+    .slice(0, Math.max(1, maxItems));
+}
+
+function compactCampusStats(campusStats) {
+  if (!campusStats || typeof campusStats !== "object") return campusStats;
+  return {
+    totalSf: Number(campusStats?.totalSf ?? 0) || 0,
+    rooms: Number(campusStats?.rooms ?? 0) || 0,
+    totalsByDeptTop: topNumericEntries(campusStats?.totalsByDept, 40),
+    byTypeTop: topTypeRows(campusStats?.byType, 30),
+    occupancySummary: campusStats?.occupancySummary || null,
+    officeOccupancy: campusStats?.officeOccupancy || null
+  };
+}
+
+function compactPanelStats(panelStats) {
+  if (!panelStats || typeof panelStats !== "object") return panelStats;
+  return summarizeAskMapData(panelStats);
+}
+
+function buildExplainCampusPayload({ context, campusStats, panelStats }) {
+  const rawPayload = { context, campusStats, panelStats };
+  const rawChars = estimateJsonChars(rawPayload);
+  if (rawChars <= EXPLAIN_CAMPUS_MAX_INPUT_CHARS) {
+    return {
+      payload: rawPayload,
+      includeDocs: true,
+      model: EXPLAIN_CAMPUS_DEFAULT_MODEL,
+      wasCompacted: false,
+      rawChars
+    };
+  }
+
+  const compactedPayload = {
+    context,
+    campusStats: compactCampusStats(campusStats),
+    panelStats: compactPanelStats(panelStats),
+    note:
+      "Large campus payload was compacted to key totals and top distributions to stay within model limits."
+  };
+
+  return {
+    payload: compactedPayload,
+    includeDocs: false,
+    model: EXPLAIN_CAMPUS_LARGE_MODEL,
+    wasCompacted: true,
+    rawChars
+  };
 }
 
 function shouldSkipDocsForAsk({ docsFirst, data }) {
@@ -1074,13 +1160,19 @@ app.post("/explain-campus", async (req, res) => {
       }
     };
 
+    const explainInput = buildExplainCampusPayload({ context, campusStats, panelStats });
+    if (explainInput.wasCompacted) {
+      console.log(
+        `[explain-campus] compacted large input (chars=${explainInput.rawChars}) -> model=${explainInput.model}, docs=${explainInput.includeDocs ? "on" : "off"}`
+      );
+    }
     const userContent = await buildUserContentWithAiDocs(
-      { context, campusStats, panelStats },
-      { warnLabel: "explain-campus" }
+      explainInput.payload,
+      { warnLabel: "explain-campus", includeDocs: explainInput.includeDocs }
     );
 
     const resp = await client.responses.create({
-      model: process.env.ASK_MAPFLUENCE_MODEL || process.env.OPENAI_ASK_MODEL || "gpt-4.1",
+      model: explainInput.model,
       input: [
         {
           role: "system",

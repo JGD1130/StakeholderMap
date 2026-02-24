@@ -3038,25 +3038,6 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
 }
 
 
-const MAPBOX_TOKENLESS_STYLE = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '\u00a9 OpenStreetMap contributors'
-    }
-  },
-  layers: [
-    {
-      id: 'osm-base',
-      type: 'raster',
-      source: 'osm'
-    }
-  ]
-};
-
 const resolveRuntimeMapboxToken = () => {
   if (typeof window === 'undefined') return '';
   const winToken = String(window.__MAPBOX_PUBLIC_TOKEN__ ?? '').trim();
@@ -3085,6 +3066,9 @@ const FLOOR_HL_BORDER_ID = "floor-highlight-border";
 const FLOOR_ROOM_LABEL_LAYER = "floor-room-labels";
 const FLOOR_DOOR_LAYER = "floor-doors";
 const FLOOR_STAIR_LAYER = "floor-stairs";
+const ENGAGEMENT_HEAT_SOURCE_ID = 'engagement-heat-source';
+const ENGAGEMENT_HEAT_LAYER_ID = 'engagement-heat-warm-halo-layer';
+const ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID = 'engagement-heat-cool-halo-layer';
 const WALLS_SOURCE = 'walls-source';
 const WALLS_LAYER = 'walls-layer';
 const DOORS_SOURCE = "doors-source";
@@ -6585,15 +6569,24 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
-const normalizeRoomLookupKey = (value) => {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const uuidMatch = raw.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i);
-  const normalized = String(uuidMatch ? uuidMatch[0] : raw)
+const normalizeRoomLookupKey = (value) =>
+  String(value || '')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
-  return normalized;
+const ROOM_LOOKUP_UUID_REGEX = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i;
+const getRoomLookupKeyVariants = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const variants = new Set();
+  const full = normalizeRoomLookupKey(raw);
+  if (full) variants.add(full);
+  const uuidMatch = raw.match(ROOM_LOOKUP_UUID_REGEX);
+  if (uuidMatch && uuidMatch[0]) {
+    const base = normalizeRoomLookupKey(uuidMatch[0]);
+    if (base) variants.add(base);
+  }
+  return Array.from(variants);
 };
 
 const normalizeRoomLabelMatch = (value) => {
@@ -6811,6 +6804,13 @@ const buildVacantOfficeListRows = (rooms = []) => {
     const building = String(getRoomBuildingLabel(room) || '').trim();
     const floor = String(room?.floor ?? room?.floorName ?? room?.floorId ?? '').trim();
     const roomNumber = getDisplayRoomNumber(room);
+    const lookupKey = normalizeRoomLookupKey(
+      room?.roomGuid ??
+      room?.revitId ??
+      room?.roomId ??
+      room?.id ??
+      ''
+    );
     const areaVal = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
     const area = Number.isFinite(areaVal) && areaVal > 0 ? Math.round(areaVal) : '';
     const key = [building, floor, roomNumber, type, area].join('|').toLowerCase();
@@ -6820,7 +6820,9 @@ const buildVacantOfficeListRows = (rooms = []) => {
       Building: building || 'Unknown',
       'Room Number': roomNumber,
       'Room Type': type,
-      'Square Feet': area
+      'Square Feet': area,
+      __lookupKey: lookupKey,
+      __floor: floor
     });
   });
   rows.sort((a, b) =>
@@ -6828,6 +6830,15 @@ const buildVacantOfficeListRows = (rooms = []) => {
     String(a['Room Number'] || '').localeCompare(String(b['Room Number'] || ''), undefined, { numeric: true, sensitivity: 'base' })
   );
   return rows;
+};
+const needsManifestRoomNumberHydration = (room) => {
+  const displayNumber = getDisplayRoomNumber(room);
+  if (displayNumber) return false;
+  const roomIdRaw = String(room?.roomId ?? room?.id ?? '').trim();
+  const roomGuidRaw = String(room?.roomGuid ?? room?.revitId ?? room?.revitUniqueId ?? '').trim();
+  if (roomGuidRaw) return true;
+  if (!roomIdRaw) return true;
+  return looksLikeMachineRoomIdentifier(roomIdRaw);
 };
 const normalizeTeachingTypeLabel = (value) =>
   String(value || '')
@@ -6880,12 +6891,28 @@ function buildAirtableRoomLookup(rooms = []) {
   const byComposite = new Map();
   if (!Array.isArray(rooms)) return { byGuid, byComposite };
 
+  const setUnique = (map, key, room) => {
+    if (!key) return;
+    if (!map.has(key)) {
+      map.set(key, room);
+      return;
+    }
+    const existing = map.get(key);
+    if (existing !== room) map.set(key, null);
+  };
+
   rooms.forEach((room) => {
     if (!room) return;
-    const guidKey = normalizeRoomLookupKey(
-      room.roomGuid ?? room.revitUniqueId ?? room['Room GUID'] ?? ''
+    const guidRaw = (
+      room.roomGuid ??
+      room.revitId ??
+      room.revitUniqueId ??
+      room['Room GUID'] ??
+      room.roomId ??
+      ''
     );
-    if (guidKey) byGuid.set(guidKey, room);
+    const guidKeys = getRoomLookupKeyVariants(guidRaw);
+    guidKeys.forEach((key) => setUnique(byGuid, key, room));
 
     const roomIdKey = normalizeRoomLookupKey(
       room.roomId ?? room.roomNumber ?? room.roomLabel ?? room.id ?? ''
@@ -6912,8 +6939,18 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
   const manifestLookup = buildAirtableRoomLookup(manifestRooms);
   return airtableRooms.map((room) => {
     if (!room) return room;
-    const guidKey = normalizeRoomLookupKey(room.roomGuid ?? room.roomId ?? room.revitUniqueId ?? '');
-    const manifestMatch = guidKey ? manifestLookup.byGuid.get(guidKey) : null;
+    const guidRaw = (
+      room.roomGuid ??
+      room.revitId ??
+      room.roomId ??
+      room.revitUniqueId ??
+      ''
+    );
+    const guidKeys = getRoomLookupKeyVariants(guidRaw);
+    const manifestMatch = guidKeys.reduce((found, key) => {
+      if (found) return found;
+      return manifestLookup.byGuid.get(key) || null;
+    }, null);
     if (!manifestMatch) return room;
 
     const merged = { ...room };
@@ -6954,16 +6991,18 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
 function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
   if (!lookup) return null;
   let room = null;
-  const guidKey = normalizeRoomLookupKey(
+  const guidRaw = (
     props.Revit_UniqueId ??
       props.RevitUniqueId ??
       props['Room GUID'] ??
       props.roomGuid ??
       ''
   );
-  if (guidKey) {
-    room = lookup.byGuid.get(guidKey) || null;
-  }
+  const guidKeys = getRoomLookupKeyVariants(guidRaw);
+  guidKeys.forEach((key) => {
+    if (room) return;
+    room = lookup.byGuid.get(key) || null;
+  });
   if (!room) {
     const roomIdKey = normalizeRoomLookupKey(
       props.Number ??
@@ -7375,7 +7414,228 @@ const utilizationColorForPercent = (value) => {
   if (value >= 20) return '#f97316';
   return '#ef4444';
 };
-
+const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
+  study: { color: '#ef4444', heatValue: 1.0, rgb: '255,69,69', haloRgb: '255,207,120' },
+  hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,150,62', haloRgb: '255,218,140' },
+  improve: { color: '#facc15', heatValue: 0.9, rgb: '255,212,45', haloRgb: '255,233,153' },
+  outdated: { color: '#60a5fa', heatValue: 0.8, rgb: '82,148,255', haloRgb: '180,220,255' },
+  rarely: { color: '#67e8f9', heatValue: 0.9, rgb: '78,228,250', haloRgb: '190,246,255' },
+  unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
+  comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '125,250,255' }
+};
+const ENGAGEMENT_HEAT_CATEGORY_LABELS = {
+  study: 'Go-to Study',
+  hangout: 'Go-to Hang Out',
+  improve: 'Needs Improvement',
+  outdated: 'Outdated / Run Down',
+  rarely: 'Rarely / Never Use',
+  unsafe: 'Do Not Feel Safe',
+  comment: 'Comment'
+};
+const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
+const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
+const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
+const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
+const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
+// Set true to restore the thermal blended warm/cool halo overlays.
+const ENGAGEMENT_USE_THERMAL_HALO = true;
+const ENGAGEMENT_HEAT_LAYER_DEFS = [
+  { category: 'rarely', layerId: 'engagement-heat-rarely' },
+  { category: 'outdated', layerId: 'engagement-heat-outdated' },
+  { category: 'unsafe', layerId: 'engagement-heat-unsafe' },
+  { category: 'improve', layerId: 'engagement-heat-improve' },
+  { category: 'hangout', layerId: 'engagement-heat-hangout' },
+  { category: 'study', layerId: 'engagement-heat-study' }
+];
+const getEngagementHeatCategory = (markerType) => {
+  const text = String(markerType || '').trim().toLowerCase();
+  if (!text) return 'comment';
+  if (/just leave a ?comment|leave a comment about this space/.test(text)) return 'comment';
+  if (/do not feel safe|unsafe/.test(text)) return 'unsafe';
+  if (/rarely|never/.test(text)) return 'rarely';
+  if (/outdated|run-down|run down/.test(text)) return 'outdated';
+  if (/furniture.*uncomfortable|layout.*not functional|lighting|temperature|technology.*inadequate|unreliable|privacy/.test(text)) return 'outdated';
+  if (/needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|improv/.test(text)) return 'improve';
+  if (/go[- ]to hang ?out|hang ?out/.test(text)) return 'hangout';
+  if (/go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively/.test(text)) return 'study';
+  return 'comment';
+};
+const getEngagementHeatWeight = (markerType) =>
+  ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.heatValue ?? 0;
+const engagementColorForType = (markerType) =>
+  ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.color || '#9ca3af';
+const isCoolEngagementCategory = (category) =>
+  category === 'outdated' || category === 'rarely' || category === 'unsafe';
+const buildEngagementCategoryHeatColorExpr = (category) => {
+  const coreRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.rgb || '156,163,175';
+  const haloRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.haloRgb || coreRgb;
+  if (isCoolEngagementCategory(category)) {
+    return [
+      'interpolate',
+      ['linear'],
+      ['heatmap-density'],
+      0, 'rgba(0,0,0,0)',
+      0.03, `rgba(${haloRgb},0.12)`,
+      0.10, `rgba(${haloRgb},0.24)`,
+      0.20, `rgba(${coreRgb},0.58)`,
+      0.36, `rgba(${coreRgb},0.82)`,
+      0.62, `rgba(${coreRgb},0.93)`,
+      1, `rgba(${coreRgb},0.995)`
+    ];
+  }
+  return [
+    'interpolate',
+    ['linear'],
+    ['heatmap-density'],
+    0, 'rgba(0,0,0,0)',
+    0.03, `rgba(${haloRgb},0.10)`,
+    0.12, `rgba(${haloRgb},0.22)`,
+    0.24, `rgba(${haloRgb},0.40)`,
+    0.40, `rgba(${coreRgb},0.66)`,
+    0.65, `rgba(${coreRgb},0.86)`,
+    1, `rgba(${coreRgb},0.98)`
+  ];
+};
+const buildEngagementThermalWarmHaloColorExpr = () => ([
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0,0,0,0)',
+  0.06, 'rgba(255,237,128,0.20)',
+  0.22, 'rgba(253,224,71,0.40)',
+  0.48, 'rgba(251,146,60,0.58)',
+  0.72, 'rgba(239,68,68,0.70)',
+  1, 'rgba(220,38,38,0.82)'
+]);
+const buildEngagementThermalCoolHaloColorExpr = () => ([
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0,0,0,0)',
+  0.05, 'rgba(207,250,254,0.24)',
+  0.18, 'rgba(125,250,255,0.44)',
+  0.42, 'rgba(56,189,248,0.62)',
+  0.70, 'rgba(59,130,246,0.78)',
+  1, 'rgba(30,64,175,0.90)'
+]);
+const buildEngagementCategoryWeightExpr = (category) => {
+  const base = ['coalesce', ['get', 'weight'], 0];
+  if (category === 'unsafe') return ['*', base, 1.08];
+  if (category === 'rarely') return ['*', base, 0.95];
+  if (category === 'outdated') return ['*', base, 0.88];
+  if (category === 'improve') return ['*', base, 0.88];
+  if (category === 'hangout') return ['*', base, 1.02];
+  if (category === 'study') return ['*', base, 1.12];
+  return ['*', base, 1.0];
+};
+const buildEngagementWarmHaloWeightExpr = () => ([
+  '*',
+  ENGAGEMENT_HEAT_WEIGHT_EXPR,
+  [
+    'match',
+    ['coalesce', ['get', 'heatCategory'], ''],
+    'study', 1.12,
+    'hangout', 1.00,
+    'improve', 0.74,
+    1.0
+  ]
+]);
+const buildEngagementWarmHaloIntensityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 1.02, 18, 1.14, 20, 1.24, 22, 1.32]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.86, 13, 0.96, 15, 1.06, 17, 1.16, 19, 1.24]
+);
+const buildEngagementWarmHaloRadiusExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 20, 18, 30, 20, 44, 22, 60]
+    : ['interpolate', ['linear'], ['zoom'], 10, 34, 12, 52, 14, 74, 16, 98, 18, 124, 20, 152]
+);
+const buildEngagementWarmHaloOpacityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.84, 18, 0.89, 20, 0.94, 22, 0.97]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.68, 13, 0.72, 16, 0.76, 19, 0.80]
+);
+const buildEngagementCoolHaloIntensityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 1.04, 18, 1.14, 20, 1.24, 22, 1.32]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.90, 13, 1.00, 15, 1.10, 17, 1.18, 19, 1.26]
+);
+const buildEngagementCoolHaloRadiusExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 18, 18, 28, 20, 40, 22, 54]
+    : ['interpolate', ['linear'], ['zoom'], 10, 28, 12, 42, 14, 58, 16, 78, 18, 98, 20, 120]
+);
+const buildEngagementCoolHaloOpacityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.88, 20, 0.94, 22, 0.97]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.62, 13, 0.68, 16, 0.74, 19, 0.80]
+);
+const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
+  if (floorScoped) {
+    if (category === 'unsafe') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 7, 18, 11, 20, 16, 22, 22];
+    }
+    if (category === 'rarely' || category === 'outdated') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 8, 18, 12, 20, 18, 22, 24];
+    }
+    if (category === 'improve') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 11, 18, 16, 20, 22, 22, 30];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 16, 11, 18, 18, 20, 24, 22, 34];
+  }
+  if (category === 'unsafe') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 13, 12, 18, 14, 26, 16, 36, 18, 46, 20, 56];
+  }
+  if (category === 'rarely' || category === 'outdated') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 22, 14, 30, 16, 40, 18, 52, 20, 64];
+  }
+  if (category === 'improve') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 18, 12, 28, 14, 40, 16, 54, 18, 70, 20, 86];
+  }
+  return ['interpolate', ['linear'], ['zoom'], 10, 20, 12, 30, 14, 44, 16, 58, 18, 76, 20, 94];
+};
+const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => {
+  if (floorScoped) {
+    if (category === 'unsafe') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.24, 18, 1.34, 20, 1.44, 22, 1.56];
+    }
+    if (category === 'rarely' || category === 'outdated') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.16, 18, 1.26, 20, 1.36, 22, 1.48];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 16, 1.14, 18, 1.24, 20, 1.34, 22, 1.46];
+  }
+  if (category === 'unsafe') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 1.12, 13, 1.22, 15, 1.32, 17, 1.44, 19, 1.54];
+  }
+  if (category === 'rarely' || category === 'outdated') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 1.00, 13, 1.10, 15, 1.20, 17, 1.30, 19, 1.38];
+  }
+  return ['interpolate', ['linear'], ['zoom'], 10, 0.98, 13, 1.08, 15, 1.18, 17, 1.30, 19, 1.40];
+};
+const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
+  if (floorScoped) {
+    if (category === 'unsafe') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 1.0, 20, 1.0, 22, 1.0];
+    }
+    if (category === 'rarely' || category === 'outdated') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.94, 18, 0.97, 20, 0.99, 22, 1.0];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 16, 0.97, 18, 0.99, 20, 1.0, 22, 1.0];
+  }
+  if (category === 'unsafe') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.88, 13, 0.92, 16, 0.95, 19, 0.97];
+  }
+  if (category === 'rarely' || category === 'outdated') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.78, 13, 0.83, 16, 0.89, 19, 0.93];
+  }
+  return ['interpolate', ['linear'], ['zoom'], 10, 0.85, 13, 0.89, 16, 0.93, 19, 0.96];
+};
+const setMapLayerVisibility = (map, layerId, visible) => {
+  try {
+    if (!map?.getLayer(layerId)) return;
+    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+  } catch {}
+};
 const StakeholderMap = ({ config, universityId, mode = 'public', persona, engagementMode = false }) => {
   const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
@@ -7404,6 +7664,18 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   };
   const defaultMapView = engagementMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA;
   const [mapView, setMapView] = useState(defaultMapView);
+  const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
+  const [presentationMode, setPresentationMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const flag = String(params.get('presentation') || '').trim().toLowerCase();
+      return flag === '1' || flag === 'true' || flag === 'yes';
+    } catch {
+      return false;
+    }
+  });
+  const [presentationExporting, setPresentationExporting] = useState(false);
   const MAP_VIEW_OPTIONS = [
     { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
     { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment Progress' },
@@ -7415,6 +7687,16 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
+  const [mapboxTokenRequired, setMapboxTokenRequired] = useState(false);
+  const [mapboxTokenDraft, setMapboxTokenDraft] = useState('');
+  const [mapboxTokenErr, setMapboxTokenErr] = useState('');
+  useEffect(() => {
+    if (!mapboxTokenRequired || mapboxTokenDraft) return;
+    try {
+      const stored = String(window.localStorage?.getItem('MAPBOX_PUBLIC_TOKEN') ?? '').trim();
+      if (stored) setMapboxTokenDraft(stored);
+    } catch {}
+  }, [mapboxTokenRequired, mapboxTokenDraft]);
   useEffect(() => {
     const target = mapContainerRef.current;
     if (!target) return () => {};
@@ -7544,9 +7826,11 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     DEPARTMENT: 'department',
     TYPE: 'type',
     OCCUPANCY: 'occupancy',
-    VACANCY: 'vacancy'
+    VACANCY: 'vacancy',
+    PLAIN: 'plain'
   }), []);
   const [floorColorMode, setFloorColorMode] = useState('department');
+  const [engagementRoomSentimentOn, setEngagementRoomSentimentOn] = useState(false);
     const mergeOptionsList = (prev, next) => {
       const seen = new Set(prev);
       (next || []).forEach((item) => {
@@ -7697,7 +7981,20 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     const src = getGeojsonSource(map, FLOOR_SOURCE);
     const data = src ? (src._data || src.serialize?.().data || null) : null;
     const fc = toFeatureCollection(data);
-    const effectiveMode = mode === FLOOR_COLOR_MODES.VACANCY ? FLOOR_COLOR_MODES.OCCUPANCY : mode;
+    const requestedMode = mode === FLOOR_COLOR_MODES.VACANCY ? FLOOR_COLOR_MODES.OCCUPANCY : mode;
+    const effectiveMode = engagementMode ? FLOOR_COLOR_MODES.PLAIN : requestedMode;
+    if (engagementMode && engagementRoomSentimentOn) return;
+
+    if (effectiveMode === FLOOR_COLOR_MODES.PLAIN) {
+      try {
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#f3f4f6');
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.86);
+        setFloorLegendItems([]);
+        setFloorLegendLookup(new Map());
+        setFloorLegendSelection(null);
+        return;
+      } catch {}
+    }
 
     if (effectiveMode === FLOOR_COLOR_MODES.DEPARTMENT && fc?.features?.length) {
       const deptColorMap = new Map();
@@ -7813,7 +8110,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     applyFloorFillExpression(map, effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
-  }, [FLOOR_COLOR_MODES.TYPE, applyFloorFillExpression, buildLegendForMode]);
+  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, engagementMode, engagementRoomSentimentOn]);
   useEffect(() => {
     roomEditSelectionRef.current = roomEditSelection;
   }, [roomEditSelection]);
@@ -7825,6 +8122,15 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     setRoomEditIncluded(new Set());
     setRoomEditPanelPos(null);
   }, [clearRoomEditSelection, setFloorHighlight]);
+  useEffect(() => {
+    if (!engagementMode) return;
+    setRoomEditOpen(false);
+    setRoomEditData(null);
+    setRoomEditIncluded(new Set());
+    setRoomEditPanelPos(null);
+    clearRoomEditSelection();
+    setFloorHighlight(null);
+  }, [engagementMode, clearRoomEditSelection, setFloorHighlight]);
   const roomEditTargets = roomEditData?.targets?.length
     ? roomEditData.targets
     : roomEditData
@@ -7938,11 +8244,13 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   const floorSummaryCacheRef = useRef(new Map());
   const floorRoomsRef = useRef(new Map());
   const floorStatsByBuildingRef = useRef({});
+  const engagementAutoLoadKeyRef = useRef('');
   const panelBuildingKeyRef = useRef(null);
   const roomSubRef = useRef(null);
 
   // Floorplans
   const roomAttrsRef = useRef({});
+  const [engagementScopeMode, setEngagementScopeMode] = useState(() => (engagementMode ? 'campus' : 'floor'));
   const [selectedFloor, setSelectedFloor] = useState('LEVEL_1');
   const [availableFloors, setAvailableFloors] = useState([]);
   const availableFloorsByBuildingRef = useRef(new Map());
@@ -7961,6 +8269,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     'Building';
   const activeBuildingId = selectedBuildingId || selectedBuilding || '';
   const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
+  const isEngagementFloorScope = engagementMode && engagementScopeMode === 'floor';
   const getAvailableFloors = useCallback((buildingKey) => {
     if (!buildingKey) return [];
     return availableFloorsByBuildingRef.current.get(buildingKey) ?? [];
@@ -9837,7 +10146,10 @@ useEffect(() => {
     }
     let floorId = resolveAvailableFloorId(floorIdRaw, buildingFloors);
     let floorUrl = null;
-    if (!floorId && floorIdRaw && buildingKey) {
+    if (!floorId && buildingFloors?.length) {
+      floorId = buildingFloors[0];
+    }
+    if (!floorId && floorIdRaw && floorOverrideValue && buildingKey && (!buildingFloors || buildingFloors.length === 0)) {
       floorId = floorIdRaw;
       floorUrl = assetUrl(`floorplans/${DEFAULT_FLOORPLAN_CAMPUS}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
       if (buildingFloors && !buildingFloors.includes(floorId)) {
@@ -10510,6 +10822,8 @@ useEffect(() => {
       if (map?.getSource(WALLS_SOURCE)) map.removeSource(WALLS_SOURCE);
     } catch {}
     setLoadedSingleFloor(false);
+    if (engagementMode) setEngagementScopeMode('campus');
+    engagementAutoLoadKeyRef.current = '';
     currentFloorUrlRef.current = null;
     lastFloorUrlRef.current = null;
     currentFloorContextRef.current = { url: null, key: null, buildingId: null, floorId: null };
@@ -10517,7 +10831,7 @@ useEffect(() => {
     setPopupMode('building');
     const buildingKey = selectedBuildingIdRef.current || selectedBuilding;
     if (buildingKey) showBuildingStats(buildingKey);
-  }, [selectedBuilding, showBuildingStats]);
+  }, [selectedBuilding, showBuildingStats, engagementMode]);
 
   const handleCenterOnFloorplan = useCallback(() => {
     centerOnCurrentFloor(mapRef.current);
@@ -11190,7 +11504,31 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         return;
       }
       if (isVacantOfficeListQuery(q)) {
-        const rows = buildVacantOfficeListRows(scopeRooms);
+        let rows = buildVacantOfficeListRows(scopeRooms);
+        if (rows.some((row) => !String(row?.['Room Number'] || '').trim())) {
+          try {
+            const buildingFilter = forceCampusScope ? '__all__' : (buildingNameForRows || '__all__');
+            const fallbackRows = await collectSpaceRows(buildingFilter, '');
+            const numberByLookupKey = new Map();
+            (fallbackRows || []).forEach((r) => {
+              const roomNumber = String(r?.roomNumber ?? '').trim();
+              if (!roomNumber || looksLikeMachineRoomIdentifier(roomNumber)) return;
+              const lookupKey = normalizeRoomLookupKey(r?.revitId ?? r?.roomId ?? '');
+              if (!lookupKey) return;
+              if (!numberByLookupKey.has(lookupKey)) numberByLookupKey.set(lookupKey, roomNumber);
+            });
+            rows = rows.map((row) => {
+              const hasNumber = String(row?.['Room Number'] || '').trim();
+              if (hasNumber) return row;
+              const lookupKey = normalizeRoomLookupKey(row?.__lookupKey ?? '');
+              if (!lookupKey) return row;
+              const resolved = numberByLookupKey.get(lookupKey) || '';
+              return resolved
+                ? { ...row, 'Room Number': resolved }
+                : row;
+            });
+          } catch {}
+        }
         const scopeLabel = forceCampusScope
           ? 'campus'
           : (inferredBuilding ? inferredBuilding : 'selected scope');
@@ -11434,6 +11772,64 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
   }, [askResult, askText]);
 
+  const onCopyAskResultCsv = useCallback(async () => {
+    if (!askResult) return;
+    const columns = Array.isArray(askResult.columns) ? askResult.columns : [];
+    const rows = Array.isArray(askResult.rows) ? askResult.rows : [];
+    if (!columns.length || !rows.length) {
+      alert('No table data available to copy.');
+      return;
+    }
+    const esc = (value) => {
+      if (value == null) return '';
+      const text = String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csvLines = [columns.map(esc).join(',')];
+    rows.forEach((row) => {
+      csvLines.push(columns.map((col) => esc(row && row[col] != null ? row[col] : '')).join(','));
+    });
+    const csvText = csvLines.join('\n');
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(csvText);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = csvText;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        alert('Copy failed. Please use Export PDF.');
+        return;
+      }
+    }
+    alert(`Copied ${rows.length.toLocaleString()} rows to clipboard (CSV).`);
+  }, [askResult]);
+
+  const onSaveMapboxToken = useCallback(() => {
+    const token = String(mapboxTokenDraft || '').trim();
+    if (!/^pk\./i.test(token)) {
+      setMapboxTokenErr('Enter a valid Mapbox public token (starts with pk.).');
+      return;
+    }
+    try {
+      window.localStorage.setItem('MAPBOX_PUBLIC_TOKEN', token);
+    } catch {}
+    mapboxgl.accessToken = token;
+    setMapboxTokenErr('');
+    setMapboxTokenRequired(false);
+    window.location.reload();
+  }, [mapboxTokenDraft]);
+
   useEffect(() => {
     const pending = pendingScenarioLoadRef.current;
     if (!pending) return;
@@ -11605,6 +12001,76 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     } catch {}
   }, []);
 
+  const exportCurrentMapPng = useCallback(() => {
+    try {
+      const map = mapRef.current;
+      const canvas = map?.getCanvas?.();
+      if (!canvas) {
+        alert('Map is not ready yet.');
+        return;
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const suffix = engagementHeatmapOn ? 'heatmap' : 'markers';
+      const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `${base}-${suffix}-${stamp}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      console.warn('PNG export failed', err);
+      alert('PNG export failed. See console for details.');
+    }
+  }, [engagementHeatmapOn, universityId]);
+
+  const togglePresentationMode = useCallback(() => {
+    setPresentationMode((prev) => {
+      const next = !prev;
+      try {
+        const url = new URL(window.location.href);
+        if (next) url.searchParams.set('presentation', '1');
+        else url.searchParams.delete('presentation');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const exportCleanMapPng = useCallback(() => {
+    const map = mapRef.current;
+    const canvas = map?.getCanvas?.();
+    if (!canvas) {
+      alert('Map is not ready yet.');
+      return;
+    }
+    const prevPresentation = presentationMode;
+    const prevControls = isControlsVisible;
+    setPresentationExporting(true);
+    setPresentationMode(true);
+    setIsControlsVisible(false);
+    const finish = () => {
+      try {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `${base}-presentation-${stamp}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (err) {
+        console.warn('Clean PNG export failed', err);
+        alert('Clean PNG export failed. See console for details.');
+      } finally {
+        setPresentationMode(prevPresentation);
+        setIsControlsVisible(prevControls);
+        setPresentationExporting(false);
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+  }, [presentationMode, isControlsVisible, universityId]);
+
   const clearConditions = useCallback(() => {
     try {
       setBuildingConditions({});
@@ -11775,12 +12241,210 @@ const filteredMarkers = useMemo(() => {
     return true; // keep admin/legacy visible
   });
 }, [markers, showStudentMarkers, showStaffMarkers, mode]);
+const scopedEngagementMarkers = useMemo(() => {
+  if (!engagementMode) return markers;
+  if (!loadedSingleFloor) return markers;
+  const ctx = currentFloorContextRef.current || {};
+  const targetBuildingId = bId(ctx?.buildingId || selectedBuildingId || selectedBuilding || '');
+  const targetFloorId = fId(ctx?.floorId || selectedFloor || '');
+  const targetFloorLabel = String(ctx?.floorLabel || selectedFloor || '').trim();
+  const floorTokens = normalizeFloorTokens(targetFloorLabel || targetFloorId);
+  return (markers || []).filter((m) => {
+    const markerBuildingId = bId(m?.buildingId || m?.buildingName || m?.building || '');
+    if (!markerBuildingId || (targetBuildingId && markerBuildingId !== targetBuildingId)) return false;
+    const markerFloorRaw = String(m?.floorId || m?.floorLabel || m?.floor || '').trim();
+    const markerFloorId = fId(markerFloorRaw);
+    if (targetFloorId && markerFloorId && markerFloorId === targetFloorId) return true;
+    if (floorTokens.length) return floorMatchesTokens(markerFloorRaw, floorTokens);
+    return false;
+  });
+}, [markers, engagementMode, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
+const scopedEngagementHeatmapData = useMemo(() => ({
+  type: 'FeatureCollection',
+  features: (scopedEngagementMarkers || [])
+    .filter((m) => Array.isArray(m?.coordinates) && Number.isFinite(Number(m.coordinates[0])) && Number.isFinite(Number(m.coordinates[1])))
+    .map((m) => {
+      const category = getEngagementHeatCategory(m?.type);
+      return {
+        type: 'Feature',
+        properties: {
+          heatCategory: category,
+          weight: getEngagementHeatWeight(m?.type),
+          markerType: m?.type || ''
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [Number(m.coordinates[0]), Number(m.coordinates[1])]
+        }
+      };
+    })
+}), [scopedEngagementMarkers]);
 
+const engagementRoomSentimentSummary = useMemo(() => {
+  const empty = {
+    matchPairs: [],
+    legendItems: [],
+    roomCount: 0,
+    markerCount: 0
+  };
+  if (!engagementMode || !engagementRoomSentimentOn) return empty;
+  if (!loadedSingleFloor || !isEngagementFloorScope) return empty;
+  const map = mapRef.current;
+  const src = map ? getGeojsonSource(map, FLOOR_SOURCE) : null;
+  const data = src ? (src._data || src.serialize?.().data || null) : null;
+  const ctxFc = currentFloorContextRef.current?.fc || null;
+  const fc = toFeatureCollection(ctxFc || data);
+  if (!fc?.features?.length) return empty;
+
+  const roomFeatures = fc.features
+    .filter((feature) => detectFeatureKind(feature?.properties) === 'room')
+    .filter((feature) => {
+      const geomType = String(feature?.geometry?.type || '');
+      return geomType === 'Polygon' || geomType === 'MultiPolygon';
+    })
+    .map((feature) => {
+      const props = feature.properties || {};
+      const rawId = feature.id ?? props.RevitId ?? props.id;
+      if (rawId == null) return null;
+      const areaSf = resolvePatchedArea(props);
+      return {
+        feature,
+        idRaw: rawId,
+        idKey: String(rawId),
+        areaSf: Number.isFinite(areaSf) ? areaSf : 0
+      };
+    })
+    .filter(Boolean);
+  if (!roomFeatures.length) return empty;
+
+  const roomCounts = new Map();
+  roomFeatures.forEach((room) => roomCounts.set(room.idKey, { counts: new Map(), total: 0 }));
+
+  let matchedMarkers = 0;
+  (scopedEngagementMarkers || [])
+    .filter((marker) => Array.isArray(marker?.coordinates))
+    .forEach((marker) => {
+      const lng = Number(marker?.coordinates?.[0]);
+      const lat = Number(marker?.coordinates?.[1]);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      const markerPoint = turf.point([lng, lat]);
+      for (const room of roomFeatures) {
+        let inRoom = false;
+        try {
+          inRoom = turf.booleanPointInPolygon(markerPoint, room.feature);
+        } catch {
+          inRoom = false;
+        }
+        if (!inRoom) continue;
+        const category = getEngagementHeatCategory(marker?.type);
+        const bucket = roomCounts.get(room.idKey);
+        const prev = bucket.counts.get(category) || 0;
+        bucket.counts.set(category, prev + 1);
+        bucket.total += 1;
+        matchedMarkers += 1;
+        break;
+      }
+    });
+
+  const categoryAgg = new Map();
+  const matchPairs = [];
+  let roomCount = 0;
+  roomFeatures.forEach((room) => {
+    const bucket = roomCounts.get(room.idKey);
+    if (!bucket || !bucket.total) return;
+    roomCount += 1;
+    const sorted = Array.from(bucket.counts.entries()).sort((a, b) => {
+      if ((b[1] || 0) !== (a[1] || 0)) return (b[1] || 0) - (a[1] || 0);
+      const heatA = ENGAGEMENT_HEAT_CATEGORY_STYLE[a[0]]?.heatValue ?? 0;
+      const heatB = ENGAGEMENT_HEAT_CATEGORY_STYLE[b[0]]?.heatValue ?? 0;
+      return heatB - heatA;
+    });
+    const dominantCategory = sorted[0]?.[0] || 'comment';
+    const dominantColor = ENGAGEMENT_HEAT_CATEGORY_STYLE[dominantCategory]?.color || '#9ca3af';
+    matchPairs.push(room.idKey, dominantColor);
+
+    const agg = categoryAgg.get(dominantCategory) || {
+      category: dominantCategory,
+      label: ENGAGEMENT_HEAT_CATEGORY_LABELS[dominantCategory] || dominantCategory,
+      color: dominantColor,
+      roomCount: 0,
+      markerCount: 0,
+      areaSf: 0
+    };
+    agg.roomCount += 1;
+    agg.markerCount += bucket.total;
+    agg.areaSf += room.areaSf || 0;
+    categoryAgg.set(dominantCategory, agg);
+  });
+
+  const legendItems = Array.from(categoryAgg.values())
+    .sort((a, b) => (b.roomCount || 0) - (a.roomCount || 0));
+  return {
+    matchPairs,
+    legendItems,
+    roomCount,
+    markerCount: matchedMarkers
+  };
+}, [
+  engagementMode,
+  engagementRoomSentimentOn,
+  loadedSingleFloor,
+  isEngagementFloorScope,
+  scopedEngagementMarkers,
+  floorFeatureVersion
+]);
+
+useEffect(() => {
+  if (!mapLoaded) return;
+  const map = mapRef.current;
+  if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+  if (!engagementMode || !engagementRoomSentimentOn || !loadedSingleFloor || !isEngagementFloorScope) return;
+  try {
+    const fillExpr = engagementRoomSentimentSummary.matchPairs.length
+      ? [
+          'match',
+          ['to-string', ['coalesce', ['id'], ['get', 'RevitId'], ['get', 'id']]],
+          ...engagementRoomSentimentSummary.matchPairs,
+          '#f3f4f6'
+        ]
+      : '#f3f4f6';
+    map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', fillExpr);
+    map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.9);
+  } catch {}
+}, [
+  mapLoaded,
+  engagementMode,
+  engagementRoomSentimentOn,
+  loadedSingleFloor,
+  isEngagementFloorScope,
+  engagementRoomSentimentSummary,
+  floorFeatureVersion
+]);
+
+useEffect(() => {
+  if (!mapLoaded || !engagementMode || !loadedSingleFloor) return;
+  if (engagementRoomSentimentOn) return;
+  applyFloorColorMode(floorColorMode);
+}, [
+  mapLoaded,
+  engagementMode,
+  loadedSingleFloor,
+  engagementRoomSentimentOn,
+  floorColorMode,
+  applyFloorColorMode
+]);
 
   const markerTypes = useMemo(() => {
     if (mode === 'admin') return { ...surveyConfigs.student, ...surveyConfigs.staff };
     return surveyConfigs[persona] || surveyConfigs.default;
   }, [persona, mode]);
+  const engagementMarkerTypeColors = useMemo(() => {
+    const out = {};
+    Object.keys(markerTypes || {}).forEach((label) => {
+      out[label] = engagementColorForType(label);
+    });
+    return out;
+  }, [markerTypes]);
 
   // ---------- Auth ----------
   useEffect(() => {
@@ -12083,7 +12747,10 @@ const filteredMarkers = useMemo(() => {
     if (!airtableRooms.length) return;
     let cancelled = false;
     const needsManifest = airtableRooms.some(
-      (room) => isLinkedRecordArray(room?.type) || isLinkedRecordArray(room?.department)
+      (room) =>
+        isLinkedRecordArray(room?.type) ||
+        isLinkedRecordArray(room?.department) ||
+        needsManifestRoomNumberHydration(room)
     );
     if (!needsManifest) {
       if (!cancelled) {
@@ -12283,17 +12950,17 @@ useEffect(() => {
     const configuredStyle = (config && config.style) || 'mapbox://styles/mapbox/streets-v12';
     const requiresMapboxToken = typeof configuredStyle === 'string' && /^mapbox:\/\//i.test(configuredStyle);
     const hasMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
-    const styleUrl = (!hasMapboxToken && requiresMapboxToken)
-      ? MAPBOX_TOKENLESS_STYLE
-      : configuredStyle;
+    if (requiresMapboxToken && !hasMapboxToken) {
+      setMapboxTokenRequired(true);
+      return;
+    }
+    setMapboxTokenRequired(false);
+    const styleUrl = configuredStyle;
     const initialCenter = config?.initialCenter || [-98.3739, 40.5939];
     const initialZoom = config?.initialZoom ?? 16;
 
     console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
-    console.log('Using style:', typeof styleUrl === 'string' ? styleUrl : 'tokenless-osm-style');
-    if (!hasMapboxToken && requiresMapboxToken) {
-      console.warn('No runtime MAPBOX_PUBLIC_TOKEN found. Falling back to OpenStreetMap base style.');
-    }
+    console.log('Using style:', styleUrl);
 
     let mapInstance = null;
     try {
@@ -12313,6 +12980,12 @@ useEffect(() => {
       console.error('Map was not created (mapInstance is falsy).');
       return;
     }
+    mapInstance.on('error', (evt) => {
+      const message = String(evt?.error?.message || '');
+      if (/access token/i.test(message)) {
+        setMapboxTokenRequired(true);
+      }
+    });
 
     mapRef.current = mapInstance;
     if (typeof window !== "undefined") {
@@ -12483,6 +13156,63 @@ useEffect(() => {
     setSelectedBuilding(resolved);
   }
 }, [selectedBuildingId, resolveBuildingPlanKey, selectedBuilding]);
+
+useEffect(() => {
+  if (!engagementMode || !mapLoaded) return;
+  if (!isEngagementFloorScope) {
+    engagementAutoLoadKeyRef.current = '';
+    return;
+  }
+  const buildingKey = bId(selectedBuildingId || selectedBuilding || '');
+  const floorKey = fId(selectedFloor || '');
+  const buildingFloors = getAvailableFloors(buildingKey);
+  const floorExistsForBuilding = buildingFloors.some((fl) => fId(fl) === floorKey);
+  if (!buildingKey || !floorKey || !buildingFloors.length || !floorExistsForBuilding) {
+    engagementAutoLoadKeyRef.current = '';
+    return;
+  }
+  const ctx = currentFloorContextRef.current || {};
+  const loadedBuildingKey = bId(ctx.buildingId || '');
+  const loadedFloorKey = fId(ctx.floorId || '');
+  const targetKey = `${buildingKey}/${floorKey}`;
+  if (loadedSingleFloor && loadedBuildingKey === buildingKey && loadedFloorKey === floorKey) {
+    engagementAutoLoadKeyRef.current = targetKey;
+    return;
+  }
+  if (engagementAutoLoadKeyRef.current === targetKey) return;
+  engagementAutoLoadKeyRef.current = targetKey;
+  void handleLoadFloorplan(selectedFloor);
+}, [
+  engagementMode,
+  isEngagementFloorScope,
+  mapLoaded,
+  selectedBuildingId,
+  selectedBuilding,
+  selectedFloor,
+  getAvailableFloors,
+  loadedSingleFloor,
+  floorFeatureVersion
+]);
+
+useEffect(() => {
+  if (!engagementMode) return;
+  if (isEngagementFloorScope) return;
+  if (!loadedSingleFloor) return;
+  handleUnloadFloorplan();
+}, [engagementMode, isEngagementFloorScope, loadedSingleFloor, handleUnloadFloorplan]);
+
+useEffect(() => {
+  if (!engagementMode) return;
+  if (!isEngagementFloorScope) {
+    setEngagementHeatmapOn(true);
+  }
+}, [engagementMode, isEngagementFloorScope]);
+
+useEffect(() => {
+  if (!engagementMode || !isEngagementFloorScope || !loadedSingleFloor) {
+    setEngagementRoomSentimentOn(false);
+  }
+}, [engagementMode, isEngagementFloorScope, loadedSingleFloor]);
 
 useEffect(() => {
   if (roomSubRef.current) {
@@ -12863,6 +13593,148 @@ useEffect(() => {
     previousSelectedBuildingId.current = selectedBuildingId;
   }, [selectedBuildingId, mapLoaded, mode]);
 
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+
+    const cleanupLegacyHeatArtifacts = () => {
+      const style = map.getStyle?.();
+      const layers = style?.layers || [];
+      const sources = style?.sources || {};
+      try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
+      layers
+        .map((l) => l?.id)
+        .filter((id) => typeof id === 'string' && id.startsWith('engagement-heat-layer-'))
+        .forEach((id) => { try { map.removeLayer(id); } catch {} });
+      Object.keys(sources)
+        .filter((id) => id.startsWith('engagement-heat-source-'))
+        .forEach((id) => { try { map.removeSource(id); } catch {} });
+    };
+    const removeEngagementHeat = () => {
+      ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ layerId }) => {
+        try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch {}
+      });
+      try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
+      try { if (map.getSource(ENGAGEMENT_HEAT_SOURCE_ID)) map.removeSource(ENGAGEMENT_HEAT_SOURCE_ID); } catch {}
+    };
+
+    if (!engagementMode) {
+      removeEngagementHeat();
+      cleanupLegacyHeatArtifacts();
+      return;
+    }
+
+    try {
+      cleanupLegacyHeatArtifacts();
+      const existingSource = map.getSource(ENGAGEMENT_HEAT_SOURCE_ID);
+      if (existingSource && typeof existingSource.setData === 'function') {
+        existingSource.setData(scopedEngagementHeatmapData);
+      } else {
+        map.addSource(ENGAGEMENT_HEAT_SOURCE_ID, { type: 'geojson', data: scopedEngagementHeatmapData });
+      }
+      const beforeId = map.getLayer('boundary-layer')
+        ? 'boundary-layer'
+        : (map.getLayer('buildings-labels') ? 'buildings-labels' : undefined);
+      // Keep floor-style color/halo/transparency in both modes, but use larger
+      // campus spread radii when no single floor is loaded so points do not look like dots.
+      const floorStyleProfile = true;
+      const floorSpreadProfile = Boolean(loadedSingleFloor);
+
+      if (!map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) {
+        map.addLayer(
+          {
+            id: ENGAGEMENT_HEAT_LAYER_ID,
+            type: 'heatmap',
+            source: ENGAGEMENT_HEAT_SOURCE_ID,
+            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+            filter: [
+              'all',
+              ['in', ['coalesce', ['get', 'heatCategory'], ''], ['literal', ENGAGEMENT_WARM_CATEGORIES]],
+              ENGAGEMENT_HAS_WEIGHT_FILTER
+            ],
+            paint: {
+              'heatmap-weight': buildEngagementWarmHaloWeightExpr(),
+              'heatmap-intensity': buildEngagementWarmHaloIntensityExpr(floorStyleProfile),
+              'heatmap-radius': buildEngagementWarmHaloRadiusExpr(floorSpreadProfile),
+              'heatmap-opacity': buildEngagementWarmHaloOpacityExpr(floorStyleProfile),
+              'heatmap-color': buildEngagementThermalWarmHaloColorExpr()
+            }
+          },
+          beforeId
+        );
+      }
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-weight', buildEngagementWarmHaloWeightExpr());
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-intensity', buildEngagementWarmHaloIntensityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-radius', buildEngagementWarmHaloRadiusExpr(floorSpreadProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-opacity', buildEngagementWarmHaloOpacityExpr(floorStyleProfile));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+
+      if (!map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) {
+        map.addLayer(
+          {
+            id: ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID,
+            type: 'heatmap',
+            source: ENGAGEMENT_HEAT_SOURCE_ID,
+            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+            filter: [
+              'all',
+              ['in', ['coalesce', ['get', 'heatCategory'], ''], ['literal', ENGAGEMENT_COOL_CATEGORIES]],
+              ENGAGEMENT_HAS_WEIGHT_FILTER
+            ],
+            paint: {
+              'heatmap-weight': ['*', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0.98],
+              'heatmap-intensity': buildEngagementCoolHaloIntensityExpr(floorStyleProfile),
+              'heatmap-radius': buildEngagementCoolHaloRadiusExpr(floorSpreadProfile),
+              'heatmap-opacity': buildEngagementCoolHaloOpacityExpr(floorStyleProfile),
+              'heatmap-color': buildEngagementThermalCoolHaloColorExpr()
+            }
+          },
+          beforeId
+        );
+      }
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-weight', ['*', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0.98]);
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementCoolHaloIntensityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-radius', buildEngagementCoolHaloRadiusExpr(floorSpreadProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementCoolHaloOpacityExpr(floorStyleProfile));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+
+      ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ category, layerId }) => {
+        if (!map.getLayer(layerId)) {
+          map.addLayer(
+            {
+              id: layerId,
+              type: 'heatmap',
+              source: ENGAGEMENT_HEAT_SOURCE_ID,
+              maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+              filter: [
+                'all',
+                ['==', ['coalesce', ['get', 'heatCategory'], ''], category],
+                ENGAGEMENT_HAS_WEIGHT_FILTER
+              ],
+              paint: {
+                'heatmap-weight': buildEngagementCategoryWeightExpr(category),
+                'heatmap-intensity': buildEngagementCategoryIntensityExpr(category, floorStyleProfile),
+                'heatmap-radius': buildEngagementCategoryRadiusExpr(category, floorSpreadProfile),
+                'heatmap-opacity': buildEngagementCategoryOpacityExpr(category, floorStyleProfile),
+                'heatmap-color': buildEngagementCategoryHeatColorExpr(category)
+              }
+            },
+            beforeId
+          );
+        }
+        map.setPaintProperty(layerId, 'heatmap-weight', buildEngagementCategoryWeightExpr(category));
+        map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile));
+        map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile));
+        map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
+        setMapLayerVisibility(map, layerId, engagementHeatmapOn);
+      });
+    } catch (err) {
+      console.warn('Engagement heatmap update failed', err);
+    }
+  }, [mapLoaded, engagementMode, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor]);
+
   // ---------- Render markers ----------
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -12875,18 +13747,23 @@ useEffect(() => {
 
     const markersToDraw = mode === 'admin'
       ? (showMarkers ? filteredMarkers : [])
-      : (engagementMode ? markers : sessionMarkers);
+      : (engagementMode ? scopedEngagementMarkers : sessionMarkers);
+    const shouldDrawMarkers = !(engagementMode && engagementHeatmapOn);
+    if (!shouldDrawMarkers) return;
     markersToDraw.forEach((m) => {
       const el = document.createElement('div');
       el.className = 'custom-marker custom-mapbox-marker';
-      el.style.backgroundColor = markerTypes[m.type] || '#9E9E9E';
+      const markerColor = engagementMode
+        ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || '#9E9E9E')
+        : (markerTypes[m.type] || '#9E9E9E');
+      el.style.backgroundColor = markerColor;
       const mk = new mapboxgl.Marker(el).setLngLat(m.coordinates);
       if (mapView !== MAP_VIEWS.SPACE_DATA) {
         mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(m.comment || m.type));
       }
       mk.addTo(map);
     });
-  }, [filteredMarkers, sessionMarkers, markers, markerTypes, mapLoaded, mode, showMarkers, engagementMode]);  // ---------- Recolor buildings based on theme ----------
+  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, engagementMode, engagementHeatmapOn]);  // ---------- Recolor buildings based on theme ----------
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
   const map = mapRef.current;
@@ -12991,10 +13868,28 @@ useEffect(() => {
     popupNode.querySelector('#confirm-marker').addEventListener('click', async () => {
       const type = popupNode.querySelector('#marker-type').value;
       const comment = popupNode.querySelector('#marker-comment').value.trim();
+      const floorCtx = currentFloorContextRef.current || {};
+      const useFloorContext = isEngagementFloorScope && loadedSingleFloor;
+      const rawBuilding = useFloorContext ? (floorCtx.buildingId || selectedBuildingId || selectedBuilding || '') : '';
+      const buildingId = bId(rawBuilding || '');
+      const buildingName = String(
+        resolveBuildingNameFromInput(rawBuilding) ||
+        activeBuildingName ||
+        rawBuilding ||
+        ''
+      ).trim();
+      const floorId = useFloorContext ? fId(floorCtx.floorId || selectedFloor || '') : '';
+      const floorLabel = useFloorContext ? String(floorCtx.floorLabel || selectedFloor || '').trim() : '';
+      const floorUrlVal = useFloorContext ? String(floorCtx.url || floorUrl || '').trim() : '';
       const markerData = {
         coordinates: new GeoPoint(lngLat.lat, lngLat.lng),
         type,
         comment,
+        buildingId,
+        buildingName,
+        floorId,
+        floorLabel,
+        floorUrl: floorUrlVal,
         persona: persona || (engagementMode ? 'student' : 'admin'),
         createdAt: serverTimestamp()
       };
@@ -13005,7 +13900,7 @@ useEffect(() => {
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes, markersCollection, persona, engagementMode]);
+  }, [markerTypes, markersCollection, persona, engagementMode, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
 
   useEffect(() => {
     if (!engagementMode || mode === 'admin') return;
@@ -13013,13 +13908,22 @@ useEffect(() => {
     const map = mapRef.current;
     const onEngagementClick = (e) => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      if (isEngagementFloorScope && !loadedSingleFloor) return;
+      try {
+        if (isEngagementFloorScope) {
+          const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] }) || [];
+          const clickedBuildingId = String(buildingHits[0]?.properties?.id || '');
+          const activeBuildingId = String(selectedBuildingIdRef.current || selectedBuildingId || selectedBuilding || '');
+          if (clickedBuildingId && activeBuildingId && clickedBuildingId !== activeBuildingId) return;
+        }
+      } catch {}
       showMarkerPopup(e.lngLat);
     };
     map.on('click', onEngagementClick);
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [engagementMode, mode, mapLoaded, showMarkerPopup]);
+  }, [engagementMode, mode, mapLoaded, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -13350,6 +14254,10 @@ useEffect(() => {
       } catch {}
 
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      if (engagementMode) {
+        setFloorHighlight(null);
+        return;
+      }
       currentRoomFeatureRef.current = null;
       const f = e.features?.[0];
       if (!f) return;
@@ -13883,6 +14791,7 @@ useEffect(() => {
 
     const onEnter = () => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      if (engagementMode) return;
       try { map.getCanvas().style.cursor = 'pointer'; } catch {}
     };
     const onLeave = () => {
@@ -13904,7 +14813,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -14003,10 +14912,81 @@ useEffect(() => {
       </div>
     </div>
 
-    {mode === 'admin' && (
+    {mapboxTokenRequired && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10010,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          className="mf-ai-modal-panel"
+          style={{
+            width: 'min(560px, 92vw)',
+            padding: 16
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 16 }}>Mapbox Token Required</div>
+          <div style={{ marginTop: 8, fontSize: 13, color: '#333' }}>
+            Enter a Mapbox public token (`pk...`) once for this browser to load the map.
+          </div>
+          <input
+            value={mapboxTokenDraft}
+            onChange={(e) => {
+              setMapboxTokenDraft(e.target.value);
+              if (mapboxTokenErr) setMapboxTokenErr('');
+            }}
+            placeholder="pk.eyJ..."
+            style={{
+              width: '100%',
+              marginTop: 10,
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: '1px solid #d0d0d0'
+            }}
+          />
+          {mapboxTokenErr ? (
+            <div style={{ marginTop: 8, color: 'crimson', fontSize: 12 }}>{mapboxTokenErr}</div>
+          ) : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            <button
+              className="btn"
+              onClick={() => {
+                try { window.localStorage.removeItem('MAPBOX_PUBLIC_TOKEN'); } catch {}
+                setMapboxTokenDraft('');
+              }}
+            >
+              Clear
+            </button>
+            <button className="btn primary" onClick={onSaveMapboxToken}>Save & Reload</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {mode === 'admin' && !presentationMode && (
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
       </button>
+    )}
+    {engagementMode && presentationMode && !presentationExporting && (
+      <div
+        style={{
+          position: 'absolute',
+          left: 16,
+          top: 16,
+          zIndex: 40,
+          display: 'flex',
+          gap: 8
+        }}
+      >
+        <button className="btn" onClick={togglePresentationMode}>Exit Presentation</button>
+        <button className="btn" onClick={exportCleanMapPng}>Export Clean PNG</button>
+      </div>
     )}
     {askOpen && (
       <div
@@ -14117,6 +15097,7 @@ useEffect(() => {
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn" onClick={onCopyAskResultCsv}>Copy CSV</button>
                 <button className="btn" onClick={onExportAskResultPdf}>Export PDF</button>
                 <button className="btn" onClick={() => setAskResult(null)}>Close</button>
               </div>
@@ -14164,6 +15145,7 @@ useEffect(() => {
       </div>
     )}
 
+      {!presentationMode && (
       <div className="mf-right-rail">
         <div className="mf-right-logos">
           <div className="logo-box">
@@ -14198,6 +15180,7 @@ useEffect(() => {
           </div>
         )}
       </div>
+      )}
 
     {mode === 'admin' && (
       <>
@@ -14719,7 +15702,7 @@ useEffect(() => {
       </div>
     )}
 
-    {isControlsVisible && (
+    {isControlsVisible && !presentationMode && (
       <div className="map-controls-panel" style={{ width: 270, fontSize: 12.5, lineHeight: 1.25 }}>
         <div className="map-controls">
 
@@ -14762,11 +15745,90 @@ useEffect(() => {
           {engagementMode && (
             <div className="legend" style={{ marginTop: 6 }}>
               <h4>Legend</h4>
+              <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
+                <button className="btn" onClick={() => setEngagementHeatmapOn((prev) => !prev)}>
+                  {engagementHeatmapOn ? 'Show Marker Dots' : 'Show Engagement Heatmap'}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setEngagementRoomSentimentOn((prev) => !prev)}
+                  disabled={!loadedSingleFloor || !isEngagementFloorScope}
+                >
+                  {engagementRoomSentimentOn ? 'Hide Room Sentiment' : 'Show Room Sentiment'}
+                </button>
+                <button className="btn" onClick={exportCurrentMapPng}>
+                  Export PNG
+                </button>
+                <button className="btn" onClick={togglePresentationMode}>
+                  {presentationMode ? 'Exit Presentation' : 'Presentation Mode'}
+                </button>
+                <button className="btn" onClick={exportCleanMapPng}>
+                  Export Clean PNG
+                </button>
+                <div style={{ fontSize: 11, color: '#555' }}>
+                  Tip: add `?presentation=1` to the URL for clean preview mode.
+                </div>
+                {(!loadedSingleFloor || !isEngagementFloorScope) && (
+                  <div style={{ fontSize: 11, color: '#666' }}>
+                    Room sentiment coloring is available in Floorplan mode with a loaded floor.
+                  </div>
+                )}
+              </div>
+              {engagementHeatmapOn && (
+                <div className="legend-section" style={{ marginBottom: 10 }}>
+                  <h5>Heat Colors</h5>
+                  <div
+                    style={{
+                      height: 10,
+                      borderRadius: 6,
+                      border: '1px solid #ddd',
+                      background: 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #facc15 56%, #fb923c 78%, #ef4444 100%)'
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginTop: 4 }}>
+                    <span>Cool</span>
+                    <span>Warm</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                    Category cores plus thermal multicolor halo (comments stay gray dots only).
+                  </div>
+                </div>
+              )}
+              {engagementRoomSentimentOn && loadedSingleFloor && isEngagementFloorScope && (
+                <div className="legend-section" style={{ marginBottom: 10 }}>
+                  <h5>Room Sentiment (Dominant)</h5>
+                  {engagementRoomSentimentSummary.legendItems.length ? (
+                    <>
+                      {engagementRoomSentimentSummary.legendItems.map((item) => (
+                        <div key={item.category} className="legend-item" style={{ justifyContent: 'space-between' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span className="legend-color-box" style={{ backgroundColor: item.color }} />
+                            <span>{item.label}</span>
+                          </span>
+                          <span style={{ fontSize: 11, color: '#555' }}>
+                            {item.roomCount} rooms
+                          </span>
+                        </div>
+                      ))}
+                      <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                        {engagementRoomSentimentSummary.markerCount.toLocaleString()} markers matched inside {engagementRoomSentimentSummary.roomCount.toLocaleString()} rooms.
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#666' }}>
+                      No markers are currently inside room polygons on this loaded floor.
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="legend-section">
                 <h5>Marker Types</h5>
                 {Object.entries(markerTypes || {}).map(([label, color]) => (
                   <div key={label} className="legend-item">
-                    <span className="legend-color-box" style={{ backgroundColor: color }} />
+                    <span
+                      className="legend-color-box"
+                      style={{ backgroundColor: engagementMode ? (engagementMarkerTypeColors[label] || color) : color }}
+                    />
                     <span>{label}</span>
                   </div>
                 ))}
@@ -14774,7 +15836,6 @@ useEffect(() => {
             </div>
           )}
 
-              {!engagementMode && (
               <div
                 className="floorplans-section"
                 style={{
@@ -14788,6 +15849,40 @@ useEffect(() => {
                 <h4 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Floorplans</h4>
 
                 <div className="floorplans" style={{ display: 'grid', gap: 6 }}>
+                  {engagementMode && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <button
+                        className="btn"
+                        style={{
+                          width: '100%',
+                          fontWeight: engagementScopeMode === 'campus' ? 700 : 500,
+                          borderColor: engagementScopeMode === 'campus' ? '#1f2937' : undefined
+                        }}
+                        onClick={() => {
+                          setEngagementScopeMode('campus');
+                          handleUnloadFloorplan();
+                        }}
+                      >
+                        Campus
+                      </button>
+                      <button
+                        className="btn"
+                        style={{
+                          width: '100%',
+                          fontWeight: engagementScopeMode === 'floor' ? 700 : 500,
+                          borderColor: engagementScopeMode === 'floor' ? '#1f2937' : undefined
+                        }}
+                        onClick={() => {
+                          setEngagementScopeMode('floor');
+                          if (!loadedSingleFloor) void handleLoadFloorplan();
+                        }}
+                        disabled={!availableFloors.length}
+                      >
+                        Floorplan
+                      </button>
+                    </div>
+                  )}
+
                   <select
                     id="fp-building"
                     style={{ width: '100%' }}
@@ -14795,7 +15890,6 @@ useEffect(() => {
                     onChange={(e) => {
                       const newBldg = e.target.value;
                       setSelectedBuilding(newBldg);
-                      setSelectedFloor(undefined);
                     }}
                   >
                     {BUILDINGS_LIST.map((b) => (
@@ -14815,27 +15909,54 @@ useEffect(() => {
                     ))}
                   </select>
 
-                  <button className="btn" style={{ width: '100%' }} onClick={() => handleLoadFloorplan()} disabled={!availableFloors.length}>Load</button>
-                  <button className="btn" style={{ width: '100%' }} onClick={handleUnloadFloorplan}>Unload</button>
-                  <button className="btn" style={{ width: '100%' }} onClick={() => centerOnCurrentFloor(mapRef.current)}>Center</button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%' }}
+                    onClick={() => {
+                      if (engagementMode) setEngagementScopeMode('floor');
+                      handleLoadFloorplan();
+                    }}
+                    disabled={!availableFloors.length}
+                  >
+                    Load
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%' }}
+                    onClick={() => {
+                      if (engagementMode) setEngagementScopeMode('campus');
+                      handleUnloadFloorplan();
+                    }}
+                  >
+                    Unload
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%' }}
+                    onClick={() => centerOnCurrentFloor(mapRef.current)}
+                    disabled={!loadedSingleFloor}
+                  >
+                    Center
+                  </button>
                 </div>
 
-                <div style={{ marginTop: 8 }}>
-                  <button
-                    className="mf-btn"
-                    style={{ width: '100%', fontWeight: 600 }}
-                    onClick={handleToggleMoveScenarioMode}
-                  >
-                    Move Scenario Mode {moveScenarioMode ? 'ON' : 'OFF'}
-                  </button>
-                  {moveScenarioMode && (
-                    <div style={{ marginTop: 6, fontSize: 11, color: '#555', textAlign: 'center' }}>
-                      Click rooms to add/remove them from a what-if scenario. Real data is not changed.
-                    </div>
-                  )}
-                </div>
+                {!engagementMode && (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      className="mf-btn"
+                      style={{ width: '100%', fontWeight: 600 }}
+                      onClick={handleToggleMoveScenarioMode}
+                    >
+                      Move Scenario Mode {moveScenarioMode ? 'ON' : 'OFF'}
+                    </button>
+                    {moveScenarioMode && (
+                      <div style={{ marginTop: 6, fontSize: 11, color: '#555', textAlign: 'center' }}>
+                        Click rooms to add/remove them from a what-if scenario. Real data is not changed.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              )}
 
               {!engagementMode && (
               <div
@@ -15100,7 +16221,7 @@ useEffect(() => {
       </div>
     )}
 
-    {mode === 'admin' && isControlsVisible && (
+    {mode === 'admin' && isControlsVisible && !presentationMode && (
       <div
         style={{
           position: 'absolute',
@@ -15122,7 +16243,7 @@ useEffect(() => {
       </div>
     )}
 
-    {engagementMode && showEngagementHelp && (
+    {engagementMode && showEngagementHelp && !presentationMode && (
       <div className="help-panel" style={{ right: 20, bottom: 20 }}>
         <button
           className="close-button"
@@ -15143,7 +16264,7 @@ useEffect(() => {
       </div>
     )}
 
-    {roomEditOpen && roomEditData && (
+    {!engagementMode && roomEditOpen && roomEditData && (
       <div
         style={{
           position: 'fixed',
