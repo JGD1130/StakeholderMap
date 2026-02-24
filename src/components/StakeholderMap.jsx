@@ -6774,6 +6774,17 @@ const isVacantOfficeListQuery = (question = '') => {
   if (!/\boffice(s)?\b/.test(text)) return false;
   return /\b(list|show|give|display|return|all|which|what)\b/.test(text);
 };
+const isVacantOfficeCountQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!/\bvacan(t|cy)\b/.test(text)) return false;
+  if (!/\boffice(s)?\b/.test(text)) return false;
+  return /\bhow many\b|\bcount\b|\bnumber of\b/.test(text);
+};
+const isClassroomCountQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!/\bclassroom(s)?\b/.test(text)) return false;
+  return /\bhow many\b|\bcount\b|\bnumber of\b/.test(text);
+};
 const isRoomVacantForListing = (room) => {
   const status = String(
     room?.occupancyStatus ??
@@ -11140,6 +11151,44 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const remaining = filtered.filter((room) => !out.includes(room));
         return out.concat(remaining.slice(0, Math.max(0, maxRows - out.length)));
       };
+      if (isClassroomCountQuery(q)) {
+        const classrooms = scopeRooms.filter((room) =>
+          isScheduledTeachingTypeLabel(room?.type ?? room?.roomType ?? '')
+        );
+        const scopeLabel = forceCampusScope
+          ? 'campus'
+          : (inferredBuilding ? inferredBuilding : 'selected scope');
+        setAskResult({
+          answer: `Found ${classrooms.length.toLocaleString()} classrooms in ${scopeLabel}.`,
+          bullets: [
+            'Count is based on room type labels that include classroom/teaching room definitions.'
+          ],
+          resultType: 'none',
+          columns: [],
+          rows: [],
+          dataUsed: ['roomRows'],
+          missingData: []
+        });
+        return;
+      }
+      if (isVacantOfficeCountQuery(q)) {
+        const rows = buildVacantOfficeListRows(scopeRooms);
+        const scopeLabel = forceCampusScope
+          ? 'campus'
+          : (inferredBuilding ? inferredBuilding : 'selected scope');
+        setAskResult({
+          answer: `Found ${rows.length.toLocaleString()} vacant offices in ${scopeLabel}.`,
+          bullets: [
+            'Only rooms marked vacant/available and without an occupant are counted.'
+          ],
+          resultType: 'none',
+          columns: [],
+          rows: [],
+          dataUsed: ['roomRows'],
+          missingData: rows.length ? [] : ['Vacancy status', 'Room inventory']
+        });
+        return;
+      }
       if (isVacantOfficeListQuery(q)) {
         const rows = buildVacantOfficeListRows(scopeRooms);
         const scopeLabel = forceCampusScope
