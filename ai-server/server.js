@@ -699,11 +699,54 @@ app.get("/api/rooms", async (req, res) => {
     const explicitFields = AIRTABLE_FIELDS
       ? AIRTABLE_FIELDS.split(",").map((f) => f.trim()).filter(Boolean)
       : null;
+    const requiredFields = uniqueStrings([
+      ...parseEnvFieldList(process.env.AIRTABLE_ROOM_ID_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_ROOM_GUID_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_BUILDING_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_BUILDING_NAME_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_FLOOR_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_OCC_STATUS_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_OCCUPANT_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_TYPE_FIELD),
+      ...parseEnvFieldList(process.env.AIRTABLE_SEAT_FIELD),
+      "Room ID",
+      "RoomId",
+      "Room ID Text",
+      "Room Number",
+      "RoomNumber",
+      "Number",
+      "Room GUID",
+      "Room Guid",
+      "RoomGuid",
+      "Revit_UniqueId",
+      "Revit Unique Id",
+      "Revit UniqueID",
+      "Revit GUID",
+      "Building",
+      "Building Name",
+      "Floor",
+      "Level",
+      "Level Name",
+      "Occupancy Status",
+      "Occupancy",
+      "Vacancy",
+      "Occupant",
+      "Assigned To",
+      "Assignee",
+      "Department",
+      "Type",
+      "Seat Count"
+    ]);
+    const requestFields =
+      explicitFields && explicitFields.length
+        ? uniqueStrings([...explicitFields, ...requiredFields])
+        : null;
 
     const records = await fetchAirtableAllRecords({
       table,
       view,
-      fields: explicitFields && explicitFields.length ? explicitFields : null
+      fields: requestFields && requestFields.length ? requestFields : null
     });
 
     const rooms = records.map((r) => {
