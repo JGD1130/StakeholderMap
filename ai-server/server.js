@@ -281,6 +281,7 @@ const AIRTABLE_BUILDING_FIELD = process.env.AIRTABLE_BUILDING_FIELD || "Building
 const AIRTABLE_BUILDING_NAME_FIELD = process.env.AIRTABLE_BUILDING_NAME_FIELD || "";
 const AIRTABLE_FLOOR_FIELD = process.env.AIRTABLE_FLOOR_FIELD || "Floor";
 const AIRTABLE_ROOM_ID_FIELD = process.env.AIRTABLE_ROOM_ID_FIELD || "Room ID";
+const AIRTABLE_ROOM_GUID_FIELD = process.env.AIRTABLE_ROOM_GUID_FIELD || "Room GUID";
 const AIRTABLE_OCC_STATUS_FIELD = process.env.AIRTABLE_OCC_STATUS_FIELD || "Occupancy Status";
 const AIRTABLE_OCCUPANT_FIELD = process.env.AIRTABLE_OCCUPANT_FIELD || "Occupant";
 const AIRTABLE_DEPT_FIELD = process.env.AIRTABLE_DEPT_FIELD || "Department";
@@ -907,20 +908,17 @@ app.patch("/api/rooms", async (req, res) => {
       return res.status(500).json({ ok: false, error: "Missing Airtable config." });
     }
 
-    const roomValue = roomGuid || roomId || roomNumber || roomLabel;
-    const matchField = roomGuid
-      ? "roomGuid"
-      : roomId
-        ? "roomId"
-        : roomNumber
-          ? "roomNumber"
-          : roomLabel
-            ? "roomLabel"
-            : "none";
-    if (roomValue) {
-      console.log(`[rooms] match field=${matchField} value=${roomValue}`);
+    const roomIdValue = String(roomId ?? "").trim();
+    const roomNumberValue = String(roomNumber ?? "").trim();
+    const roomLabelValue = String(roomLabel ?? "").trim();
+    const roomGuidValue = String(roomGuid ?? "").trim();
+    const hasLookupValue = Boolean(roomIdValue || roomNumberValue || roomLabelValue || roomGuidValue);
+    if (hasLookupValue) {
+      console.log(
+        `[rooms] match roomId=${roomIdValue || "-"} roomNumber=${roomNumberValue || "-"} roomLabel=${roomLabelValue || "-"} roomGuid=${roomGuidValue || "-"}`
+      );
     }
-    if (!roomValue) {
+    if (!hasLookupValue) {
       return res.status(400).json({ ok: false, error: "roomId required" });
     }
 
@@ -945,6 +943,15 @@ app.patch("/api/rooms", async (req, res) => {
         error: "AIRTABLE_ROOM_ID_FIELD is required to update by roomId"
       });
     }
+    const roomGuidFields = parseEnvFieldList(process.env.AIRTABLE_ROOM_GUID_FIELD).concat([
+      "Room GUID",
+      "Room Guid",
+      "RoomGuid",
+      "Revit_UniqueId",
+      "Revit Unique Id",
+      "Revit UniqueID",
+      "Revit GUID"
+    ]);
     const buildingFields = parseEnvFieldList(process.env.AIRTABLE_BUILDING_FIELD)
       .concat(parseEnvFieldList(process.env.AIRTABLE_BUILDING_NAME_FIELD));
     const floorFields = parseEnvFieldList(process.env.AIRTABLE_FLOOR_FIELD);
@@ -952,7 +959,13 @@ app.patch("/api/rooms", async (req, res) => {
     const buildingValues = expandBuildingValues([building, buildingName]);
     const floorValues = expandFloorValues([floor]);
 
-    const roomClause = buildFieldEqualsClause(roomFields, [roomValue]);
+    const roomLookupValues = uniqueStrings([roomIdValue, roomNumberValue, roomLabelValue]);
+    const roomGuidLookupValues = uniqueStrings([roomGuidValue]);
+    const roomIdClause = buildFieldEqualsClause(roomFields, roomLookupValues);
+    const roomGuidClause = buildFieldEqualsClause(roomGuidFields, roomGuidLookupValues);
+    const roomClause = roomIdClause && roomGuidClause
+      ? `OR(${roomIdClause},${roomGuidClause})`
+      : (roomIdClause || roomGuidClause);
     const buildingClause = buildFieldEqualsClause(buildingFields, buildingValues);
     const floorClause = buildFieldEqualsClause(floorFields, floorValues);
     if (!roomClause) {

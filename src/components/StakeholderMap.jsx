@@ -3060,6 +3060,29 @@ console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
 const FLOOR_SOURCE = 'floor-source';
 const FLOOR_FILL_ID = "floor-fill";
 const FLOOR_LINE_ID = "floor-line";
+const FLOOR_SENTIMENT_GRADIENT_SOURCE = "floor-sentiment-gradient-source";
+const FLOOR_SENTIMENT_LIGHT_ID = "floor-sentiment-light";
+const FLOOR_SENTIMENT_MID_ID = "floor-sentiment-mid";
+const FLOOR_SENTIMENT_SHADE_ID = "floor-sentiment-shade";
+const FLOOR_SENTIMENT_CORE_ID = "floor-sentiment-core";
+const FLOOR_SENTIMENT_CORE2_ID = "floor-sentiment-core-2";
+const FLOOR_SENTIMENT_CORE3_ID = "floor-sentiment-core-3";
+const FLOOR_SENTIMENT_CORE4_ID = "floor-sentiment-core-4";
+const FLOOR_SENTIMENT_CORE5_ID = "floor-sentiment-core-5";
+const FLOOR_SENTIMENT_CORE6_ID = "floor-sentiment-core-6";
+const FLOOR_SENTIMENT_CORE7_ID = "floor-sentiment-core-7";
+const FLOOR_SENTIMENT_GRADIENT_LAYER_IDS = [
+  FLOOR_SENTIMENT_LIGHT_ID,
+  FLOOR_SENTIMENT_MID_ID,
+  FLOOR_SENTIMENT_SHADE_ID,
+  FLOOR_SENTIMENT_CORE_ID,
+  FLOOR_SENTIMENT_CORE2_ID,
+  FLOOR_SENTIMENT_CORE3_ID,
+  FLOOR_SENTIMENT_CORE4_ID,
+  FLOOR_SENTIMENT_CORE5_ID,
+  FLOOR_SENTIMENT_CORE6_ID,
+  FLOOR_SENTIMENT_CORE7_ID
+];
 const FLOOR_DRAWING_LAYER = "floor-drawing";
 const FLOOR_HL_ID = "floor-highlight";
 const FLOOR_HL_BORDER_ID = "floor-highlight-border";
@@ -3218,7 +3241,30 @@ function applyFloorFillExpression(map, mode = 'department', options = {}) {
       ]
     ]
   ];
-  const isOfficeExpr = ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]];
+  const officeTypeCodeExpr = [
+    'to-string',
+    [
+      'coalesce',
+      ['get', '__roomType'],
+      ['get', 'NCES_Type'],
+      ['get', 'type'],
+      ['get', 'Type'],
+      ''
+    ]
+  ];
+  const isOfficeExpr = [
+    'any',
+    ['in', roomTypeUpperExpr, ['literal', OCCUPANCY_ELIGIBLE_OFFICE_LABELS_UPPER]],
+    ['>=', ['index-of', 'OFFICE - STAFF', roomTypeUpperExpr], 0],
+    ['>=', ['index-of', 'OFFICE - PROF AND ADMIN', roomTypeUpperExpr], 0],
+    ['>=', ['index-of', 'OFFICE - PROF & ADMIN', roomTypeUpperExpr], 0],
+    ['>=', ['index-of', 'OFFICE - PROF/ADMIN', roomTypeUpperExpr], 0],
+    ['>=', ['index-of', 'OFFICE - FACULTY', roomTypeUpperExpr], 0],
+    ['>=', ['index-of', 'OFFICE - ADJUNCT FACULTY', roomTypeUpperExpr], 0],
+    ['>=', ['index-of', 'OFFICE - EMERITUS FACULTY', roomTypeUpperExpr], 0],
+    ['==', officeTypeCodeExpr, '310'],
+    ['==', officeTypeCodeExpr, '311']
+  ];
   const hasOccupancyExpr = ['>', ['length', occupancyUpperExpr], 0];
   const isVacantExpr = [
     'any',
@@ -3430,6 +3476,11 @@ function ensureLayerOrder(map) {
     // Stairs above doors.
     if (map.getLayer(STAIRS_LAYER)) {
       map.moveLayer(STAIRS_LAYER);
+    }
+
+    // Keep room labels above all room sentiment overlays.
+    if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) {
+      map.moveLayer(FLOOR_ROOM_LABEL_LAYER);
     }
   } catch {}
 }
@@ -4099,7 +4150,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     try { map.setFilter(FLOOR_LINE_ID, ROOMS_ONLY_FILTER); } catch {}
   }
 
-  ensureFloorRoomLabelLayer(map);
+  ensureFloorRoomLabelLayer(map, options?.labelMode || 'department');
   // ---- WALLS OVERLAY (NEW) ----
   if (options?.enableWalls && options?.wallsBasePath) {
     const floorId = options.wallsFloorId || floor || (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) || null;
@@ -6719,6 +6770,19 @@ const OFFICE_TYPE_LABELS = [
   'Office - Emeritus Faculty'
 ];
 const OFFICE_TYPE_LABELS_UPPER = OFFICE_TYPE_LABELS.map((label) => label.toUpperCase());
+const OCCUPANCY_ELIGIBLE_OFFICE_LABELS = [
+  'Office - Staff',
+  'Office - Staff (311)',
+  'Office - Prof and Admin',
+  'Office - Prof and Admin (310)',
+  'Office - Prof & Admin',
+  'Office - Prof/Admin',
+  'Office - Faculty',
+  'Office - Adjunct Faculty',
+  'Office - Emeritus Faculty'
+];
+const OCCUPANCY_ELIGIBLE_OFFICE_LABELS_UPPER = OCCUPANCY_ELIGIBLE_OFFICE_LABELS.map((label) => label.toUpperCase());
+const OCCUPANCY_ELIGIBLE_OFFICE_CODES = new Set(['310', '311']);
 const normalizeOfficeTypeLabel = (value) =>
   String(value || '')
     .toLowerCase()
@@ -6727,7 +6791,30 @@ const normalizeOfficeTypeLabel = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
-const isAllowedOfficeType = (value) => OFFICE_TYPE_SET.has(normalizeOfficeTypeLabel(value));
+const OCCUPANCY_ELIGIBLE_OFFICE_SET = new Set(OCCUPANCY_ELIGIBLE_OFFICE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
+const isAllowedOfficeType = (value) => {
+  const normalized = normalizeOfficeTypeLabel(value);
+  if (!normalized) return false;
+  if (OFFICE_TYPE_SET.has(normalized)) return true;
+  if (normalized.includes('office')) return true;
+  const compact = normalized.replace(/\s+/g, '');
+  if (compact === '310' || compact === '311' || compact.startsWith('310') || compact.startsWith('311')) return true;
+  return false;
+};
+const isOccupancyEligibleOfficeType = (value) => {
+  const normalized = normalizeOfficeTypeLabel(value);
+  if (!normalized) return false;
+  if (OCCUPANCY_ELIGIBLE_OFFICE_SET.has(normalized)) return true;
+  const compact = normalized.replace(/\s+/g, '');
+  if (OCCUPANCY_ELIGIBLE_OFFICE_CODES.has(compact)) return true;
+  return (
+    normalized.includes('office staff') ||
+    normalized.includes('office prof admin') ||
+    normalized.includes('office faculty') ||
+    normalized.includes('office adjunct faculty') ||
+    normalized.includes('office emeritus faculty')
+  );
+};
 const GUID_VALUE_REGEX = /^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?[)}]?$/i;
 const LONG_HEX_VALUE_REGEX = /^[0-9a-f]{24,}$/i;
 const GUID_SUBSTRING_REGEX = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?/i;
@@ -7203,6 +7290,10 @@ function unloadFloorplan(map, currentFloorUrlRef) {
     if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) map.removeLayer(FLOOR_ROOM_LABEL_LAYER);
     if (map.getLayer(FLOOR_DRAWING_LAYER)) map.removeLayer(FLOOR_DRAWING_LAYER);
     if (map.getLayer(FLOOR_LINE_ID)) map.removeLayer(FLOOR_LINE_ID);
+    FLOOR_SENTIMENT_GRADIENT_LAYER_IDS.forEach((id) => {
+      if (map.getLayer(id)) map.removeLayer(id);
+    });
+    if (map.getSource(FLOOR_SENTIMENT_GRADIENT_SOURCE)) map.removeSource(FLOOR_SENTIMENT_GRADIENT_SOURCE);
     if (map.getLayer(FLOOR_DOOR_LAYER)) map.removeLayer(FLOOR_DOOR_LAYER);
     if (map.getLayer(FLOOR_STAIR_LAYER)) map.removeLayer(FLOOR_STAIR_LAYER);
     if (map.getLayer(FLOOR_FILL_ID)) map.removeLayer(FLOOR_FILL_ID);
@@ -7233,8 +7324,14 @@ function centerOnCurrentFloor(map) {
   } catch {}
 }
 
-function ensureFloorRoomLabelLayer(map) {
+function ensureFloorRoomLabelLayer(map, labelMode = 'department') {
   if (!map) return;
+  const roomNumberField = ['coalesce', ['get', 'Number'], ['get', 'RoomNumber'], ['get', 'name'], ['literal', '-']];
+  const occupantField = [
+    'to-string',
+    ['coalesce', ['get', 'occupant'], ['get', 'Occupant'], '']
+  ];
+  const areaSfField = ['concat', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ' SF'];
   const scenarioDeptField = [
     'coalesce',
     ['get', 'scenarioDepartment'],
@@ -7252,21 +7349,35 @@ function ensureFloorRoomLabelLayer(map) {
     ['get', 'Name'],
     ['literal', '-']
   ];
-  const textField = [
+  const defaultTextField = [
     'case',
     ['==', ['get', 'Element'], 'Room'],
     [
       'concat',
-      ['coalesce', ['get', 'Number'], ['get', 'RoomNumber'], ['get', 'name'], ['literal', '-']],
+      roomNumberField,
       '\n',
       typeField,
       '\n',
       scenarioDeptField,
       '\n',
-      ['concat', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ' SF']
+      areaSfField
     ],
     ''
   ];
+  const occupancyTextField = [
+    'case',
+    ['==', ['get', 'Element'], 'Room'],
+    [
+      'concat',
+      roomNumberField,
+      '\n',
+      occupantField,
+      '\n',
+      areaSfField
+    ],
+    ''
+  ];
+  const textField = labelMode === 'occupancy' ? occupancyTextField : defaultTextField;
   const textSizeExpr = [
     'interpolate',
     ['linear'],
@@ -7414,10 +7525,35 @@ const utilizationColorForPercent = (value) => {
   if (value >= 20) return '#f97316';
   return '#ef4444';
 };
+const parseHexColor = (hex) => {
+  const raw = String(hex || '').trim().replace('#', '');
+  const value = raw.length === 3
+    ? raw.split('').map((ch) => ch + ch).join('')
+    : raw;
+  if (!/^[0-9a-f]{6}$/i.test(value)) return null;
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+};
+const toHexColor = ({ r, g, b }) =>
+  `#${[r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+const mixHexColor = (sourceHex, targetHex, weight = 0.25) => {
+  const a = parseHexColor(sourceHex);
+  const b = parseHexColor(targetHex);
+  if (!a || !b) return sourceHex;
+  const w = Math.max(0, Math.min(1, Number(weight) || 0));
+  return toHexColor({
+    r: a.r + (b.r - a.r) * w,
+    g: a.g + (b.g - a.g) * w,
+    b: a.b + (b.b - a.b) * w
+  });
+};
 const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
   study: { color: '#ef4444', heatValue: 1.0, rgb: '255,69,69', haloRgb: '255,207,120' },
   hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,150,62', haloRgb: '255,218,140' },
-  improve: { color: '#facc15', heatValue: 0.9, rgb: '255,212,45', haloRgb: '255,233,153' },
+  improve: { color: '#ffe44d', heatValue: 0.9, rgb: '255,228,77', haloRgb: '255,243,168' },
   outdated: { color: '#60a5fa', heatValue: 0.8, rgb: '82,148,255', haloRgb: '180,220,255' },
   rarely: { color: '#67e8f9', heatValue: 0.9, rgb: '78,228,250', haloRgb: '190,246,255' },
   unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
@@ -7432,6 +7568,21 @@ const ENGAGEMENT_HEAT_CATEGORY_LABELS = {
   unsafe: 'Do Not Feel Safe',
   comment: 'Comment'
 };
+const ENGAGEMENT_MARKER_TYPE_ORDER = ['study', 'hangout', 'improve', 'rarely', 'outdated', 'unsafe', 'comment'];
+const ENGAGEMENT_MARKER_TYPE_LABELS = {
+  study: 'This is a go to study spot',
+  hangout: 'This is a go to hang out spot',
+  improve: 'I would like to use this space more, but it needs improvement',
+  rarely: 'I rarely or never use this space',
+  outdated: 'This space feels outdated or run down',
+  unsafe: 'I do not feel safe in this space',
+  comment: 'Just leave a comment'
+};
+const ENGAGEMENT_MARKER_TYPES = ENGAGEMENT_MARKER_TYPE_ORDER.reduce((out, category) => {
+  const label = ENGAGEMENT_MARKER_TYPE_LABELS[category];
+  out[label] = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.color || '#9ca3af';
+  return out;
+}, {});
 const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
 const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
@@ -7460,6 +7611,8 @@ const getEngagementHeatCategory = (markerType) => {
   if (/go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively/.test(text)) return 'study';
   return 'comment';
 };
+const getCanonicalEngagementMarkerLabel = (markerType) =>
+  ENGAGEMENT_MARKER_TYPE_LABELS[getEngagementHeatCategory(markerType)] || ENGAGEMENT_MARKER_TYPE_LABELS.comment;
 const getEngagementHeatWeight = (markerType) =>
   ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.heatValue ?? 0;
 const engagementColorForType = (markerType) =>
@@ -7502,7 +7655,7 @@ const buildEngagementThermalWarmHaloColorExpr = () => ([
   ['heatmap-density'],
   0, 'rgba(0,0,0,0)',
   0.06, 'rgba(255,237,128,0.20)',
-  0.22, 'rgba(253,224,71,0.40)',
+  0.22, 'rgba(255,228,77,0.40)',
   0.48, 'rgba(251,146,60,0.58)',
   0.72, 'rgba(239,68,68,0.70)',
   1, 'rgba(220,38,38,0.82)'
@@ -7636,6 +7789,65 @@ const setMapLayerVisibility = (map, layerId, visible) => {
     map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
   } catch {}
 };
+const buildRoomSentimentFillExpr = (matchPairs, fallback = '#f3f4f6') =>
+  matchPairs?.length
+    ? [
+        'match',
+        ['to-string', ['coalesce', ['id'], ['get', 'RevitId'], ['get', 'id']]],
+        ...matchPairs,
+        fallback
+      ]
+    : fallback;
+const ensureRoomSentimentGradientLayers = (
+  map,
+  gradientCollection = { type: 'FeatureCollection', features: [] }
+) => {
+  if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+  const beforeId = map.getLayer(FLOOR_LINE_ID) ? FLOOR_LINE_ID : undefined;
+  const bandDefs = [
+    { id: FLOOR_SENTIMENT_LIGHT_ID, band: 1, opacity: 0.10 },
+    { id: FLOOR_SENTIMENT_MID_ID, band: 2, opacity: 0.11 },
+    { id: FLOOR_SENTIMENT_SHADE_ID, band: 3, opacity: 0.12 },
+    { id: FLOOR_SENTIMENT_CORE_ID, band: 4, opacity: 0.13 },
+    { id: FLOOR_SENTIMENT_CORE2_ID, band: 5, opacity: 0.14 },
+    { id: FLOOR_SENTIMENT_CORE3_ID, band: 6, opacity: 0.15 },
+    { id: FLOOR_SENTIMENT_CORE4_ID, band: 7, opacity: 0.17 },
+    { id: FLOOR_SENTIMENT_CORE5_ID, band: 8, opacity: 0.19 },
+    { id: FLOOR_SENTIMENT_CORE6_ID, band: 9, opacity: 0.22 },
+    { id: FLOOR_SENTIMENT_CORE7_ID, band: 10, opacity: 0.25 }
+  ];
+  try {
+    upsertGeoJsonSource(map, FLOOR_SENTIMENT_GRADIENT_SOURCE, gradientCollection);
+
+    bandDefs.forEach(({ id, band, opacity }) => {
+      if (map.getLayer(id)) return;
+      map.addLayer(
+        {
+          id,
+          type: 'fill',
+          source: FLOOR_SENTIMENT_GRADIENT_SOURCE,
+          filter: ['==', ['get', 'band'], band],
+          paint: {
+            'fill-color': ['coalesce', ['get', 'c'], '#93c5fd'],
+            'fill-opacity': opacity
+          }
+        },
+        beforeId
+      );
+    });
+  } catch {}
+};
+const getRuntimeBundleId = () => {
+  if (typeof document === 'undefined') return '';
+  try {
+    const scripts = Array.from(document.scripts || []).map((s) => String(s?.src || ''));
+    for (const src of scripts) {
+      const match = src.match(/assets\/index-([A-Za-z0-9_-]+)\.js/i);
+      if (match?.[1]) return match[1];
+    }
+  } catch {}
+  return '';
+};
 const StakeholderMap = ({ config, universityId, mode = 'public', persona, engagementMode = false }) => {
   const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
@@ -7675,7 +7887,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
       return false;
     }
   });
-  const [presentationExporting, setPresentationExporting] = useState(false);
+  const [engagementBuildId, setEngagementBuildId] = useState('');
   const MAP_VIEW_OPTIONS = [
     { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
     { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment Progress' },
@@ -7690,6 +7902,10 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   const [mapboxTokenRequired, setMapboxTokenRequired] = useState(false);
   const [mapboxTokenDraft, setMapboxTokenDraft] = useState('');
   const [mapboxTokenErr, setMapboxTokenErr] = useState('');
+  useEffect(() => {
+    if (!engagementMode) return;
+    setEngagementBuildId(getRuntimeBundleId());
+  }, [engagementMode]);
   useEffect(() => {
     if (!mapboxTokenRequired || mapboxTokenDraft) return;
     try {
@@ -7831,6 +8047,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   }), []);
   const [floorColorMode, setFloorColorMode] = useState('department');
   const [engagementRoomSentimentOn, setEngagementRoomSentimentOn] = useState(false);
+  const [engagementRoomSentimentStyle, setEngagementRoomSentimentStyle] = useState('solid');
+  const [engagementRoomSentimentOnlyOn, setEngagementRoomSentimentOnlyOn] = useState(false);
     const mergeOptionsList = (prev, next) => {
       const seen = new Set(prev);
       (next || []).forEach((item) => {
@@ -7910,7 +8128,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         p.type ??
         p.Name ??
         '';
-      const isOfficeType = isAllowedOfficeType(typeLabelRaw);
+      const isOfficeType = isOccupancyEligibleOfficeType(typeLabelRaw);
       let key = '';
       let color = '#e6e6e6';
       const normalizeOccupancyLabel = (props = {}) => {
@@ -7975,9 +8193,23 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     setFloorLegendLookup(new Map(items.map((item) => [item.name, item.ids || []])));
   }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY]);
 
+  const syncFloorLegendFromSummary = useCallback((summary) => {
+    if (floorColorMode === FLOOR_COLOR_MODES.DEPARTMENT) {
+      setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary?.totalsByDept)));
+      setFloorLegendLookup(new Map());
+      return;
+    }
+    setFloorLegendItems([]);
+    setFloorLegendLookup(new Map());
+    buildLegendForMode(floorColorMode);
+  }, [FLOOR_COLOR_MODES.DEPARTMENT, floorColorMode, buildLegendForMode]);
+
   const applyFloorColorMode = useCallback((mode) => {
     const map = mapRef.current;
     if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+    const applyLabelMode = (labelMode) => {
+      try { ensureFloorRoomLabelLayer(map, labelMode); } catch {}
+    };
     const src = getGeojsonSource(map, FLOOR_SOURCE);
     const data = src ? (src._data || src.serialize?.().data || null) : null;
     const fc = toFeatureCollection(data);
@@ -7989,6 +8221,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#f3f4f6');
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.86);
+        applyLabelMode(effectiveMode);
         setFloorLegendItems([]);
         setFloorLegendLookup(new Map());
         setFloorLegendSelection(null);
@@ -8043,6 +8276,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', deptExpr);
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        applyLabelMode(effectiveMode);
         const legend = Array.from(deptColorMap.entries()).map(([name, color]) => ({
           name,
           color,
@@ -8095,6 +8329,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', typeExpr);
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        applyLabelMode(effectiveMode);
         const legend = Array.from(typeColorMap.entries()).map(([name, color]) => ({
           name,
           color,
@@ -8108,6 +8343,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     }
 
     applyFloorFillExpression(map, effectiveMode);
+    applyLabelMode(effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
   }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, engagementMode, engagementRoomSentimentOn]);
@@ -8367,9 +8603,12 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     }
   }, [mapLoaded, floorAdjustMode, drawingAlignState]);
   useEffect(() => {
-    if (!mapLoaded || !floorUrl) return;
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    if (!map.getLayer(FLOOR_FILL_ID)) return;
     applyFloorColorMode(floorColorMode);
-  }, [mapLoaded, floorUrl, floorColorMode, applyFloorColorMode]);
+    ensureFloorRoomLabelLayer(map, floorColorMode);
+  }, [mapLoaded, floorColorMode, applyFloorColorMode]);
   useEffect(() => {
     if (!mapLoaded || !floorUrl) return;
     buildLegendForMode(floorColorMode);
@@ -9397,7 +9636,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         const labeled = { ...summary, floorLabel };
         floorStatsCache.current[url] = summary;
         setFloorStats(labeled);
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
+        syncFloorLegendFromSummary(summary);
         setPanelStats(formatSummaryForPanel(summary, 'floor'));
         return;
       }
@@ -9406,7 +9645,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     if (cachedUrlSummary) {
       const floorLabel = ctx?.floorLabel || selectedFloor || '';
       setFloorStats({ ...cachedUrlSummary, floorLabel });
-      setFloorLegendItems(toKeyDeptList(filterDeptTotals(cachedUrlSummary.totalsByDept)));
+      syncFloorLegendFromSummary(cachedUrlSummary);
       setPanelStats(formatSummaryForPanel(cachedUrlSummary, 'floor'));
       return;
     }
@@ -9415,7 +9654,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
       if (cached) {
         const floorLabel = ctx.floorLabel || selectedFloor || '';
         setFloorStats({ ...cached, floorLabel });
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(cached.totalsByDept)));
+        syncFloorLegendFromSummary(cached);
         setPanelStats(formatSummaryForPanel(cached, 'floor'));
         return;
       }
@@ -9429,7 +9668,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         }
         const floorLabel = latestCtx?.floorLabel || selectedFloor || '';
         setFloorStats(summary ? { ...summary, floorLabel } : null);
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary?.totalsByDept)));
+        syncFloorLegendFromSummary(summary);
         setPanelStats(formatSummaryForPanel(summary, 'floor'));
       })
       .catch(() => {
@@ -9437,7 +9676,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         setFloorStats(null);
         setPanelStats(formatSummaryForPanel(null, 'floor'));
       });
-  }, [fetchFloorSummaryByUrl, selectedFloor]);
+  }, [fetchFloorSummaryByUrl, selectedFloor, syncFloorLegendFromSummary]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
@@ -9587,12 +9826,21 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
           }
           if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
             try {
+              const roomIdLookupValue = String(
+                roomNumberValue ||
+                roomLabel ||
+                roomId ||
+                ''
+              ).trim();
+              const roomLabelLookupValue = String(roomLabel ?? '').trim();
               const resp = await guardedAiFetch('/ai/api/rooms', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  roomId: roomGuidValue || roomNumberValue,
+                  roomId: roomIdLookupValue || undefined,
                   roomGuid: roomGuidValue || undefined,
+                  roomNumber: roomNumberValue || undefined,
+                  roomLabel: roomLabelLookupValue || undefined,
                   building: buildingId,
                   buildingName: buildingName || '',
                   floor: floorName,
@@ -10270,6 +10518,7 @@ useEffect(() => {
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
+        labelMode: floorColorMode,
         roomPatches,
         airtableLookup: airtableRoomLookup,
         currentFloorContextRef,
@@ -10332,7 +10581,7 @@ useEffect(() => {
         floorSummaryCacheRef.current.set(url, summaryToUse);
         const summaryWithLabel = { ...summaryToUse, floorLabel: floorId };
         setFloorStats(summaryWithLabel);
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summaryToUse.totalsByDept)));
+        syncFloorLegendFromSummary(summaryToUse);
         if (currentFloorUrlRef.current === url) {
           setPanelStats(formatSummaryForPanel(summaryToUse, 'floor'));
         }
@@ -12001,29 +12250,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     } catch {}
   }, []);
 
-  const exportCurrentMapPng = useCallback(() => {
-    try {
-      const map = mapRef.current;
-      const canvas = map?.getCanvas?.();
-      if (!canvas) {
-        alert('Map is not ready yet.');
-        return;
-      }
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const suffix = engagementHeatmapOn ? 'heatmap' : 'markers';
-      const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/png');
-      a.download = `${base}-${suffix}-${stamp}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (err) {
-      console.warn('PNG export failed', err);
-      alert('PNG export failed. See console for details.');
-    }
-  }, [engagementHeatmapOn, universityId]);
-
   const togglePresentationMode = useCallback(() => {
     setPresentationMode((prev) => {
       const next = !prev;
@@ -12036,40 +12262,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       return next;
     });
   }, []);
-
-  const exportCleanMapPng = useCallback(() => {
-    const map = mapRef.current;
-    const canvas = map?.getCanvas?.();
-    if (!canvas) {
-      alert('Map is not ready yet.');
-      return;
-    }
-    const prevPresentation = presentationMode;
-    const prevControls = isControlsVisible;
-    setPresentationExporting(true);
-    setPresentationMode(true);
-    setIsControlsVisible(false);
-    const finish = () => {
-      try {
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
-        const a = document.createElement('a');
-        a.href = canvas.toDataURL('image/png');
-        a.download = `${base}-presentation-${stamp}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch (err) {
-        console.warn('Clean PNG export failed', err);
-        alert('Clean PNG export failed. See console for details.');
-      } finally {
-        setPresentationMode(prevPresentation);
-        setIsControlsVisible(prevControls);
-        setPresentationExporting(false);
-      }
-    };
-    requestAnimationFrame(() => requestAnimationFrame(finish));
-  }, [presentationMode, isControlsVisible, universityId]);
 
   const clearConditions = useCallback(() => {
     try {
@@ -12283,6 +12475,8 @@ const scopedEngagementHeatmapData = useMemo(() => ({
 const engagementRoomSentimentSummary = useMemo(() => {
   const empty = {
     matchPairs: [],
+    matchPairsGradientBase: [],
+    gradientPointCollection: { type: 'FeatureCollection', features: [] },
     legendItems: [],
     roomCount: 0,
     markerCount: 0
@@ -12292,8 +12486,7 @@ const engagementRoomSentimentSummary = useMemo(() => {
   const map = mapRef.current;
   const src = map ? getGeojsonSource(map, FLOOR_SOURCE) : null;
   const data = src ? (src._data || src.serialize?.().data || null) : null;
-  const ctxFc = currentFloorContextRef.current?.fc || null;
-  const fc = toFeatureCollection(ctxFc || data);
+  const fc = toFeatureCollection(data);
   if (!fc?.features?.length) return empty;
 
   const roomFeatures = fc.features
@@ -12348,6 +12541,8 @@ const engagementRoomSentimentSummary = useMemo(() => {
 
   const categoryAgg = new Map();
   const matchPairs = [];
+  const matchPairsGradientBase = [];
+  const gradientFeatures = [];
   let roomCount = 0;
   roomFeatures.forEach((room) => {
     const bucket = roomCounts.get(room.idKey);
@@ -12361,7 +12556,50 @@ const engagementRoomSentimentSummary = useMemo(() => {
     });
     const dominantCategory = sorted[0]?.[0] || 'comment';
     const dominantColor = ENGAGEMENT_HEAT_CATEGORY_STYLE[dominantCategory]?.color || '#9ca3af';
+    const dominantBaseLight = mixHexColor(dominantColor, '#ffffff', 0.40);
+    const gradientBands = [
+      { band: 1, scale: 0.98, color: mixHexColor(dominantColor, '#ffffff', 0.36) },
+      { band: 2, scale: 0.93, color: mixHexColor(dominantColor, '#ffffff', 0.30) },
+      { band: 3, scale: 0.88, color: mixHexColor(dominantColor, '#ffffff', 0.23) },
+      { band: 4, scale: 0.83, color: mixHexColor(dominantColor, '#ffffff', 0.16) },
+      { band: 5, scale: 0.77, color: mixHexColor(dominantColor, '#ffffff', 0.08) },
+      { band: 6, scale: 0.71, color: dominantColor },
+      { band: 7, scale: 0.64, color: mixHexColor(dominantColor, '#000000', 0.10) },
+      { band: 8, scale: 0.57, color: mixHexColor(dominantColor, '#000000', 0.20) },
+      { band: 9, scale: 0.50, color: mixHexColor(dominantColor, '#000000', 0.31) },
+      { band: 10, scale: 0.43, color: mixHexColor(dominantColor, '#000000', 0.43) }
+    ];
     matchPairs.push(room.idKey, dominantColor);
+    matchPairsGradientBase.push(room.idKey, dominantBaseLight);
+
+    try {
+      const center = turf.centerOfMass(room.feature);
+      const coords = center?.geometry?.coordinates || null;
+      const origin = Number.isFinite(Number(coords?.[0])) && Number.isFinite(Number(coords?.[1]))
+        ? [Number(coords[0]), Number(coords[1])]
+        : 'center';
+      gradientBands.forEach(({ band, scale, color }) => {
+        let scaled = null;
+        try {
+          scaled = turf.transformScale(room.feature, scale, { origin });
+        } catch {
+          scaled = null;
+        }
+        if (!scaled && band === 1) scaled = room.feature;
+        if (!scaled) return;
+        const geomType = String(scaled?.geometry?.type || '');
+        if (geomType !== 'Polygon' && geomType !== 'MultiPolygon') return;
+        gradientFeatures.push({
+          ...scaled,
+          properties: {
+            ...(scaled.properties || {}),
+            roomId: room.idKey,
+            band,
+            c: color
+          }
+        });
+      });
+    } catch {}
 
     const agg = categoryAgg.get(dominantCategory) || {
       category: dominantCategory,
@@ -12381,6 +12619,8 @@ const engagementRoomSentimentSummary = useMemo(() => {
     .sort((a, b) => (b.roomCount || 0) - (a.roomCount || 0));
   return {
     matchPairs,
+    matchPairsGradientBase,
+    gradientPointCollection: { type: 'FeatureCollection', features: gradientFeatures },
     legendItems,
     roomCount,
     markerCount: matchedMarkers
@@ -12400,25 +12640,58 @@ useEffect(() => {
   if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
   if (!engagementMode || !engagementRoomSentimentOn || !loadedSingleFloor || !isEngagementFloorScope) return;
   try {
-    const fillExpr = engagementRoomSentimentSummary.matchPairs.length
-      ? [
-          'match',
-          ['to-string', ['coalesce', ['id'], ['get', 'RevitId'], ['get', 'id']]],
-          ...engagementRoomSentimentSummary.matchPairs,
-          '#f3f4f6'
-        ]
-      : '#f3f4f6';
+    const useGradient = engagementRoomSentimentStyle === 'gradient';
+    const fillExpr = buildRoomSentimentFillExpr(
+      useGradient
+        ? engagementRoomSentimentSummary.matchPairsGradientBase
+        : engagementRoomSentimentSummary.matchPairs,
+      '#f3f4f6'
+    );
     map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', fillExpr);
-    map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.9);
+    map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', useGradient ? 0.94 : 0.88);
+
+    if (useGradient) {
+      ensureRoomSentimentGradientLayers(
+        map,
+        engagementRoomSentimentSummary.gradientPointCollection
+      );
+      FLOOR_SENTIMENT_GRADIENT_LAYER_IDS.forEach((id) => setMapLayerVisibility(map, id, true));
+      try {
+        if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) map.moveLayer(FLOOR_ROOM_LABEL_LAYER);
+      } catch {}
+    } else {
+      FLOOR_SENTIMENT_GRADIENT_LAYER_IDS.forEach((id) => setMapLayerVisibility(map, id, false));
+    }
   } catch {}
 }, [
   mapLoaded,
   engagementMode,
   engagementRoomSentimentOn,
+  engagementRoomSentimentStyle,
   loadedSingleFloor,
   isEngagementFloorScope,
   engagementRoomSentimentSummary,
   floorFeatureVersion
+]);
+useEffect(() => {
+  if (!mapLoaded) return;
+  const map = mapRef.current;
+  if (!map) return;
+  const visible = Boolean(
+    engagementMode &&
+    engagementRoomSentimentOn &&
+    engagementRoomSentimentStyle === 'gradient' &&
+    loadedSingleFloor &&
+    isEngagementFloorScope
+  );
+  FLOOR_SENTIMENT_GRADIENT_LAYER_IDS.forEach((id) => setMapLayerVisibility(map, id, visible));
+}, [
+  mapLoaded,
+  engagementMode,
+  engagementRoomSentimentOn,
+  engagementRoomSentimentStyle,
+  loadedSingleFloor,
+  isEngagementFloorScope
 ]);
 
 useEffect(() => {
@@ -12433,11 +12706,22 @@ useEffect(() => {
   floorColorMode,
   applyFloorColorMode
 ]);
+useEffect(() => {
+  if (engagementRoomSentimentOn) return;
+  if (!engagementRoomSentimentOnlyOn) return;
+  setEngagementRoomSentimentOnlyOn(false);
+}, [engagementRoomSentimentOn, engagementRoomSentimentOnlyOn]);
+useEffect(() => {
+  if (loadedSingleFloor && isEngagementFloorScope) return;
+  if (!engagementRoomSentimentOnlyOn) return;
+  setEngagementRoomSentimentOnlyOn(false);
+}, [loadedSingleFloor, isEngagementFloorScope, engagementRoomSentimentOnlyOn]);
 
   const markerTypes = useMemo(() => {
+    if (engagementMode) return ENGAGEMENT_MARKER_TYPES;
     if (mode === 'admin') return { ...surveyConfigs.student, ...surveyConfigs.staff };
     return surveyConfigs[persona] || surveyConfigs.default;
-  }, [persona, mode]);
+  }, [persona, mode, engagementMode]);
   const engagementMarkerTypeColors = useMemo(() => {
     const out = {};
     Object.keys(markerTypes || {}).forEach((label) => {
@@ -12852,12 +13136,13 @@ useEffect(() => {
     floorSummaryCacheRef.current.set(url, summary);
     if (ctx.key) floorSummaryCacheRef.current.set(ctx.key, summary);
     setFloorStats(summaryWithLabel);
-    setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
+    syncFloorLegendFromSummary(summary);
     setPanelStats(formatSummaryForPanel(summary, 'floor'));
   }, [
     loadedSingleFloor,
     dashboardFloorFeatures,
-    selectedFloor
+    selectedFloor,
+    syncFloorLegendFromSummary
   ]);
 
   useEffect(() => {
@@ -13560,12 +13845,11 @@ useEffect(() => {
       applyFill('buildings-fill', withNoFloorplanOverride(defaultBuildingColor), 0.2);
       try {
         map.setPaintProperty('buildings-fill', 'fill-outline-color', '#00000000');
-    } catch {}
-    ensureFloorRoomLabelLayer(map);
+      } catch {}
+      ensureFloorRoomLabelLayer(map, floorColorMode);
+    }
   }
-}
-
-}, [mapLoaded, mapView]);
+}, [mapLoaded, mapView, floorColorMode]);
 
 
   
@@ -13748,22 +14032,23 @@ useEffect(() => {
     const markersToDraw = mode === 'admin'
       ? (showMarkers ? filteredMarkers : [])
       : (engagementMode ? scopedEngagementMarkers : sessionMarkers);
-    const shouldDrawMarkers = !(engagementMode && engagementHeatmapOn);
+    const shouldDrawMarkers = !(engagementMode && (engagementHeatmapOn || engagementRoomSentimentOnlyOn));
     if (!shouldDrawMarkers) return;
     markersToDraw.forEach((m) => {
       const el = document.createElement('div');
       el.className = 'custom-marker custom-mapbox-marker';
       const markerColor = engagementMode
-        ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || '#9E9E9E')
+        ? engagementColorForType(m.type)
         : (markerTypes[m.type] || '#9E9E9E');
       el.style.backgroundColor = markerColor;
       const mk = new mapboxgl.Marker(el).setLngLat(m.coordinates);
       if (mapView !== MAP_VIEWS.SPACE_DATA) {
-        mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(m.comment || m.type));
+        const markerLabel = engagementMode ? getCanonicalEngagementMarkerLabel(m.type) : m.type;
+        mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(m.comment || markerLabel));
       }
       mk.addTo(map);
     });
-  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, engagementMode, engagementHeatmapOn]);  // ---------- Recolor buildings based on theme ----------
+  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, engagementMode, engagementHeatmapOn, engagementRoomSentimentOnlyOn]);  // ---------- Recolor buildings based on theme ----------
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
   const map = mapRef.current;
@@ -14973,7 +15258,7 @@ useEffect(() => {
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
       </button>
     )}
-    {engagementMode && presentationMode && !presentationExporting && (
+    {engagementMode && presentationMode && (
       <div
         style={{
           position: 'absolute',
@@ -14985,7 +15270,6 @@ useEffect(() => {
         }}
       >
         <button className="btn" onClick={togglePresentationMode}>Exit Presentation</button>
-        <button className="btn" onClick={exportCleanMapPng}>Export Clean PNG</button>
       </div>
     )}
     {askOpen && (
@@ -15345,6 +15629,7 @@ useEffect(() => {
               onChangeColorMode={(mode) => {
                 setFloorColorMode(mode);
                 applyFloorColorMode(mode);
+                ensureFloorRoomLabelLayer(mapRef.current, mode);
               }}
               legendSelection={floorLegendSelection}
               onLegendClick={(name) => {
@@ -15746,7 +16031,14 @@ useEffect(() => {
             <div className="legend" style={{ marginTop: 6 }}>
               <h4>Legend</h4>
               <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-                <button className="btn" onClick={() => setEngagementHeatmapOn((prev) => !prev)}>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const next = !engagementHeatmapOn;
+                    setEngagementHeatmapOn(next);
+                    if (next) setEngagementRoomSentimentOnlyOn(false);
+                  }}
+                >
                   {engagementHeatmapOn ? 'Show Marker Dots' : 'Show Engagement Heatmap'}
                 </button>
                 <button
@@ -15756,18 +16048,31 @@ useEffect(() => {
                 >
                   {engagementRoomSentimentOn ? 'Hide Room Sentiment' : 'Show Room Sentiment'}
                 </button>
-                <button className="btn" onClick={exportCurrentMapPng}>
-                  Export PNG
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const next = !engagementRoomSentimentOnlyOn;
+                    setEngagementRoomSentimentOnlyOn(next);
+                    if (next) {
+                      setEngagementHeatmapOn(false);
+                      setEngagementRoomSentimentOn(true);
+                    }
+                  }}
+                  disabled={!loadedSingleFloor || !isEngagementFloorScope}
+                >
+                  {engagementRoomSentimentOnlyOn ? 'Exit Room Sentiment Only' : 'Room Sentiment Only'}
                 </button>
                 <button className="btn" onClick={togglePresentationMode}>
                   {presentationMode ? 'Exit Presentation' : 'Presentation Mode'}
                 </button>
-                <button className="btn" onClick={exportCleanMapPng}>
-                  Export Clean PNG
-                </button>
                 <div style={{ fontSize: 11, color: '#555' }}>
-                  Tip: add `?presentation=1` to the URL for clean preview mode.
+                  Tip: use `?presentation=1` in the URL for clean preview mode.
                 </div>
+                {engagementBuildId && (
+                  <div style={{ fontSize: 11, color: '#777' }}>
+                    Build: {engagementBuildId}
+                  </div>
+                )}
                 {(!loadedSingleFloor || !isEngagementFloorScope) && (
                   <div style={{ fontSize: 11, color: '#666' }}>
                     Room sentiment coloring is available in Floorplan mode with a loaded floor.
@@ -15782,7 +16087,7 @@ useEffect(() => {
                       height: 10,
                       borderRadius: 6,
                       border: '1px solid #ddd',
-                      background: 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #facc15 56%, #fb923c 78%, #ef4444 100%)'
+                      background: 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #ffe44d 56%, #fb923c 78%, #ef4444 100%)'
                     }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginTop: 4 }}>
@@ -15796,6 +16101,29 @@ useEffect(() => {
               )}
               {engagementRoomSentimentOn && loadedSingleFloor && isEngagementFloorScope && (
                 <div className="legend-section" style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6 }}>Room Fill Style</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+                    <button
+                      className="btn"
+                      style={{
+                        fontWeight: engagementRoomSentimentStyle === 'solid' ? 700 : 500,
+                        borderColor: engagementRoomSentimentStyle === 'solid' ? '#1f2937' : undefined
+                      }}
+                      onClick={() => setEngagementRoomSentimentStyle('solid')}
+                    >
+                      Solid
+                    </button>
+                    <button
+                      className="btn"
+                      style={{
+                        fontWeight: engagementRoomSentimentStyle === 'gradient' ? 700 : 500,
+                        borderColor: engagementRoomSentimentStyle === 'gradient' ? '#1f2937' : undefined
+                      }}
+                      onClick={() => setEngagementRoomSentimentStyle('gradient')}
+                    >
+                      Gradient
+                    </button>
+                  </div>
                   <h5>Room Sentiment (Dominant)</h5>
                   {engagementRoomSentimentSummary.legendItems.length ? (
                     <>
@@ -17199,6 +17527,7 @@ useEffect(() => {
             <div style={{ fontWeight: 600, marginBottom: 4 }}>What Mapfluence AI is doing</div>
             <ul style={{ paddingLeft: 18, margin: '0 0 10px 0' }}>
               <li>Generates summaries and comparisons from the statistics currently loaded in this session.</li>
+              <li>Can reference the Hastings Master Facilities Plan for narrative/context questions when document support is enabled.</li>
               <li>Uses your selected scope (campus / building / floor) and scenario totals when available.</li>
               <li>Produces descriptive output and does not modify project data.</li>
             </ul>
