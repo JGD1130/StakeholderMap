@@ -6889,7 +6889,8 @@ const resolveAvailableFloorId = (value, availableFloors = []) => {
 function buildAirtableRoomLookup(rooms = []) {
   const byGuid = new Map();
   const byComposite = new Map();
-  if (!Array.isArray(rooms)) return { byGuid, byComposite };
+  const byBuildingRoom = new Map();
+  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom };
 
   const setUnique = (map, key, room) => {
     if (!key) return;
@@ -6927,9 +6928,12 @@ function buildAirtableRoomLookup(rooms = []) {
       const compositeKey = `${buildingKey}|${floorKey}|${roomIdKey}`;
       if (!byComposite.has(compositeKey)) byComposite.set(compositeKey, room);
     }
+    if (roomIdKey && buildingKey) {
+      setUnique(byBuildingRoom, `${buildingKey}|${roomIdKey}`, room);
+    }
   });
 
-  return { byGuid, byComposite };
+  return { byGuid, byComposite, byBuildingRoom };
 }
 
 function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) {
@@ -7020,6 +7024,9 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
     );
     if (roomIdKey && buildingKey && floorKey) {
       room = lookup.byComposite.get(`${buildingKey}|${floorKey}|${roomIdKey}`) || null;
+    }
+    if (!room && roomIdKey && buildingKey) {
+      room = lookup.byBuildingRoom?.get(`${buildingKey}|${roomIdKey}`) || null;
     }
   }
   if (!room) return null;
@@ -9397,7 +9404,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         const labeled = { ...summary, floorLabel };
         floorStatsCache.current[url] = summary;
         setFloorStats(labeled);
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
+        try { buildLegendForMode(floorColorMode); } catch {}
         setPanelStats(formatSummaryForPanel(summary, 'floor'));
         return;
       }
@@ -9406,7 +9413,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     if (cachedUrlSummary) {
       const floorLabel = ctx?.floorLabel || selectedFloor || '';
       setFloorStats({ ...cachedUrlSummary, floorLabel });
-      setFloorLegendItems(toKeyDeptList(filterDeptTotals(cachedUrlSummary.totalsByDept)));
+      try { buildLegendForMode(floorColorMode); } catch {}
       setPanelStats(formatSummaryForPanel(cachedUrlSummary, 'floor'));
       return;
     }
@@ -9415,7 +9422,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
       if (cached) {
         const floorLabel = ctx.floorLabel || selectedFloor || '';
         setFloorStats({ ...cached, floorLabel });
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(cached.totalsByDept)));
+        try { buildLegendForMode(floorColorMode); } catch {}
         setPanelStats(formatSummaryForPanel(cached, 'floor'));
         return;
       }
@@ -9429,7 +9436,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         }
         const floorLabel = latestCtx?.floorLabel || selectedFloor || '';
         setFloorStats(summary ? { ...summary, floorLabel } : null);
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary?.totalsByDept)));
+        try { buildLegendForMode(floorColorMode); } catch {}
         setPanelStats(formatSummaryForPanel(summary, 'floor'));
       })
       .catch(() => {
@@ -9437,7 +9444,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
         setFloorStats(null);
         setPanelStats(formatSummaryForPanel(null, 'floor'));
       });
-  }, [fetchFloorSummaryByUrl, selectedFloor]);
+  }, [buildLegendForMode, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
@@ -10332,7 +10339,7 @@ useEffect(() => {
         floorSummaryCacheRef.current.set(url, summaryToUse);
         const summaryWithLabel = { ...summaryToUse, floorLabel: floorId };
         setFloorStats(summaryWithLabel);
-        setFloorLegendItems(toKeyDeptList(filterDeptTotals(summaryToUse.totalsByDept)));
+        try { buildLegendForMode(floorColorMode); } catch {}
         if (currentFloorUrlRef.current === url) {
           setPanelStats(formatSummaryForPanel(summaryToUse, 'floor'));
         }
@@ -12852,9 +12859,11 @@ useEffect(() => {
     floorSummaryCacheRef.current.set(url, summary);
     if (ctx.key) floorSummaryCacheRef.current.set(ctx.key, summary);
     setFloorStats(summaryWithLabel);
-    setFloorLegendItems(toKeyDeptList(filterDeptTotals(summary.totalsByDept)));
+    try { buildLegendForMode(floorColorMode); } catch {}
     setPanelStats(formatSummaryForPanel(summary, 'floor'));
   }, [
+    buildLegendForMode,
+    floorColorMode,
     loadedSingleFloor,
     dashboardFloorFeatures,
     selectedFloor
@@ -14237,7 +14246,7 @@ useEffect(() => {
       try { map.off('mousemove', onMouseMove); } catch {}
       try { map.off('mouseup', onMouseUp); } catch {}
     };
-  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb]);
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
