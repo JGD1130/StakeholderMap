@@ -626,6 +626,27 @@ function normalizeLoose(value) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+function looksLikeMachineRoomIdentifier(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  if (isAirtableRecordId(raw)) return true;
+  if (/^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?[)}]?$/i.test(raw)) return true;
+  if (/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?/i.test(raw) && raw.length >= 24) return true;
+  if (/^[0-9a-f]{24,}$/i.test(raw)) return true;
+  if (raw.includes("|")) return true;
+  return false;
+}
+
+function pickReadableRoomNumber(...candidates) {
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").trim();
+    if (!text) continue;
+    if (looksLikeMachineRoomIdentifier(text)) continue;
+    return text;
+  }
+  return "";
+}
+
 function parseEnvFieldList(value) {
   if (!value) return [];
   return String(value)
@@ -752,13 +773,23 @@ app.get("/api/rooms", async (req, res) => {
         "SeatCount"
       ]);
       const roomIdFields = parseEnvFieldList(process.env.AIRTABLE_ROOM_ID_FIELD);
-      const roomId = pickFieldValue(f, [
+      const roomIdRaw = pickFieldValue(f, [
         ...roomIdFields,
         "Room ID",
         "RoomId",
         "Room ID Text",
         "Room Number"
       ]);
+      const roomNumberRaw = pickFieldValue(f, [
+        process.env.AIRTABLE_ROOM_NUMBER_FIELD,
+        "Room Number",
+        "RoomNumber",
+        "Number",
+        "Room No",
+        "Room"
+      ]);
+      const roomNumber = pickReadableRoomNumber(roomNumberRaw, roomIdRaw);
+      const roomId = roomNumber || String(roomIdRaw || "").trim();
       const roomGuid = pickFieldValue(f, [
         "Room GUID",
         "Room Guid",
@@ -772,6 +803,7 @@ app.get("/api/rooms", async (req, res) => {
       return {
         airtableId: r.id,
         roomId,
+        roomNumber,
         roomGuid,
         building,
         floor,
