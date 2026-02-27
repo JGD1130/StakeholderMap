@@ -452,6 +452,10 @@ function buildFieldEqualsClause(fields = [], values = []) {
     valueList.forEach((value) => {
       const escaped = escapeFormulaValue(value);
       clauses.push(`${fieldExpr}="${escaped}"`);
+      const raw = String(value ?? "").trim();
+      if (/^-?\d+(?:\.\d+)?$/.test(raw)) {
+        clauses.push(`${fieldExpr}=${raw}`);
+      }
     });
   });
   if (!clauses.length) return null;
@@ -975,23 +979,37 @@ app.patch("/api/rooms", async (req, res) => {
     const formula = formulaParts.length > 1 ? `AND(${formulaParts.join(",")})` : formulaParts[0];
 
     const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
-    let records = [];
-    try {
-      records = await fetchAirtableRows(formula, view);
-    } catch (err) {
-      const msg = String(err?.message || err || "");
-      const invalidFormulaUnknownFields =
-        /INVALID_FILTER_BY_FORMULA/i.test(msg) && /Unknown field names/i.test(msg);
-      if (!invalidFormulaUnknownFields || !roomIdClause) {
+    const safeLookup = async (formulaText, label) => {
+      if (!formulaText) return [];
+      try {
+        return await fetchAirtableRows(formulaText, view);
+      } catch (err) {
+        const msg = String(err?.message || err || "");
+        const invalidFormulaUnknownFields =
+          /INVALID_FILTER_BY_FORMULA/i.test(msg) && /Unknown field names/i.test(msg);
+        if (invalidFormulaUnknownFields) {
+          console.warn(`[rooms] lookup skipped (${label}) due to Airtable formula field mismatch`);
+          return [];
+        }
         throw err;
       }
-      const fallbackParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
-      const fallbackFormula =
-        fallbackParts.length > 1 ? `AND(${fallbackParts.join(",")})` : fallbackParts[0];
-      console.warn(
-        "[rooms] retrying lookup without GUID formula fields due to Airtable filter error"
-      );
-      records = await fetchAirtableRows(fallbackFormula, view);
+    };
+
+    let records = await safeLookup(formula, "room+building+floor");
+    const roomBaseClause = roomIdClause || roomClause;
+
+    if (!records.length && roomIdClause && roomClause !== roomIdClause) {
+      const idOnlyParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
+      const idOnlyFormula = idOnlyParts.length > 1 ? `AND(${idOnlyParts.join(",")})` : idOnlyParts[0];
+      records = await safeLookup(idOnlyFormula, "roomId+building+floor");
+    }
+    if (!records.length && floorClause) {
+      const noFloorParts = [roomBaseClause, buildingClause].filter(Boolean);
+      const noFloorFormula = noFloorParts.length > 1 ? `AND(${noFloorParts.join(",")})` : noFloorParts[0];
+      records = await safeLookup(noFloorFormula, "room+building");
+    }
+    if (!records.length && buildingClause) {
+      records = await safeLookup(roomBaseClause, "room-only");
     }
     if (!records.length) {
       return res.status(404).json({ ok: false, error: "Room not found" });
