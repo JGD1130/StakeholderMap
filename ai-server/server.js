@@ -975,7 +975,24 @@ app.patch("/api/rooms", async (req, res) => {
     const formula = formulaParts.length > 1 ? `AND(${formulaParts.join(",")})` : formulaParts[0];
 
     const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
-    const records = await fetchAirtableRows(formula, view);
+    let records = [];
+    try {
+      records = await fetchAirtableRows(formula, view);
+    } catch (err) {
+      const msg = String(err?.message || err || "");
+      const invalidFormulaUnknownFields =
+        /INVALID_FILTER_BY_FORMULA/i.test(msg) && /Unknown field names/i.test(msg);
+      if (!invalidFormulaUnknownFields || !roomIdClause) {
+        throw err;
+      }
+      const fallbackParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
+      const fallbackFormula =
+        fallbackParts.length > 1 ? `AND(${fallbackParts.join(",")})` : fallbackParts[0];
+      console.warn(
+        "[rooms] retrying lookup without GUID formula fields due to Airtable filter error"
+      );
+      records = await fetchAirtableRows(fallbackFormula, view);
+    }
     if (!records.length) {
       return res.status(404).json({ ok: false, error: "Room not found" });
     }
