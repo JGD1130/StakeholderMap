@@ -7460,6 +7460,15 @@ const ENGAGEMENT_HEAT_CATEGORY_LABELS = {
   unsafe: 'Do Not Feel Safe',
   comment: 'Comment'
 };
+const ENGAGEMENT_MARKER_TYPES = {
+  'This is a go to study spot': '#ef4444',
+  'This is a go to hang out spot': '#fb923c',
+  'I would like to use this space more, but it needs improvement': '#fde047',
+  'I rarely or never use this space': '#67e8f9',
+  'This space feels outdated or run down': '#60a5fa',
+  'I do not feel safe in this space': '#1d4ed8',
+  'Just leave a comment': '#9ca3af'
+};
 const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
 const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
@@ -12602,9 +12611,10 @@ useEffect(() => {
 }, [engagementRoomSentimentOn, loadedSingleFloor, isEngagementFloorScope]);
 
   const markerTypes = useMemo(() => {
+    if (engagementMode) return ENGAGEMENT_MARKER_TYPES;
     if (mode === 'admin') return { ...surveyConfigs.student, ...surveyConfigs.staff };
     return surveyConfigs[persona] || surveyConfigs.default;
-  }, [persona, mode]);
+  }, [persona, mode, engagementMode]);
   const engagementMarkerTypeColors = useMemo(() => {
     const out = {};
     Object.keys(markerTypes || {}).forEach((label) => {
@@ -13923,7 +13933,7 @@ useEffect(() => {
       const el = document.createElement('div');
       el.className = 'custom-marker custom-mapbox-marker';
       const markerColor = engagementMode
-        ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || '#9E9E9E')
+        ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || engagementColorForType(m.type) || '#9E9E9E')
         : (markerTypes[m.type] || '#9E9E9E');
       el.style.backgroundColor = markerColor;
       const mk = new mapboxgl.Marker(el).setLngLat(m.coordinates);
