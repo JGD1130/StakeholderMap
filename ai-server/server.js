@@ -782,6 +782,9 @@ app.get("/api/rooms", async (req, res) => {
       ]);
       const roomNumberRaw = pickFieldValue(f, [
         process.env.AIRTABLE_ROOM_NUMBER_FIELD,
+        "Room ID",
+        "RoomId",
+        "Room ID Text",
         "Room Number",
         "RoomNumber",
         "Number",
