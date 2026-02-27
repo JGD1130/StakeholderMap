@@ -130,10 +130,27 @@ const _hash = (s) => {
   return h;
 };
 
-const FALLBACKS = [
+const DEPT_FALLBACKS = [
   '#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd',
   '#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf'
 ];
+
+const TYPE_FALLBACKS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981', '#14b8a6',
+  '#06b6d4', '#0ea5e9', '#3b82f6', '#2563eb', '#4f46e5', '#6366f1', '#8b5cf6', '#a855f7',
+  '#d946ef', '#ec4899', '#f43f5e', '#fb7185', '#f472b6', '#38bdf8', '#2dd4bf', '#34d399',
+  '#a3e635', '#facc15', '#fb923c', '#f87171', '#60a5fa', '#818cf8', '#22d3ee', '#4ade80'
+];
+
+const adjustHexColor = (hex, delta = 0) => {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized) || !Number.isFinite(delta) || delta === 0) return hex;
+  const shift = (v) => Math.max(0, Math.min(255, v + delta));
+  const r = shift(parseInt(normalized.slice(0, 2), 16));
+  const g = shift(parseInt(normalized.slice(2, 4), 16));
+  const b = shift(parseInt(normalized.slice(4, 6), 16));
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+};
 
 const colorForDept = (name) => {
   if (!name) return '#AAAAAA';
@@ -142,13 +159,17 @@ const colorForDept = (name) => {
   } catch {
     // fall back to hash palette
   }
-  return FALLBACKS[_hash(String(name)) % FALLBACKS.length];
+  return DEPT_FALLBACKS[_hash(String(name)) % DEPT_FALLBACKS.length];
 };
 
 const colorForType = (name) => {
   if (!name) return '#CCCCCC';
-  if (String(name).trim().toLowerCase() === 'public corridor') return '#D9D9D9';
-  return FALLBACKS[_hash(String(name).toLowerCase()) % FALLBACKS.length];
+  const normName = String(name).trim().toLowerCase();
+  if (normName === 'public corridor' || normName.includes('corridor') || normName.includes('circulation')) return '#D9D9D9';
+  const h = _hash(normName);
+  const base = TYPE_FALLBACKS[h % TYPE_FALLBACKS.length];
+  const shade = [0, 18, -12][(h >>> 5) % 3];
+  return adjustHexColor(base, shade);
 };
 
 const summarizeProgramCounts = (stats) => {
