@@ -7443,9 +7443,9 @@ const utilizationColorForPercent = (value) => {
   return '#ef4444';
 };
 const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
-  study: { color: '#ef4444', heatValue: 1.0, rgb: '255,69,69', haloRgb: '255,207,120' },
-  hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,150,62', haloRgb: '255,218,140' },
-  improve: { color: '#facc15', heatValue: 0.9, rgb: '255,212,45', haloRgb: '255,233,153' },
+  study: { color: '#ef4444', heatValue: 1.0, rgb: '255,56,56', haloRgb: '255,230,210' },
+  hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,142,44', haloRgb: '255,234,204' },
+  improve: { color: '#fde047', heatValue: 0.9, rgb: '255,230,88', haloRgb: '255,247,214' },
   outdated: { color: '#60a5fa', heatValue: 0.8, rgb: '82,148,255', haloRgb: '180,220,255' },
   rarely: { color: '#67e8f9', heatValue: 0.9, rgb: '78,228,250', haloRgb: '190,246,255' },
   unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
@@ -7516,12 +7516,13 @@ const buildEngagementCategoryHeatColorExpr = (category) => {
     ['linear'],
     ['heatmap-density'],
     0, 'rgba(0,0,0,0)',
-    0.03, `rgba(${haloRgb},0.10)`,
-    0.12, `rgba(${haloRgb},0.22)`,
-    0.24, `rgba(${haloRgb},0.40)`,
-    0.40, `rgba(${coreRgb},0.66)`,
-    0.65, `rgba(${coreRgb},0.86)`,
-    1, `rgba(${coreRgb},0.98)`
+    0.03, 'rgba(255,255,255,0.05)',
+    0.10, 'rgba(255,255,255,0.14)',
+    0.22, `rgba(${haloRgb},0.26)`,
+    0.36, `rgba(${haloRgb},0.42)`,
+    0.54, `rgba(${coreRgb},0.74)`,
+    0.76, `rgba(${coreRgb},0.93)`,
+    1, `rgba(${coreRgb},1.0)`
   ];
 };
 const buildEngagementThermalWarmHaloColorExpr = () => ([
