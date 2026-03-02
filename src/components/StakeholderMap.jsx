@@ -17422,7 +17422,7 @@ useEffect(() => {
             <div style={{ fontWeight: 600, marginBottom: 4 }}>What Mapfluence AI is doing</div>
             <ul style={{ paddingLeft: 18, margin: '0 0 10px 0' }}>
               <li>Generates summaries and comparisons from the statistics currently loaded in this session.</li>
-              <li>Uses your selected scope (campus / building / floor) and scenario totals when available.</li>
+              <li>References connected planning documents (for example, the facilities master plan) when available.</li>
               <li>Produces descriptive output and does not modify project data.</li>
             </ul>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>What Mapfluence AI is not doing</div>
