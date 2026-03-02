@@ -7739,7 +7739,7 @@ const setMapLayerVisibility = (map, layerId, visible) => {
     map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
   } catch {}
 };
-const StakeholderMap = ({ config, universityId, mode = 'public', persona, engagementMode = false }) => {
+const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', persona, engagementMode = false }) => {
   const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -7759,6 +7759,8 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   const [selectedBuilding, setSelectedBuilding] = useState(BUILDINGS_LIST[0]?.name || '');
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
+  const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
+  const engagementTechnicalAssessmentEnabled = Boolean(tenant?.features?.enableEngagementTechnicalAssessment);
   // ---- Map view modes ----
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
@@ -7787,6 +7789,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
   const visibleMapViewOptions = mode === 'admin'
     ? MAP_VIEW_OPTIONS
     : MAP_VIEW_OPTIONS.filter((opt) => opt.value === MAP_VIEWS.SPACE_DATA);
+  const showMapViewSelector = !engagementMode || (mode === 'admin' && engagementTechnicalAssessmentEnabled);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
@@ -8400,18 +8403,18 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     if (manifestUrl) {
       return /^https?:\/\//i.test(manifestUrl) ? manifestUrl : assetUrl(manifestUrl);
     }
-    const campusSeg = encodeURIComponent(DEFAULT_FLOORPLAN_CAMPUS);
+    const campusSeg = encodeURIComponent(floorplanCampus);
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(normalizedFloorId);
     return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
-  }, [getAvailableFloors, getBuildingFolderKey]);
+  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return [];
     const cached = getAvailableFloors(folderKey);
     const hasUrls = availableFloorUrlsByBuildingRef.current.has(folderKey);
     if (cached.length && hasUrls) return cached;
-    const floorEntries = await loadFloorManifest(folderKey);
+    const floorEntries = await loadFloorManifest(folderKey, floorplanCampus);
     const floors = (floorEntries || [])
       .map((f) => normalizeFloorIdValue(f?.id))
       .filter(Boolean);
@@ -8423,7 +8426,7 @@ const StakeholderMap = ({ config, universityId, mode = 'public', persona, engage
     availableFloorsByBuildingRef.current.set(folderKey, floors);
     availableFloorUrlsByBuildingRef.current.set(folderKey, urlMap);
     return floors;
-  }, [getBuildingFolderKey, getAvailableFloors]);
+  }, [getBuildingFolderKey, getAvailableFloors, floorplanCampus]);
   const [loadedFloors, setLoadedFloors] = useState([]);
   const [loadedSingleFloor, setLoadedSingleFloor] = useState(false);
   const loadedFloorsRef = useRef([]);
@@ -10256,7 +10259,8 @@ useEffect(() => {
     }
     if (!floorId && floorIdRaw && floorOverrideValue && buildingKey && (!buildingFloors || buildingFloors.length === 0)) {
       floorId = floorIdRaw;
-      floorUrl = assetUrl(`floorplans/${DEFAULT_FLOORPLAN_CAMPUS}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
+      const campusSeg = encodeURIComponent(floorplanCampus);
+      floorUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
       if (buildingFloors && !buildingFloors.includes(floorId)) {
         buildingFloors = [...buildingFloors, floorId];
         availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
@@ -10280,7 +10284,7 @@ useEffect(() => {
         resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
         resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
       const basePath = buildingFolder
-        ? assetUrl(`floorplans/Hastings/${buildingFolder}`)
+        ? assetUrl(`floorplans/${encodeURIComponent(floorplanCampus)}/${buildingFolder}`)
         : null;
       const urlFolder = url ? getBuildingFolderFromBasePath(url) : null;
       const adjustLabel =
@@ -12704,7 +12708,7 @@ useEffect(() => {
         clearFloors();
         return;
       }
-      const floorEntries = await loadFloorManifest(folderKey);
+      const floorEntries = await loadFloorManifest(folderKey, floorplanCampus);
       if (cancelled) return;
       const floors = (floorEntries || [])
         .map((f) => normalizeFloorIdValue(f?.id))
@@ -12725,7 +12729,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [selectedBuildingId, selectedBuilding, getBuildingFolderKey]);
+  }, [selectedBuildingId, selectedBuilding, getBuildingFolderKey, floorplanCampus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -14416,7 +14420,7 @@ useEffect(() => {
       try { map.off('mousemove', onMouseMove); } catch {}
       try { map.off('mouseup', onMouseUp); } catch {}
     };
-  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode]);
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -15905,7 +15909,7 @@ useEffect(() => {
           )}
 
           {/* Map View */}
-          {!engagementMode && (
+          {showMapViewSelector && (
             <div className="control-section theme-selector" style={{ marginTop: 6 }}>
               <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
               <select

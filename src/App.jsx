@@ -4,13 +4,19 @@ import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-
 import PublicMapPage from './pages/PublicMapPage.jsx';
 import AdminMapPage from './pages/AdminMapPage.jsx';
 import { getConfig } from './configLoader';
+import { getTenantConfigId, resolveTenant } from './tenants/registry';
 import './App.css';
 
 function UniversityMapLoader({ engagementMode = false }) {
   const { universityId, persona } = useParams();
-  const config = getConfig(universityId);
+  const tenant = resolveTenant(universityId);
+  const configId = getTenantConfigId(universityId);
+  const config = getConfig(configId);
 
   if (!config) {
+    if (tenant?.status === 'planned') {
+      return <div>Tenant "{universityId}" is scaffolded but not configured yet.</div>;
+    }
     return <div>Error: Configuration not found for "{universityId}".</div>;
   }
 
@@ -18,7 +24,7 @@ function UniversityMapLoader({ engagementMode = false }) {
   const mode = isAdmin ? 'admin' : 'public';
 
   if (isAdmin) {
-    return <AdminMapPage config={config} universityId={universityId} />;
+    return <AdminMapPage config={config} universityId={universityId} tenant={tenant} />;
   } else {
     return (
       <PublicMapPage
@@ -26,6 +32,7 @@ function UniversityMapLoader({ engagementMode = false }) {
         universityId={universityId}
         persona={persona}
         engagementMode={engagementMode}
+        tenant={tenant}
       />
     );
   }

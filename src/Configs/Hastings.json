@@ -2,6 +2,7 @@
   {
   "universityName": "Hastings College",
   "enableDrawingEntry": true,
+  "floorplanCampus": "Hastings",
 
   "buildings": "Hastings_College_Buildings.geojson",
   "boundary": "Hastings_College_Boundary.geojson",
