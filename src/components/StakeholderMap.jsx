@@ -4321,9 +4321,39 @@ function accumulateSummaryFromProps(accumulator, props = {}) {
   }
 }
 
+function isPolygonGeometryType(geomType) {
+  return geomType === 'Polygon' || geomType === 'MultiPolygon';
+}
+
+function featureLooksLikeRoom(feature) {
+  if (!feature) return false;
+  const props = feature?.properties || {};
+  if (isDrawingFeature(props)) return false;
+
+  const geomType = feature?.geometry?.type || '';
+  if (geomType && !isPolygonGeometryType(geomType)) return false;
+
+  const area = resolvePatchedArea(props);
+  if (Number.isFinite(area)) return area > 0;
+
+  const roomLabel = pickFirstDefined(props, [
+    'Room',
+    'Room Number',
+    'Room_Number',
+    'RoomNumber',
+    'Number',
+    'Name',
+    'Label'
+  ]);
+  return Boolean(norm(roomLabel));
+}
+
 function summarizeFeatures(features = []) {
   const acc = createEmptySummaryAccumulator();
-  features.forEach((feature) => accumulateSummaryFromProps(acc, feature?.properties));
+  features.forEach((feature) => {
+    if (!featureLooksLikeRoom(feature)) return;
+    accumulateSummaryFromProps(acc, feature?.properties);
+  });
   return finalizeCombinedSummary(acc);
 }
 
