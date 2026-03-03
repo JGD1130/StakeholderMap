@@ -9364,6 +9364,18 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         totalsByDept: {}
       };
     }
+    // Keep building totals aligned with floor totals by preferring floorplan-derived summaries.
+    const sum = await fetchBuildingSummary(buildingId);
+    const hasFloorSummaryData = Boolean(
+      sum &&
+      (
+        (Number(sum.rooms) || 0) > 0 ||
+        (Number(sum.totalSf) || 0) > 0 ||
+        Object.keys(sum.totalsByDept || sum.deptCounts || {}).length > 0
+      )
+    );
+    if (hasFloorSummaryData) return sum;
+
     if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
       const buildingKey = normalizeDashboardKey(buildingId);
       if (buildingKey) {
@@ -9379,7 +9391,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         if (summary) return summary;
       }
     }
-    const sum = await fetchBuildingSummary(buildingId);
     return sum ?? {
       totalSf: undefined,
       rooms: undefined,
@@ -9475,25 +9486,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     currentFloorUrlRef.current = null;
     currentFloorContextRef.current = { url: null, key: null, buildingId: null, floorId: null };
     setPanelStats({ loading: true, mode: 'building' });
-    if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
-      const buildingKey = normalizeDashboardKey(buildingId);
-      if (buildingKey) {
-        const scoped = campusRooms.filter((room) => {
-          const roomBuilding =
-            room?.building ??
-            room?.buildingName ??
-            room?.buildingLabel ??
-            '';
-          return normalizeDashboardKey(roomBuilding) === buildingKey;
-        });
-        const summary = summarizeRoomRowsForPanels(scoped);
-        if (summary) {
-          setBuildingStats(summary);
-          setPanelStats(formatSummaryForPanel(summary, 'building'));
-          return;
-        }
-      }
-    }
     computeBuildingTotals(buildingId)
       .then((summary) => {
         if (panelBuildingKeyRef.current !== resolvedKey) return;
@@ -9515,31 +9507,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     currentFloorUrlRef.current = url;
     setPanelStats({ loading: true, mode: 'floor' });
     const ctx = currentFloorContextRef.current;
-    if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
-      const buildingKey = ctx?.buildingId || selectedBuildingId || selectedBuilding;
-      const floorLabel = ctx?.floorLabel || selectedFloor || '';
-      const scoped = campusRooms.filter((room) => {
-        const roomBuilding =
-          room?.building ??
-          room?.buildingName ??
-          room?.buildingLabel ??
-          '';
-        if (normalizeDashboardKey(roomBuilding) !== normalizeDashboardKey(buildingKey)) return false;
-        if (!floorLabel) return true;
-        const floorTokens = normalizeFloorTokens(floorLabel);
-        if (!floorTokens.length) return true;
-        return floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens);
-      });
-      const summary = summarizeRoomRowsForPanels(scoped);
-      if (summary) {
-        const labeled = { ...summary, floorLabel };
-        floorStatsCache.current[url] = summary;
-        setFloorStats(labeled);
-        try { buildLegendForMode(floorColorMode); } catch {}
-        setPanelStats(formatSummaryForPanel(summary, 'floor'));
-        return;
-      }
-    }
     const cachedUrlSummary = floorStatsCache.current[url];
     if (cachedUrlSummary) {
       const floorLabel = ctx?.floorLabel || selectedFloor || '';
@@ -13023,30 +12990,25 @@ useEffect(() => {
   ]);
 
   useEffect(() => {
-    if (!campusRoomsLoaded || !Array.isArray(campusRooms) || !campusRooms.length) return;
     if (loadedSingleFloor) return;
     const buildingId = selectedBuildingId || selectedBuilding;
     if (!buildingId) return;
-    const buildingKey = normalizeDashboardKey(buildingId);
-    if (!buildingKey) return;
-    const scoped = campusRooms.filter((room) => {
-      const roomBuilding =
-        room?.building ??
-        room?.buildingName ??
-        room?.buildingLabel ??
-        '';
-      return normalizeDashboardKey(roomBuilding) === buildingKey;
-    });
-    const summary = summarizeRoomRowsForPanels(scoped);
-    if (!summary) return;
-    setBuildingStats(summary);
-    setPanelStats(formatSummaryForPanel(summary, 'building'));
+    let cancelled = false;
+    computeBuildingTotals(buildingId)
+      .then((summary) => {
+        if (cancelled || loadedSingleFloor) return;
+        if (!summary) return;
+        setBuildingStats(summary);
+        setPanelStats(formatSummaryForPanel(summary, 'building'));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, [
-    campusRoomsLoaded,
     campusRooms,
     loadedSingleFloor,
     selectedBuildingId,
-    selectedBuilding
+    selectedBuilding,
+    computeBuildingTotals
   ]);
 
   useEffect(() => {
