@@ -12403,7 +12403,7 @@ const engagementRoomSentimentSummary = useMemo(() => {
   if (!fc?.features?.length) return empty;
 
   const roomFeatures = fc.features
-    .filter((feature) => detectFeatureKind(feature?.properties) === 'room')
+    .filter((feature) => featureLooksLikeRoom(feature))
     .filter((feature) => {
       const geomType = String(feature?.geometry?.type || '');
       return geomType === 'Polygon' || geomType === 'MultiPolygon';
@@ -12911,7 +12911,7 @@ useEffect(() => {
     const fc = ctx.fc;
     const feats = Array.isArray(fc?.features) ? fc.features : [];
     if (!feats.length) return [];
-    return feats.filter((feature) => detectFeatureKind(feature?.properties) === 'room');
+    return feats.filter((feature) => featureLooksLikeRoom(feature));
   }, [loadedSingleFloor, floorFeatureVersion, selectedBuildingId, selectedBuilding, selectedFloor]);
 
   const dashboardRoomFeatures = useMemo(() => {
