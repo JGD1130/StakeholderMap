@@ -60,6 +60,10 @@ function isPdfFile(name) {
   return /\.pdf$/i.test(String(name || ""));
 }
 
+function isAllowedAiDocFile(name) {
+  return /\.(pdf|xlsx|xls|csv|txt|md)$/i.test(String(name || ""));
+}
+
 async function listLocalAiDocs() {
   if (!AI_DOCS_ENABLED) return [];
   let entries = [];
@@ -69,7 +73,7 @@ async function listLocalAiDocs() {
     return [];
   }
   return entries
-    .filter((entry) => entry.isFile() && isPdfFile(entry.name))
+    .filter((entry) => entry.isFile() && isAllowedAiDocFile(entry.name))
     .map((entry) => ({
       name: entry.name,
       fullPath: path.join(AI_DOCS_DIR, entry.name)
