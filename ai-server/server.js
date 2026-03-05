@@ -51,6 +51,11 @@ const EXPLAIN_CAMPUS_DEFAULT_MODEL =
   process.env.OPENAI_ASK_MODEL ||
   AI_MODEL;
 const EXPLAIN_CAMPUS_LARGE_MODEL = process.env.EXPLAIN_CAMPUS_LARGE_MODEL || "gpt-4.1-mini";
+const SERVER_COMMIT =
+  process.env.RENDER_GIT_COMMIT ||
+  process.env.GIT_COMMIT ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  "";
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
@@ -1970,7 +1975,12 @@ app.get("/demo/sample", async (req, res) => {
   }
 });
 
-app.get("/health", (req, res) => res.json({ ok: true }));
+app.get("/health", (req, res) =>
+  res.json({
+    ok: true,
+    commit: SERVER_COMMIT || "unknown"
+  })
+);
 
 app.listen(8787, () => {
   console.log("[ai-server] running at http://localhost:8787");
