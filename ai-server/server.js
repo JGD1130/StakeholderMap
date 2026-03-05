@@ -56,10 +56,6 @@ const aiDocsCache = {
   docs: [] // [{ name, fullPath, fileId }]
 };
 
-function isPdfFile(name) {
-  return /\.pdf$/i.test(String(name || ""));
-}
-
 function isAllowedAiDocFile(name) {
   return /\.(pdf|xlsx|xls|csv|txt|md)$/i.test(String(name || ""));
 }
