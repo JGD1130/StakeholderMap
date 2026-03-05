@@ -7291,7 +7291,7 @@ function centerOnCurrentFloor(map) {
   } catch {}
 }
 
-function ensureFloorRoomLabelLayer(map) {
+function ensureFloorRoomLabelLayer(map, colorMode = 'department') {
   if (!map) return;
   const scenarioDeptField = [
     'coalesce',
@@ -7310,6 +7310,36 @@ function ensureFloorRoomLabelLayer(map) {
     ['get', 'Name'],
     ['literal', '-']
   ];
+  const occupantField = [
+    'to-string',
+    ['coalesce', ['get', 'occupant'], ['get', 'Occupant'], '']
+  ];
+  const occupancyStatusField = [
+    'to-string',
+    [
+      'coalesce',
+      ['get', 'occupancyStatus'],
+      ['get', 'Occupancy Status'],
+      ['get', 'OccupancyStatus'],
+      ['get', 'Occupancy'],
+      ['get', 'Vacancy'],
+      ['get', 'vacancy'],
+      ['get', 'Vacant'],
+      ''
+    ]
+  ];
+  const occupancyLabelField = [
+    'case',
+    ['>', ['length', occupantField], 0],
+    occupantField,
+    ['>', ['length', occupancyStatusField], 0],
+    occupancyStatusField,
+    'Unknown'
+  ];
+  const infoLineField =
+    colorMode === 'occupancy' || colorMode === 'vacancy'
+      ? occupancyLabelField
+      : scenarioDeptField;
   const textField = [
     'case',
     ['==', ['get', 'Element'], 'Room'],
@@ -7319,7 +7349,7 @@ function ensureFloorRoomLabelLayer(map) {
       '\n',
       typeField,
       '\n',
-      scenarioDeptField,
+      infoLineField,
       '\n',
       ['concat', ['to-string', ['round', ['coalesce', ['get', 'Area_SF'], ['get', 'Area'], 0]]], ' SF']
     ],
@@ -8130,6 +8160,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         setFloorLegendItems([]);
         setFloorLegendLookup(new Map());
         setFloorLegendSelection(null);
+        ensureFloorRoomLabelLayer(map, effectiveMode);
         return;
       } catch {}
     }
@@ -8189,6 +8220,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
         setFloorLegendItems(legend);
         setFloorLegendLookup(new Map(legend.map((item) => [item.name, item.ids || []])));
+        ensureFloorRoomLabelLayer(map, effectiveMode);
         return;
       } catch {}
     }
@@ -8241,11 +8273,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
         setFloorLegendItems(legend);
         setFloorLegendLookup(new Map(legend.map((item) => [item.name, item.ids || []])));
+        ensureFloorRoomLabelLayer(map, effectiveMode);
         return;
       } catch {}
     }
 
     applyFloorFillExpression(map, effectiveMode);
+    ensureFloorRoomLabelLayer(map, effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
   }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, engagementMode, engagementRoomSentimentOn]);
