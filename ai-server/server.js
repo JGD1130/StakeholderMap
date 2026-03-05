@@ -1964,7 +1964,7 @@ app.get("/demo/sample", async (req, res) => {
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.listen(8787, () => {
-  console.log("?? AI server running at http://localhost:8787");
+  console.log("[ai-server] running at http://localhost:8787");
 });
 
 
