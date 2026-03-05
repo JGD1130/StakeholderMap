@@ -258,6 +258,12 @@ function isDocPriorityQuestion(question) {
   return /(history|historic|origin|background|founded|founded in|built|construction|renovation|renovated|named after|namesake|timeline|master plan|facilities plan|strategic plan|mission|vision)/i.test(q);
 }
 
+function isDocDependentQuantQuestion(question) {
+  const q = String(question || "").trim().toLowerCase();
+  if (!q) return false;
+  return /(enrollment|projected|projection|forecast|headcount|fte|admissions|demographic|program growth|program decline|gain or lose|grow or shrink)/i.test(q);
+}
+
 function summarizeAskMapData(data) {
   if (!data || typeof data !== "object") return {};
   const out = {};
@@ -1615,7 +1621,10 @@ app.post("/ask-mapfluence", async (req, res) => {
 
     const questionText = String(question).trim();
     const docsFirst = isDocPriorityQuestion(questionText);
-    const skipDocsForDataHeavy = shouldSkipDocsForAsk({ docsFirst, data });
+    const forceDocsForQuant = isDocDependentQuantQuestion(questionText);
+    const skipDocsForDataHeavy = forceDocsForQuant
+      ? false
+      : shouldSkipDocsForAsk({ docsFirst, data });
     const payloadSize = estimateAskPayloadSize(data);
     const envDocs = getConfiguredEnvDocs();
     let docsForLog = [];
