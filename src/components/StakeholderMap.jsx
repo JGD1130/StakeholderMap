@@ -13100,6 +13100,37 @@ useEffect(() => {
   }, [strategicYearRows, strategicSelectedYear]);
 
   useEffect(() => {
+    if (strategicEnrollmentTouched) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const query = universityId ? `?campus=${encodeURIComponent(universityId)}` : '';
+        const res = await guardedAiFetch(`/ai/enrollment-projections${query}`, {
+          cache: 'no-store',
+          timeoutMs: 8000
+        });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {}
+        if (!res.ok || !data?.ok || !Array.isArray(data?.series)) return;
+        const normalized = normalizeStrategicEnrollmentSeries(data.series);
+        if (!normalized.length) return;
+        if (cancelled) return;
+        setStrategicEnrollmentSeries(normalized);
+        setStrategicSelectedYear((prev) => (
+          normalized.some((row) => row.year === prev)
+            ? prev
+            : normalized[normalized.length - 1].year
+        ));
+      } catch (err) {
+        console.warn('Unable to load enrollment projections from AI server', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [universityId, strategicEnrollmentTouched]);
+
+  useEffect(() => {
     if (!airtableRooms.length) return;
     let cancelled = false;
     const needsManifest = airtableRooms.some(

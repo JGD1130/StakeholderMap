@@ -6,6 +6,7 @@ import cors from "cors";
 import express from "express";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
+import * as XLSX from "xlsx";
 import { fileURLToPath } from "url";
 import { validateAiQuery } from "./validateAiQuery.js";
 
@@ -56,6 +57,8 @@ const SERVER_COMMIT =
   process.env.GIT_COMMIT ||
   process.env.VERCEL_GIT_COMMIT_SHA ||
   "";
+const ENROLLMENT_FILE_NAME = process.env.ENROLLMENT_FILE_NAME || "HastingsCollege_Enrollment.xlsx";
+const ENROLLMENT_SHEET_NAME = process.env.ENROLLMENT_SHEET_NAME || "";
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
@@ -267,6 +270,142 @@ function isDocDependentQuantQuestion(question) {
   const q = String(question || "").trim().toLowerCase();
   if (!q) return false;
   return /(enrollment|projected|projection|forecast|headcount|fte|admissions|demographic|program growth|program decline|gain or lose|grow or shrink)/i.test(q);
+}
+
+function parseYearCell(value) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n >= 1900 && n <= 2200) return Math.round(n);
+  const s = String(value || "").trim();
+  const m = s.match(/\b(19|20|21)\d{2}\b/);
+  return m ? Number(m[0]) : null;
+}
+
+function pickEnrollmentRow(rows = []) {
+  const scoreCell = (cell) => {
+    const s = String(cell || "").toLowerCase();
+    if (!s) return 0;
+    if (s.includes("net student headcou") || s.includes("net student headcount")) return 5;
+    if (s.includes("enrollment")) return 3;
+    if (s.includes("headcount")) return 3;
+    return 0;
+  };
+
+  let best = { idx: -1, col: -1, score: 0 };
+  rows.forEach((row, idx) => {
+    (row || []).forEach((cell, col) => {
+      const score = scoreCell(cell);
+      if (score > best.score) best = { idx, col, score };
+    });
+  });
+  return best.score > 0 ? best : null;
+}
+
+function normalizeEnrollmentSeries(rows = []) {
+  const byYear = new Map();
+  (rows || []).forEach((row) => {
+    const year = Number(row?.year);
+    const enrollment = Number(row?.enrollment);
+    if (!Number.isFinite(year)) return;
+    byYear.set(
+      Math.round(year),
+      Number.isFinite(enrollment) && enrollment >= 0 ? Math.round(enrollment) : 0
+    );
+  });
+  return Array.from(byYear.entries())
+    .map(([year, enrollment]) => ({ year, enrollment }))
+    .sort((a, b) => a.year - b.year);
+}
+
+function parseEnrollmentSeriesFromSheet(sheet) {
+  if (!sheet) return [];
+  const rows = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: true,
+    defval: null,
+    blankrows: false
+  });
+  if (!rows.length) return [];
+
+  const hit = pickEnrollmentRow(rows);
+  if (!hit) return [];
+  const labelCol = Math.max(0, hit.col);
+  const enrollmentRow = rows[hit.idx] || [];
+
+  const valueCells = [];
+  for (let col = labelCol + 1; col < enrollmentRow.length; col += 1) {
+    const val = Number(enrollmentRow[col]);
+    if (!Number.isFinite(val) || val < 0) continue;
+    valueCells.push({ col, enrollment: Math.round(val) });
+  }
+  if (!valueCells.length) return [];
+
+  let trimmedValueCells = valueCells.slice();
+  let years = trimmedValueCells.map(() => null);
+  const yearRowCandidates = [hit.idx - 1, hit.idx - 2, hit.idx - 3]
+    .filter((idx) => idx >= 0)
+    .map((idx) => rows[idx] || []);
+
+  for (const candidate of yearRowCandidates) {
+    const parsed = trimmedValueCells.map((entry) => parseYearCell(candidate[entry.col]));
+    const matchCount = parsed.filter((v) => Number.isFinite(v)).length;
+    if (matchCount >= Math.max(2, Math.ceil(trimmedValueCells.length * 0.5))) {
+      years = parsed;
+      break;
+    }
+  }
+
+  // Trim leading/trailing placeholder cells (null year + zero value) that appear in some planning sheets.
+  while (
+    trimmedValueCells.length &&
+    !Number.isFinite(years[0]) &&
+    Number(trimmedValueCells[0]?.enrollment) === 0
+  ) {
+    trimmedValueCells = trimmedValueCells.slice(1);
+    years = years.slice(1);
+  }
+  while (
+    trimmedValueCells.length &&
+    !Number.isFinite(years[years.length - 1]) &&
+    Number(trimmedValueCells[trimmedValueCells.length - 1]?.enrollment) === 0
+  ) {
+    trimmedValueCells = trimmedValueCells.slice(0, -1);
+    years = years.slice(0, -1);
+  }
+  if (!trimmedValueCells.length) return [];
+
+  const firstKnown = years.findIndex((v) => Number.isFinite(v));
+  if (firstKnown >= 0) {
+    for (let i = firstKnown + 1; i < years.length; i += 1) {
+      if (!Number.isFinite(years[i])) years[i] = Number(years[i - 1]) + 1;
+    }
+    for (let i = firstKnown - 1; i >= 0; i -= 1) {
+      if (!Number.isFinite(years[i])) years[i] = Number(years[i + 1]) - 1;
+    }
+  } else {
+    const startYear = new Date().getFullYear();
+    years = years.map((_, idx) => startYear + idx);
+  }
+
+  const series = trimmedValueCells.map((entry, idx) => ({
+    year: Number(years[idx]),
+    enrollment: entry.enrollment
+  }));
+  return normalizeEnrollmentSeries(series);
+}
+
+async function resolveEnrollmentFilePath() {
+  const preferredPath = path.join(AI_DOCS_DIR, ENROLLMENT_FILE_NAME);
+  try {
+    const st = await fsp.stat(preferredPath);
+    if (st.isFile()) return preferredPath;
+  } catch {}
+
+  try {
+    const entries = await fsp.readdir(AI_DOCS_DIR, { withFileTypes: true });
+    const hit = entries.find((entry) => entry.isFile() && /\.(xlsx|xls)$/i.test(entry.name));
+    if (hit) return path.join(AI_DOCS_DIR, hit.name);
+  } catch {}
+  return null;
 }
 
 function summarizeAskMapData(data) {
@@ -1972,6 +2111,42 @@ app.get("/demo/sample", async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.get("/enrollment-projections", async (req, res) => {
+  try {
+    const filePath = await resolveEnrollmentFilePath();
+    if (!filePath) {
+      return res.status(404).json({ ok: false, error: "No enrollment workbook found in Docs" });
+    }
+
+    const workbook = XLSX.readFile(filePath, { cellDates: false });
+    const sheetName =
+      ENROLLMENT_SHEET_NAME && workbook.Sheets[ENROLLMENT_SHEET_NAME]
+        ? ENROLLMENT_SHEET_NAME
+        : workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) {
+      return res.status(422).json({ ok: false, error: "Workbook has no readable sheets" });
+    }
+
+    const series = parseEnrollmentSeriesFromSheet(sheet);
+    if (!series.length) {
+      return res.status(422).json({
+        ok: false,
+        error: "Unable to parse year/enrollment series from workbook"
+      });
+    }
+
+    return res.json({
+      ok: true,
+      source: path.basename(filePath),
+      sheet: sheetName,
+      series
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });
 
