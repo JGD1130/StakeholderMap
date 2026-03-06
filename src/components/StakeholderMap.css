@@ -38,14 +38,15 @@
 }
 
 .mf-right-logos {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 10px;
+  width: 100%;
 }
 
 .mf-right-logos .logo-box {
-  width: 204px;
+  width: 100%;
   align-items: center;
 }
 
@@ -56,8 +57,13 @@
   height: auto;
 }
 
-.mf-logo--mapfluence { width: 100%; max-width: 100%; }
-.mf-logo--hc { width: 100%; max-width: 100%; }
+.mf-logo--mapfluence,
+.mf-logo--hc {
+  width: 100%;
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+}
 
 /* This styles EACH white box that contains a logo */
 .logo-box {
@@ -100,7 +106,7 @@
 .mapfluence-title {
   font-family: Arial Condensed, 'Arial Narrow', Arial, sans-serif; 
   font-weight: 540; /* A standard, non-bold weight */
-  font-size: 26px; /* Match logo visual weight */
+  font-size: 20px; /* Fit side-by-side logo row */
   color: #d23a02;  /* orange color */
   text-transform: uppercase; /* ALL CAPS */
   margin-bottom: 3px; /* Space between the title and the logo below it */
@@ -914,8 +920,8 @@
 }
 
 .mf-right-rail { width: 345px; }
-.mf-right-logos .logo-box { width: 220px; }
-.logo-box { width: 220px; box-shadow: var(--mf-panel-shadow-soft); }
+.mf-right-logos .logo-box { width: 100%; }
+.logo-box { width: 100%; box-shadow: var(--mf-panel-shadow-soft); }
 
 .btn {
   font-size: 12px;

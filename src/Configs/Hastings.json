@@ -19,7 +19,20 @@
   "logos": {
     "clarkEnersen": "Clark_Enersen_Logo.png",
     "university": "HC_image.png"
-  }
+  },
+  "strategicEnrollmentSeries": [
+    { "year": 2026, "enrollment": 860 },
+    { "year": 2027, "enrollment": 837 },
+    { "year": 2028, "enrollment": 858 },
+    { "year": 2029, "enrollment": 871 },
+    { "year": 2030, "enrollment": 886 },
+    { "year": 2031, "enrollment": 902 },
+    { "year": 2032, "enrollment": 922 },
+    { "year": 2033, "enrollment": 938 },
+    { "year": 2034, "enrollment": 957 },
+    { "year": 2035, "enrollment": 982 },
+    { "year": 2036, "enrollment": 1006 }
+  ]
 }
 ]
 

@@ -8024,6 +8024,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     () => buildDefaultEnrollmentSeries(0)
   );
   const [strategicEnrollmentTouched, setStrategicEnrollmentTouched] = useState(false);
+  const configStrategicEnrollmentSeries = useMemo(
+    () => normalizeStrategicEnrollmentSeries(config?.strategicEnrollmentSeries || []),
+    [config]
+  );
   const [strategicSelectedYear, setStrategicSelectedYear] = useState(() => new Date().getFullYear());
     const dashboardManifestRef = useRef(null);
     const campusRoomsRefreshTimerRef = useRef(null);
@@ -13057,6 +13061,17 @@ useEffect(() => {
 
   useEffect(() => {
     if (strategicEnrollmentTouched) return;
+    if (!configStrategicEnrollmentSeries.length) return;
+    setStrategicEnrollmentSeries(configStrategicEnrollmentSeries);
+    setStrategicSelectedYear((prev) => (
+      configStrategicEnrollmentSeries.some((row) => row.year === prev)
+        ? prev
+        : configStrategicEnrollmentSeries[configStrategicEnrollmentSeries.length - 1].year
+    ));
+  }, [configStrategicEnrollmentSeries, strategicEnrollmentTouched]);
+
+  useEffect(() => {
+    if (strategicEnrollmentTouched) return;
     const baseEnrollment = Number(utilizationCampus?.finalEnrollment ?? 0);
     if (!Number.isFinite(baseEnrollment) || baseEnrollment <= 0) return;
     setStrategicEnrollmentSeries((prev) => {
@@ -15533,18 +15548,18 @@ useEffect(() => {
       <div className="mf-right-rail">
         <div className="mf-right-logos">
           <div className="logo-box">
+            <img
+              className="mf-logo mf-logo--hc"
+              src={assetUrl('HC_image.png')}
+              alt="Hastings College"
+            />
+          </div>
+          <div className="logo-box">
             <div className="mapfluence-title">MAPFLUENCE</div>
             <img
               className="mf-logo mf-logo--mapfluence"
               src={assetUrl('Clark_Enersen_Logo.png')}
               alt="Clark & Enersen Logo"
-            />
-          </div>
-          <div className="logo-box">
-            <img
-              className="mf-logo mf-logo--hc"
-              src={assetUrl('HC_image.png')}
-              alt="Hastings College"
             />
           </div>
         </div>
