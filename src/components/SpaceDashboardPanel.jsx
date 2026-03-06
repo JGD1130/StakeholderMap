@@ -57,6 +57,24 @@ const ChartShell = ({ title, children }) => (
   </PanelCard>
 );
 
+const CollapsibleSection = ({ title, children, defaultOpen = false }) => (
+  <details
+    open={defaultOpen}
+    style={{
+      marginTop: 8,
+      border: '1px solid #e4e7ec',
+      borderRadius: 8,
+      background: '#ffffff',
+      padding: '6px 8px'
+    }}
+  >
+    <summary style={{ fontWeight: 700, fontSize: 12, cursor: 'pointer', color: '#1d2939' }}>
+      {title}
+    </summary>
+    <div style={{ marginTop: 6 }}>{children}</div>
+  </details>
+);
+
 const EnrollmentTrendChart = ({ rows = [] }) => {
   if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No enrollment data.</div>;
 
@@ -367,18 +385,20 @@ const StrategicDashboardSection = ({ strategic }) => {
         />
       </div>
 
-      <ChartShell title="Enrollment Trend">
-        <EnrollmentTrendChart rows={rows} />
-      </ChartShell>
-      <ChartShell title="Required vs Available Seats">
-        <RequiredVsAvailableChart rows={rows} />
-      </ChartShell>
-      <ChartShell title="Seat Gap Over Time">
-        <SeatGapChart rows={rows} />
-      </ChartShell>
+      <CollapsibleSection title="Trend Charts">
+        <ChartShell title="Enrollment Trend">
+          <EnrollmentTrendChart rows={rows} />
+        </ChartShell>
+        <ChartShell title="Required vs Available Seats">
+          <RequiredVsAvailableChart rows={rows} />
+        </ChartShell>
+        <ChartShell title="Seat Gap Over Time">
+          <SeatGapChart rows={rows} />
+        </ChartShell>
+      </CollapsibleSection>
 
-      <ChartShell title="Enrollment by Year (Editable)">
-        <div style={{ maxHeight: 140, overflowY: 'auto', paddingRight: 4 }}>
+      <CollapsibleSection title="Enrollment by Year (Editable)">
+        <div style={{ maxHeight: 180, overflowY: 'auto', paddingRight: 4 }}>
           {enrollmentSeries.map((row) => (
             <div key={row.year} style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: 6, marginBottom: 4 }}>
               <div style={{ alignSelf: 'center', fontSize: 11, color: '#475467' }}>{row.year}</div>
@@ -393,7 +413,7 @@ const StrategicDashboardSection = ({ strategic }) => {
             </div>
           ))}
         </div>
-      </ChartShell>
+      </CollapsibleSection>
     </PanelCard>
   );
 };

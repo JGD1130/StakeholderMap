@@ -74,7 +74,11 @@
 .dashboard-box {
   width: 100%;
   align-items: stretch;
+  height: calc(100vh - 320px);
   max-height: calc(100vh - 320px);
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 6px;
   background: #fff;
