@@ -19,7 +19,11 @@ import FloorPanel from './panels/FloorPanel';
 import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
-import { computeSpaceDashboard } from '../dashboard/spaceDashboard';
+import {
+  computeSpaceDashboard,
+  computeStrategicCapacityMetrics,
+  computeStrategicSeatGapByYear
+} from '../dashboard/spaceDashboard';
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 
@@ -1038,6 +1042,18 @@ function resolveNcesDept(p = {}) {
     p.department ??
     p.Department ??
     p.Dept ??
+    ''
+  ).toString().trim();
+}
+
+function resolveNcesCategory(p = {}) {
+  return (
+    p.NCES_Category ??
+    p['NCES Category'] ??
+    p.NCES_Category_Code ??
+    p['NCES Category Code'] ??
+    p.categoryCode ??
+    p.category ??
     ''
   ).toString().trim();
 }
@@ -6272,6 +6288,36 @@ const BUILDING_ALIAS_NORMALIZED_LOOSE = Object.fromEntries(
 );
 
 const UTILIZATION_CSV_PATH = 'Data/Utilization/classroom_utilization.csv';
+const STRATEGIC_DEFAULT_SEAT_RATIO = 2.5;
+const STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES = ['1']; // 100-classroom rollup
+
+const normalizeStrategicEnrollmentSeries = (series = []) => {
+  const rows = Array.isArray(series) ? series : [];
+  const byYear = new Map();
+  rows.forEach((row) => {
+    const year = Number(row?.year);
+    const enrollment = Number(row?.enrollment);
+    if (!Number.isFinite(year)) return;
+    byYear.set(
+      Math.round(year),
+      Number.isFinite(enrollment) && enrollment >= 0 ? Math.round(enrollment) : 0
+    );
+  });
+  return Array.from(byYear.entries())
+    .map(([year, enrollment]) => ({ year, enrollment }))
+    .sort((a, b) => a.year - b.year);
+};
+
+const buildDefaultEnrollmentSeries = (baseEnrollment = 0, anchorYear = new Date().getFullYear()) => {
+  const normalizedBase = Number.isFinite(Number(baseEnrollment)) && Number(baseEnrollment) > 0
+    ? Math.round(Number(baseEnrollment))
+    : 0;
+  const years = [];
+  for (let y = anchorYear - 4; y <= anchorYear + 5; y += 1) {
+    years.push({ year: y, enrollment: normalizedBase });
+  }
+  return years;
+};
 
 const parseCsvLine = (line) => {
   const out = [];
@@ -7163,6 +7209,8 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
     props.LevelName ??
     props['Level Name'] ??
     '';
+  const seatCount = getSeatCount(props);
+  const categoryCode = resolveNcesCategory(props);
   return {
     building: buildingLabel || '',
     floor,
@@ -7175,6 +7223,8 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
     roomGuid,
     department: resolveNcesDept(props),
     type: resolveNcesType(props),
+    categoryCode,
+    seatCount: Number.isFinite(seatCount) && seatCount > 0 ? seatCount : null,
     occupancyStatus,
     occupant
   };
@@ -7224,6 +7274,15 @@ const roomRowToDashboardFeature = (room) => {
   if (!room) return null;
   const area = Number(room.areaSF ?? room.area ?? room.sf ?? 0);
   if (!Number.isFinite(area) || area <= 0) return null;
+  const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
+  const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
+  const categoryCode = String(
+    room.categoryCode ??
+    room.category ??
+    room.NCES_Category ??
+    room['NCES Category'] ??
+    ''
+  ).trim();
   const dept = String(room.department ?? '').trim();
   const type = String(room.type ?? '').trim();
   const occupancyStatus = String(room.occupancyStatus ?? '').trim();
@@ -7240,11 +7299,18 @@ const roomRowToDashboardFeature = (room) => {
       department: dept,
       NCES_Type: type,
       __roomType: type,
+      NCES_Category: categoryCode,
+      'NCES Category': categoryCode,
+      categoryCode,
+      category: categoryCode,
       OccupancyStatus: occupancyStatus,
       'Occupancy Status': occupancyStatus,
       occupancyStatus,
       Occupant: occupant,
-      occupant
+      occupant,
+      SeatCount: hasSeatCount ? seatCount : undefined,
+      'Seat Count': hasSeatCount ? seatCount : undefined,
+      seatCount: hasSeatCount ? seatCount : undefined
     }
   };
 };
@@ -7952,6 +8018,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [airtableLastSyncedAt, setAirtableLastSyncedAt] = useState(null);
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
+  const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
+  const [strategicIncludeLabs, setStrategicIncludeLabs] = useState(false);
+  const [strategicEnrollmentSeries, setStrategicEnrollmentSeries] = useState(
+    () => buildDefaultEnrollmentSeries(0)
+  );
+  const [strategicEnrollmentTouched, setStrategicEnrollmentTouched] = useState(false);
+  const [strategicSelectedYear, setStrategicSelectedYear] = useState(() => new Date().getFullYear());
     const dashboardManifestRef = useRef(null);
     const campusRoomsRefreshTimerRef = useRef(null);
     const airtableRoomLookup = useMemo(
@@ -12955,6 +13028,77 @@ useEffect(() => {
       .filter(Boolean);
   }, [dashboardScopeRooms, dashboardFloorFeatures, loadedSingleFloor]);
 
+  const strategicSeatSupplyPrefixes = useMemo(
+    () => (strategicIncludeLabs ? ['1', '2'] : STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES),
+    [strategicIncludeLabs]
+  );
+
+  const strategicCapacityMetrics = useMemo(
+    () => computeStrategicCapacityMetrics(dashboardRoomFeatures, {
+      seatSupplyCategoryPrefixes: strategicSeatSupplyPrefixes
+    }),
+    [dashboardRoomFeatures, strategicSeatSupplyPrefixes]
+  );
+
+  const strategicYearRows = useMemo(
+    () => computeStrategicSeatGapByYear(
+      strategicEnrollmentSeries,
+      strategicCapacityMetrics?.availableSeats || 0,
+      strategicSeatRatio
+    ),
+    [strategicEnrollmentSeries, strategicCapacityMetrics, strategicSeatRatio]
+  );
+
+  useEffect(() => {
+    if (!strategicYearRows.length) return;
+    if (strategicYearRows.some((row) => row.year === strategicSelectedYear)) return;
+    setStrategicSelectedYear(strategicYearRows[strategicYearRows.length - 1].year);
+  }, [strategicYearRows, strategicSelectedYear]);
+
+  useEffect(() => {
+    if (strategicEnrollmentTouched) return;
+    const baseEnrollment = Number(utilizationCampus?.finalEnrollment ?? 0);
+    if (!Number.isFinite(baseEnrollment) || baseEnrollment <= 0) return;
+    setStrategicEnrollmentSeries((prev) => {
+      const normalized = normalizeStrategicEnrollmentSeries(prev);
+      if (!normalized.length) return buildDefaultEnrollmentSeries(baseEnrollment);
+      const hasNonZero = normalized.some((row) => Number(row.enrollment) > 0);
+      if (hasNonZero) return normalized;
+      return normalized.map((row) => ({ ...row, enrollment: Math.round(baseEnrollment) }));
+    });
+  }, [utilizationCampus, strategicEnrollmentTouched]);
+
+  const handleStrategicSeatRatioChange = useCallback((nextValue) => {
+    const parsed = Number(nextValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    setStrategicSeatRatio(parsed);
+  }, []);
+
+  const handleStrategicEnrollmentChange = useCallback((year, nextValue) => {
+    const targetYear = Number(year);
+    if (!Number.isFinite(targetYear)) return;
+    const parsed = Number(String(nextValue ?? '').replace(/,/g, '').trim());
+    const safeEnrollment = Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 0;
+    setStrategicEnrollmentTouched(true);
+    setStrategicEnrollmentSeries((prev) => {
+      const normalized = normalizeStrategicEnrollmentSeries(prev);
+      const next = normalized.length
+        ? normalized.map((row) =>
+            row.year === targetYear ? { ...row, enrollment: safeEnrollment } : row
+          )
+        : [{ year: targetYear, enrollment: safeEnrollment }];
+      return normalizeStrategicEnrollmentSeries(next);
+    });
+  }, []);
+
+  const strategicSelectedYearMetrics = useMemo(() => {
+    if (!strategicYearRows.length) return null;
+    return (
+      strategicYearRows.find((row) => row.year === strategicSelectedYear) ||
+      strategicYearRows[strategicYearRows.length - 1]
+    );
+  }, [strategicYearRows, strategicSelectedYear]);
+
   useEffect(() => {
     if (!airtableRooms.length) return;
     let cancelled = false;
@@ -15385,6 +15529,20 @@ useEffect(() => {
               utilizationScopeLabel={dashboardUtilizationLabel}
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
+              strategic={{
+                scenarioName: 'Baseline',
+                selectedYear: strategicSelectedYear,
+                onSelectedYearChange: setStrategicSelectedYear,
+                seatRatio: strategicSeatRatio,
+                onSeatRatioChange: handleStrategicSeatRatioChange,
+                includeLabs: strategicIncludeLabs,
+                onIncludeLabsChange: setStrategicIncludeLabs,
+                enrollmentSeries: strategicEnrollmentSeries,
+                onEnrollmentChange: handleStrategicEnrollmentChange,
+                yearRows: strategicYearRows,
+                selectedMetrics: strategicSelectedYearMetrics,
+                capacityMetrics: strategicCapacityMetrics
+              }}
             />
           </div>
         )}

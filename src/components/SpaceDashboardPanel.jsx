@@ -7,7 +7,19 @@ const fmtSF = (val) => {
   return Number.isFinite(n) ? Math.round(n).toLocaleString() : '0';
 };
 
-const StatCard = ({ label, value }) => (
+const fmtCount = (val) => {
+  const n = Number(val || 0);
+  return Number.isFinite(n) ? Math.round(n).toLocaleString() : '0';
+};
+
+const fmtSigned = (val) => {
+  const n = Number(val || 0);
+  if (!Number.isFinite(n)) return '0';
+  const rounded = Math.round(n);
+  return `${rounded >= 0 ? '+' : ''}${rounded.toLocaleString()}`;
+};
+
+const StatCard = ({ label, value, sublabel, valueColor }) => (
   <div
     style={{
       background: '#f9fafb',
@@ -19,7 +31,8 @@ const StatCard = ({ label, value }) => (
     <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, color: '#667085' }}>
       {label}
     </div>
-    <div style={{ fontSize: 16, fontWeight: 800, color: '#1d2939' }}>{value}</div>
+    <div style={{ fontSize: 16, fontWeight: 800, color: valueColor || '#1d2939' }}>{value}</div>
+    {sublabel ? <div style={{ fontSize: 11, color: '#667085' }}>{sublabel}</div> : null}
   </div>
 );
 
@@ -36,6 +49,139 @@ const PanelCard = ({ children, style }) => (
     {children}
   </div>
 );
+
+const ChartShell = ({ title, children }) => (
+  <PanelCard style={{ marginTop: 8 }}>
+    <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>{title}</div>
+    {children}
+  </PanelCard>
+);
+
+const EnrollmentTrendChart = ({ rows = [] }) => {
+  if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No enrollment data.</div>;
+
+  const width = 290;
+  const height = 120;
+  const left = 10;
+  const right = 8;
+  const top = 10;
+  const bottom = 22;
+  const innerW = width - left - right;
+  const innerH = height - top - bottom;
+  const maxVal = Math.max(...rows.map((r) => Number(r.enrollment || 0)), 1);
+
+  const xFor = (idx) => {
+    if (rows.length === 1) return left + innerW / 2;
+    return left + (idx / (rows.length - 1)) * innerW;
+  };
+  const yFor = (val) => top + (1 - val / maxVal) * innerH;
+  const points = rows.map((r, idx) => `${xFor(idx)},${yFor(Number(r.enrollment || 0))}`).join(' ');
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Enrollment trend chart">
+      <line x1={left} y1={top + innerH} x2={width - right} y2={top + innerH} stroke="#d0d5dd" strokeWidth="1" />
+      <polyline fill="none" stroke="#2563eb" strokeWidth="2" points={points} />
+      {rows.map((r, idx) => (
+        <g key={r.year}>
+          <circle cx={xFor(idx)} cy={yFor(Number(r.enrollment || 0))} r="2.6" fill="#2563eb" />
+          <text x={xFor(idx)} y={height - 6} textAnchor="middle" fontSize="9" fill="#667085">
+            {r.year}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+};
+
+const RequiredVsAvailableChart = ({ rows = [] }) => {
+  if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No seat demand data.</div>;
+
+  const width = 290;
+  const height = 130;
+  const left = 10;
+  const right = 8;
+  const top = 10;
+  const bottom = 22;
+  const innerW = width - left - right;
+  const innerH = height - top - bottom;
+  const maxVal = Math.max(
+    ...rows.map((r) => Math.max(Number(r.requiredSeats || 0), Number(r.availableSeats || 0))),
+    1
+  );
+  const groupW = innerW / rows.length;
+  const barW = Math.max(4, Math.min(12, groupW * 0.34));
+  const yFor = (val) => top + innerH - (val / maxVal) * innerH;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Required versus available seats chart">
+      <line x1={left} y1={top + innerH} x2={width - right} y2={top + innerH} stroke="#d0d5dd" strokeWidth="1" />
+      {rows.map((r, idx) => {
+        const xCenter = left + groupW * idx + groupW / 2;
+        const required = Number(r.requiredSeats || 0);
+        const available = Number(r.availableSeats || 0);
+        const requiredY = yFor(required);
+        const availableY = yFor(available);
+        return (
+          <g key={r.year}>
+            <rect x={xCenter - barW - 1} y={requiredY} width={barW} height={top + innerH - requiredY} fill="#f97316" />
+            <rect x={xCenter + 1} y={availableY} width={barW} height={top + innerH - availableY} fill="#16a34a" />
+            <text x={xCenter} y={height - 6} textAnchor="middle" fontSize="9" fill="#667085">
+              {r.year}
+            </text>
+          </g>
+        );
+      })}
+      <text x={left + 2} y={12} fontSize="9" fill="#f97316">Required</text>
+      <text x={left + 56} y={12} fontSize="9" fill="#16a34a">Available</text>
+    </svg>
+  );
+};
+
+const SeatGapChart = ({ rows = [] }) => {
+  if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No seat gap data.</div>;
+
+  const width = 290;
+  const height = 130;
+  const left = 10;
+  const right = 8;
+  const top = 10;
+  const bottom = 22;
+  const innerW = width - left - right;
+  const innerH = height - top - bottom;
+  const zeroY = top + innerH / 2;
+  const maxAbs = Math.max(...rows.map((r) => Math.abs(Number(r.seatGap || 0))), 1);
+  const groupW = innerW / rows.length;
+  const barW = Math.max(5, Math.min(14, groupW * 0.5));
+  const hFor = (val) => (Math.abs(val) / maxAbs) * (innerH / 2 - 4);
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Seat gap over time chart">
+      <line x1={left} y1={zeroY} x2={width - right} y2={zeroY} stroke="#98a2b3" strokeWidth="1" />
+      {rows.map((r, idx) => {
+        const xCenter = left + groupW * idx + groupW / 2;
+        const gap = Number(r.seatGap || 0);
+        const h = hFor(gap);
+        const y = gap >= 0 ? zeroY - h : zeroY;
+        return (
+          <g key={r.year}>
+            <rect
+              x={xCenter - barW / 2}
+              y={y}
+              width={barW}
+              height={Math.max(1, h)}
+              fill={gap >= 0 ? '#16a34a' : '#dc2626'}
+            />
+            <text x={xCenter} y={height - 6} textAnchor="middle" fontSize="9" fill="#667085">
+              {r.year}
+            </text>
+          </g>
+        );
+      })}
+      <text x={left + 2} y={top + 8} fontSize="9" fill="#16a34a">Surplus</text>
+      <text x={left + 48} y={height - bottom - 2} fontSize="9" fill="#dc2626">Deficit</text>
+    </svg>
+  );
+};
 
 const OfficeOccupancyGauge = ({ pct, occupied = 0, vacant = 0, unknown = 0, scopeLabel = '' }) => {
   const value = Number.isFinite(pct) ? Math.max(0, Math.min(1, pct)) : null;
@@ -98,7 +244,7 @@ const DeptPie = ({ entries = [], maxSlices = 8 }) => {
   const cy = 60;
   const r = 50;
 
-  const paths = slices.map((item, i) => {
+  const paths = slices.map((item) => {
     const name = item?.name || 'Unknown';
     const sf = Number(item?.sf || 0);
     const frac = sf / total;
@@ -145,6 +291,113 @@ const DeptPie = ({ entries = [], maxSlices = 8 }) => {
   );
 };
 
+const StrategicDashboardSection = ({ strategic }) => {
+  if (!strategic) return null;
+  const rows = strategic.yearRows || [];
+  const selected = strategic.selectedMetrics || null;
+  const enrollmentSeries = strategic.enrollmentSeries || [];
+  const selectedYear = Number(strategic.selectedYear);
+  const gapValue = Number(selected?.seatGap || 0);
+  const gapColor = gapValue >= 0 ? '#166534' : '#b42318';
+
+  return (
+    <PanelCard>
+      <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 8 }}>Strategic Space Dashboard</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+        <div>
+          <div style={{ fontSize: 10, color: '#667085', marginBottom: 2 }}>Year</div>
+          <select
+            value={Number.isFinite(selectedYear) ? selectedYear : ''}
+            onChange={(e) => strategic.onSelectedYearChange?.(Number(e.target.value))}
+            style={{ width: '100%', height: 28 }}
+          >
+            {rows.map((row) => (
+              <option key={row.year} value={row.year}>{row.year}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: '#667085', marginBottom: 2 }}>Seat Ratio</div>
+          <input
+            type="number"
+            min="0.5"
+            step="0.1"
+            value={Number(strategic.seatRatio || 0)}
+            onChange={(e) => strategic.onSeatRatioChange?.(e.target.value)}
+            style={{ width: '100%', height: 28 }}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: '#667085', marginBottom: 2 }}>Scenario</div>
+          <select value={strategic.scenarioName || 'Baseline'} style={{ width: '100%', height: 28 }} disabled>
+            <option>Baseline</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 8, fontSize: 11, color: '#344054' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked readOnly />
+          100 Classrooms
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(strategic.includeLabs)}
+            onChange={(e) => strategic.onIncludeLabsChange?.(e.target.checked)}
+          />
+          200 Labs
+        </label>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginTop: 8 }}>
+        <StatCard label="Enrollment" value={fmtCount(selected?.enrollment)} sublabel={`${selected?.year || '--'}`} />
+        <StatCard
+          label="Available Seats"
+          value={fmtCount(selected?.availableSeats ?? strategic.capacityMetrics?.availableSeats)}
+          sublabel={`${fmtCount(strategic.capacityMetrics?.instructionalRooms)} instructional rooms`}
+        />
+        <StatCard label="Required Seats" value={fmtCount(selected?.requiredSeats)} sublabel={`ratio ${Number(strategic.seatRatio || 0).toFixed(1)}`} />
+        <StatCard
+          label="Seat Gap"
+          value={fmtSigned(selected?.seatGap)}
+          valueColor={gapColor}
+          sublabel={selected?.gapStatus || ''}
+        />
+      </div>
+
+      <ChartShell title="Enrollment Trend">
+        <EnrollmentTrendChart rows={rows} />
+      </ChartShell>
+      <ChartShell title="Required vs Available Seats">
+        <RequiredVsAvailableChart rows={rows} />
+      </ChartShell>
+      <ChartShell title="Seat Gap Over Time">
+        <SeatGapChart rows={rows} />
+      </ChartShell>
+
+      <ChartShell title="Enrollment by Year (Editable)">
+        <div style={{ maxHeight: 140, overflowY: 'auto', paddingRight: 4 }}>
+          {enrollmentSeries.map((row) => (
+            <div key={row.year} style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: 6, marginBottom: 4 }}>
+              <div style={{ alignSelf: 'center', fontSize: 11, color: '#475467' }}>{row.year}</div>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={Number(row.enrollment || 0)}
+                onChange={(e) => strategic.onEnrollmentChange?.(row.year, e.target.value)}
+                style={{ height: 26 }}
+              />
+            </div>
+          ))}
+        </div>
+      </ChartShell>
+    </PanelCard>
+  );
+};
+
 export default function SpaceDashboardPanel({
   title,
   metrics,
@@ -154,7 +407,8 @@ export default function SpaceDashboardPanel({
   utilization,
   utilizationScopeLabel,
   heatmapOn,
-  onToggleHeatmap
+  onToggleHeatmap,
+  strategic
 }) {
   const officeOcc = metrics?.officeOccupancy || {};
   const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
@@ -166,51 +420,57 @@ export default function SpaceDashboardPanel({
       {loading && <div style={{ fontSize: 12, color: '#667085' }}>Loading dashboard...</div>}
       {error && <div style={{ fontSize: 12, color: '#b00020' }}>{String(error)}</div>}
 
-      {!loading && !error && metrics && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 1.3fr', gap: 6 }}>
-            <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
-            <PanelCard>
-              <OfficeOccupancyGauge
-                pct={officeOcc.pct}
-                occupied={officeOcc.occupied}
-                vacant={officeOcc.vacant}
-                unknown={officeOcc.unknown}
-                scopeLabel={scopeLabel}
-              />
-            </PanelCard>
-          </div>
+      {!loading && !error && (
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+          <StrategicDashboardSection strategic={strategic} />
 
-          <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, marginTop: 8 }}>
-            <PanelCard>
-              <DeptPie entries={metrics.byDept || []} />
-            </PanelCard>
-
-            {showUtilization ? (
+          {metrics ? (
+            <>
               <PanelCard style={{ marginTop: 8 }}>
-                <div className="mf-section-title">Classroom Utilization</div>
-                {utilizationScopeLabel ? (
-                  <div style={{ fontSize: 11, color: '#667085', marginTop: -2, marginBottom: 6 }}>
-                    {utilizationScopeLabel}
-                  </div>
-                ) : null}
-                <UtilizationBars
-                  timePct={utilization.timeUtilization}
-                  seatPct={utilization.seatUtilization}
-                  compact
-                />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(heatmapOn)}
-                    onChange={(event) => onToggleHeatmap?.(event.target.checked)}
-                  />
-                  Classroom Utilization Heat Map
-                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 1.3fr', gap: 6 }}>
+                  <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
+                  <PanelCard>
+                    <OfficeOccupancyGauge
+                      pct={officeOcc.pct}
+                      occupied={officeOcc.occupied}
+                      vacant={officeOcc.vacant}
+                      unknown={officeOcc.unknown}
+                      scopeLabel={scopeLabel}
+                    />
+                  </PanelCard>
+                </div>
               </PanelCard>
-            ) : null}
-          </div>
-        </>
+
+              <PanelCard style={{ marginTop: 8 }}>
+                <DeptPie entries={metrics.byDept || []} />
+              </PanelCard>
+            </>
+          ) : null}
+
+          {showUtilization ? (
+            <PanelCard style={{ marginTop: 8 }}>
+              <div className="mf-section-title">Classroom Utilization</div>
+              {utilizationScopeLabel ? (
+                <div style={{ fontSize: 11, color: '#667085', marginTop: -2, marginBottom: 6 }}>
+                  {utilizationScopeLabel}
+                </div>
+              ) : null}
+              <UtilizationBars
+                timePct={utilization.timeUtilization}
+                seatPct={utilization.seatUtilization}
+                compact
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(heatmapOn)}
+                  onChange={(event) => onToggleHeatmap?.(event.target.checked)}
+                />
+                Classroom Utilization Heat Map
+              </label>
+            </PanelCard>
+          ) : null}
+        </div>
       )}
     </div>
   );

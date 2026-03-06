@@ -243,3 +243,115 @@ const isAssignableDept = (dept) => {
     officeOccupancy
   };
 }
+
+function resolveSeatCount(p = {}) {
+  const raw =
+    p.seatCount ??
+    p.SeatCount ??
+    p['Seat Count'] ??
+    p.Seats ??
+    p.Capacity ??
+    p.rm_seats ??
+    p.SeatingCapacity ??
+    null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function resolveCategoryCode(p = {}) {
+  const raw =
+    p.NCES_Category ??
+    p['NCES Category'] ??
+    p.NCES_Category_Code ??
+    p['NCES Category Code'] ??
+    p.categoryCode ??
+    p.category ??
+    '';
+  return String(raw || '').trim();
+}
+
+function resolveCategoryPrefix(p = {}) {
+  const code = resolveCategoryCode(p);
+  if (!code) return '';
+  return code.charAt(0);
+}
+
+export function computeStrategicCapacityMetrics(
+  features = [],
+  { seatSupplyCategoryPrefixes = ['1'] } = {}
+) {
+  const feats = Array.isArray(features) ? features : [];
+  const allowed = new Set(
+    (seatSupplyCategoryPrefixes || [])
+      .map((v) => String(v || '').trim())
+      .filter(Boolean)
+  );
+  if (!allowed.size) allowed.add('1');
+
+  let availableSeats = 0;
+  let instructionalRooms = 0;
+  const seatsByPrefix = {};
+
+  for (const f of feats) {
+    const p = f?.properties || {};
+    const prefix = resolveCategoryPrefix(p);
+    if (!prefix || !allowed.has(prefix)) continue;
+    instructionalRooms += 1;
+    const seats = resolveSeatCount(p);
+    availableSeats += seats;
+    seatsByPrefix[prefix] = (seatsByPrefix[prefix] || 0) + seats;
+  }
+
+  return {
+    availableSeats: Math.round(availableSeats),
+    instructionalRooms,
+    seatsByPrefix
+  };
+}
+
+function normalizeEnrollmentSeries(series = []) {
+  const rows = Array.isArray(series) ? series : [];
+  const byYear = new Map();
+  rows.forEach((row) => {
+    const yearRaw = row?.year;
+    const enrollmentRaw = row?.enrollment;
+    const year = Number(yearRaw);
+    const enrollment = Number(enrollmentRaw);
+    if (!Number.isFinite(year)) return;
+    byYear.set(
+      Math.round(year),
+      Number.isFinite(enrollment) && enrollment >= 0 ? enrollment : 0
+    );
+  });
+  return Array.from(byYear.entries())
+    .map(([year, enrollment]) => ({ year, enrollment }))
+    .sort((a, b) => a.year - b.year);
+}
+
+export function computeStrategicSeatGapByYear(
+  enrollmentSeries = [],
+  availableSeats = 0,
+  seatRatio = 2.5
+) {
+  const rows = normalizeEnrollmentSeries(enrollmentSeries);
+  if (!rows.length) return [];
+
+  const seatSupply = Number.isFinite(Number(availableSeats))
+    ? Number(availableSeats)
+    : 0;
+  const ratio = Number(seatRatio);
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 2.5;
+
+  return rows.map((row) => {
+    const requiredSeats = row.enrollment / safeRatio;
+    const seatGap = seatSupply - requiredSeats;
+    return {
+      year: row.year,
+      enrollment: row.enrollment,
+      availableSeats: seatSupply,
+      requiredSeats,
+      seatGap,
+      gapStatus: seatGap >= 0 ? 'Surplus' : 'Deficit'
+    };
+  });
+}
