@@ -8985,6 +8985,17 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     } catch {}
   }, [ensureScenarioLayer]);
 
+  const toEffectiveScenarioTargetRoomIds = useCallback((roomIds = []) => {
+    const mergeState = scenarioMergeStateRef.current || { bySourceRoomId: new Map() };
+    const nextIds = new Set();
+    (roomIds || []).forEach((roomId) => {
+      const mergeEntry = mergeState.bySourceRoomId.get(roomId);
+      if (mergeEntry?.syntheticRoomId) nextIds.add(mergeEntry.syntheticRoomId);
+      else nextIds.add(roomId);
+    });
+    return Array.from(nextIds);
+  }, []);
+
   const resolveScenarioOverrideForRoom = useCallback((roomId, meta = null) => {
     const overrides = scenarioRoomOverridesRef.current || {};
     if (!overrides) return null;
@@ -9157,7 +9168,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         if (sourceEffective.length) {
           const mergedArea = sourceEffective.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
           const categories = Array.from(new Set(sourceEffective.map((room) => normalizeScenarioCategoryCode(room.categoryCode || '')).filter(Boolean)));
-          const categoryCode = categories.length === 1 ? categories[0] : (categories[0] || '');
+          const syntheticOverride = resolveScenarioOverrideForRoom(roomId, syntheticRoom) || {};
+          const categoryCode = normalizeScenarioCategoryCode(syntheticOverride?.categoryCode) || (categories.length === 1 ? categories[0] : (categories[0] || ''));
           effectiveRoom = {
             ...syntheticRoom,
             area: mergedArea,
@@ -9189,7 +9201,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       totals
     });
     return { totals, highlightIds };
-  }, [buildEffectiveScenarioRoom]);
+  }, [buildEffectiveScenarioRoom, resolveScenarioOverrideForRoom]);
 
   const buildScenarioRoomMetaFromCandidate = useCallback((c, idx) => {
     const derivedRoomId = (c?.buildingLabel && (c?.floorName || c?.floorId) && c?.revitId != null)
@@ -9393,13 +9405,15 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert('Enter a canonical 3-digit category code (for example, 100 or 200).');
       return;
     }
+    const targetRoomIds = toEffectiveScenarioTargetRoomIds(Array.from(scenarioSelection));
     console.log('[Planning Scenario Debug] selected room ids affected', {
       opType: 'categoryOverride',
       sourceRoomIds: Array.from(scenarioSelection),
+      targetRoomIds,
       categoryCode: nextCode
     });
-    appendScenarioOperation('categoryOverride', { categoryCode: nextCode });
-  }, [scenarioSelection, scenarioCategoryCodeInput, appendScenarioOperation]);
+    appendScenarioOperation('categoryOverride', { categoryCode: nextCode, targetRoomIds });
+  }, [scenarioSelection, scenarioCategoryCodeInput, appendScenarioOperation, toEffectiveScenarioTargetRoomIds]);
 
   const applyScenarioCapacityOverride = useCallback(() => {
     if (scenarioSelection.size === 0) return;
@@ -9408,13 +9422,15 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert('Enter an integer capacity value of 0 or greater.');
       return;
     }
+    const targetRoomIds = toEffectiveScenarioTargetRoomIds(Array.from(scenarioSelection));
     console.log('[Planning Scenario Debug] selected room ids affected', {
       opType: 'capacityOverride',
       sourceRoomIds: Array.from(scenarioSelection),
+      targetRoomIds,
       capacity: nextCapacity
     });
-    appendScenarioOperation('capacityOverride', { capacity: nextCapacity });
-  }, [scenarioSelection, scenarioCapacityInput, appendScenarioOperation]);
+    appendScenarioOperation('capacityOverride', { capacity: nextCapacity, targetRoomIds });
+  }, [scenarioSelection, scenarioCapacityInput, appendScenarioOperation, toEffectiveScenarioTargetRoomIds]);
 
   const removeScenarioOperation = useCallback((opId) => {
     if (!opId) return;
@@ -9464,19 +9480,22 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
     scenarioOperations.forEach((op) => {
       const sourceIds = Array.isArray(op?.sourceRoomIds) ? op.sourceRoomIds : [];
-      if (!sourceIds.length) return;
+      const targetIds = Array.isArray(op?.targetRoomIds) && op.targetRoomIds.length
+        ? op.targetRoomIds
+        : sourceIds;
+      if (!targetIds.length) return;
       if (op?.opType === 'categoryOverride') {
         const categoryCode = normalizeScenarioCategoryCode(op?.categoryCode);
         if (!categoryCode) return;
-        sourceIds.forEach((roomId) => upsertRoomOverride(roomId, { categoryCode }));
+        targetIds.forEach((roomId) => upsertRoomOverride(roomId, { categoryCode }));
       } else if (op?.opType === 'capacityOverride') {
         const seatCount = normalizeScenarioCapacityValue(op?.capacity);
         if (seatCount == null) return;
-        sourceIds.forEach((roomId) => upsertRoomOverride(roomId, { seatCount }));
+        targetIds.forEach((roomId) => upsertRoomOverride(roomId, { seatCount }));
       } else if (op?.opType === 'departmentOverride') {
         const department = norm(op?.department || '');
         if (!department) return;
-        sourceIds.forEach((roomId) => upsertRoomOverride(roomId, { department }));
+        targetIds.forEach((roomId) => upsertRoomOverride(roomId, { department }));
       }
     });
 
@@ -9606,6 +9625,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const mergedArea = effectiveSources.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
     const mergedSeats = effectiveSources.reduce((sum, room) => sum + (Number(room.seatCount || 0) || 0), 0);
     const mergedBaseSeats = effectiveSources.reduce((sum, room) => sum + (Number(room.baseSeatCount || 0) || 0), 0);
+    const syntheticOverride = resolveScenarioOverrideForRoom(syntheticRoom.roomId, syntheticRoom) || {};
 
     const categories = Array.from(new Set(
       effectiveSources.map((room) => normalizeScenarioCategoryCode(room.categoryCode || '')).filter(Boolean)
@@ -9620,15 +9640,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       effectiveSources.map((room) => norm(room.baseDepartment || '')).filter(Boolean)
     ));
 
-    const effectiveCategoryCode = categories.length === 1
+    const effectiveCategoryCode = normalizeScenarioCategoryCode(syntheticOverride?.categoryCode) || (categories.length === 1
       ? categories[0]
-      : normalizeScenarioCategoryCode(syntheticRoom.categoryCode || categories[0] || '');
+      : normalizeScenarioCategoryCode(syntheticRoom.categoryCode || categories[0] || ''));
     const baseCategoryCode = baseCategories.length === 1
       ? baseCategories[0]
       : normalizeScenarioCategoryCode(syntheticRoom.baseCategoryCode || baseCategories[0] || '');
-    const effectiveDepartment = departments.length === 1
+    const effectiveDepartment = norm(syntheticOverride?.department || '') || (departments.length === 1
       ? departments[0]
-      : norm(syntheticRoom.department || departments[0] || '');
+      : norm(syntheticRoom.department || departments[0] || ''));
+    const overrideSeatCount = normalizeScenarioCapacityValue(syntheticOverride?.seatCount);
     const baseDepartment = baseDepartments.length === 1
       ? baseDepartments[0]
       : norm(syntheticRoom.baseDepartment || baseDepartments[0] || '');
@@ -9643,7 +9664,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     return {
       ...syntheticRoom,
       area: mergedArea,
-      seatCount: mergedSeats,
+      seatCount: overrideSeatCount != null ? overrideSeatCount : mergedSeats,
       categoryCode: effectiveCategoryCode || '',
       department: effectiveDepartment || '',
       roomType,
@@ -9651,7 +9672,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       baseSeatCount: mergedBaseSeats,
       baseDepartment: baseDepartment || ''
     };
-  }, [buildEffectiveScenarioRoom]);
+  }, [buildEffectiveScenarioRoom, resolveScenarioOverrideForRoom]);
 
   const resolveScenarioMergeForFeature = useCallback((feature) => {
     if (!moveScenarioMode || !scenarioMergeState.activeCount) return null;
