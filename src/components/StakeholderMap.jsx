@@ -9071,13 +9071,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       sourceRoomIds,
       sourceRoomRefs,
       timestamp,
-      user: authUser?.email || 'anonymous',
+      user: getAuth().currentUser?.email || 'anonymous',
       ...payload
     };
     setScenarioOperations((prev) => [...prev, op]);
     void persistScenarioOperation(op);
     return op;
-  }, [scenarioSelection, authUser, persistScenarioOperation]);
+  }, [scenarioSelection, persistScenarioOperation]);
 
   const assignDepartmentToSelection = useCallback(() => {
     if (!scenarioAssignedDept || scenarioSelection.size === 0) return;
@@ -9147,11 +9147,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       opType: 'undoOperation',
       sourceRoomIds: removed.sourceRoomIds || [],
       timestamp: new Date().toISOString(),
-      user: authUser?.email || 'anonymous',
+      user: getAuth().currentUser?.email || 'anonymous',
       removedOpId: removed.id,
       removedOpType: removed.opType
     });
-  }, [scenarioOperations, authUser, persistScenarioOperation]);
+  }, [scenarioOperations, persistScenarioOperation]);
 
   const scenarioRoomOverrides = useMemo(() => {
     const byRoomId = new Map();
