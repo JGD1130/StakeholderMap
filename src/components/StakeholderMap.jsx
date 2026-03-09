@@ -7025,7 +7025,8 @@ function buildAirtableRoomLookup(rooms = []) {
   const byGuid = new Map();
   const byComposite = new Map();
   const byBuildingRoom = new Map();
-  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom };
+  const byRoomId = new Map();
+  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom, byRoomId };
 
   const setUnique = (map, key, room) => {
     if (!key) return;
@@ -7066,9 +7067,12 @@ function buildAirtableRoomLookup(rooms = []) {
     if (roomIdKey && buildingKey) {
       setUnique(byBuildingRoom, `${buildingKey}|${roomIdKey}`, room);
     }
+    if (roomIdKey) {
+      setUnique(byRoomId, roomIdKey, room);
+    }
   });
 
-  return { byGuid, byComposite, byBuildingRoom };
+  return { byGuid, byComposite, byBuildingRoom, byRoomId };
 }
 
 function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) {
@@ -7078,6 +7082,15 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
   const manifestLookup = buildAirtableRoomLookup(manifestRooms);
   return airtableRooms.map((room) => {
     if (!room) return room;
+    const roomIdKey = normalizeRoomLookupKey(
+      room.roomId ?? room.roomNumber ?? room.roomLabel ?? room.id ?? ''
+    );
+    const buildingKey = normalizeDashboardKey(
+      room.building ?? room.buildingName ?? room.buildingLabel ?? ''
+    );
+    const floorKey = normalizeDashboardKey(
+      room.floor ?? room.floorName ?? room.floorId ?? ''
+    );
     const guidRaw = (
       room.roomGuid ??
       room.revitId ??
@@ -7086,10 +7099,19 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
       ''
     );
     const guidKeys = getRoomLookupKeyVariants(guidRaw);
-    const manifestMatch = guidKeys.reduce((found, key) => {
+    let manifestMatch = guidKeys.reduce((found, key) => {
       if (found) return found;
       return manifestLookup.byGuid.get(key) || null;
     }, null);
+    if (!manifestMatch && roomIdKey && buildingKey && floorKey) {
+      manifestMatch = manifestLookup.byComposite.get(`${buildingKey}|${floorKey}|${roomIdKey}`) || null;
+    }
+    if (!manifestMatch && roomIdKey && buildingKey) {
+      manifestMatch = manifestLookup.byBuildingRoom.get(`${buildingKey}|${roomIdKey}`) || null;
+    }
+    if (!manifestMatch && roomIdKey) {
+      manifestMatch = manifestLookup.byRoomId?.get(roomIdKey) || null;
+    }
     if (!manifestMatch) return room;
 
     const merged = { ...room };
@@ -7122,6 +7144,36 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
       if (Number.isFinite(Number(manifestMatch.areaSF)) && Number(manifestMatch.areaSF) > 0) {
         merged.areaSF = Number(manifestMatch.areaSF);
       }
+    }
+    const mergedSeatCountNum = Number(merged.seatCount ?? merged.SeatCount ?? merged['Seat Count'] ?? 0);
+    const manifestSeatCountNum = Number(
+      manifestMatch.seatCount ??
+      manifestMatch.SeatCount ??
+      manifestMatch['Seat Count'] ??
+      0
+    );
+    if ((!Number.isFinite(mergedSeatCountNum) || mergedSeatCountNum <= 0) && Number.isFinite(manifestSeatCountNum) && manifestSeatCountNum > 0) {
+      merged.seatCount = manifestSeatCountNum;
+      merged.SeatCount = manifestSeatCountNum;
+    }
+    const mergedCategoryCode = String(
+      merged.categoryCode ??
+      merged.category ??
+      merged.NCES_Category ??
+      merged['NCES Category'] ??
+      ''
+    ).trim();
+    const manifestCategoryCode = String(
+      manifestMatch.categoryCode ??
+      manifestMatch.category ??
+      manifestMatch.NCES_Category ??
+      manifestMatch['NCES Category'] ??
+      ''
+    ).trim();
+    if (!mergedCategoryCode && manifestCategoryCode) {
+      merged.categoryCode = manifestCategoryCode;
+      merged.category = manifestCategoryCode;
+      merged.NCES_Category = manifestCategoryCode;
     }
     return merged;
   });
@@ -8088,6 +8140,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   );
   const [strategicSelectedYear, setStrategicSelectedYear] = useState(() => new Date().getFullYear());
     const dashboardManifestRef = useRef(null);
+    const manifestHydrationRoomsRef = useRef(null);
     const campusRoomsRefreshTimerRef = useRef(null);
     const airtableRoomLookup = useMemo(
       () => buildAirtableRoomLookup(airtableRooms.length ? airtableRooms : campusRooms),
@@ -13907,6 +13960,7 @@ useEffect(() => {
           const rooms = await buildCampusRoomsFromManifest(manifest);
           if (!rooms.length) throw new Error('No floorplan rooms found for dashboard');
           if (!cancelled) {
+            manifestHydrationRoomsRef.current = rooms;
             setCampusRooms(rooms);
             setDashboardError(null);
             setCampusRoomsLoaded(true);
@@ -14383,20 +14437,6 @@ useEffect(() => {
   useEffect(() => {
     if (!airtableRooms.length) return;
     let cancelled = false;
-    const needsManifest = airtableRooms.some(
-      (room) =>
-        isLinkedRecordArray(room?.type) ||
-        isLinkedRecordArray(room?.department) ||
-        needsManifestRoomNumberHydration(room)
-    );
-    if (!needsManifest) {
-      if (!cancelled) {
-        setCampusRooms(airtableRooms);
-        setCampusRoomsLoaded(true);
-      }
-      return;
-    }
-
     (async () => {
       try {
         let manifest = dashboardManifestRef.current;
@@ -14404,7 +14444,13 @@ useEffect(() => {
           manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
           dashboardManifestRef.current = manifest;
         }
-        const manifestRooms = await buildCampusRoomsFromManifest(manifest);
+        let manifestRooms = manifestHydrationRoomsRef.current;
+        if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
+          manifestRooms = await buildCampusRoomsFromManifest(manifest);
+          if (Array.isArray(manifestRooms) && manifestRooms.length) {
+            manifestHydrationRoomsRef.current = manifestRooms;
+          }
+        }
         if (cancelled) return;
         const merged = mergeAirtableRoomsWithManifest(airtableRooms, manifestRooms);
         setCampusRooms(merged);
