@@ -7924,14 +7924,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
-  const engagementTechnicalAssessmentEnabled = Boolean(tenant?.features?.enableEngagementTechnicalAssessment);
   // ---- Map view modes ----
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
     ASSESSMENT: 'assessment',
     TECHNICAL: 'technical'
   };
-  const defaultMapView = engagementMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA;
+  const defaultMapView = MAP_VIEWS.SPACE_DATA;
   const [mapView, setMapView] = useState(defaultMapView);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -7946,14 +7945,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   });
   const [presentationExporting, setPresentationExporting] = useState(false);
   const MAP_VIEW_OPTIONS = [
-    { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
-    { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment Progress' },
-    { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
+    { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }
   ];
   const visibleMapViewOptions = mode === 'admin'
     ? MAP_VIEW_OPTIONS
     : MAP_VIEW_OPTIONS.filter((opt) => opt.value === MAP_VIEWS.SPACE_DATA);
-  const showMapViewSelector = !engagementMode || (mode === 'admin' && engagementTechnicalAssessmentEnabled);
+  const showMapViewSelector = visibleMapViewOptions.length > 1;
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
@@ -13379,16 +13376,33 @@ useEffect(() => {
     applyScenarioOverrideToFeature
   ]);
 
+  const strategicCampusRoomFeatures = useMemo(() => {
+    if (!campusRoomsLoaded) return [];
+    return (campusRooms || [])
+      .map(roomRowToDashboardFeature)
+      .filter(Boolean);
+  }, [campusRooms, campusRoomsLoaded]);
+
+  const strategicRoomFeatures = useMemo(() => {
+    if (!moveScenarioMode || !scenarioRoomOverrides.count) return strategicCampusRoomFeatures;
+    return strategicCampusRoomFeatures.map((feature) => applyScenarioOverrideToFeature(feature));
+  }, [
+    strategicCampusRoomFeatures,
+    moveScenarioMode,
+    scenarioRoomOverrides,
+    applyScenarioOverrideToFeature
+  ]);
+
   const strategicSeatSupplyPrefixes = useMemo(
     () => (strategicIncludeLabs ? ['1', '2'] : STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES),
     [strategicIncludeLabs]
   );
 
   const strategicCapacityMetrics = useMemo(
-    () => computeStrategicCapacityMetrics(dashboardRoomFeatures, {
+    () => computeStrategicCapacityMetrics(strategicRoomFeatures, {
       seatSupplyCategoryPrefixes: strategicSeatSupplyPrefixes
     }),
-    [dashboardRoomFeatures, strategicSeatSupplyPrefixes]
+    [strategicRoomFeatures, strategicSeatSupplyPrefixes]
   );
 
   const strategicYearRows = useMemo(

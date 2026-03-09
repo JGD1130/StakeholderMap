@@ -56,9 +56,10 @@ const ChartShell = ({ title, children }) => (
   </PanelCard>
 );
 
-const CollapsibleSection = ({ title, children, defaultOpen = false }) => (
+const CollapsibleSection = ({ title, children, defaultOpen = false, open = defaultOpen, onToggle }) => (
   <details
-    open={defaultOpen}
+    open={open}
+    onToggle={(event) => onToggle?.(event.currentTarget.open)}
     style={{
       marginTop: 6,
       border: '1px solid #e4e7ec',
@@ -283,14 +284,24 @@ const DeptList = ({ entries = [], maxRows = 6 }) => {
   );
 };
 
-const StrategicDashboardSection = ({ strategic }) => {
+const StrategicDashboardSection = ({ strategic, onExpandedStateChange }) => {
   if (!strategic) return null;
+  const [trendOpen, setTrendOpen] = React.useState(false);
+  const [enrollmentOpen, setEnrollmentOpen] = React.useState(false);
   const rows = strategic.yearRows || [];
   const selected = strategic.selectedMetrics || null;
   const enrollmentSeries = strategic.enrollmentSeries || [];
   const selectedYear = Number(strategic.selectedYear);
   const gapValue = Number(selected?.seatGap || 0);
   const gapColor = gapValue >= 0 ? '#166534' : '#b42318';
+
+  React.useEffect(() => {
+    onExpandedStateChange?.({
+      trendOpen,
+      enrollmentOpen,
+      needsScroll: trendOpen || enrollmentOpen
+    });
+  }, [trendOpen, enrollmentOpen, onExpandedStateChange]);
 
   return (
     <PanelCard>
@@ -375,7 +386,7 @@ const StrategicDashboardSection = ({ strategic }) => {
         />
       </div>
 
-      <CollapsibleSection title="Trend Charts">
+      <CollapsibleSection title="Trend Charts" open={trendOpen} onToggle={setTrendOpen}>
         <ChartShell title="Enrollment Trend">
           <EnrollmentTrendChart rows={rows} />
         </ChartShell>
@@ -387,7 +398,11 @@ const StrategicDashboardSection = ({ strategic }) => {
         </ChartShell>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Enrollment by Year (Editable)">
+      <CollapsibleSection
+        title="Enrollment by Year (Editable)"
+        open={enrollmentOpen}
+        onToggle={setEnrollmentOpen}
+      >
         <div style={{ maxHeight: 130, overflowY: 'auto', paddingRight: 4 }}>
           {enrollmentSeries.map((row) => (
             <div key={row.year} style={{ display: 'grid', gridTemplateColumns: '60px 1fr', gap: 6, marginBottom: 4 }}>
@@ -420,6 +435,15 @@ export default function SpaceDashboardPanel({
   onToggleHeatmap,
   strategic
 }) {
+  const [strategicExpansionState, setStrategicExpansionState] = React.useState({
+    trendOpen: false,
+    enrollmentOpen: false,
+    needsScroll: false
+  });
+  React.useEffect(() => {
+    if (strategic) return;
+    setStrategicExpansionState({ trendOpen: false, enrollmentOpen: false, needsScroll: false });
+  }, [strategic]);
   const officeOcc = metrics?.officeOccupancy || {};
   const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
 
@@ -431,8 +455,17 @@ export default function SpaceDashboardPanel({
       {error && <div style={{ fontSize: 12, color: '#b00020' }}>{String(error)}</div>}
 
       {!loading && !error && (
-        <div style={{ flex: 1, overflowY: 'hidden', paddingRight: 0 }}>
-          <StrategicDashboardSection strategic={strategic} />
+        <div
+          style={{
+            flex: 1,
+            overflowY: strategicExpansionState.needsScroll ? 'auto' : 'hidden',
+            paddingRight: strategicExpansionState.needsScroll ? 3 : 0
+          }}
+        >
+          <StrategicDashboardSection
+            strategic={strategic}
+            onExpandedStateChange={setStrategicExpansionState}
+          />
 
           <PanelCard style={{ marginTop: 6 }}>
             <div className="mf-section-title">Actual Classroom Utilization</div>
