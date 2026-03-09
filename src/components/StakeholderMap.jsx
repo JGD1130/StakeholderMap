@@ -6288,7 +6288,8 @@ const BUILDING_ALIAS_NORMALIZED_LOOSE = Object.fromEntries(
 );
 
 const UTILIZATION_CSV_PATH = 'Data/Utilization/classroom_utilization.csv';
-const STRATEGIC_DEFAULT_SEAT_RATIO = 2.5;
+const STRATEGIC_DEFAULT_SEAT_RATIO = 2.3;
+const STRATEGIC_DEFAULT_INCLUDE_LABS = false;
 const STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES = ['1']; // 100-classroom rollup
 
 const normalizeStrategicEnrollmentSeries = (series = []) => {
@@ -8025,7 +8026,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
-  const [strategicIncludeLabs, setStrategicIncludeLabs] = useState(false);
+  const [strategicIncludeLabs, setStrategicIncludeLabs] = useState(STRATEGIC_DEFAULT_INCLUDE_LABS);
   const [strategicEnrollmentSeries, setStrategicEnrollmentSeries] = useState(
     () => buildDefaultEnrollmentSeries(0)
   );

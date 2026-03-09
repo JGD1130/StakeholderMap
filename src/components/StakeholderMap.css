@@ -30,6 +30,7 @@
   position: absolute;
   right: 16px;
   top: 14px;
+  bottom: 14px;
   width: 260px;
   display: flex;
   flex-direction: column;
@@ -80,9 +81,8 @@
 .dashboard-box {
   width: 100%;
   align-items: stretch;
-  height: calc(100vh - 320px);
-  max-height: calc(100vh - 320px);
-  min-height: 280px;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
