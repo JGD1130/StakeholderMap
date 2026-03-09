@@ -7303,6 +7303,12 @@ const roomRowToDashboardFeature = (room) => {
       'NCES Category': categoryCode,
       categoryCode,
       category: categoryCode,
+      building: room.building || '',
+      Building: room.building || '',
+      buildingName: room.building || '',
+      Number: room.roomNumber || room.roomId || '',
+      RoomNumber: room.roomNumber || room.roomId || '',
+      roomNumber: room.roomNumber || room.roomId || '',
       OccupancyStatus: occupancyStatus,
       'Occupancy Status': occupancyStatus,
       occupancyStatus,
@@ -13032,16 +13038,75 @@ useEffect(() => {
       .filter(Boolean);
   }, [dashboardScopeRooms, dashboardFloorFeatures, loadedSingleFloor]);
 
+  const strategicRoomFeatures = useMemo(() => {
+    const feats = Array.isArray(dashboardRoomFeatures) ? dashboardRoomFeatures : [];
+    if (!feats.length) return [];
+
+    const fallbackBuildingRaw = String(
+      activeBuildingName || selectedBuildingId || selectedBuilding || ''
+    ).trim();
+    const fallbackBuilding =
+      resolveBuildingNameFromInput(fallbackBuildingRaw) || fallbackBuildingRaw;
+
+    return feats.map((feature) => {
+      const props = feature?.properties || {};
+      const directSeatCount = getSeatCount(props);
+      if (Number.isFinite(directSeatCount) && directSeatCount > 0) return feature;
+
+      const roomLabel = String(
+        props.Number ??
+        props.RoomNumber ??
+        props.roomNumber ??
+        props.roomId ??
+        props.roomLabel ??
+        ''
+      ).trim();
+      if (!roomLabel) return feature;
+
+      const roomBuildingRaw = String(
+        props.building ??
+        props.Building ??
+        props.buildingName ??
+        props.BuildingName ??
+        fallbackBuilding
+      ).trim();
+      const roomBuilding =
+        resolveBuildingNameFromInput(roomBuildingRaw) || roomBuildingRaw;
+      if (!roomBuilding) return feature;
+
+      const util = utilizationByRoom[buildUtilizationKey(roomBuilding, roomLabel)] || null;
+      const utilCapacity = Number(util?.totalCapacity ?? 0);
+      if (!Number.isFinite(utilCapacity) || utilCapacity <= 0) return feature;
+
+      return {
+        ...feature,
+        properties: {
+          ...props,
+          seatCount: utilCapacity,
+          SeatCount: utilCapacity,
+          'Seat Count': utilCapacity,
+          Capacity: utilCapacity
+        }
+      };
+    });
+  }, [
+    dashboardRoomFeatures,
+    utilizationByRoom,
+    activeBuildingName,
+    selectedBuildingId,
+    selectedBuilding
+  ]);
+
   const strategicSeatSupplyPrefixes = useMemo(
     () => (strategicIncludeLabs ? ['1', '2'] : STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES),
     [strategicIncludeLabs]
   );
 
   const strategicCapacityMetrics = useMemo(
-    () => computeStrategicCapacityMetrics(dashboardRoomFeatures, {
+    () => computeStrategicCapacityMetrics(strategicRoomFeatures, {
       seatSupplyCategoryPrefixes: strategicSeatSupplyPrefixes
     }),
-    [dashboardRoomFeatures, strategicSeatSupplyPrefixes]
+    [strategicRoomFeatures, strategicSeatSupplyPrefixes]
   );
 
   const strategicYearRows = useMemo(

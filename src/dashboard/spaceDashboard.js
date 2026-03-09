@@ -272,8 +272,23 @@ function resolveCategoryCode(p = {}) {
 
 function resolveCategoryPrefix(p = {}) {
   const code = resolveCategoryCode(p);
-  if (!code) return '';
-  return code.charAt(0);
+  if (code) return code.charAt(0);
+
+  const typeRaw =
+    p.NCES_Type ??
+    p.NCES_Type_Desc ??
+    p['NCES Type Description'] ??
+    p['NCES_Type Description_Sh'] ??
+    p.RoomTypeName ??
+    p.RoomType ??
+    p.Type ??
+    p.type ??
+    '';
+  const type = String(typeRaw || '').toLowerCase();
+  if (!type) return '';
+  if (type.includes('classroom')) return '1';
+  if (type.includes('laboratory') || /\blab\b/.test(type) || type.includes('studio')) return '2';
+  return '';
 }
 
 export function computeStrategicCapacityMetrics(
