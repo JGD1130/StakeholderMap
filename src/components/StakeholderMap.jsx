@@ -8845,20 +8845,22 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
-    return collection(db, 'universities', universityId, 'planningScenarioOps');
+    return collection(db, 'moves');
   }, [universityId]);
 
   const persistScenarioOperation = useCallback(async (op) => {
     if (!scenarioOpsCollection || !op) return;
     try {
       await addDoc(scenarioOpsCollection, {
+        eventType: 'planningScenarioOp',
+        universityId,
         ...op,
         createdAt: serverTimestamp()
       });
     } catch (err) {
       console.warn('Unable to persist planning scenario operation', err);
     }
-  }, [scenarioOpsCollection]);
+  }, [scenarioOpsCollection, universityId]);
 
   const ensureScenarioLayer = useCallback(() => {
     const map = mapRef.current;
