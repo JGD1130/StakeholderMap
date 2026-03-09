@@ -24,7 +24,7 @@ const StatCard = ({ label, value, sublabel, valueColor }) => (
       background: '#f9fafb',
       border: '1px solid #e4e7ec',
       borderRadius: 8,
-      padding: 6
+      padding: 5
     }}
   >
     <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.3, color: '#667085' }}>
@@ -41,7 +41,7 @@ const PanelCard = ({ children, style }) => (
       background: '#f9fafb',
       border: '1px solid #e4e7ec',
       borderRadius: 8,
-      padding: 6,
+      padding: 5,
       ...style
     }}
   >
@@ -50,7 +50,7 @@ const PanelCard = ({ children, style }) => (
 );
 
 const ChartShell = ({ title, children }) => (
-  <PanelCard style={{ marginTop: 6 }}>
+  <PanelCard style={{ marginTop: 4 }}>
     <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 5 }}>{title}</div>
     {children}
   </PanelCard>
@@ -60,11 +60,11 @@ const CollapsibleSection = ({ title, children, defaultOpen = false }) => (
   <details
     open={defaultOpen}
     style={{
-      marginTop: 8,
+      marginTop: 6,
       border: '1px solid #e4e7ec',
       borderRadius: 8,
       background: '#ffffff',
-      padding: '4px 6px'
+      padding: '3px 5px'
     }}
   >
     <summary style={{ fontWeight: 700, fontSize: 11, cursor: 'pointer', color: '#1d2939' }}>
@@ -213,7 +213,7 @@ const OfficeOccupancyGauge = ({ pct, occupied = 0, vacant = 0, unknown = 0, scop
           {scopeLabel}
         </div>
       ) : null}
-      <svg width="140" height="92" viewBox="0 0 200 130" aria-label="Office Occupancy">
+      <svg width="124" height="82" viewBox="0 0 200 130" aria-label="Office Occupancy">
         <path d="M 20 110 A 80 80 0 0 1 80 30" fill="none" stroke="#d64545" strokeWidth="16" strokeLinecap="round" />
         <path d="M 80 30 A 80 80 0 0 1 120 30" fill="none" stroke="#f0a23b" strokeWidth="16" strokeLinecap="round" />
         <path d="M 120 30 A 80 80 0 0 1 180 110" fill="none" stroke="#2aa84a" strokeWidth="16" strokeLinecap="round" />
@@ -424,17 +424,17 @@ export default function SpaceDashboardPanel({
   const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
 
   return (
-    <div style={{ padding: 4, width: '100%', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>{title}</div>
+    <div style={{ padding: 3, width: '100%', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 3 }}>{title}</div>
 
       {loading && <div style={{ fontSize: 12, color: '#667085' }}>Loading dashboard...</div>}
       {error && <div style={{ fontSize: 12, color: '#b00020' }}>{String(error)}</div>}
 
       {!loading && !error && (
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
+        <div style={{ flex: 1, overflowY: 'hidden', paddingRight: 0 }}>
           <StrategicDashboardSection strategic={strategic} />
 
-          <PanelCard style={{ marginTop: 8 }}>
+          <PanelCard style={{ marginTop: 6 }}>
             <div className="mf-section-title">Actual Classroom Utilization</div>
             {utilizationScopeLabel ? (
               <div style={{ fontSize: 10, color: '#667085', marginTop: -2, marginBottom: 4 }}>
@@ -465,7 +465,7 @@ export default function SpaceDashboardPanel({
           </PanelCard>
 
           {metrics ? (
-            <PanelCard style={{ marginTop: 8 }}>
+            <PanelCard style={{ marginTop: 6 }}>
               <div className="mf-section-title">Campus Space Context</div>
               <div
                 style={{
