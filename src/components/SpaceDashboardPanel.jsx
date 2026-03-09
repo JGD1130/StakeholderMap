@@ -493,23 +493,29 @@ export default function SpaceDashboardPanel({
           {metrics ? (
             <PanelCard style={{ marginTop: 8 }}>
               <div className="mf-section-title">Campus Space Context</div>
-              <CollapsibleSection title="Space Mix + Occupancy">
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 1.2fr', gap: 6, marginTop: 4 }}>
-                  <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
-                  <PanelCard>
-                    <OfficeOccupancyGauge
-                      pct={officeOcc.pct}
-                      occupied={officeOcc.occupied}
-                      vacant={officeOcc.vacant}
-                      unknown={officeOcc.unknown}
-                      scopeLabel={scopeLabel}
-                    />
-                  </PanelCard>
-                </div>
-                <PanelCard style={{ marginTop: 6 }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.25fr)',
+                  gap: 6,
+                  marginTop: 4,
+                  alignItems: 'stretch'
+                }}
+              >
+                <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
+                <PanelCard style={{ gridRow: '1 / span 2' }}>
+                  <OfficeOccupancyGauge
+                    pct={officeOcc.pct}
+                    occupied={officeOcc.occupied}
+                    vacant={officeOcc.vacant}
+                    unknown={officeOcc.unknown}
+                    scopeLabel={scopeLabel}
+                  />
+                </PanelCard>
+                <PanelCard>
                   <DeptPie entries={metrics.byDept || []} />
                 </PanelCard>
-              </CollapsibleSection>
+              </div>
             </PanelCard>
           ) : null}
         </div>
