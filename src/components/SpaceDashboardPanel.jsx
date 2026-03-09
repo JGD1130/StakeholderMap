@@ -25,14 +25,14 @@ const StatCard = ({ label, value, sublabel, valueColor }) => (
       background: '#f9fafb',
       border: '1px solid #e4e7ec',
       borderRadius: 8,
-      padding: 8
+      padding: 6
     }}
   >
-    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, color: '#667085' }}>
+    <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.3, color: '#667085' }}>
       {label}
     </div>
-    <div style={{ fontSize: 16, fontWeight: 800, color: valueColor || '#1d2939' }}>{value}</div>
-    {sublabel ? <div style={{ fontSize: 11, color: '#667085' }}>{sublabel}</div> : null}
+    <div style={{ fontSize: 14, fontWeight: 800, color: valueColor || '#1d2939' }}>{value}</div>
+    {sublabel ? <div style={{ fontSize: 10, color: '#667085' }}>{sublabel}</div> : null}
   </div>
 );
 
@@ -42,7 +42,7 @@ const PanelCard = ({ children, style }) => (
       background: '#f9fafb',
       border: '1px solid #e4e7ec',
       borderRadius: 8,
-      padding: 8,
+      padding: 6,
       ...style
     }}
   >
@@ -51,8 +51,8 @@ const PanelCard = ({ children, style }) => (
 );
 
 const ChartShell = ({ title, children }) => (
-  <PanelCard style={{ marginTop: 8 }}>
-    <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>{title}</div>
+  <PanelCard style={{ marginTop: 6 }}>
+    <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 5 }}>{title}</div>
     {children}
   </PanelCard>
 );
@@ -65,25 +65,25 @@ const CollapsibleSection = ({ title, children, defaultOpen = false }) => (
       border: '1px solid #e4e7ec',
       borderRadius: 8,
       background: '#ffffff',
-      padding: '6px 8px'
+      padding: '4px 6px'
     }}
   >
-    <summary style={{ fontWeight: 700, fontSize: 12, cursor: 'pointer', color: '#1d2939' }}>
+    <summary style={{ fontWeight: 700, fontSize: 11, cursor: 'pointer', color: '#1d2939' }}>
       {title}
     </summary>
-    <div style={{ marginTop: 6 }}>{children}</div>
+    <div style={{ marginTop: 4 }}>{children}</div>
   </details>
 );
 
 const EnrollmentTrendChart = ({ rows = [] }) => {
   if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No enrollment data.</div>;
 
-  const width = 290;
-  const height = 120;
+  const width = 280;
+  const height = 100;
   const left = 10;
   const right = 8;
-  const top = 10;
-  const bottom = 22;
+  const top = 8;
+  const bottom = 18;
   const innerW = width - left - right;
   const innerH = height - top - bottom;
   const maxVal = Math.max(...rows.map((r) => Number(r.enrollment || 0)), 1);
@@ -114,12 +114,12 @@ const EnrollmentTrendChart = ({ rows = [] }) => {
 const RequiredVsAvailableChart = ({ rows = [] }) => {
   if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No seat demand data.</div>;
 
-  const width = 290;
-  const height = 130;
+  const width = 280;
+  const height = 108;
   const left = 10;
   const right = 8;
-  const top = 10;
-  const bottom = 22;
+  const top = 8;
+  const bottom = 18;
   const innerW = width - left - right;
   const innerH = height - top - bottom;
   const maxVal = Math.max(
@@ -158,12 +158,12 @@ const RequiredVsAvailableChart = ({ rows = [] }) => {
 const SeatGapChart = ({ rows = [] }) => {
   if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>No seat gap data.</div>;
 
-  const width = 290;
-  const height = 130;
+  const width = 280;
+  const height = 108;
   const left = 10;
   const right = 8;
-  const top = 10;
-  const bottom = 22;
+  const top = 8;
+  const bottom = 18;
   const innerW = width - left - right;
   const innerH = height - top - bottom;
   const zeroY = top + innerH / 2;
@@ -214,7 +214,7 @@ const OfficeOccupancyGauge = ({ pct, occupied = 0, vacant = 0, unknown = 0, scop
           {scopeLabel}
         </div>
       ) : null}
-      <svg width="170" height="110" viewBox="0 0 200 130" aria-label="Office Occupancy">
+      <svg width="140" height="92" viewBox="0 0 200 130" aria-label="Office Occupancy">
         <path d="M 20 110 A 80 80 0 0 1 80 30" fill="none" stroke="#d64545" strokeWidth="16" strokeLinecap="round" />
         <path d="M 80 30 A 80 80 0 0 1 120 30" fill="none" stroke="#f0a23b" strokeWidth="16" strokeLinecap="round" />
         <path d="M 120 30 A 80 80 0 0 1 180 110" fill="none" stroke="#2aa84a" strokeWidth="16" strokeLinecap="round" />
@@ -290,13 +290,13 @@ const DeptPie = ({ entries = [], maxSlices = 8 }) => {
     <div className="mf-pie">
       <div className="mf-section-title">Departments (SF)</div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <svg width="120" height="120" viewBox="0 0 120 120" aria-label="Department share by SF">
+        <svg width="96" height="96" viewBox="0 0 120 120" aria-label="Department share by SF">
           {paths.map((p, idx) => (
             <path key={idx} d={p.d} fill={p.color} stroke="#fff" strokeWidth="1" />
           ))}
         </svg>
         <div className="mf-pie-legend">
-          {paths.slice(0, 6).map((p, idx) => (
+          {paths.slice(0, 4).map((p, idx) => (
             <div key={idx} className="mf-legend-row">
               <span className="mf-swatch" style={{ background: p.color }} />
               <span className="mf-legend-name" title={p.name}>{p.name}</span>
@@ -328,7 +328,7 @@ const StrategicDashboardSection = ({ strategic }) => {
           <select
             value={Number.isFinite(selectedYear) ? selectedYear : ''}
             onChange={(e) => strategic.onSelectedYearChange?.(Number(e.target.value))}
-            style={{ width: '100%', height: 28 }}
+            style={{ width: '100%', height: 26 }}
           >
             {rows.map((row) => (
               <option key={row.year} value={row.year}>{row.year}</option>
@@ -343,7 +343,7 @@ const StrategicDashboardSection = ({ strategic }) => {
             step="0.1"
             value={Number(strategic.seatRatio || 0)}
             onChange={(e) => strategic.onSeatRatioChange?.(e.target.value)}
-            style={{ width: '100%', height: 28 }}
+            style={{ width: '100%', height: 26 }}
           />
         </div>
         <div>
@@ -356,13 +356,13 @@ const StrategicDashboardSection = ({ strategic }) => {
               step="1"
               value={Math.round(Number(strategic.targetUtilization || 0) * 100)}
               onChange={(e) => strategic.onTargetUtilizationChange?.(e.target.value)}
-              style={{ width: '100%', height: 28 }}
+              style={{ width: '100%', height: 26 }}
             />
             <span style={{ fontSize: 12, color: '#667085' }}>%</span>
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 11, color: '#667085', marginTop: 6 }}>
+      <div style={{ fontSize: 10, color: '#667085', marginTop: 4 }}>
         Represents the planning goal for instructional seat utilization.
       </div>
 
@@ -381,7 +381,7 @@ const StrategicDashboardSection = ({ strategic }) => {
         </label>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginTop: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, marginTop: 6 }}>
         <StatCard label="Enrollment" value={fmtCount(selected?.enrollment)} sublabel={`${selected?.year || '--'}`} />
         <StatCard
           label="Available Seats"
@@ -414,17 +414,17 @@ const StrategicDashboardSection = ({ strategic }) => {
       </CollapsibleSection>
 
       <CollapsibleSection title="Enrollment by Year (Editable)">
-        <div style={{ maxHeight: 180, overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{ maxHeight: 130, overflowY: 'auto', paddingRight: 4 }}>
           {enrollmentSeries.map((row) => (
-            <div key={row.year} style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: 6, marginBottom: 4 }}>
-              <div style={{ alignSelf: 'center', fontSize: 11, color: '#475467' }}>{row.year}</div>
+            <div key={row.year} style={{ display: 'grid', gridTemplateColumns: '60px 1fr', gap: 6, marginBottom: 4 }}>
+              <div style={{ alignSelf: 'center', fontSize: 10, color: '#475467' }}>{row.year}</div>
               <input
                 type="number"
                 min="0"
                 step="1"
                 value={Number(row.enrollment || 0)}
                 onChange={(e) => strategic.onEnrollmentChange?.(row.year, e.target.value)}
-                style={{ height: 26 }}
+                style={{ height: 24 }}
               />
             </div>
           ))}
@@ -461,9 +461,9 @@ export default function SpaceDashboardPanel({
           <StrategicDashboardSection strategic={strategic} />
 
           <PanelCard style={{ marginTop: 8 }}>
-            <div className="mf-section-title">Instructional Space Performance</div>
+            <div className="mf-section-title">Actual Classroom Utilization</div>
             {utilizationScopeLabel ? (
-              <div style={{ fontSize: 11, color: '#667085', marginTop: -2, marginBottom: 6 }}>
+              <div style={{ fontSize: 10, color: '#667085', marginTop: -2, marginBottom: 4 }}>
                 {utilizationScopeLabel}
               </div>
             ) : null}
@@ -474,7 +474,7 @@ export default function SpaceDashboardPanel({
                   seatPct={utilization.seatUtilization}
                   compact
                 />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
                   <input
                     type="checkbox"
                     checked={Boolean(heatmapOn)}
@@ -484,7 +484,7 @@ export default function SpaceDashboardPanel({
                 </label>
               </>
             ) : (
-              <div style={{ fontSize: 12, color: '#667085' }}>
+              <div style={{ fontSize: 11, color: '#667085' }}>
                 No classroom utilization data.
               </div>
             )}
@@ -493,21 +493,23 @@ export default function SpaceDashboardPanel({
           {metrics ? (
             <PanelCard style={{ marginTop: 8 }}>
               <div className="mf-section-title">Campus Space Context</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 1.3fr', gap: 6, marginTop: 6 }}>
-                <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
-                <PanelCard>
-                  <OfficeOccupancyGauge
-                    pct={officeOcc.pct}
-                    occupied={officeOcc.occupied}
-                    vacant={officeOcc.vacant}
-                    unknown={officeOcc.unknown}
-                    scopeLabel={scopeLabel}
-                  />
+              <CollapsibleSection title="Space Mix + Occupancy">
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 1.2fr', gap: 6, marginTop: 4 }}>
+                  <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
+                  <PanelCard>
+                    <OfficeOccupancyGauge
+                      pct={officeOcc.pct}
+                      occupied={officeOcc.occupied}
+                      vacant={officeOcc.vacant}
+                      unknown={officeOcc.unknown}
+                      scopeLabel={scopeLabel}
+                    />
+                  </PanelCard>
+                </div>
+                <PanelCard style={{ marginTop: 6 }}>
+                  <DeptPie entries={metrics.byDept || []} />
                 </PanelCard>
-              </div>
-              <PanelCard style={{ marginTop: 8 }}>
-                <DeptPie entries={metrics.byDept || []} />
-              </PanelCard>
+              </CollapsibleSection>
             </PanelCard>
           ) : null}
         </div>
