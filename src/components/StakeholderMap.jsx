@@ -26,6 +26,7 @@ import {
 } from '../dashboard/spaceDashboard';
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
+const SCENARIO_OP_PERSIST_ENABLED = String(import.meta.env.VITE_SCENARIO_OP_PERSIST || 'false').toLowerCase() === 'true';
 
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
@@ -8849,6 +8850,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [universityId]);
 
   const persistScenarioOperation = useCallback(async (op) => {
+    if (!SCENARIO_OP_PERSIST_ENABLED) return;
     if (!scenarioOpsCollection || !op) return;
     try {
       await addDoc(scenarioOpsCollection, {
@@ -8858,7 +8860,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         createdAt: serverTimestamp()
       });
     } catch (err) {
-      console.warn('Unable to persist planning scenario operation', err);
+      // Keep scenario edits local if Firestore rules block writes.
     }
   }, [scenarioOpsCollection, universityId]);
 
@@ -9203,6 +9205,34 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       count: byRoomId.size
     };
   }, [scenarioOperations, scenarioAssignments, scenarioSelection]);
+
+  const scenarioSelectionSeatSummary = useMemo(() => {
+    let baseSeats = 0;
+    let scenarioSeats = 0;
+    let baseInstructionalSeats = 0;
+    let scenarioInstructionalSeats = 0;
+    scenarioSelection.forEach((roomId) => {
+      const meta = scenarioRoomInfoRef.current.get(roomId);
+      const baseSeat = normalizeScenarioCapacityValue(meta?.seatCount) ?? 0;
+      const baseCategoryCode = normalizeScenarioCategoryCode(meta?.categoryCode || '');
+      const override = scenarioRoomOverrides.byRoomId.get(roomId) || {};
+      const scenarioSeat = normalizeScenarioCapacityValue(override?.seatCount ?? baseSeat) ?? 0;
+      const scenarioCategoryCode = normalizeScenarioCategoryCode(override?.categoryCode || baseCategoryCode);
+      const basePrefix = String(baseCategoryCode || '').charAt(0);
+      const scenarioPrefix = String(scenarioCategoryCode || '').charAt(0);
+      baseSeats += baseSeat;
+      scenarioSeats += scenarioSeat;
+      if (basePrefix === '1' || basePrefix === '2') baseInstructionalSeats += baseSeat;
+      if (scenarioPrefix === '1' || scenarioPrefix === '2') scenarioInstructionalSeats += scenarioSeat;
+    });
+    return {
+      baseSeats,
+      scenarioSeats,
+      baseInstructionalSeats,
+      scenarioInstructionalSeats,
+      instructionalDelta: scenarioInstructionalSeats - baseInstructionalSeats
+    };
+  }, [scenarioSelection, scenarioRoomOverrides]);
 
   const handleExportScenario = useCallback(async () => {
     if (!aiScenarioResult) {
@@ -16275,6 +16305,15 @@ useEffect(() => {
         <div style={{ marginBottom: 8 }}>
           <div><b>Total SF:</b> {Math.round(scenarioTotals.totalSF).toLocaleString()}</div>
           <div><b>Rooms:</b> {scenarioTotals.rooms}</div>
+          <div>
+            <b>Instructional Seats (Selected):</b>{' '}
+            {Math.round(scenarioSelectionSeatSummary.scenarioInstructionalSeats).toLocaleString()}
+            {' '}
+            <span style={{ color: '#667085' }}>
+              ({scenarioSelectionSeatSummary.instructionalDelta >= 0 ? '+' : ''}
+              {Math.round(scenarioSelectionSeatSummary.instructionalDelta).toLocaleString()} vs original)
+            </span>
+          </div>
         </div>
 
         <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
