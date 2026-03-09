@@ -201,7 +201,7 @@ export default function FloorPanel({
               style={{ width: "100%", fontWeight: 600 }}
               onClick={onToggleMoveScenarioMode}
             >
-              Move Scenario Mode {moveScenarioMode ? "ON" : "OFF"}
+              Planning Scenario Mode {moveScenarioMode ? "ON" : "OFF"}
             </button>
             <div style={{ marginTop: 4, fontSize: 11, color: "#555", textAlign: "center" }}>
               Click rooms to add/remove them from a what-if scenario. Real data is not changed.

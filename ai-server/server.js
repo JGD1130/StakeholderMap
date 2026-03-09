@@ -59,6 +59,9 @@ const SERVER_COMMIT =
   "";
 const ENROLLMENT_FILE_NAME = process.env.ENROLLMENT_FILE_NAME || "HastingsCollege_Enrollment.xlsx";
 const ENROLLMENT_SHEET_NAME = process.env.ENROLLMENT_SHEET_NAME || "";
+const XLSX_API = (XLSX && XLSX.readFile && XLSX.utils)
+  ? XLSX
+  : (XLSX?.default || XLSX);
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
@@ -318,7 +321,7 @@ function normalizeEnrollmentSeries(rows = []) {
 
 function parseEnrollmentSeriesFromSheet(sheet) {
   if (!sheet) return [];
-  const rows = XLSX.utils.sheet_to_json(sheet, {
+  const rows = XLSX_API.utils.sheet_to_json(sheet, {
     header: 1,
     raw: true,
     defval: null,
@@ -2116,12 +2119,18 @@ app.get("/demo/sample", async (req, res) => {
 
 app.get("/enrollment-projections", async (req, res) => {
   try {
+    if (!XLSX_API?.readFile || !XLSX_API?.utils?.sheet_to_json) {
+      return res.status(500).json({
+        ok: false,
+        error: "XLSX parser is not initialized correctly on this server"
+      });
+    }
     const filePath = await resolveEnrollmentFilePath();
     if (!filePath) {
       return res.status(404).json({ ok: false, error: "No enrollment workbook found in Docs" });
     }
 
-    const workbook = XLSX.readFile(filePath, { cellDates: false });
+    const workbook = XLSX_API.readFile(filePath, { cellDates: false });
     const sheetName =
       ENROLLMENT_SHEET_NAME && workbook.Sheets[ENROLLMENT_SHEET_NAME]
         ? ENROLLMENT_SHEET_NAME

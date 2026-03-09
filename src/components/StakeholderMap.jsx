@@ -4606,6 +4606,19 @@ function computeScenarioTotalsFromCandidates(candidates = []) {
   return totals;
 }
 
+function normalizeScenarioCategoryCode(value) {
+  const normalized = String(value ?? '').trim();
+  return /^\d{3}$/.test(normalized) ? normalized : '';
+}
+
+function normalizeScenarioCapacityValue(value) {
+  if (value == null || String(value).trim() === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  return rounded >= 0 ? rounded : null;
+}
+
 function selectScenarioInventoryByBaseline(inventory, baselineTotals, options = {}) {
   if (!Array.isArray(inventory) || !baselineTotals) return inventory || [];
   const maxTotal = Number.isFinite(options.maxTotal) ? options.maxTotal : 180;
@@ -7211,6 +7224,12 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
     props.LevelName ??
     props['Level Name'] ??
     '';
+  const revitIdRaw = feature?.id ?? props.RevitId ?? props.revitId ?? props.id ?? null;
+  const revitId = revitIdRaw == null ? null : String(revitIdRaw).trim();
+  const scenarioRoomId =
+    buildingLabel && floor && revitId
+      ? rId(buildingLabel, floor, revitId)
+      : '';
   const seatCount = getSeatCount(props);
   const categoryCode = resolveNcesCategory(props);
   return {
@@ -7222,6 +7241,8 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
     roomId: roomId || '',
     roomNumber: roomId || '',
     roomLabel: roomId || '',
+    revitId,
+    scenarioRoomId,
     roomGuid,
     department: resolveNcesDept(props),
     type: resolveNcesType(props),
@@ -7278,6 +7299,7 @@ const roomRowToDashboardFeature = (room) => {
   if (!Number.isFinite(area) || area <= 0) return null;
   const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
   const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
+  const revitId = room.revitId ?? room.RevitId ?? null;
   const categoryCode = String(
     room.categoryCode ??
     room.category ??
@@ -7308,9 +7330,16 @@ const roomRowToDashboardFeature = (room) => {
       building: room.building || '',
       Building: room.building || '',
       buildingName: room.building || '',
+      Floor: room.floor ?? room.floorName ?? room.floorId ?? '',
+      floor: room.floor ?? room.floorName ?? room.floorId ?? '',
       Number: room.roomNumber || room.roomId || '',
       RoomNumber: room.roomNumber || room.roomId || '',
       roomNumber: room.roomNumber || room.roomId || '',
+      RevitId: revitId != null ? String(revitId) : undefined,
+      revitId: revitId != null ? String(revitId) : undefined,
+      roomGuid: room.roomGuid || '',
+      'Room GUID': room.roomGuid || '',
+      __scenarioRoomId: room.scenarioRoomId || '',
       OccupancyStatus: occupancyStatus,
       'Occupancy Status': occupancyStatus,
       occupancyStatus,
@@ -8669,7 +8698,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [moveScenarioMode, setMoveScenarioMode] = useState(false);
   const [scenarioSelection, setScenarioSelection] = useState(new Set());
   const [scenarioAssignments, setScenarioAssignments] = useState({});
+  const [scenarioOperations, setScenarioOperations] = useState([]);
   const [scenarioAssignedDept, setScenarioAssignedDept] = useState('');
+  const [scenarioCategoryCodeInput, setScenarioCategoryCodeInput] = useState('');
+  const [scenarioCapacityInput, setScenarioCapacityInput] = useState('');
   const [scenarioLabel, setScenarioLabel] = useState('');
   const [scenarioTotals, setScenarioTotals] = useState({
     totalSF: 0,
@@ -8697,6 +8729,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
   const pendingScenarioLoadRef = useRef(null);
   const pendingScenarioCandidatesRef = useRef(null);
+  const scenarioSessionIdRef = useRef(`scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 
   const SCENARIO_LAYER_ID = 'scenario-highlight';
   const DEFAULT_SCENARIO_COLOR = 'rgba(255, 159, 64, 0.9)';
@@ -8787,6 +8820,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     previousScenarioSelectionRef.current = new Set();
     setScenarioSelection(new Set());
     setScenarioAssignments({});
+    setScenarioOperations([]);
     setScenarioTotals({
       totalSF: 0,
       rooms: 0,
@@ -8794,17 +8828,37 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       sfByRoomType: {}
     });
     setScenarioAssignedDept('');
+    setScenarioCategoryCodeInput('');
+    setScenarioCapacityInput('');
     setScenarioLabel('');
     setScenarioPanelVisible(false);
     setScenarioPanelPos(null);
     setScenarioPanelTop(20);
     setAiScenarioComparePending(false);
+    scenarioSessionIdRef.current = `scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     resetScenarioRecolor();
   }, [clearScenarioFeatureStates, resetScenarioRecolor, updateScenarioDepartmentOnFloor]);
 
   const clearScenario = useCallback(() => {
     resetScenarioModeState();
   }, [resetScenarioModeState]);
+
+  const scenarioOpsCollection = useMemo(() => {
+    if (!universityId) return null;
+    return collection(db, 'universities', universityId, 'planningScenarioOps');
+  }, [universityId]);
+
+  const persistScenarioOperation = useCallback(async (op) => {
+    if (!scenarioOpsCollection || !op) return;
+    try {
+      await addDoc(scenarioOpsCollection, {
+        ...op,
+        createdAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.warn('Unable to persist planning scenario operation', err);
+    }
+  }, [scenarioOpsCollection]);
 
   const ensureScenarioLayer = useCallback(() => {
     const map = mapRef.current;
@@ -8889,6 +8943,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       `cand-${idx}`;
     const roomGuid = c?.roomGuid ?? c?.revitUniqueId ?? c?.revitUniqueID ?? null;
     const revitId = c?.revitId ?? roomGuid ?? null;
+    const normalizedCategoryCode = normalizeScenarioCategoryCode(
+      c?.categoryCode ?? c?.category ?? c?.NCES_Category ?? c?.['NCES Category'] ?? ''
+    );
+    const normalizedSeatCount = normalizeScenarioCapacityValue(
+      c?.seatCount ?? c?.SeatCount ?? c?.capacity ?? c?.Capacity ?? c?.['Seat Count'] ?? null
+    );
     return {
       roomId,
       buildingId: c?.buildingLabel || '',
@@ -8899,7 +8959,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       roomNumber: c?.roomLabel || '',
       roomType: c?.type || 'Unspecified',
       department: c?.department || '',
-      area: Number(c?.sf || 0) || 0
+      area: Number(c?.sf || 0) || 0,
+      categoryCode: normalizedCategoryCode || '',
+      seatCount: normalizedSeatCount
     };
   }, []);
 
@@ -8978,6 +9040,45 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     } catch {}
   }, []);
 
+  const scenarioCategoryOptions = useMemo(() => {
+    const options = new Set();
+    scenarioSelection.forEach((roomId) => {
+      const info = scenarioRoomInfoRef.current.get(roomId);
+      const code = normalizeScenarioCategoryCode(info?.categoryCode || '');
+      if (code) options.add(code);
+    });
+    return Array.from(options).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [scenarioSelection]);
+
+  const appendScenarioOperation = useCallback((opType, payload = {}) => {
+    const sourceRoomIds = Array.from(scenarioSelection);
+    if (!sourceRoomIds.length) return null;
+    const id = `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const timestamp = new Date().toISOString();
+    const sourceRoomRefs = sourceRoomIds.map((roomId) => {
+      const meta = scenarioRoomInfoRef.current.get(roomId);
+      return {
+        roomId,
+        revitId: meta?.revitId ?? null,
+        roomGuid: meta?.roomGuid ?? null,
+        roomNumber: meta?.roomNumber ?? ''
+      };
+    });
+    const op = {
+      id,
+      scenarioId: scenarioSessionIdRef.current,
+      opType,
+      sourceRoomIds,
+      sourceRoomRefs,
+      timestamp,
+      user: authUser?.email || 'anonymous',
+      ...payload
+    };
+    setScenarioOperations((prev) => [...prev, op]);
+    void persistScenarioOperation(op);
+    return op;
+  }, [scenarioSelection, authUser, persistScenarioOperation]);
+
   const assignDepartmentToSelection = useCallback(() => {
     if (!scenarioAssignedDept || scenarioSelection.size === 0) return;
     const outlineColor = getDeptColor(scenarioAssignedDept) || DEFAULT_SCENARIO_OUTLINE;
@@ -9005,7 +9106,101 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     if (updates.length) {
       updateScenarioDepartmentOnFloor(updates);
     }
-  }, [scenarioAssignedDept, scenarioSelection, setScenarioFeatureState, hexToRGBA, updateScenarioDepartmentOnFloor]);
+    appendScenarioOperation('departmentOverride', { department: scenarioAssignedDept });
+  }, [
+    scenarioAssignedDept,
+    scenarioSelection,
+    setScenarioFeatureState,
+    hexToRGBA,
+    updateScenarioDepartmentOnFloor,
+    appendScenarioOperation
+  ]);
+
+  const applyScenarioCategoryOverride = useCallback(() => {
+    if (scenarioSelection.size === 0) return;
+    const nextCode = normalizeScenarioCategoryCode(scenarioCategoryCodeInput);
+    if (!nextCode) {
+      alert('Enter a canonical 3-digit category code (for example, 100 or 200).');
+      return;
+    }
+    appendScenarioOperation('categoryOverride', { categoryCode: nextCode });
+  }, [scenarioSelection, scenarioCategoryCodeInput, appendScenarioOperation]);
+
+  const applyScenarioCapacityOverride = useCallback(() => {
+    if (scenarioSelection.size === 0) return;
+    const nextCapacity = normalizeScenarioCapacityValue(scenarioCapacityInput);
+    if (nextCapacity == null) {
+      alert('Enter an integer capacity value of 0 or greater.');
+      return;
+    }
+    appendScenarioOperation('capacityOverride', { capacity: nextCapacity });
+  }, [scenarioSelection, scenarioCapacityInput, appendScenarioOperation]);
+
+  const removeScenarioOperation = useCallback((opId) => {
+    if (!opId) return;
+    const removed = scenarioOperations.find((op) => op.id === opId);
+    setScenarioOperations((prev) => prev.filter((op) => op.id !== opId));
+    if (!removed) return;
+    void persistScenarioOperation({
+      id: `undo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      scenarioId: scenarioSessionIdRef.current,
+      opType: 'undoOperation',
+      sourceRoomIds: removed.sourceRoomIds || [],
+      timestamp: new Date().toISOString(),
+      user: authUser?.email || 'anonymous',
+      removedOpId: removed.id,
+      removedOpType: removed.opType
+    });
+  }, [scenarioOperations, authUser, persistScenarioOperation]);
+
+  const scenarioRoomOverrides = useMemo(() => {
+    const byRoomId = new Map();
+    const byRevitId = new Map();
+    const byRoomGuid = new Map();
+
+    const upsertRoomOverride = (roomId, patch = {}) => {
+      if (!roomId) return;
+      const existing = byRoomId.get(roomId) || {};
+      const merged = { ...existing, ...patch };
+      byRoomId.set(roomId, merged);
+      const info = scenarioRoomInfoRef.current.get(roomId);
+      const revitKey = info?.revitId == null ? '' : String(info.revitId).trim();
+      const roomGuidKey = String(info?.roomGuid ?? '').trim();
+      if (revitKey) byRevitId.set(revitKey, merged);
+      if (roomGuidKey) byRoomGuid.set(roomGuidKey, merged);
+    };
+
+    scenarioOperations.forEach((op) => {
+      const sourceIds = Array.isArray(op?.sourceRoomIds) ? op.sourceRoomIds : [];
+      if (!sourceIds.length) return;
+      if (op?.opType === 'categoryOverride') {
+        const categoryCode = normalizeScenarioCategoryCode(op?.categoryCode);
+        if (!categoryCode) return;
+        sourceIds.forEach((roomId) => upsertRoomOverride(roomId, { categoryCode }));
+      } else if (op?.opType === 'capacityOverride') {
+        const seatCount = normalizeScenarioCapacityValue(op?.capacity);
+        if (seatCount == null) return;
+        sourceIds.forEach((roomId) => upsertRoomOverride(roomId, { seatCount }));
+      } else if (op?.opType === 'departmentOverride') {
+        const department = norm(op?.department || '');
+        if (!department) return;
+        sourceIds.forEach((roomId) => upsertRoomOverride(roomId, { department }));
+      }
+    });
+
+    Object.entries(scenarioAssignments || {}).forEach(([roomId, department]) => {
+      const dept = norm(department);
+      if (!dept) return;
+      upsertRoomOverride(roomId, { department: dept });
+    });
+
+    return {
+      byRoomId,
+      byRevitId,
+      byRoomGuid,
+      count: byRoomId.size
+    };
+  }, [scenarioOperations, scenarioAssignments, scenarioSelection]);
 
   const handleExportScenario = useCallback(async () => {
     if (!aiScenarioResult) {
@@ -10846,7 +11041,7 @@ useEffect(() => {
     setAiScenarioResult(null);
 
     try {
-      if (!scenarioTotals) throw new Error('No scenario totals available. Turn on Move Scenario Mode and make changes.');
+      if (!scenarioTotals) throw new Error('No scenario totals available. Turn on Planning Scenario Mode and make changes.');
       if (!scenarioAssignedDept) throw new Error('Select a department for the scenario before comparing.');
 
       const { perBuilding, campusTotals } = await computeDeptTotalsByBuildingAcrossCampus(scenarioAssignedDept, {
@@ -11247,7 +11442,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     try {
       if (aiStatus === 'down') throw new Error('AI server is offline.');
       const request = (aiCreateScenarioText || '').trim();
-      if (!request) throw new Error('Enter a short request for the move scenario.');
+      if (!request) throw new Error('Enter a short request for the planning scenario.');
 
       const allRooms = (campusRoomsLoaded && Array.isArray(campusRooms)) ? campusRooms : [];
       const deptCandidates = getDeptCandidates(allRooms);
@@ -13015,6 +13210,107 @@ useEffect(() => {
     activeUniversityName
   ]);
 
+  const applyScenarioOverrideToFeature = useCallback((feature) => {
+    if (!moveScenarioMode || !scenarioRoomOverrides.count) return feature;
+    const props = feature?.properties || {};
+    if (!props) return feature;
+
+    const explicitRoomId = norm(props.__scenarioRoomId || props.scenarioRoomId || '');
+    const revitCandidate = feature?.id ?? props.RevitId ?? props.revitId ?? props.id ?? null;
+    const revitKey = revitCandidate == null ? '' : String(revitCandidate).trim();
+    const roomGuidKey = String(
+      props.roomGuid ??
+      props['Room GUID'] ??
+      props.Revit_UniqueId ??
+      props.RevitUniqueId ??
+      ''
+    ).trim();
+
+    let override = explicitRoomId ? scenarioRoomOverrides.byRoomId.get(explicitRoomId) : null;
+    if (!override && revitKey) {
+      override = scenarioRoomOverrides.byRevitId.get(revitKey) || null;
+    }
+    if (!override && roomGuidKey) {
+      override = scenarioRoomOverrides.byRoomGuid.get(roomGuidKey) || null;
+    }
+    if (!override && revitKey) {
+      const buildingCandidates = [
+        props.Building,
+        props.building,
+        props.buildingName,
+        currentFloorContextRef.current?.buildingLabel,
+        currentFloorContextRef.current?.buildingId,
+        activeBuildingName,
+        selectedBuildingId,
+        selectedBuilding
+      ].map((x) => norm(x)).filter(Boolean);
+      const floorCandidates = [
+        props.Floor,
+        props.floor,
+        props.Level,
+        props.floorName,
+        props.floorId,
+        currentFloorContextRef.current?.floorLabel,
+        currentFloorContextRef.current?.floorId,
+        selectedFloor
+      ].map((x) => norm(x)).filter(Boolean);
+      for (const buildingValue of buildingCandidates) {
+        for (const floorValue of floorCandidates) {
+          const scenarioRoomId = rId(buildingValue, floorValue, revitKey);
+          const matched = scenarioRoomOverrides.byRoomId.get(scenarioRoomId);
+          if (matched) {
+            override = matched;
+            break;
+          }
+        }
+        if (override) break;
+      }
+    }
+    if (!override) return feature;
+
+    const nextProps = { ...props };
+    let changed = false;
+    if (override.department) {
+      const dept = String(override.department).trim();
+      if (dept && dept !== String(props.department ?? '').trim()) changed = true;
+      nextProps.department = dept;
+      nextProps.Department = dept;
+      nextProps.NCES_Department = dept;
+    }
+    if (override.categoryCode) {
+      const categoryCode = normalizeScenarioCategoryCode(override.categoryCode);
+      if (categoryCode && categoryCode !== String(props.categoryCode ?? props.NCES_Category ?? '').trim()) {
+        changed = true;
+      }
+      nextProps.categoryCode = categoryCode;
+      nextProps.category = categoryCode;
+      nextProps.NCES_Category = categoryCode;
+      nextProps['NCES Category'] = categoryCode;
+    }
+    if (override.seatCount != null) {
+      const seatCount = normalizeScenarioCapacityValue(override.seatCount);
+      if (seatCount != null) {
+        if (seatCount !== Number(props.seatCount ?? props.SeatCount ?? props['Seat Count'] ?? 0)) changed = true;
+        nextProps.seatCount = seatCount;
+        nextProps.SeatCount = seatCount;
+        nextProps['Seat Count'] = seatCount;
+        nextProps.Capacity = seatCount;
+      }
+    }
+    if (!changed) return feature;
+    return {
+      ...feature,
+      properties: nextProps
+    };
+  }, [
+    moveScenarioMode,
+    scenarioRoomOverrides,
+    selectedBuildingId,
+    selectedBuilding,
+    selectedFloor,
+    activeBuildingName
+  ]);
+
   const dashboardFloorFeatures = useMemo(() => {
     if (!loadedSingleFloor) return [];
     const ctx = currentFloorContextRef.current || {};
@@ -13035,11 +13331,21 @@ useEffect(() => {
   }, [loadedSingleFloor, floorFeatureVersion, selectedBuildingId, selectedBuilding, selectedFloor]);
 
   const dashboardRoomFeatures = useMemo(() => {
-    if (loadedSingleFloor) return dashboardFloorFeatures;
-    return (dashboardScopeRooms || [])
+    const baseFeatures = loadedSingleFloor
+      ? dashboardFloorFeatures
+      : (dashboardScopeRooms || [])
       .map(roomRowToDashboardFeature)
       .filter(Boolean);
-  }, [dashboardScopeRooms, dashboardFloorFeatures, loadedSingleFloor]);
+    if (!moveScenarioMode || !scenarioRoomOverrides.count) return baseFeatures;
+    return baseFeatures.map((feature) => applyScenarioOverrideToFeature(feature));
+  }, [
+    dashboardScopeRooms,
+    dashboardFloorFeatures,
+    loadedSingleFloor,
+    moveScenarioMode,
+    scenarioRoomOverrides,
+    applyScenarioOverrideToFeature
+  ]);
 
   const strategicSeatSupplyPrefixes = useMemo(
     () => (strategicIncludeLabs ? ['1', '2'] : STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES),
@@ -14699,6 +15005,8 @@ useEffect(() => {
             '';
 
           const roomTypeLabel = norm(getRoomTypeLabelFromProps(rawProps) || rawProps.__roomType || '');
+          const categoryCode = normalizeScenarioCategoryCode(getRoomCategoryCode(rawProps) || '');
+          const seatCount = normalizeScenarioCapacityValue(getSeatCount(rawProps));
 
           const department =
             rawProps.department ??
@@ -14730,7 +15038,9 @@ useEffect(() => {
             roomNumber,
             roomType: roomTypeLabel,
             department,
-            area: Number(area) || 0
+            area: Number(area) || 0,
+            categoryCode,
+            seatCount
           });
           repositionScenarioPanelToClick(screenPoint);
           nudgeScenarioPanelUp();
@@ -15917,7 +16227,7 @@ useEffect(() => {
       );
     })()}
 
-    {/* Move Scenario Summary Panel */}
+    {/* Planning Scenario Summary Panel */}
     {moveScenarioMode && scenarioPanelVisible && (
       <div
         ref={scenarioPanelRef}
@@ -15939,7 +16249,7 @@ useEffect(() => {
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
           {...scenarioPanelDragHandleProps}
         >
-          <div style={{ fontWeight: 600 }}>Move Scenario</div>
+          <div style={{ fontWeight: 600 }}>Planning Scenario</div>
           <button
             className="btn secondary"
             style={{ fontSize: 11, padding: '2px 6px' }}
@@ -15963,6 +16273,58 @@ useEffect(() => {
         <div style={{ marginBottom: 8 }}>
           <div><b>Total SF:</b> {Math.round(scenarioTotals.totalSF).toLocaleString()}</div>
           <div><b>Rooms:</b> {scenarioTotals.rooms}</div>
+        </div>
+
+        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario Overrides (Selected Rooms)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+            <div>
+              <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Category Code</label>
+              <input
+                className="mf-input"
+                value={scenarioCategoryCodeInput}
+                onChange={(e) => setScenarioCategoryCodeInput(e.target.value)}
+                placeholder="e.g. 100 or 200"
+                list="scenario-category-code-options"
+              />
+              <datalist id="scenario-category-code-options">
+                {scenarioCategoryOptions.map((code) => (
+                  <option key={code} value={code} />
+                ))}
+              </datalist>
+            </div>
+            <button
+              className="btn secondary"
+              style={{ alignSelf: 'end', whiteSpace: 'nowrap' }}
+              onClick={applyScenarioCategoryOverride}
+              disabled={scenarioSelection.size === 0}
+            >
+              Apply Category
+            </button>
+            <div>
+              <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Capacity (Seats)</label>
+              <input
+                className="mf-input"
+                type="number"
+                min="0"
+                step="1"
+                value={scenarioCapacityInput}
+                onChange={(e) => setScenarioCapacityInput(e.target.value)}
+                placeholder="e.g. 32"
+              />
+            </div>
+            <button
+              className="btn secondary"
+              style={{ alignSelf: 'end', whiteSpace: 'nowrap' }}
+              onClick={applyScenarioCapacityOverride}
+              disabled={scenarioSelection.size === 0}
+            >
+              Apply Capacity
+            </button>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
+            Edits are scenario-only and recalculate seat supply and gap metrics.
+          </div>
         </div>
 
         <div style={{ marginBottom: 8 }}>
@@ -16008,6 +16370,57 @@ useEffect(() => {
           </button>
         </div>
 
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Scenario Operations</div>
+          {scenarioOperations.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#667085', fontStyle: 'italic' }}>No scenario overrides yet.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 4 }}>
+              {scenarioOperations.map((op) => {
+                const opLabel =
+                  op?.opType === 'categoryOverride'
+                    ? `Category -> ${op.categoryCode || ''}`
+                    : op?.opType === 'capacityOverride'
+                      ? `Capacity -> ${op.capacity ?? ''}`
+                      : op?.opType === 'departmentOverride'
+                        ? `Department -> ${op.department || ''}`
+                        : op?.opType || 'Operation';
+                const roomCount = Array.isArray(op?.sourceRoomIds) ? op.sourceRoomIds.length : 0;
+                return (
+                  <div
+                    key={op.id}
+                    style={{
+                      border: '1px solid #e4e7ec',
+                      borderRadius: 6,
+                      padding: '4px 6px',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: 6,
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {opLabel}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#667085' }}>
+                        {roomCount} rooms • {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
+                      </div>
+                    </div>
+                    <button
+                      className="btn secondary"
+                      style={{ fontSize: 11, padding: '2px 6px' }}
+                      onClick={() => removeScenarioOperation(op.id)}
+                    >
+                      Undo
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
           <button
             className="btn primary"
@@ -16017,7 +16430,7 @@ useEffect(() => {
               !scenarioAssignedDept
                 ? 'Select a department for the scenario before comparing.'
                 : !scenarioTotals
-                  ? 'Enable Move Scenario Mode and create a scenario to compare.'
+                  ? 'Enable Planning Scenario Mode and create a scenario to compare.'
                   : 'Compare scenario vs current allocation for this department.'
             }
           >
@@ -16056,8 +16469,8 @@ useEffect(() => {
                 imageAdded = true;
               }
 
-              const scenarioTitle = 'Move Scenario';
-              const summaryLabel = scenarioLabel || 'Move Scenario';
+              const scenarioTitle = 'Planning Scenario';
+              const summaryLabel = scenarioLabel || 'Planning Scenario';
               const labelText = scenarioLabel?.trim() ? scenarioLabel.trim() : '';
               const textX = imageAdded ? imgWidth + margin * 2 : margin;
               const textWidth = pageWidth - textX - margin;
@@ -16123,7 +16536,7 @@ useEffect(() => {
               doc.setFont(undefined, 'normal');
               doc.setFontSize(12);
               y += lineHeight / 4;
-              const filename = `${(summaryLabel || 'move-scenario').replace(/\s+/g, '-').toLowerCase()}.pdf`;
+              const filename = `${(summaryLabel || 'planning-scenario').replace(/\s+/g, '-').toLowerCase()}.pdf`;
               doc.save(filename);
             } catch (err) {
               console.error('Scenario export failed', err);
@@ -16421,7 +16834,7 @@ useEffect(() => {
                       style={{ width: '100%', fontWeight: 600 }}
                       onClick={handleToggleMoveScenarioMode}
                     >
-                      Move Scenario Mode {moveScenarioMode ? 'ON' : 'OFF'}
+                      Planning Scenario Mode {moveScenarioMode ? 'ON' : 'OFF'}
                     </button>
                     {moveScenarioMode && (
                       <div style={{ marginTop: 6, fontSize: 11, color: '#555', textAlign: 'center' }}>
@@ -16675,7 +17088,7 @@ useEffect(() => {
                   onClick={() => setAiCreateScenarioOpen(true)}
                   style={{ width: '100%', padding: '5px 7px', fontSize: 11 }}
                 >
-                  {"\u2728 Create move scenario"}
+                  {"\u2728 Create planning scenario"}
                 </button>
               </div>
             )}
@@ -17441,7 +17854,7 @@ useEffect(() => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>Create move scenario (AI)</div>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Create planning scenario (AI)</div>
                   <span
                     title="AI-generated scenario plan based on currently loaded space data."
                     style={{
@@ -17491,7 +17904,7 @@ useEffect(() => {
               disabled={aiCreateScenarioLoading || !aiCreateScenarioText.trim() || aiIsDown}
               onClick={onCreateMoveScenario}
             >
-              {aiCreateScenarioLoading ? 'Planning...' : 'Create move scenario'}
+              {aiCreateScenarioLoading ? 'Planning...' : 'Create planning scenario'}
             </button>
           </div>
         </div>
@@ -17572,7 +17985,7 @@ useEffect(() => {
               <div style={{ marginTop: 6, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px', background: '#f8f9fb' }}>
                   <button className="btn" onClick={applyAiMoveCandidatesToScenario}>
-                    Select these rooms in Move Scenario
+                    Select these rooms in Planning Scenario
                   </button>
                 </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 3fr', background: '#f8f9fb', padding: '6px 8px', fontWeight: 600, fontSize: 12 }}>
