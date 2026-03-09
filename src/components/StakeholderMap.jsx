@@ -4251,6 +4251,27 @@ function toFeatureCollection(anyGeo) {
   return null;
 }
 
+function cloneGeoJsonValue(value) {
+  if (!value) return null;
+  try {
+    if (typeof structuredClone === 'function') return structuredClone(value);
+  } catch {}
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function geoJsonShallowEqual(a, b) {
+  if (!a || !b) return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
 function parseAreaValue(value) {
   if (value == null) return 0;
   if (typeof value === 'number') return value;
@@ -8728,6 +8749,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const pendingScenarioLoadRef = useRef(null);
   const pendingScenarioCandidatesRef = useRef(null);
   const scenarioSessionIdRef = useRef(`scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+  const scenarioRoomOverridesRef = useRef({ byRoomId: new Map(), byRevitId: new Map(), byRoomGuid: new Map(), count: 0 });
+  const scenarioFloorBaseFcRef = useRef(null);
+  const scenarioFloorBaseKeyRef = useRef('');
 
   const SCENARIO_LAYER_ID = 'scenario-highlight';
   const DEFAULT_SCENARIO_COLOR = 'rgba(255, 159, 64, 0.9)';
@@ -8908,6 +8932,144 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     } catch {}
   }, [ensureScenarioLayer]);
 
+  const resolveScenarioOverrideForRoom = useCallback((roomId, meta = null) => {
+    const overrides = scenarioRoomOverridesRef.current || {};
+    if (!overrides) return null;
+    const roomIdKey = roomId ? String(roomId).trim() : '';
+    if (roomIdKey && overrides.byRoomId?.has(roomIdKey)) {
+      return overrides.byRoomId.get(roomIdKey) || null;
+    }
+    const revitKey = meta?.revitId == null ? '' : String(meta.revitId).trim();
+    if (revitKey && overrides.byRevitId?.has(revitKey)) {
+      const scoped = overrides.byRevitId.get(revitKey);
+      if (Array.isArray(scoped)) {
+        const buildingKey = normalizeDashboardKey(meta?.buildingId || meta?.buildingName || '');
+        const floorTokens = normalizeFloorTokens(meta?.floorName || '');
+        const matched = scoped.find((entry) => {
+          const entryBuilding = normalizeDashboardKey(entry?.__buildingId || entry?.__buildingName || '');
+          if (buildingKey && entryBuilding && buildingKey !== entryBuilding) return false;
+          const entryFloorTokens = Array.isArray(entry?.__floorTokens) ? entry.__floorTokens : [];
+          if (floorTokens.length && entryFloorTokens.length) {
+            return floorTokens.some((token) => entryFloorTokens.includes(token));
+          }
+          return true;
+        });
+        return matched || scoped[0] || null;
+      }
+      return scoped || null;
+    }
+    const roomGuidKey = String(meta?.roomGuid ?? '').trim();
+    if (roomGuidKey && overrides.byRoomGuid?.has(roomGuidKey)) {
+      return overrides.byRoomGuid.get(roomGuidKey) || null;
+    }
+    return null;
+  }, []);
+
+  const resolveScenarioBaselineRoom = useCallback((meta = null) => {
+    if (!meta || !airtableRoomLookup) return null;
+    const guidCandidates = [
+      meta.roomGuid,
+      meta.revitId,
+      meta.roomNumber
+    ];
+    for (const raw of guidCandidates) {
+      const keys = getRoomLookupKeyVariants(raw);
+      for (const key of keys) {
+        const byGuid = airtableRoomLookup.byGuid?.get(key) || null;
+        if (byGuid) return byGuid;
+      }
+    }
+
+    const buildingCandidates = [
+      meta.buildingId,
+      meta.buildingName
+    ]
+      .map((value) => normalizeDashboardKey(value))
+      .filter(Boolean);
+    const floorCandidates = normalizeFloorTokens(meta.floorName || '');
+    const roomNumberKey = normalizeRoomLookupKey(meta.roomNumber || meta.roomId || '');
+    if (roomNumberKey) {
+      for (const buildingKey of buildingCandidates) {
+        for (const floorToken of floorCandidates) {
+          const compositeKey = `${buildingKey}|${floorToken}|${roomNumberKey}`;
+          const composite = airtableRoomLookup.byComposite?.get(compositeKey) || null;
+          if (composite) return composite;
+        }
+        const byBuildingRoom = airtableRoomLookup.byBuildingRoom?.get(`${buildingKey}|${roomNumberKey}`) || null;
+        if (byBuildingRoom) return byBuildingRoom;
+      }
+    }
+    return null;
+  }, [airtableRoomLookup]);
+
+  const buildEffectiveScenarioRoom = useCallback((roomId, roomMeta = null) => {
+    const meta = roomMeta || scenarioRoomInfoRef.current.get(roomId);
+    if (!meta) return null;
+    const baselineRoom = resolveScenarioBaselineRoom(meta);
+    const override = resolveScenarioOverrideForRoom(roomId, meta) || {};
+    const baseCategoryCode = normalizeScenarioCategoryCode(
+      baselineRoom?.categoryCode ??
+      baselineRoom?.category ??
+      baselineRoom?.NCES_Category ??
+      baselineRoom?.['NCES Category'] ??
+      meta?.categoryCode ??
+      ''
+    );
+    const baseSeatCount = normalizeScenarioCapacityValue(
+      baselineRoom?.seatCount ??
+      baselineRoom?.SeatCount ??
+      baselineRoom?.['Seat Count'] ??
+      meta?.seatCount
+    );
+    const baselineDepartment = norm(
+      baselineRoom?.department ??
+      baselineRoom?.Department ??
+      baselineRoom?.NCES_Department ??
+      meta?.department ??
+      ''
+    );
+    const baselineRoomType = norm(
+      baselineRoom?.type ??
+      baselineRoom?.roomType ??
+      baselineRoom?.NCES_Type ??
+      meta?.roomType ??
+      meta?.type ??
+      'Unknown'
+    ) || 'Unknown';
+    const baselineArea = Number(
+      baselineRoom?.areaSF ??
+      baselineRoom?.area ??
+      baselineRoom?.sf ??
+      meta?.area ??
+      0
+    );
+    const effectiveCategoryCode = normalizeScenarioCategoryCode(override?.categoryCode || baseCategoryCode);
+    const effectiveSeatCount = normalizeScenarioCapacityValue(
+      override?.seatCount != null ? override.seatCount : baseSeatCount
+    );
+    const effectiveDepartment = norm(override?.department || baselineDepartment || '');
+    const effectiveRoom = {
+      ...meta,
+      roomId,
+      department: effectiveDepartment || '',
+      categoryCode: effectiveCategoryCode || '',
+      seatCount: effectiveSeatCount,
+      roomType: baselineRoomType,
+      area: Number.isFinite(baselineArea) ? baselineArea : 0,
+      baseCategoryCode: baseCategoryCode || '',
+      baseSeatCount: baseSeatCount ?? 0,
+      baseDepartment: baselineDepartment || '',
+      baselineRoom
+    };
+    console.log('[Planning Scenario Debug] effective room after merge', {
+      roomId,
+      baselineRoom,
+      override,
+      effectiveRoom
+    });
+    return effectiveRoom;
+  }, [resolveScenarioOverrideForRoom, resolveScenarioBaselineRoom]);
+
   const recomputeScenarioTotals = useCallback((selection) => {
     const totals = {
       totalSF: 0,
@@ -8916,21 +9078,27 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       sfByRoomType: {}
     };
     const highlightIds = [];
-    const roomInfo = scenarioRoomInfoRef.current;
-    selection.forEach((roomId) => {
-      const meta = roomInfo.get(roomId);
-      if (!meta) return;
-      const area = Number.isFinite(Number(meta.area)) ? Number(meta.area) : 0;
-      const typeName = norm(meta.roomType ?? meta.type ?? 'Unknown') || 'Unknown';
+    const selectedRoomIds = Array.from(selection || []);
+    selectedRoomIds.forEach((roomId) => {
+      const effectiveRoom = buildEffectiveScenarioRoom(roomId);
+      if (!effectiveRoom) return;
+      const area = Number.isFinite(Number(effectiveRoom.area)) ? Number(effectiveRoom.area) : 0;
+      const typeName = norm(effectiveRoom.roomType ?? effectiveRoom.type ?? 'Unknown') || 'Unknown';
       totals.rooms += 1;
       totals.totalSF += area;
       totals.roomTypes[typeName] = (totals.roomTypes[typeName] || 0) + 1;
       totals.sfByRoomType[typeName] = (totals.sfByRoomType[typeName] || 0) + area;
-      if (meta.revitId != null) highlightIds.push(meta.revitId);
-      if (meta.roomGuid && meta.roomGuid !== meta.revitId) highlightIds.push(meta.roomGuid);
+      if (effectiveRoom.revitId != null) highlightIds.push(effectiveRoom.revitId);
+      if (effectiveRoom.roomGuid && effectiveRoom.roomGuid !== effectiveRoom.revitId) {
+        highlightIds.push(effectiveRoom.roomGuid);
+      }
+    });
+    console.log('[Planning Scenario Debug] selected room summary after recompute', {
+      selectedRoomIds,
+      totals
     });
     return { totals, highlightIds };
-  }, []);
+  }, [buildEffectiveScenarioRoom]);
 
   const buildScenarioRoomMetaFromCandidate = useCallback((c, idx) => {
     const derivedRoomId = (c?.buildingLabel && (c?.floorName || c?.floorId) && c?.revitId != null)
@@ -9044,12 +9212,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const scenarioCategoryOptions = useMemo(() => {
     const options = new Set();
     scenarioSelection.forEach((roomId) => {
-      const info = scenarioRoomInfoRef.current.get(roomId);
-      const code = normalizeScenarioCategoryCode(info?.categoryCode || '');
+      const effective = buildEffectiveScenarioRoom(roomId);
+      const code = normalizeScenarioCategoryCode(effective?.categoryCode || '');
       if (code) options.add(code);
     });
     return Array.from(options).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [scenarioSelection]);
+  }, [scenarioSelection, scenarioOperations, scenarioAssignments, buildEffectiveScenarioRoom]);
 
   const appendScenarioOperation = useCallback((opType, payload = {}) => {
     const sourceRoomIds = Array.from(scenarioSelection);
@@ -9075,6 +9243,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       user: getAuth().currentUser?.email || 'anonymous',
       ...payload
     };
+    if (opType === 'categoryOverride' || opType === 'capacityOverride') {
+      console.log('[Planning Scenario Debug] override write payload', {
+        opType,
+        sourceRoomIds,
+        payload
+      });
+    }
     setScenarioOperations((prev) => [...prev, op]);
     void persistScenarioOperation(op);
     return op;
@@ -9124,6 +9299,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert('Enter a canonical 3-digit category code (for example, 100 or 200).');
       return;
     }
+    console.log('[Planning Scenario Debug] selected room ids affected', {
+      opType: 'categoryOverride',
+      sourceRoomIds: Array.from(scenarioSelection),
+      categoryCode: nextCode
+    });
     appendScenarioOperation('categoryOverride', { categoryCode: nextCode });
   }, [scenarioSelection, scenarioCategoryCodeInput, appendScenarioOperation]);
 
@@ -9134,6 +9314,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert('Enter an integer capacity value of 0 or greater.');
       return;
     }
+    console.log('[Planning Scenario Debug] selected room ids affected', {
+      opType: 'capacityOverride',
+      sourceRoomIds: Array.from(scenarioSelection),
+      capacity: nextCapacity
+    });
     appendScenarioOperation('capacityOverride', { capacity: nextCapacity });
   }, [scenarioSelection, scenarioCapacityInput, appendScenarioOperation]);
 
@@ -9162,12 +9347,24 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const upsertRoomOverride = (roomId, patch = {}) => {
       if (!roomId) return;
       const existing = byRoomId.get(roomId) || {};
-      const merged = { ...existing, ...patch };
-      byRoomId.set(roomId, merged);
       const info = scenarioRoomInfoRef.current.get(roomId);
+      const merged = {
+        ...existing,
+        ...patch,
+        __roomId: roomId,
+        __buildingId: info?.buildingId || existing.__buildingId || '',
+        __buildingName: info?.buildingName || existing.__buildingName || '',
+        __floorName: info?.floorName || existing.__floorName || '',
+        __floorTokens: normalizeFloorTokens(info?.floorName || existing.__floorName || '')
+      };
+      byRoomId.set(roomId, merged);
       const revitKey = info?.revitId == null ? '' : String(info.revitId).trim();
       const roomGuidKey = String(info?.roomGuid ?? '').trim();
-      if (revitKey) byRevitId.set(revitKey, merged);
+      if (revitKey) {
+        const list = Array.isArray(byRevitId.get(revitKey)) ? [...byRevitId.get(revitKey)] : [];
+        const withoutExisting = list.filter((entry) => entry?.__roomId !== roomId);
+        byRevitId.set(revitKey, [...withoutExisting, merged]);
+      }
       if (roomGuidKey) byRoomGuid.set(roomGuidKey, merged);
     };
 
@@ -9203,18 +9400,26 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     };
   }, [scenarioOperations, scenarioAssignments, scenarioSelection]);
 
+  useEffect(() => {
+    scenarioRoomOverridesRef.current = scenarioRoomOverrides;
+  }, [scenarioRoomOverrides]);
+
+  const effectiveScenarioSelectedRooms = useMemo(() => {
+    return Array.from(scenarioSelection)
+      .map((roomId) => buildEffectiveScenarioRoom(roomId))
+      .filter(Boolean);
+  }, [scenarioSelection, scenarioRoomOverrides, buildEffectiveScenarioRoom]);
+
   const scenarioSelectionSeatSummary = useMemo(() => {
     let baseSeats = 0;
     let scenarioSeats = 0;
     let baseInstructionalSeats = 0;
     let scenarioInstructionalSeats = 0;
-    scenarioSelection.forEach((roomId) => {
-      const meta = scenarioRoomInfoRef.current.get(roomId);
-      const baseSeat = normalizeScenarioCapacityValue(meta?.seatCount) ?? 0;
-      const baseCategoryCode = normalizeScenarioCategoryCode(meta?.categoryCode || '');
-      const override = scenarioRoomOverrides.byRoomId.get(roomId) || {};
-      const scenarioSeat = normalizeScenarioCapacityValue(override?.seatCount ?? baseSeat) ?? 0;
-      const scenarioCategoryCode = normalizeScenarioCategoryCode(override?.categoryCode || baseCategoryCode);
+    effectiveScenarioSelectedRooms.forEach((room) => {
+      const baseSeat = normalizeScenarioCapacityValue(room?.baseSeatCount) ?? 0;
+      const baseCategoryCode = normalizeScenarioCategoryCode(room?.baseCategoryCode || '');
+      const scenarioSeat = normalizeScenarioCapacityValue(room?.seatCount) ?? 0;
+      const scenarioCategoryCode = normalizeScenarioCategoryCode(room?.categoryCode || baseCategoryCode);
       const basePrefix = String(baseCategoryCode || '').charAt(0);
       const scenarioPrefix = String(scenarioCategoryCode || '').charAt(0);
       baseSeats += baseSeat;
@@ -9229,7 +9434,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       scenarioInstructionalSeats,
       instructionalDelta: scenarioInstructionalSeats - baseInstructionalSeats
     };
-  }, [scenarioSelection, scenarioRoomOverrides]);
+  }, [effectiveScenarioSelectedRooms]);
 
   const handleExportScenario = useCallback(async () => {
     if (!aiScenarioResult) {
@@ -9512,9 +9717,78 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   useEffect(() => {
     if (!moveScenarioMode || scenarioSelection.size === 0) return;
-    const { highlightIds } = recomputeScenarioTotals(scenarioSelection);
+    const { totals, highlightIds } = recomputeScenarioTotals(scenarioSelection);
+    setScenarioTotals(totals);
     applyScenarioHighlight(highlightIds);
-  }, [moveScenarioMode, scenarioSelection, floorUrl, recomputeScenarioTotals, applyScenarioHighlight]);
+  }, [moveScenarioMode, scenarioSelection, floorUrl, scenarioRoomOverrides, recomputeScenarioTotals, applyScenarioHighlight]);
+
+  useEffect(() => {
+    const floorContext = currentFloorContextRef.current || {};
+    const floorKey = [
+      floorContext.url || floorUrl || '',
+      floorContext.buildingId || selectedBuildingId || selectedBuilding || '',
+      floorContext.floorId || floorContext.floorLabel || selectedFloor || ''
+    ].join('|');
+    if (scenarioFloorBaseKeyRef.current === floorKey) return;
+    scenarioFloorBaseKeyRef.current = floorKey;
+    scenarioFloorBaseFcRef.current = null;
+  }, [floorUrl, selectedBuildingId, selectedBuilding, selectedFloor, loadedSingleFloor]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !loadedSingleFloor) return;
+    const map = mapRef.current;
+    const src = getGeojsonSource(map, FLOOR_SOURCE);
+    if (!src) return;
+    const sourceData = src._data || src.serialize?.()?.data || currentFloorContextRef.current?.fc || null;
+    const liveFc = toFeatureCollection(sourceData);
+    if (!liveFc?.features?.length) return;
+
+    if (!moveScenarioMode) {
+      if (!scenarioFloorBaseFcRef.current) return;
+      const restoreFc = toFeatureCollection(cloneGeoJsonValue(scenarioFloorBaseFcRef.current));
+      scenarioFloorBaseFcRef.current = null;
+      if (!restoreFc?.features?.length || geoJsonShallowEqual(liveFc, restoreFc)) return;
+      try { src.setData(restoreFc); } catch {}
+      if (currentFloorContextRef.current) {
+        currentFloorContextRef.current = { ...currentFloorContextRef.current, fc: restoreFc };
+      }
+      setFloorFeatureVersion((prev) => prev + 1);
+      try { applyFloorColorMode(floorColorMode); } catch {}
+      return;
+    }
+
+    if (!scenarioFloorBaseFcRef.current) {
+      scenarioFloorBaseFcRef.current = cloneGeoJsonValue(liveFc);
+    }
+    const baseFc = toFeatureCollection(cloneGeoJsonValue(scenarioFloorBaseFcRef.current));
+    if (!baseFc?.features?.length) return;
+
+    const nextFeatures = baseFc.features.map((feature) => applyScenarioOverrideToFeature(feature));
+    const nextFc = { ...baseFc, features: nextFeatures };
+    if (geoJsonShallowEqual(liveFc, nextFc)) return;
+
+    console.log('[Planning Scenario Debug] rebuilt floor feature collection for scenario overrides', {
+      overrideCount: scenarioRoomOverrides.count,
+      selectedRoomIds: Array.from(scenarioSelection)
+    });
+
+    try { src.setData(nextFc); } catch {}
+    if (currentFloorContextRef.current) {
+      currentFloorContextRef.current = { ...currentFloorContextRef.current, fc: nextFc };
+    }
+    setFloorFeatureVersion((prev) => prev + 1);
+    try { applyFloorColorMode(floorColorMode); } catch {}
+  }, [
+    mapLoaded,
+    loadedSingleFloor,
+    floorFeatureVersion,
+    moveScenarioMode,
+    scenarioRoomOverrides,
+    scenarioSelection,
+    floorColorMode,
+    applyFloorColorMode,
+    applyScenarioOverrideToFeature
+  ]);
 
   const [moveMode, setMoveMode] = useState(false);
   const [pendingMove, setPendingMove] = useState(null);
@@ -13257,7 +13531,37 @@ useEffect(() => {
 
     let override = explicitRoomId ? scenarioRoomOverrides.byRoomId.get(explicitRoomId) : null;
     if (!override && revitKey) {
-      override = scenarioRoomOverrides.byRevitId.get(revitKey) || null;
+      const candidates = scenarioRoomOverrides.byRevitId.get(revitKey) || [];
+      if (Array.isArray(candidates) && candidates.length) {
+        const featureBuildingCandidates = [
+          props.Building,
+          props.building,
+          props.buildingName,
+          currentFloorContextRef.current?.buildingLabel,
+          currentFloorContextRef.current?.buildingId,
+          activeBuildingName,
+          selectedBuildingId,
+          selectedBuilding
+        ].map((x) => normalizeDashboardKey(x)).filter(Boolean);
+        const featureFloorTokens = normalizeFloorTokens(
+          props.Floor ||
+          props.floor ||
+          props.Level ||
+          props.floorName ||
+          props.floorId ||
+          currentFloorContextRef.current?.floorLabel ||
+          currentFloorContextRef.current?.floorId ||
+          selectedFloor ||
+          ''
+        );
+        override = candidates.find((entry) => {
+          const entryBuilding = normalizeDashboardKey(entry?.__buildingId || entry?.__buildingName || '');
+          const entryFloorTokens = Array.isArray(entry?.__floorTokens) ? entry.__floorTokens : [];
+          const buildingMatch = !entryBuilding || !featureBuildingCandidates.length || featureBuildingCandidates.includes(entryBuilding);
+          const floorMatch = !entryFloorTokens.length || !featureFloorTokens.length || featureFloorTokens.some((token) => entryFloorTokens.includes(token));
+          return buildingMatch && floorMatch;
+        }) || candidates[0] || null;
+      }
     }
     if (!override && roomGuidKey) {
       override = scenarioRoomOverrides.byRoomGuid.get(roomGuidKey) || null;
@@ -15035,32 +15339,41 @@ useEffect(() => {
       if (moveScenarioMode) {
         try {
           const rawProps = f.properties || {};
-          const buildingId = selectedBuildingId || selectedBuilding || rawProps.Building || rawProps.buildingId || '';
+          const effectiveFeature = applyScenarioOverrideToFeature({ ...f, properties: rawProps });
+          const scenarioProps = effectiveFeature?.properties || rawProps;
+          const buildingId = selectedBuildingId || selectedBuilding || scenarioProps.Building || scenarioProps.buildingId || '';
           const floorName =
-            rawProps.Floor ||
+            scenarioProps.Floor ||
             selectedFloor ||
             (floorUrl?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) ||
             'LEVEL_1';
 
-          const revitId = f.id ?? rawProps.RevitId ?? rawProps.revitId ?? null;
+          const revitId = f.id ?? scenarioProps.RevitId ?? scenarioProps.revitId ?? null;
           const roomNumber =
-            rawProps.Number ??
-            rawProps.RoomNumber ??
-            rawProps.number ??
-            rawProps.Room ??
+            scenarioProps.Number ??
+            scenarioProps.RoomNumber ??
+            scenarioProps.number ??
+            scenarioProps.Room ??
             '';
+          const roomGuid = String(
+            scenarioProps.roomGuid ??
+            scenarioProps['Room GUID'] ??
+            scenarioProps.Revit_UniqueId ??
+            scenarioProps.RevitUniqueId ??
+            ''
+          ).trim();
 
-          const roomTypeLabel = norm(getRoomTypeLabelFromProps(rawProps) || rawProps.__roomType || '');
-          const categoryCode = normalizeScenarioCategoryCode(getRoomCategoryCode(rawProps) || '');
-          const seatCount = normalizeScenarioCapacityValue(getSeatCount(rawProps));
+          const roomTypeLabel = norm(getRoomTypeLabelFromProps(scenarioProps) || scenarioProps.__roomType || '');
+          const categoryCode = normalizeScenarioCategoryCode(getRoomCategoryCode(scenarioProps) || '');
+          const seatCount = normalizeScenarioCapacityValue(getSeatCount(scenarioProps));
 
           const department =
-            rawProps.department ??
-            rawProps.Department ??
-            rawProps.Dept ??
+            scenarioProps.department ??
+            scenarioProps.Department ??
+            scenarioProps.Dept ??
             '';
 
-          const resolvedArea = resolvePatchedArea(rawProps);
+          const resolvedArea = resolvePatchedArea(scenarioProps);
           const area = Number.isFinite(resolvedArea) ? resolvedArea : 0;
 
           const roomId = (buildingId && floorName && revitId != null)
@@ -15078,9 +15391,10 @@ useEffect(() => {
           toggleScenarioRoom({
             roomId,
             buildingId,
-            buildingName: rawProps.BuildingName || rawProps.buildingName || buildingId,
+            buildingName: scenarioProps.BuildingName || scenarioProps.buildingName || buildingId,
             floorName,
             revitId,
+            roomGuid: roomGuid || null,
             roomNumber,
             roomType: roomTypeLabel,
             department,
@@ -15587,7 +15901,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, applyScenarioOverrideToFeature]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
