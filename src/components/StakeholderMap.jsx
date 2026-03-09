@@ -3104,6 +3104,7 @@ const FLOOR_HL_BORDER_ID = "floor-highlight-border";
 const FLOOR_ROOM_LABEL_LAYER = "floor-room-labels";
 const FLOOR_DOOR_LAYER = "floor-doors";
 const FLOOR_STAIR_LAYER = "floor-stairs";
+const SCENARIO_MERGE_OUTLINE_LAYER_ID = 'scenario-merge-outline';
 const ENGAGEMENT_HEAT_SOURCE_ID = 'engagement-heat-source';
 const ENGAGEMENT_HEAT_LAYER_ID = 'engagement-heat-warm-halo-layer';
 const ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID = 'engagement-heat-cool-halo-layer';
@@ -8916,6 +8917,50 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     } catch {}
   }, []);
 
+  const ensureScenarioMergeOutlineLayer = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const hasSource = Boolean(getGeojsonSource(map, FLOOR_SOURCE));
+    const shouldShow = Boolean(moveScenarioMode && loadedSingleFloor && scenarioMergeStateRef.current?.activeCount && hasSource);
+    if (!shouldShow) {
+      if (map.getLayer(SCENARIO_MERGE_OUTLINE_LAYER_ID)) {
+        try { map.removeLayer(SCENARIO_MERGE_OUTLINE_LAYER_ID); } catch {}
+      }
+      return;
+    }
+    const layerDef = {
+      id: SCENARIO_MERGE_OUTLINE_LAYER_ID,
+      type: 'line',
+      source: FLOOR_SOURCE,
+      filter: ['all', ROOMS_ONLY_FILTER, ['==', ['get', 'isScenarioSuperseded'], true]],
+      paint: {
+        'line-color': '#7c3aed',
+        'line-width': [
+          'interpolate', ['linear'], ['zoom'],
+          16, 1.2,
+          18, 2.0,
+          20, 3.0
+        ],
+        'line-dasharray': [2, 1.2],
+        'line-opacity': 0.95
+      }
+    };
+    if (!map.getLayer(SCENARIO_MERGE_OUTLINE_LAYER_ID)) {
+      try {
+        map.addLayer(layerDef, FLOOR_ROOM_LABEL_LAYER);
+      } catch {
+        try { map.addLayer(layerDef); } catch {}
+      }
+    } else {
+      try { map.setFilter(SCENARIO_MERGE_OUTLINE_LAYER_ID, layerDef.filter); } catch {}
+      try { map.setPaintProperty(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-color', layerDef.paint['line-color']); } catch {}
+      try { map.setPaintProperty(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-width', layerDef.paint['line-width']); } catch {}
+      try { map.setPaintProperty(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-dasharray', layerDef.paint['line-dasharray']); } catch {}
+      try { map.setPaintProperty(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-opacity', layerDef.paint['line-opacity']); } catch {}
+    }
+    try { bringFloorRoomLabelsToFront(map); } catch {}
+  }, [moveScenarioMode, loadedSingleFloor]);
+
   const applyScenarioHighlight = useCallback((highlightIds) => {
     ensureScenarioLayer();
     const map = mapRef.current;
@@ -9725,6 +9770,80 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     };
   }, [effectiveScenarioSelectedRooms]);
 
+  const scenarioImpactSummary = useMemo(() => {
+    const selectedIds = Array.from(scenarioSelection || []);
+    if (!selectedIds.length) {
+      return {
+        instructionalSeatsAdded: 0,
+        roomsConvertedToInstructional: 0,
+        roomsRemoved: 0,
+        netRoomChange: 0,
+        departmentLabel: scenarioAssignedDept || 'Department',
+        departmentSfImpact: 0
+      };
+    }
+    const effectiveRoomBySourceId = new Map();
+    selectedIds.forEach((roomId) => {
+      const mergeEntry = scenarioMergeState.bySourceRoomId.get(roomId);
+      if (mergeEntry?.syntheticRoomId) {
+        effectiveRoomBySourceId.set(
+          roomId,
+          scenarioMergeState.bySyntheticRoomId.get(mergeEntry.syntheticRoomId) || null
+        );
+      } else {
+        effectiveRoomBySourceId.set(roomId, buildEffectiveScenarioRoom(roomId));
+      }
+    });
+    let roomsConvertedToInstructional = 0;
+    selectedIds.forEach((roomId) => {
+      const baseRoom = buildEffectiveScenarioRoom(roomId);
+      const effectiveRoom = effectiveRoomBySourceId.get(roomId);
+      if (!baseRoom || !effectiveRoom) return;
+      const basePrefix = String(baseRoom.baseCategoryCode || '').charAt(0);
+      const effectivePrefix = String(effectiveRoom.categoryCode || '').charAt(0);
+      const wasInstructional = basePrefix === '1' || basePrefix === '2';
+      const isInstructional = effectivePrefix === '1' || effectivePrefix === '2';
+      if (!wasInstructional && isInstructional) roomsConvertedToInstructional += 1;
+    });
+    const roomsRemoved = selectedIds.filter((roomId) => scenarioMergeState.bySourceRoomId.has(roomId)).length;
+    const netRoomChange = effectiveScenarioSelectedRooms.length - selectedIds.length;
+
+    const deptLabel = scenarioAssignedDept || 'Selected Department';
+    const deptKey = norm(scenarioAssignedDept || '');
+    let baselineDeptSf = 0;
+    let scenarioDeptSf = 0;
+    if (deptKey) {
+      selectedIds.forEach((roomId) => {
+        const baseRoom = buildEffectiveScenarioRoom(roomId);
+        if (!baseRoom) return;
+        if (norm(baseRoom.baseDepartment || '') === deptKey) {
+          baselineDeptSf += Number(baseRoom.area || 0) || 0;
+        }
+      });
+      effectiveScenarioSelectedRooms.forEach((room) => {
+        if (norm(room.department || '') === deptKey) {
+          scenarioDeptSf += Number(room.area || 0) || 0;
+        }
+      });
+    }
+
+    return {
+      instructionalSeatsAdded: scenarioSelectionSeatSummary.instructionalDelta,
+      roomsConvertedToInstructional,
+      roomsRemoved,
+      netRoomChange,
+      departmentLabel: deptLabel,
+      departmentSfImpact: scenarioDeptSf - baselineDeptSf
+    };
+  }, [
+    scenarioSelection,
+    scenarioAssignedDept,
+    scenarioMergeState,
+    effectiveScenarioSelectedRooms,
+    buildEffectiveScenarioRoom,
+    scenarioSelectionSeatSummary
+  ]);
+
   const handleExportScenario = useCallback(async () => {
     if (!aiScenarioResult) {
       alert('No scenario comparison available yet.');
@@ -10003,6 +10122,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       ensureScenarioLayer();
     }
   }, [moveScenarioMode, ensureScenarioLayer]);
+
+  useEffect(() => {
+    ensureScenarioMergeOutlineLayer();
+  }, [ensureScenarioMergeOutlineLayer, moveScenarioMode, loadedSingleFloor, scenarioMergeState, floorFeatureVersion, floorUrl]);
 
   useEffect(() => {
     if (!moveScenarioMode || scenarioSelection.size === 0) return;
@@ -13896,6 +14019,11 @@ useEffect(() => {
       nextProps.isScenarioSuperseded = true;
       nextProps.isScenarioSupersededMergeId = mergeEntry.mergeId || '';
       nextProps.isScenarioSupersededSyntheticRoomId = mergeEntry.syntheticRoomId || '';
+      if (String(props.__roomType || '').trim() !== 'Scenario Room') changed = true;
+      nextProps.__roomType = 'Scenario Room';
+      nextProps.NCES_Type = 'Scenario Room';
+      nextProps.Type = 'Scenario Room';
+      nextProps.type = 'Scenario Room';
     } else if (props.isScenarioSuperseded || props.isScenarioSupersededMergeId || props.isScenarioSupersededSyntheticRoomId) {
       changed = true;
       delete nextProps.isScenarioSuperseded;
@@ -16934,7 +17062,7 @@ useEffect(() => {
             style={{ fontSize: 11, padding: '2px 6px' }}
             onClick={clearScenario}
           >
-            Clear
+            Reset Scenario
           </button>
         </div>
 
@@ -16960,6 +17088,19 @@ useEffect(() => {
               ({scenarioSelectionSeatSummary.instructionalDelta >= 0 ? '+' : ''}
               {Math.round(scenarioSelectionSeatSummary.instructionalDelta).toLocaleString()} vs original)
             </span>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario Impact</div>
+          <div><b>Instructional Seats Added:</b> {scenarioImpactSummary.instructionalSeatsAdded >= 0 ? '+' : ''}{Math.round(scenarioImpactSummary.instructionalSeatsAdded).toLocaleString()}</div>
+          <div><b>Rooms Converted to Instructional:</b> {scenarioImpactSummary.roomsConvertedToInstructional}</div>
+          <div><b>Rooms Removed:</b> {scenarioImpactSummary.roomsRemoved}</div>
+          <div><b>Net Room Change:</b> {scenarioImpactSummary.netRoomChange >= 0 ? '+' : ''}{scenarioImpactSummary.netRoomChange}</div>
+          <div>
+            <b>Department SF ({scenarioImpactSummary.departmentLabel}):</b>{' '}
+            {scenarioImpactSummary.departmentSfImpact >= 0 ? '+' : ''}
+            {Math.round(scenarioImpactSummary.departmentSfImpact).toLocaleString()} SF
           </div>
         </div>
 
