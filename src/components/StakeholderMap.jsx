@@ -9786,8 +9786,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     scenarioRoomOverrides,
     scenarioSelection,
     floorColorMode,
-    applyFloorColorMode,
-    applyScenarioOverrideToFeature
+    applyFloorColorMode
   ]);
 
   const [moveMode, setMoveMode] = useState(false);
