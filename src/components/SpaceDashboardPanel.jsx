@@ -289,13 +289,13 @@ const DeptPie = ({ entries = [], maxSlices = 8 }) => {
   return (
     <div className="mf-pie">
       <div className="mf-section-title">Departments (SF)</div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <svg width="96" height="96" viewBox="0 0 120 120" aria-label="Department share by SF">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+        <svg width="74" height="74" viewBox="0 0 120 120" aria-label="Department share by SF">
           {paths.map((p, idx) => (
             <path key={idx} d={p.d} fill={p.color} stroke="#fff" strokeWidth="1" />
           ))}
         </svg>
-        <div className="mf-pie-legend">
+        <div className="mf-pie-legend" style={{ width: '100%', minWidth: 0 }}>
           {paths.slice(0, 4).map((p, idx) => (
             <div key={idx} className="mf-legend-row">
               <span className="mf-swatch" style={{ background: p.color }} />

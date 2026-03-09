@@ -97,10 +97,10 @@
 .muted { color: #777; font-size: 12px; }
 
 .mf-section-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
-.mf-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 3px 0; }
+.mf-legend-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 6px; font-size: 10px; margin: 2px 0; }
 .mf-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.mf-legend-name { width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mf-legend-sf { margin-left: auto; color: #555; }
+.mf-legend-name { min-width: 0; width: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-legend-sf { margin-left: 0; color: #555; font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* This styles the "MAPFLUENCE" title */
 .mapfluence-title {
