@@ -9149,7 +9149,28 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     });
     Array.from(effectiveRoomIds).forEach((roomId) => {
       const syntheticRoom = mergeState.bySyntheticRoomId.get(roomId) || null;
-      const effectiveRoom = syntheticRoom || buildEffectiveScenarioRoom(roomId);
+      let effectiveRoom = null;
+      if (syntheticRoom && Array.isArray(syntheticRoom.sourceRoomIds) && syntheticRoom.sourceRoomIds.length) {
+        const sourceEffective = syntheticRoom.sourceRoomIds
+          .map((sourceRoomId) => buildEffectiveScenarioRoom(sourceRoomId))
+          .filter(Boolean);
+        if (sourceEffective.length) {
+          const mergedArea = sourceEffective.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
+          const categories = Array.from(new Set(sourceEffective.map((room) => normalizeScenarioCategoryCode(room.categoryCode || '')).filter(Boolean)));
+          const categoryCode = categories.length === 1 ? categories[0] : (categories[0] || '');
+          effectiveRoom = {
+            ...syntheticRoom,
+            area: mergedArea,
+            categoryCode,
+            roomType: categoryCode
+              ? (categoryCode.startsWith('1') ? 'Classroom (Merged Scenario)' : categoryCode.startsWith('2') ? 'Lab (Merged Scenario)' : 'Merged Scenario Room')
+              : (syntheticRoom.roomType || 'Merged Scenario Room')
+          };
+        }
+      }
+      if (!effectiveRoom) {
+        effectiveRoom = syntheticRoom || buildEffectiveScenarioRoom(roomId);
+      }
       if (!effectiveRoom) return;
       const area = Number.isFinite(Number(effectiveRoom.area)) ? Number(effectiveRoom.area) : 0;
       const typeName = norm(effectiveRoom.roomType ?? effectiveRoom.type ?? 'Unknown') || 'Unknown';
@@ -9570,6 +9591,68 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     scenarioMergeStateRef.current = scenarioMergeState;
   }, [scenarioMergeState]);
 
+  const buildEffectiveSyntheticScenarioRoom = useCallback((syntheticRoom) => {
+    if (!syntheticRoom) return null;
+    const sourceRoomIds = Array.isArray(syntheticRoom.sourceRoomIds)
+      ? syntheticRoom.sourceRoomIds.filter(Boolean)
+      : [];
+    if (!sourceRoomIds.length) return syntheticRoom;
+
+    const effectiveSources = sourceRoomIds
+      .map((roomId) => buildEffectiveScenarioRoom(roomId))
+      .filter(Boolean);
+    if (!effectiveSources.length) return syntheticRoom;
+
+    const mergedArea = effectiveSources.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
+    const mergedSeats = effectiveSources.reduce((sum, room) => sum + (Number(room.seatCount || 0) || 0), 0);
+    const mergedBaseSeats = effectiveSources.reduce((sum, room) => sum + (Number(room.baseSeatCount || 0) || 0), 0);
+
+    const categories = Array.from(new Set(
+      effectiveSources.map((room) => normalizeScenarioCategoryCode(room.categoryCode || '')).filter(Boolean)
+    ));
+    const baseCategories = Array.from(new Set(
+      effectiveSources.map((room) => normalizeScenarioCategoryCode(room.baseCategoryCode || '')).filter(Boolean)
+    ));
+    const departments = Array.from(new Set(
+      effectiveSources.map((room) => norm(room.department || '')).filter(Boolean)
+    ));
+    const baseDepartments = Array.from(new Set(
+      effectiveSources.map((room) => norm(room.baseDepartment || '')).filter(Boolean)
+    ));
+
+    const effectiveCategoryCode = categories.length === 1
+      ? categories[0]
+      : normalizeScenarioCategoryCode(syntheticRoom.categoryCode || categories[0] || '');
+    const baseCategoryCode = baseCategories.length === 1
+      ? baseCategories[0]
+      : normalizeScenarioCategoryCode(syntheticRoom.baseCategoryCode || baseCategories[0] || '');
+    const effectiveDepartment = departments.length === 1
+      ? departments[0]
+      : norm(syntheticRoom.department || departments[0] || '');
+    const baseDepartment = baseDepartments.length === 1
+      ? baseDepartments[0]
+      : norm(syntheticRoom.baseDepartment || baseDepartments[0] || '');
+    const roomType = effectiveCategoryCode
+      ? (effectiveCategoryCode.startsWith('1')
+          ? 'Classroom (Merged Scenario)'
+          : effectiveCategoryCode.startsWith('2')
+            ? 'Lab (Merged Scenario)'
+            : 'Merged Scenario Room')
+      : (syntheticRoom.roomType || 'Merged Scenario Room');
+
+    return {
+      ...syntheticRoom,
+      area: mergedArea,
+      seatCount: mergedSeats,
+      categoryCode: effectiveCategoryCode || '',
+      department: effectiveDepartment || '',
+      roomType,
+      baseCategoryCode: baseCategoryCode || '',
+      baseSeatCount: mergedBaseSeats,
+      baseDepartment: baseDepartment || ''
+    };
+  }, [buildEffectiveScenarioRoom]);
+
   const resolveScenarioMergeForFeature = useCallback((feature) => {
     if (!moveScenarioMode || !scenarioMergeState.activeCount) return null;
     const props = feature?.properties || {};
@@ -9634,22 +9717,25 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const scenarioSyntheticDashboardFeatures = useMemo(() => {
     if (!moveScenarioMode || !scenarioMergeState.activeCount) return [];
     return (scenarioMergeState.mergeOrder || [])
-      .map((syntheticRoom) => roomRowToDashboardFeature({
-        building: syntheticRoom.buildingName || syntheticRoom.buildingId || '',
-        floor: syntheticRoom.floorName || '',
-        areaSF: syntheticRoom.area || 0,
-        roomId: syntheticRoom.roomNumber || syntheticRoom.roomId,
-        roomNumber: syntheticRoom.roomNumber || syntheticRoom.roomId,
-        roomGuid: syntheticRoom.roomId,
-        revitId: null,
-        scenarioRoomId: syntheticRoom.roomId,
-        department: syntheticRoom.department || '',
-        type: syntheticRoom.roomType || 'Merged Scenario Room',
-        categoryCode: syntheticRoom.categoryCode || '',
-        seatCount: syntheticRoom.seatCount ?? 0
-      }))
+      .map((syntheticRoomRaw) => {
+        const syntheticRoom = buildEffectiveSyntheticScenarioRoom(syntheticRoomRaw) || syntheticRoomRaw;
+        return roomRowToDashboardFeature({
+          building: syntheticRoom.buildingName || syntheticRoom.buildingId || '',
+          floor: syntheticRoom.floorName || '',
+          areaSF: syntheticRoom.area || 0,
+          roomId: syntheticRoom.roomNumber || syntheticRoom.roomId,
+          roomNumber: syntheticRoom.roomNumber || syntheticRoom.roomId,
+          roomGuid: syntheticRoom.roomId,
+          revitId: null,
+          scenarioRoomId: syntheticRoom.roomId,
+          department: syntheticRoom.department || '',
+          type: syntheticRoom.roomType || 'Merged Scenario Room',
+          categoryCode: syntheticRoom.categoryCode || '',
+          seatCount: syntheticRoom.seatCount ?? 0
+        });
+      })
       .filter(Boolean);
-  }, [moveScenarioMode, scenarioMergeState]);
+  }, [moveScenarioMode, scenarioMergeState, buildEffectiveSyntheticScenarioRoom]);
 
   const scenarioMergeValidation = useMemo(() => {
     const selectedIds = Array.from(scenarioSelection || []);
@@ -9740,9 +9826,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       else effectiveRoomIds.add(roomId);
     });
     return Array.from(effectiveRoomIds)
-      .map((roomId) => scenarioMergeState.bySyntheticRoomId.get(roomId) || buildEffectiveScenarioRoom(roomId))
+      .map((roomId) => {
+        const syntheticRoom = scenarioMergeState.bySyntheticRoomId.get(roomId) || null;
+        if (syntheticRoom) return buildEffectiveSyntheticScenarioRoom(syntheticRoom) || syntheticRoom;
+        return buildEffectiveScenarioRoom(roomId);
+      })
       .filter(Boolean);
-  }, [scenarioSelection, scenarioRoomOverrides, scenarioMergeState, buildEffectiveScenarioRoom]);
+  }, [scenarioSelection, scenarioRoomOverrides, scenarioMergeState, buildEffectiveScenarioRoom, buildEffectiveSyntheticScenarioRoom]);
 
   const scenarioSelectionSeatSummary = useMemo(() => {
     let baseSeats = 0;
@@ -9786,9 +9876,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     selectedIds.forEach((roomId) => {
       const mergeEntry = scenarioMergeState.bySourceRoomId.get(roomId);
       if (mergeEntry?.syntheticRoomId) {
+        const syntheticRoom = scenarioMergeState.bySyntheticRoomId.get(mergeEntry.syntheticRoomId) || null;
         effectiveRoomBySourceId.set(
           roomId,
-          scenarioMergeState.bySyntheticRoomId.get(mergeEntry.syntheticRoomId) || null
+          syntheticRoom ? (buildEffectiveSyntheticScenarioRoom(syntheticRoom) || syntheticRoom) : null
         );
       } else {
         effectiveRoomBySourceId.set(roomId, buildEffectiveScenarioRoom(roomId));
@@ -9841,6 +9932,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     scenarioMergeState,
     effectiveScenarioSelectedRooms,
     buildEffectiveScenarioRoom,
+    buildEffectiveSyntheticScenarioRoom,
     scenarioSelectionSeatSummary
   ]);
 
