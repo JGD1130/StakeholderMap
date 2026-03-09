@@ -1,6 +1,5 @@
 import React from 'react';
 import UtilizationBars from './UtilizationBars';
-import { getDeptColor } from '../style/roomColors';
 
 const fmtSF = (val) => {
   const n = Number(val || 0);
@@ -245,65 +244,40 @@ const OfficeOccupancyGauge = ({ pct, occupied = 0, vacant = 0, unknown = 0, scop
   );
 };
 
-const DeptPie = ({ entries = [], maxSlices = 8 }) => {
-  const top = entries.slice(0, maxSlices);
-  const other = entries
-    .slice(maxSlices)
-    .reduce((sum, item) => sum + Number(item?.sf || 0), 0);
-  const slices = other > 0
-    ? [...top, { name: 'Other', sf: other }]
-    : top;
-
-  const total = slices.reduce((sum, item) => sum + Number(item?.sf || 0), 0) || 1;
-  const fallbackOther = '#94a3b8';
-
-  let start = 0;
-  const cx = 60;
-  const cy = 60;
-  const r = 50;
-
-  const paths = slices.map((item) => {
-    const name = item?.name || 'Unknown';
-    const sf = Number(item?.sf || 0);
-    const frac = sf / total;
-    const end = start + frac * Math.PI * 2;
-
-    const x1 = cx + r * Math.cos(start);
-    const y1 = cy + r * Math.sin(start);
-    const x2 = cx + r * Math.cos(end);
-    const y2 = cy + r * Math.sin(end);
-    const large = frac > 0.5 ? 1 : 0;
-
-    const d = [
-      `M ${cx} ${cy}`,
-      `L ${x1} ${y1}`,
-      `A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`,
-      'Z'
-    ].join(' ');
-
-    const color = name === 'Other' ? fallbackOther : getDeptColor(name);
-    start = end;
-    return { d, name, sf, color };
-  });
-
+const DeptList = ({ entries = [], maxRows = 6 }) => {
+  const rows = (Array.isArray(entries) ? entries : []).slice(0, maxRows);
   return (
     <div className="mf-pie">
       <div className="mf-section-title">Departments (SF)</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-        <svg width="74" height="74" viewBox="0 0 120 120" aria-label="Department share by SF">
-          {paths.map((p, idx) => (
-            <path key={idx} d={p.d} fill={p.color} stroke="#fff" strokeWidth="1" />
-          ))}
-        </svg>
-        <div className="mf-pie-legend" style={{ width: '100%', minWidth: 0 }}>
-          {paths.slice(0, 4).map((p, idx) => (
-            <div key={idx} className="mf-legend-row">
-              <span className="mf-swatch" style={{ background: p.color }} />
-              <span className="mf-legend-name" title={p.name}>{p.name}</span>
-              <span className="mf-legend-sf">{Math.round(p.sf).toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
+      <div style={{ width: '100%', minWidth: 0, display: 'grid', gap: 2 }}>
+        {rows.map((row, idx) => (
+          <div
+            key={`${row?.name || 'dept'}-${idx}`}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 10
+            }}
+          >
+            <span
+              style={{
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                color: '#1f2937'
+              }}
+              title={row?.name || 'Unknown'}
+            >
+              {row?.name || 'Unknown'}
+            </span>
+            <span style={{ color: '#4b5563', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+              {Math.round(Number(row?.sf || 0)).toLocaleString()}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -450,14 +424,14 @@ export default function SpaceDashboardPanel({
   const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
 
   return (
-    <div style={{ padding: 6, width: '100%', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{title}</div>
+    <div style={{ padding: 4, width: '100%', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>{title}</div>
 
       {loading && <div style={{ fontSize: 12, color: '#667085' }}>Loading dashboard...</div>}
       {error && <div style={{ fontSize: 12, color: '#b00020' }}>{String(error)}</div>}
 
       {!loading && !error && (
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
           <StrategicDashboardSection strategic={strategic} />
 
           <PanelCard style={{ marginTop: 8 }}>
@@ -513,7 +487,7 @@ export default function SpaceDashboardPanel({
                   />
                 </PanelCard>
                 <PanelCard>
-                  <DeptPie entries={metrics.byDept || []} />
+                  <DeptList entries={metrics.byDept || []} />
                 </PanelCard>
               </div>
             </PanelCard>
