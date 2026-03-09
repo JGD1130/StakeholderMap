@@ -123,7 +123,7 @@ const RequiredVsAvailableChart = ({ rows = [] }) => {
   const innerW = width - left - right;
   const innerH = height - top - bottom;
   const maxVal = Math.max(
-    ...rows.map((r) => Math.max(Number(r.requiredSeats || 0), Number(r.availableSeats || 0))),
+    ...rows.map((r) => Math.max(Number(r.planningRequiredSeats || 0), Number(r.availableSeats || 0))),
     1
   );
   const groupW = innerW / rows.length;
@@ -135,7 +135,7 @@ const RequiredVsAvailableChart = ({ rows = [] }) => {
       <line x1={left} y1={top + innerH} x2={width - right} y2={top + innerH} stroke="#d0d5dd" strokeWidth="1" />
       {rows.map((r, idx) => {
         const xCenter = left + groupW * idx + groupW / 2;
-        const required = Number(r.requiredSeats || 0);
+        const required = Number(r.planningRequiredSeats || 0);
         const available = Number(r.availableSeats || 0);
         const requiredY = yFor(required);
         const availableY = yFor(available);
@@ -149,7 +149,7 @@ const RequiredVsAvailableChart = ({ rows = [] }) => {
           </g>
         );
       })}
-      <text x={left + 2} y={12} fontSize="9" fill="#f97316">Required</text>
+      <text x={left + 2} y={12} fontSize="9" fill="#f97316">Planning Required</text>
       <text x={left + 56} y={12} fontSize="9" fill="#16a34a">Available</text>
     </svg>
   );
@@ -317,12 +317,13 @@ const StrategicDashboardSection = ({ strategic }) => {
   const selectedYear = Number(strategic.selectedYear);
   const gapValue = Number(selected?.seatGap || 0);
   const gapColor = gapValue >= 0 ? '#166534' : '#b42318';
+  const targetPct = Math.round(Number(strategic.targetUtilization || 0) * 100);
 
   return (
     <PanelCard>
       <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 8 }}>Strategic Space Dashboard</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
         <div>
           <div style={{ fontSize: 10, color: '#667085', marginBottom: 2 }}>Year</div>
           <select
@@ -347,11 +348,29 @@ const StrategicDashboardSection = ({ strategic }) => {
           />
         </div>
         <div>
+          <div style={{ fontSize: 10, color: '#667085', marginBottom: 2 }}>Target Utilization</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              value={Math.round(Number(strategic.targetUtilization || 0) * 100)}
+              onChange={(e) => strategic.onTargetUtilizationChange?.(e.target.value)}
+              style={{ width: '100%', height: 28 }}
+            />
+            <span style={{ fontSize: 12, color: '#667085' }}>%</span>
+          </div>
+        </div>
+        <div>
           <div style={{ fontSize: 10, color: '#667085', marginBottom: 2 }}>Scenario</div>
           <select value={strategic.scenarioName || 'Baseline'} style={{ width: '100%', height: 28 }} disabled>
             <option>Baseline</option>
           </select>
         </div>
+      </div>
+      <div style={{ fontSize: 11, color: '#667085', marginTop: 6 }}>
+        Represents the planning goal for instructional seat utilization.
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginTop: 8, fontSize: 11, color: '#344054' }}>
@@ -376,7 +395,11 @@ const StrategicDashboardSection = ({ strategic }) => {
           value={fmtCount(selected?.availableSeats ?? strategic.capacityMetrics?.availableSeats)}
           sublabel={`${fmtCount(strategic.capacityMetrics?.instructionalRooms)} instructional rooms`}
         />
-        <StatCard label="Required Seats" value={fmtCount(selected?.requiredSeats)} sublabel={`ratio ${Number(strategic.seatRatio || 0).toFixed(1)}`} />
+        <StatCard
+          label="Planning Required Seats"
+          value={fmtCount(selected?.planningRequiredSeats)}
+          sublabel={`Based on seat ratio + target utilization (${targetPct}%)`}
+        />
         <StatCard
           label="Seat Gap"
           value={fmtSigned(selected?.seatGap)}
@@ -389,7 +412,7 @@ const StrategicDashboardSection = ({ strategic }) => {
         <ChartShell title="Enrollment Trend">
           <EnrollmentTrendChart rows={rows} />
         </ChartShell>
-        <ChartShell title="Required vs Available Seats">
+        <ChartShell title="Planning Required vs Available Seats">
           <RequiredVsAvailableChart rows={rows} />
         </ChartShell>
         <ChartShell title="Seat Gap Over Time">

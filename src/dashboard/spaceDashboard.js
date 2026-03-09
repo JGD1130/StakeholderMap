@@ -346,25 +346,33 @@ function normalizeEnrollmentSeries(series = []) {
 export function computeStrategicSeatGapByYear(
   enrollmentSeries = [],
   availableSeats = 0,
-  seatRatio = 2.5
+  seatRatio = 2.5,
+  targetUtilization = 0.7
 ) {
   const rows = normalizeEnrollmentSeries(enrollmentSeries);
   if (!rows.length) return [];
 
   const seatSupply = Number.isFinite(Number(availableSeats))
-    ? Number(availableSeats)
+    ? Math.round(Number(availableSeats))
     : 0;
   const ratio = Number(seatRatio);
-  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 2.5;
+  const safeSeatRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 2.5;
+  const util = Number(targetUtilization);
+  const safeTargetUtilization = Number.isFinite(util) && util > 0 && util <= 1 ? util : 0.7;
 
   return rows.map((row) => {
-    const requiredSeats = row.enrollment / safeRatio;
-    const seatGap = seatSupply - requiredSeats;
+    const baseRequiredSeats = row.enrollment / safeSeatRatio;
+    const planningRequiredSeatsRaw = baseRequiredSeats / safeTargetUtilization;
+    const planningRequiredSeats = Math.round(planningRequiredSeatsRaw);
+    const seatGap = seatSupply - planningRequiredSeats;
     return {
       year: row.year,
       enrollment: row.enrollment,
       availableSeats: seatSupply,
-      requiredSeats,
+      seatRatio: safeSeatRatio,
+      targetUtilization: safeTargetUtilization,
+      baseRequiredSeats,
+      planningRequiredSeats,
       seatGap,
       gapStatus: seatGap >= 0 ? 'Surplus' : 'Deficit'
     };

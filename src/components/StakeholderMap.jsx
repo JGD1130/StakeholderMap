@@ -6288,7 +6288,8 @@ const BUILDING_ALIAS_NORMALIZED_LOOSE = Object.fromEntries(
 );
 
 const UTILIZATION_CSV_PATH = 'Data/Utilization/classroom_utilization.csv';
-const STRATEGIC_DEFAULT_SEAT_RATIO = 2.3;
+const STRATEGIC_DEFAULT_SEAT_RATIO = 2.5;
+const STRATEGIC_DEFAULT_TARGET_UTILIZATION = 0.7;
 const STRATEGIC_DEFAULT_INCLUDE_LABS = false;
 const STRATEGIC_DEFAULT_SEAT_SUPPLY_PREFIXES = ['1']; // 100-classroom rollup
 
@@ -8026,6 +8027,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
+  const [strategicTargetUtilization, setStrategicTargetUtilization] = useState(STRATEGIC_DEFAULT_TARGET_UTILIZATION);
   const [strategicIncludeLabs, setStrategicIncludeLabs] = useState(STRATEGIC_DEFAULT_INCLUDE_LABS);
   const [strategicEnrollmentSeries, setStrategicEnrollmentSeries] = useState(
     () => buildDefaultEnrollmentSeries(0)
@@ -13114,9 +13116,10 @@ useEffect(() => {
     () => computeStrategicSeatGapByYear(
       strategicEnrollmentSeries,
       strategicCapacityMetrics?.availableSeats || 0,
-      strategicSeatRatio
+      strategicSeatRatio,
+      strategicTargetUtilization
     ),
-    [strategicEnrollmentSeries, strategicCapacityMetrics, strategicSeatRatio]
+    [strategicEnrollmentSeries, strategicCapacityMetrics, strategicSeatRatio, strategicTargetUtilization]
   );
 
   useEffect(() => {
@@ -13153,6 +13156,14 @@ useEffect(() => {
     const parsed = Number(nextValue);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     setStrategicSeatRatio(parsed);
+  }, []);
+
+  const handleStrategicTargetUtilizationChange = useCallback((nextValue) => {
+    const parsed = Number(nextValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const normalized = parsed > 1 ? parsed / 100 : parsed;
+    if (!Number.isFinite(normalized) || normalized <= 0 || normalized > 1) return;
+    setStrategicTargetUtilization(normalized);
   }, []);
 
   const handleStrategicEnrollmentChange = useCallback((year, nextValue) => {
@@ -15647,6 +15658,8 @@ useEffect(() => {
                 onSelectedYearChange: setStrategicSelectedYear,
                 seatRatio: strategicSeatRatio,
                 onSeatRatioChange: handleStrategicSeatRatioChange,
+                targetUtilization: strategicTargetUtilization,
+                onTargetUtilizationChange: handleStrategicTargetUtilizationChange,
                 includeLabs: strategicIncludeLabs,
                 onIncludeLabsChange: setStrategicIncludeLabs,
                 enrollmentSeries: strategicEnrollmentSeries,
