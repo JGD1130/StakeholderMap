@@ -27,6 +27,30 @@ import {
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 const SCENARIO_OP_PERSIST_ENABLED = String(import.meta.env.VITE_SCENARIO_OP_PERSIST || 'false').toLowerCase() === 'true';
+const RENO_LEVELS = [
+  { value: 'light_refresh', label: 'Light Refresh', minCostPerSf: 25, maxCostPerSf: 60 },
+  { value: 'moderate_interior', label: 'Moderate Interior', minCostPerSf: 60, maxCostPerSf: 140 },
+  { value: 'heavy_renovation', label: 'Heavy Renovation', minCostPerSf: 140, maxCostPerSf: 260 },
+  { value: 'specialized', label: 'Specialized', minCostPerSf: 260, maxCostPerSf: 480 }
+];
+const RENO_DEFAULT_LEVEL = 'moderate_interior';
+const RENO_SPECIALIZED_TYPE_KEYWORDS = [
+  'lab',
+  'laboratory',
+  'science',
+  'clinic',
+  'kitchen',
+  'mechanical',
+  'electrical',
+  'server',
+  'data',
+  'theater',
+  'studio',
+  'music',
+  'art',
+  'shop',
+  'maintenance'
+];
 
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
@@ -192,6 +216,12 @@ const summarizeProgramCounts = (stats) => {
   }
 
   return { offices, classrooms, labs };
+};
+
+const formatCurrency = (value) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '$0';
+  return `$${Math.round(n).toLocaleString()}`;
 };
 
 function renderDeptListHTML(list) {
@@ -7986,6 +8016,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const spacePanelRef = useRef(null);
   const roomEditPanelRef = useRef(null);
   const scenarioPanelRef = useRef(null);
+  const renoPanelRef = useRef(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
@@ -8800,9 +8831,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const previousScenarioSelectionRef = useRef(new Set());
   const [scenarioPanelTop, setScenarioPanelTop] = useState(20);
   const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
+  const [renoScenarioVisible, setRenoScenarioVisible] = useState(false);
+  const [renoScenarioLabel, setRenoScenarioLabel] = useState('');
+  const [renoRenovationLevel, setRenoRenovationLevel] = useState(RENO_DEFAULT_LEVEL);
+  const [renoScenarioSaveMessage, setRenoScenarioSaveMessage] = useState('');
+  const [renoPanelTop, setRenoPanelTop] = useState(20);
+  const [renoPanelPos, setRenoPanelPos] = useState(null);
   const pendingScenarioLoadRef = useRef(null);
   const pendingScenarioCandidatesRef = useRef(null);
   const scenarioSessionIdRef = useRef(`scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+  const renoScenarioIdRef = useRef(`reno-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
   const scenarioRoomOverridesRef = useRef({ byRoomId: new Map(), byRevitId: new Map(), byRoomGuid: new Map(), count: 0 });
   const scenarioMergeStateRef = useRef({
     bySourceRoomId: new Map(),
@@ -8918,8 +8956,15 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setScenarioPanelVisible(false);
     setScenarioPanelPos(null);
     setScenarioPanelTop(20);
+    setRenoScenarioVisible(false);
+    setRenoScenarioLabel('');
+    setRenoRenovationLevel(RENO_DEFAULT_LEVEL);
+    setRenoScenarioSaveMessage('');
+    setRenoPanelPos(null);
+    setRenoPanelTop(20);
     setAiScenarioComparePending(false);
     scenarioSessionIdRef.current = `scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    renoScenarioIdRef.current = `reno-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     resetScenarioRecolor();
   }, [clearScenarioFeatureStates, resetScenarioRecolor, updateScenarioDepartmentOnFloor]);
 
@@ -10008,6 +10053,287 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     buildEffectiveScenarioRoom,
     buildEffectiveSyntheticScenarioRoom,
     scenarioSelectionSeatSummary
+  ]);
+
+  const renoScenarioSummary = useMemo(() => {
+    const byType = new Map();
+    const byCategory = new Map();
+    let selectedSf = 0;
+    let specializedRoomCount = 0;
+
+    (effectiveScenarioSelectedRooms || []).forEach((room) => {
+      if (!room) return;
+      const roomType = norm(room.roomType || room.type || 'Unspecified') || 'Unspecified';
+      const categoryCode = normalizeScenarioCategoryCode(room.categoryCode || room.baseCategoryCode || '') || 'Unspecified';
+      const area = Number(room.area || 0) || 0;
+      const typeEntry = byType.get(roomType) || { label: roomType, rooms: 0, sf: 0 };
+      typeEntry.rooms += 1;
+      typeEntry.sf += area;
+      byType.set(roomType, typeEntry);
+
+      const categoryEntry = byCategory.get(categoryCode) || { label: categoryCode, rooms: 0, sf: 0 };
+      categoryEntry.rooms += 1;
+      categoryEntry.sf += area;
+      byCategory.set(categoryCode, categoryEntry);
+
+      const typeLower = roomType.toLowerCase();
+      const isSpecialized =
+        String(categoryCode).startsWith('2') ||
+        RENO_SPECIALIZED_TYPE_KEYWORDS.some((token) => typeLower.includes(token));
+      if (isSpecialized) specializedRoomCount += 1;
+      selectedSf += area;
+    });
+
+    return {
+      selectedSf,
+      roomCount: (effectiveScenarioSelectedRooms || []).length,
+      roomTypeMix: Array.from(byType.values()).sort((a, b) => b.sf - a.sf || b.rooms - a.rooms),
+      categoryMix: Array.from(byCategory.values()).sort((a, b) => b.sf - a.sf || b.rooms - a.rooms),
+      specializedRoomCount
+    };
+  }, [effectiveScenarioSelectedRooms]);
+
+  const renoLevelConfig = useMemo(
+    () => RENO_LEVELS.find((level) => level.value === renoRenovationLevel) || RENO_LEVELS[1],
+    [renoRenovationLevel]
+  );
+
+  const renoCostRange = useMemo(() => {
+    const selectedSf = Number(renoScenarioSummary.selectedSf || 0) || 0;
+    const minCost = selectedSf * Number(renoLevelConfig?.minCostPerSf || 0);
+    const maxCost = selectedSf * Number(renoLevelConfig?.maxCostPerSf || 0);
+    return { minCost, maxCost };
+  }, [renoScenarioSummary, renoLevelConfig]);
+
+  const renoSpecializedWarning = useMemo(() => {
+    if ((renoScenarioSummary.specializedRoomCount || 0) <= 0) return '';
+    if (renoRenovationLevel === 'specialized') return '';
+    return `${renoScenarioSummary.specializedRoomCount} selected room(s) appear specialized. Consider Specialized level for conceptual planning range.`;
+  }, [renoScenarioSummary, renoRenovationLevel]);
+
+  const renoConceptualDisclaimer = 'Conceptual planning range only. This is not a construction estimate.';
+
+  const persistRenoScenarioState = useCallback(async (reason = 'manual') => {
+    if (!universityId) return false;
+    if (!renoScenarioSummary.roomCount) return false;
+    try {
+      const roomRows = (effectiveScenarioSelectedRooms || []).map((room) => ({
+        roomId: room.roomId || '',
+        roomNumber: room.roomNumber || '',
+        roomType: room.roomType || room.type || '',
+        categoryCode: normalizeScenarioCategoryCode(room.categoryCode || room.baseCategoryCode || '') || '',
+        department: norm(room.department || '') || '',
+        sf: Math.round(Number(room.area || 0) || 0)
+      }));
+      const payload = {
+        scenarioId: renoScenarioIdRef.current,
+        planningScenarioId: scenarioSessionIdRef.current,
+        universityId,
+        campus: universityId,
+        building: activeBuildingName || selectedBuilding || selectedBuildingId || '',
+        floor: selectedFloor || currentFloorContextRef.current?.floorLabel || '',
+        label: (renoScenarioLabel || '').trim(),
+        renovationLevel: renoLevelConfig?.value || RENO_DEFAULT_LEVEL,
+        renovationLevelLabel: renoLevelConfig?.label || 'Moderate Interior',
+        selectedRoomIds: Array.from(scenarioSelection || []),
+        selectedRooms: roomRows,
+        selectedSf: Math.round(renoScenarioSummary.selectedSf || 0),
+        roomCount: Math.round(renoScenarioSummary.roomCount || 0),
+        roomTypeMix: renoScenarioSummary.roomTypeMix,
+        categoryMix: renoScenarioSummary.categoryMix,
+        specializedRoomCount: Math.round(renoScenarioSummary.specializedRoomCount || 0),
+        costRange: {
+          min: Math.round(renoCostRange.minCost || 0),
+          max: Math.round(renoCostRange.maxCost || 0)
+        },
+        warning: renoSpecializedWarning,
+        conceptualOnly: true,
+        conceptualDisclaimer: renoConceptualDisclaimer,
+        source: 'selected-room-reno-scenario',
+        reason,
+        updatedBy: getAuth().currentUser?.email || 'anonymous',
+        updatedAt: serverTimestamp()
+      };
+      const renoDocRef = doc(db, 'universities', universityId, 'renoScenarios', renoScenarioIdRef.current);
+      await setDoc(renoDocRef, payload, { merge: true });
+      setRenoScenarioSaveMessage(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      return true;
+    } catch (err) {
+      console.warn('Unable to persist Reno scenario state', err);
+      setRenoScenarioSaveMessage('Save failed (Firestore permissions or network).');
+      return false;
+    }
+  }, [
+    universityId,
+    renoScenarioSummary,
+    effectiveScenarioSelectedRooms,
+    renoScenarioLabel,
+    renoLevelConfig,
+    scenarioSelection,
+    renoCostRange,
+    renoSpecializedWarning,
+    renoConceptualDisclaimer,
+    activeBuildingName,
+    selectedBuilding,
+    selectedBuildingId,
+    selectedFloor
+  ]);
+
+  const handleLaunchRenoScenario = useCallback(() => {
+    if (!scenarioSelection.size) {
+      alert('Select one or more rooms before launching Reno Scenario.');
+      return;
+    }
+    setRenoScenarioVisible(true);
+    setRenoScenarioSaveMessage('');
+    if (!renoPanelPos) {
+      const height = mapContainerRef.current?.clientHeight ?? 0;
+      const panelHeight = Math.max(320, (height || 0) * 0.6);
+      const maxTop = Math.max(8, (height || 800) - panelHeight - 40);
+      setRenoPanelTop(Math.max(8, Math.min((scenarioPanelTop || 20) + 24, maxTop)));
+    }
+  }, [scenarioSelection, renoPanelPos, scenarioPanelTop]);
+
+  useEffect(() => {
+    if (!scenarioSelection.size) {
+      setRenoScenarioVisible(false);
+    }
+  }, [scenarioSelection]);
+
+  useEffect(() => {
+    if (!renoScenarioVisible) return;
+    if (!renoScenarioSummary.roomCount) return;
+    void persistRenoScenarioState('autosave');
+  }, [
+    renoScenarioVisible,
+    renoScenarioSummary,
+    renoRenovationLevel,
+    renoScenarioLabel,
+    persistRenoScenarioState
+  ]);
+
+  const handleExportRenoScenarioPdf = useCallback(() => {
+    if (!renoScenarioSummary.roomCount) {
+      alert('Select one or more rooms before exporting Reno Scenario.');
+      return;
+    }
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 24;
+      const lineHeight = 15;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+      const ensureSpace = (needed = lineHeight) => {
+        if (y + needed > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+      const addLine = (text, opts = {}) => {
+        ensureSpace(lineHeight);
+        const indent = Number(opts.indent || 0);
+        doc.text(String(text), margin + indent, y, { maxWidth: Math.max(80, contentWidth - indent) });
+        y += lineHeight;
+      };
+      const addSection = (title) => {
+        ensureSpace(lineHeight * 1.4);
+        doc.setFont(undefined, 'bold');
+        doc.text(title, margin, y);
+        y += lineHeight;
+        doc.setFont(undefined, 'normal');
+      };
+
+      const imageData = generateFloorplanImageData({
+        ...currentFloorContextRef.current,
+        labelOptions: { hideDrawing: true }
+      });
+      if (imageData) {
+        const maxWidth = Math.min(pageWidth * 0.48, contentWidth);
+        const aspect = imageData.height && imageData.width ? imageData.height / imageData.width : 1;
+        let imageWidth = maxWidth;
+        let imageHeight = imageWidth * aspect;
+        const maxImageHeight = pageHeight - margin * 2;
+        if (imageHeight > maxImageHeight) {
+          imageHeight = maxImageHeight;
+          imageWidth = imageHeight / (aspect || 1);
+        }
+        doc.addImage(imageData.data, 'PNG', margin, margin, imageWidth, imageHeight);
+        const textX = margin + imageWidth + 18;
+        y = margin;
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Selected-Room Reno Scenario', textX, y);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(11);
+        y += lineHeight;
+        if (renoScenarioLabel?.trim()) {
+          doc.text(renoScenarioLabel.trim(), textX, y, { maxWidth: pageWidth - textX - margin });
+          y += lineHeight;
+        }
+        doc.text(`Building: ${activeBuildingName || selectedBuilding || selectedBuildingId || '-'}`, textX, y, { maxWidth: pageWidth - textX - margin });
+        y += lineHeight;
+        doc.text(`Floor: ${selectedFloor || currentFloorContextRef.current?.floorLabel || '-'}`, textX, y, { maxWidth: pageWidth - textX - margin });
+        y += lineHeight;
+        doc.text(`Renovation Level: ${renoLevelConfig.label}`, textX, y, { maxWidth: pageWidth - textX - margin });
+        y += lineHeight;
+        doc.text(`Conceptual Cost Range: ${formatCurrency(renoCostRange.minCost)} - ${formatCurrency(renoCostRange.maxCost)}`, textX, y, { maxWidth: pageWidth - textX - margin });
+        y = Math.max(y + lineHeight, margin + imageHeight + 14);
+      } else {
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        addLine('Selected-Room Reno Scenario');
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'normal');
+      }
+
+      addSection('Selection Summary');
+      addLine(`Selected SF: ${Math.round(renoScenarioSummary.selectedSf || 0).toLocaleString()}`);
+      addLine(`Room Count: ${Math.round(renoScenarioSummary.roomCount || 0).toLocaleString()}`);
+      addLine(`Renovation Level: ${renoLevelConfig.label}`);
+      addLine(`Conceptual Cost Range: ${formatCurrency(renoCostRange.minCost)} - ${formatCurrency(renoCostRange.maxCost)}`);
+      addLine(renoConceptualDisclaimer);
+      if (renoSpecializedWarning) {
+        addLine(`Specialized-space warning: ${renoSpecializedWarning}`);
+      }
+
+      addSection('Room Type Mix');
+      if (!renoScenarioSummary.roomTypeMix.length) {
+        addLine('No room type data for selected rooms.');
+      } else {
+        renoScenarioSummary.roomTypeMix.forEach((row) => {
+          addLine(`${row.label}: ${row.rooms} rooms, ${Math.round(row.sf).toLocaleString()} SF`, { indent: 8 });
+        });
+      }
+
+      addSection('Category Mix');
+      if (!renoScenarioSummary.categoryMix.length) {
+        addLine('No category data for selected rooms.');
+      } else {
+        renoScenarioSummary.categoryMix.forEach((row) => {
+          addLine(`${row.label}: ${row.rooms} rooms, ${Math.round(row.sf).toLocaleString()} SF`, { indent: 8 });
+        });
+      }
+
+      const fileBase = (renoScenarioLabel || 'reno-scenario').trim() || 'reno-scenario';
+      const filename = `${fileBase.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      doc.save(filename);
+    } catch (err) {
+      console.error('Reno scenario export failed', err);
+      alert('Reno scenario export failed. See console for details.');
+    }
+  }, [
+    renoScenarioSummary,
+    renoScenarioLabel,
+    renoLevelConfig,
+    renoCostRange,
+    renoSpecializedWarning,
+    renoConceptualDisclaimer,
+    activeBuildingName,
+    selectedBuilding,
+    selectedBuildingId,
+    selectedFloor
   ]);
 
   const handleExportScenario = useCallback(async () => {
@@ -13407,6 +13733,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     (event) => beginPanelDrag(event, scenarioPanelRef, setScenarioPanelPos, getMapPageBounds),
     [getMapPageBounds]
   );
+  const handleRenoPanelDragStart = useCallback(
+    (event) => beginPanelDrag(event, renoPanelRef, setRenoPanelPos, getMapPageBounds),
+    [getMapPageBounds]
+  );
   const aiScenarioPanelRef = useRef(null);
   const aiCreateScenarioResultRef = useRef(null);
   const handleAiScenarioDragStart = useCallback(
@@ -13427,6 +13757,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   };
   const scenarioPanelDragHandleProps = {
     onPointerDown: handleScenarioPanelDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const renoPanelDragHandleProps = {
+    onPointerDown: handleRenoPanelDragStart,
     style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
   };
   const aiScenarioDragHandleProps = {
@@ -17085,6 +17419,9 @@ useEffect(() => {
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
+              scenarioSelectedCount={scenarioSelection.size}
+              onLaunchRenoScenario={handleLaunchRenoScenario}
+              renoScenarioVisible={renoScenarioVisible}
               rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
               moveActive={mode === 'admin' && floorAdjustMode === 'move'}
               rotateValue={mode === 'admin' ? floorRotateValue : 0}
@@ -17235,6 +17572,15 @@ useEffect(() => {
             style={{ width: '100%' }}
           />
         </div>
+        <button
+          className="btn secondary"
+          style={{ width: '100%', marginBottom: 8 }}
+          onClick={handleLaunchRenoScenario}
+          disabled={scenarioSelection.size === 0}
+          title={scenarioSelection.size === 0 ? 'Select rooms first.' : 'Open Selected-Room Reno Scenario.'}
+        >
+          {renoScenarioVisible ? 'Reno Scenario Open' : 'Launch Reno Scenario'}
+        </button>
 
         <div style={{ marginBottom: 8 }}>
           <div><b>Total SF:</b> {Math.round(scenarioTotals.totalSF).toLocaleString()}</div>
@@ -17548,6 +17894,154 @@ useEffect(() => {
         >
           Export Scenario (PDF)
         </button>
+      </div>
+    )}
+
+    {renoScenarioVisible && scenarioSelection.size > 0 && (
+      <div
+        ref={renoPanelRef}
+        className="floating-panel mf-reno-scenario-panel"
+        style={{
+          position: 'absolute',
+          zIndex: 61,
+          right: renoPanelPos ? 'auto' : 352,
+          left: renoPanelPos ? renoPanelPos.x : 'auto',
+          top: renoPanelPos ? renoPanelPos.y : renoPanelTop,
+          width: 340,
+          maxHeight: '70vh',
+          overflow: 'auto',
+          padding: 12,
+          fontSize: 13
+        }}
+      >
+        <div
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
+          {...renoPanelDragHandleProps}
+        >
+          <div style={{ fontWeight: 600 }}>Reno Scenario</div>
+          <button
+            className="btn secondary"
+            style={{ fontSize: 11, padding: '2px 6px' }}
+            onClick={() => setRenoScenarioVisible(false)}
+          >
+            Close
+          </button>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 12, marginBottom: 2 }}>Scenario Label (optional)</label>
+          <input
+            className="mf-input"
+            value={renoScenarioLabel}
+            onChange={(e) => setRenoScenarioLabel(e.target.value)}
+            placeholder="e.g. Hurley Level_1 Reno - Option A"
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Selected-Room Summary</div>
+          <div><b>Selected SF:</b> {Math.round(renoScenarioSummary.selectedSf || 0).toLocaleString()}</div>
+          <div><b>Rooms:</b> {Math.round(renoScenarioSummary.roomCount || 0).toLocaleString()}</div>
+          <div style={{ marginTop: 4, fontSize: 11, color: '#667085' }}>
+            Uses selected rooms only. No Airtable data is modified.
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Renovation Level</label>
+          <select
+            className="mf-input"
+            value={renoRenovationLevel}
+            onChange={(e) => setRenoRenovationLevel(e.target.value)}
+            style={{ width: '100%' }}
+          >
+            {RENO_LEVELS.map((level) => (
+              <option key={level.value} value={level.value}>{level.label}</option>
+            ))}
+          </select>
+          <div style={{ marginTop: 6 }}>
+            <b>Conceptual Cost Range:</b>{' '}
+            {formatCurrency(renoCostRange.minCost)} - {formatCurrency(renoCostRange.maxCost)}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 11, color: '#667085' }}>
+            {renoConceptualDisclaimer}
+          </div>
+          {renoSpecializedWarning ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#b54708' }}>
+              <b>Specialized-space warning:</b> {renoSpecializedWarning}
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Room Type Mix</div>
+          {renoScenarioSummary.roomTypeMix.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#667085' }}>No room type data.</div>
+          ) : (
+            <table style={{ width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Type</th>
+                  <th style={{ textAlign: 'right' }}>Rooms</th>
+                  <th style={{ textAlign: 'right' }}>SF</th>
+                </tr>
+              </thead>
+              <tbody>
+                {renoScenarioSummary.roomTypeMix.map((row) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    <td style={{ textAlign: 'right' }}>{row.rooms}</td>
+                    <td style={{ textAlign: 'right' }}>{Math.round(row.sf).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Category Mix</div>
+          {renoScenarioSummary.categoryMix.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#667085' }}>No category data.</div>
+          ) : (
+            <table style={{ width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Category</th>
+                  <th style={{ textAlign: 'right' }}>Rooms</th>
+                  <th style={{ textAlign: 'right' }}>SF</th>
+                </tr>
+              </thead>
+              <tbody>
+                {renoScenarioSummary.categoryMix.map((row) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    <td style={{ textAlign: 'right' }}>{row.rooms}</td>
+                    <td style={{ textAlign: 'right' }}>{Math.round(row.sf).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            className="btn secondary"
+            onClick={() => {
+              void persistRenoScenarioState('manualSave');
+            }}
+          >
+            Save Reno Scenario
+          </button>
+          <button className="btn primary" onClick={handleExportRenoScenarioPdf}>
+            Export Reno PDF
+          </button>
+        </div>
+        {renoScenarioSaveMessage ? (
+          <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>{renoScenarioSaveMessage}</div>
+        ) : null}
       </div>
     )}
 

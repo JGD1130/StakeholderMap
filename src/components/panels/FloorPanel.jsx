@@ -26,6 +26,9 @@ export default function FloorPanel({
   explainError = '',
   moveScenarioMode = false,
   onToggleMoveScenarioMode,
+  scenarioSelectedCount = 0,
+  onLaunchRenoScenario,
+  renoScenarioVisible = false,
   rotateActive = false,
   moveActive = false,
   rotateValue = 0,
@@ -206,6 +209,22 @@ export default function FloorPanel({
             <div style={{ marginTop: 4, fontSize: 11, color: "#555", textAlign: "center" }}>
               Click rooms to add/remove them from a what-if scenario. Real data is not changed.
             </div>
+            {onLaunchRenoScenario ? (
+              <>
+                <button
+                  className="btn secondary"
+                  style={{ width: "100%", marginTop: 6 }}
+                  onClick={onLaunchRenoScenario}
+                  disabled={scenarioSelectedCount === 0}
+                  title={scenarioSelectedCount === 0 ? "Select one or more rooms first." : "Open selected-room Reno Scenario."}
+                >
+                  {renoScenarioVisible ? "Reno Scenario Open" : "Launch Reno Scenario"}
+                </button>
+                <div style={{ marginTop: 4, fontSize: 11, color: "#555", textAlign: "center" }}>
+                  Selected rooms: {Number.isFinite(scenarioSelectedCount) ? scenarioSelectedCount : 0}
+                </div>
+              </>
+            ) : null}
           </div>
         ) : null}
         {onStartRotate ? (
