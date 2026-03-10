@@ -10398,7 +10398,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const start = Array.isArray(startCoord) ? startCoord : [];
     const end = Array.isArray(endCoord) ? endCoord : [];
     if (start.length < 2 || end.length < 2) {
-      alert('Select both split endpoints on the room boundary.');
+      alert('Select two split points inside the selected room.');
       return false;
     }
     const dx = Number(end[0]) - Number(start[0]);
@@ -10421,8 +10421,26 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     let pieces = [];
     try {
       const boundary = turf.polygonToLine(feature);
-      const boundaryLines = turf.flatten(boundary)?.features || [];
-      const lineInputs = [...boundaryLines, splitLine].filter(Boolean);
+      const boundaryLines = (turf.flatten(boundary)?.features || [])
+        .filter((line) => line?.geometry?.type === 'LineString' || line?.geometry?.type === 'MultiLineString');
+      const nodedBoundaryLines = [];
+      boundaryLines.forEach((line) => {
+        try {
+          const splitBoundary = turf.lineSplit(line, splitLine);
+          const splitFeatures = splitBoundary?.features || [];
+          if (splitFeatures.length) nodedBoundaryLines.push(...splitFeatures);
+          else nodedBoundaryLines.push(line);
+        } catch {
+          nodedBoundaryLines.push(line);
+        }
+      });
+      let nodedSplitLines = [splitLine];
+      try {
+        const splitByBoundary = turf.lineSplit(splitLine, boundary);
+        const splitFeatures = splitByBoundary?.features || [];
+        if (splitFeatures.length) nodedSplitLines = splitFeatures;
+      } catch {}
+      const lineInputs = [...nodedBoundaryLines, ...nodedSplitLines].filter(Boolean);
       const splitResult = turf.polygonize(turf.featureCollection(lineInputs));
       pieces = (splitResult?.features || [])
         .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'))
@@ -10440,7 +10458,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     }
     if (pieces.length < 2) {
       console.log('[Planning Scenario Debug] split failed: no polygonized pieces', { roomId, piecesCount: pieces.length });
-      alert('Split line must cross the room and start/end on the boundary.');
+      alert('Split line must cross the selected room.');
       return false;
     }
     const keptPieces = pieces.slice(0, 2);
