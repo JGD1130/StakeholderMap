@@ -7055,8 +7055,9 @@ function buildAirtableRoomLookup(rooms = []) {
   const byGuid = new Map();
   const byComposite = new Map();
   const byBuildingRoom = new Map();
+  const byBuildingRoomList = new Map();
   const byRoomId = new Map();
-  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom, byRoomId };
+  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId };
 
   const setUnique = (map, key, room) => {
     if (!key) return;
@@ -7066,6 +7067,15 @@ function buildAirtableRoomLookup(rooms = []) {
     }
     const existing = map.get(key);
     if (existing !== room) map.set(key, null);
+  };
+  const addToList = (map, key, room) => {
+    if (!key) return;
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, [room]);
+      return;
+    }
+    prev.push(room);
   };
 
   rooms.forEach((room) => {
@@ -7095,14 +7105,16 @@ function buildAirtableRoomLookup(rooms = []) {
       if (!byComposite.has(compositeKey)) byComposite.set(compositeKey, room);
     }
     if (roomIdKey && buildingKey) {
-      setUnique(byBuildingRoom, `${buildingKey}|${roomIdKey}`, room);
+      const key = `${buildingKey}|${roomIdKey}`;
+      setUnique(byBuildingRoom, key, room);
+      addToList(byBuildingRoomList, key, room);
     }
     if (roomIdKey) {
       setUnique(byRoomId, roomIdKey, room);
     }
   });
 
-  return { byGuid, byComposite, byBuildingRoom, byRoomId };
+  return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId };
 }
 
 function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) {
@@ -7138,6 +7150,33 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
     }
     if (!manifestMatch && roomIdKey && buildingKey) {
       manifestMatch = manifestLookup.byBuildingRoom.get(`${buildingKey}|${roomIdKey}`) || null;
+    }
+    if (!manifestMatch && roomIdKey && buildingKey) {
+      const key = `${buildingKey}|${roomIdKey}`;
+      const candidates = manifestLookup.byBuildingRoomList?.get(key) || [];
+      if (candidates.length === 1) {
+        manifestMatch = candidates[0];
+      } else if (candidates.length > 1) {
+        const roomFloorTokens = normalizeFloorTokens(
+          room.floor ?? room.floorName ?? room.floorId ?? ''
+        );
+        const floorScoped = roomFloorTokens.length
+          ? candidates.filter((candidate) =>
+              floorMatchesTokens(
+                candidate?.floor ?? candidate?.floorName ?? candidate?.floorId ?? '',
+                roomFloorTokens
+              )
+            )
+          : candidates;
+        const ranked = floorScoped.length ? floorScoped : candidates;
+        manifestMatch =
+          ranked.find((candidate) => {
+            const seatCount = Number(
+              candidate?.seatCount ?? candidate?.SeatCount ?? candidate?.['Seat Count'] ?? 0
+            );
+            return Number.isFinite(seatCount) && seatCount > 0;
+          }) || ranked[0] || null;
+      }
     }
     if (!manifestMatch && roomIdKey) {
       manifestMatch = manifestLookup.byRoomId?.get(roomIdKey) || null;
@@ -7286,6 +7325,30 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
 const hasDashboardRoomArea = (room) => {
   const area = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
   return Number.isFinite(area) && area > 0;
+};
+
+const hasInstructionalSeatCoverage = (rooms = []) => {
+  if (!Array.isArray(rooms) || !rooms.length) return false;
+  let instructionalRooms = 0;
+  let instructionalSeats = 0;
+  rooms.forEach((room) => {
+    const categoryCode = String(
+      room?.categoryCode ??
+      room?.category ??
+      room?.NCES_Category ??
+      room?.['NCES Category'] ??
+      ''
+    ).trim();
+    const prefix = categoryCode.charAt(0);
+    if (prefix !== '1' && prefix !== '2') return;
+    instructionalRooms += 1;
+    const seats = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
+    if (Number.isFinite(seats) && seats > 0) {
+      instructionalSeats += seats;
+    }
+  });
+  if (!instructionalRooms) return true;
+  return instructionalSeats > 0;
 };
 
 const toDashboardRoomRow = (feature, buildingLabel) => {
@@ -14772,29 +14835,59 @@ useEffect(() => {
     if (!airtableRooms.length) return;
     let cancelled = false;
     (async () => {
-      try {
-        let manifest = dashboardManifestRef.current;
-        if (!manifest) {
-          manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
-          dashboardManifestRef.current = manifest;
-        }
-        let manifestRooms = manifestHydrationRoomsRef.current;
-        if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
-          manifestRooms = await buildCampusRoomsFromManifest(manifest);
-          if (Array.isArray(manifestRooms) && manifestRooms.length) {
+      let merged = null;
+      let hydrateErr = null;
+      for (let attempt = 0; attempt < 3 && !merged; attempt += 1) {
+        try {
+          let manifest = dashboardManifestRef.current;
+          const hasManifest =
+            manifest &&
+            typeof manifest === 'object' &&
+            manifest.floorsByBuilding &&
+            Object.keys(manifest.floorsByBuilding).length > 0;
+          if (!hasManifest) {
+            manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+            const fetchedValid =
+              manifest &&
+              typeof manifest === 'object' &&
+              manifest.floorsByBuilding &&
+              Object.keys(manifest.floorsByBuilding).length > 0;
+            if (!fetchedValid) {
+              throw new Error('Dashboard manifest unavailable');
+            }
+            dashboardManifestRef.current = manifest;
+          }
+          let manifestRooms = manifestHydrationRoomsRef.current;
+          if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
+            manifestRooms = await buildCampusRoomsFromManifest(manifest);
+            if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
+              throw new Error('Manifest hydration rooms unavailable');
+            }
             manifestHydrationRoomsRef.current = manifestRooms;
           }
-        }
-        if (cancelled) return;
-        const merged = mergeAirtableRoomsWithManifest(airtableRooms, manifestRooms);
-        setCampusRooms(merged);
-        setCampusRoomsLoaded(true);
-      } catch (err) {
-        if (!cancelled) {
-          setCampusRooms(airtableRooms);
-          setCampusRoomsLoaded(true);
+          merged = mergeAirtableRoomsWithManifest(airtableRooms, manifestRooms);
+        } catch (err) {
+          hydrateErr = err;
+          if (attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+          }
         }
       }
+      if (cancelled) return;
+      if (Array.isArray(merged) && merged.length) {
+        setCampusRooms(merged);
+        setCampusRoomsLoaded(true);
+        setDashboardError(null);
+        return;
+      }
+      if (hasInstructionalSeatCoverage(airtableRooms)) {
+        setCampusRooms(airtableRooms);
+        setCampusRoomsLoaded(true);
+        setDashboardError(null);
+        return;
+      }
+      console.warn('Dashboard hydration skipped seatless Airtable fallback', hydrateErr);
+      setDashboardError(hydrateErr || new Error('Unable to hydrate campus room seat data'));
     })();
 
     return () => { cancelled = true; };
