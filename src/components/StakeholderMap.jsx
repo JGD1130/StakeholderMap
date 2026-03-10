@@ -7329,26 +7329,15 @@ const hasDashboardRoomArea = (room) => {
 
 const hasInstructionalSeatCoverage = (rooms = []) => {
   if (!Array.isArray(rooms) || !rooms.length) return false;
-  let instructionalRooms = 0;
-  let instructionalSeats = 0;
-  rooms.forEach((room) => {
-    const categoryCode = String(
-      room?.categoryCode ??
-      room?.category ??
-      room?.NCES_Category ??
-      room?.['NCES Category'] ??
-      ''
-    ).trim();
-    const prefix = categoryCode.charAt(0);
-    if (prefix !== '1' && prefix !== '2') return;
-    instructionalRooms += 1;
-    const seats = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
-    if (Number.isFinite(seats) && seats > 0) {
-      instructionalSeats += seats;
-    }
+  const features = rooms.map(roomRowToDashboardFeature).filter(Boolean);
+  if (!features.length) return false;
+  const metrics = computeStrategicCapacityMetrics(features, {
+    seatSupplyCategoryPrefixes: ['1', '2']
   });
-  if (!instructionalRooms) return true;
-  return instructionalSeats > 0;
+  const instructionalRooms = Number(metrics?.instructionalRooms || 0);
+  const availableSeats = Number(metrics?.availableSeats || 0);
+  if (instructionalRooms <= 0) return false;
+  return availableSeats > 0;
 };
 
 const toDashboardRoomRow = (feature, buildingLabel) => {
@@ -8900,6 +8889,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [renoScenarioSaveMessage, setRenoScenarioSaveMessage] = useState('');
   const [renoPanelTop, setRenoPanelTop] = useState(20);
   const [renoPanelPos, setRenoPanelPos] = useState(null);
+  const renoSavePermissionBlockedRef = useRef(false);
   const pendingScenarioLoadRef = useRef(null);
   const pendingScenarioCandidatesRef = useRef(null);
   const scenarioSessionIdRef = useRef(`scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
@@ -9025,6 +9015,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setRenoScenarioSaveMessage('');
     setRenoPanelPos(null);
     setRenoPanelTop(20);
+    renoSavePermissionBlockedRef.current = false;
     setAiScenarioComparePending(false);
     scenarioSessionIdRef.current = `scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     renoScenarioIdRef.current = `reno-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -10179,6 +10170,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const persistRenoScenarioState = useCallback(async (reason = 'manual') => {
     if (!universityId) return false;
     if (!renoScenarioSummary.roomCount) return false;
+    if (renoSavePermissionBlockedRef.current && reason !== 'manualSave') return false;
     try {
       const roomRows = (effectiveScenarioSelectedRooms || []).map((room) => ({
         roomId: room.roomId || '',
@@ -10219,12 +10211,47 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       };
       const renoDocRef = doc(db, 'universities', universityId, 'renoScenarios', renoScenarioIdRef.current);
       await setDoc(renoDocRef, payload, { merge: true });
+      renoSavePermissionBlockedRef.current = false;
       setRenoScenarioSaveMessage(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
       return true;
     } catch (err) {
-      console.warn('Unable to persist Reno scenario state', err);
-      setRenoScenarioSaveMessage('Save failed (Firestore permissions or network).');
-      return false;
+      const code = String(err?.code || '');
+      const permissionDenied = code.includes('permission-denied') || /insufficient permissions/i.test(String(err?.message || ''));
+      try {
+        await addDoc(collection(db, 'moves'), {
+          eventType: 'renoScenarioSnapshot',
+          createdAt: serverTimestamp(),
+          ...{
+            scenarioId: renoScenarioIdRef.current,
+            planningScenarioId: scenarioSessionIdRef.current,
+            universityId,
+            label: (renoScenarioLabel || '').trim(),
+            renovationLevel: renoLevelConfig?.value || RENO_DEFAULT_LEVEL,
+            selectedRoomIds: Array.from(scenarioSelection || []),
+            selectedSf: Math.round(renoScenarioSummary.selectedSf || 0),
+            roomCount: Math.round(renoScenarioSummary.roomCount || 0),
+            costRangeMin: Math.round(renoCostRange.minCost || 0),
+            costRangeMax: Math.round(renoCostRange.maxCost || 0),
+            warning: renoSpecializedWarning,
+            conceptualOnly: true,
+            reason,
+            updatedBy: getAuth().currentUser?.email || 'anonymous'
+          }
+        });
+        renoSavePermissionBlockedRef.current = false;
+        setRenoScenarioSaveMessage(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (fallback)`);
+        return true;
+      } catch (fallbackErr) {
+        if (permissionDenied) renoSavePermissionBlockedRef.current = true;
+        const fallbackCode = String(fallbackErr?.code || '');
+        const fallbackPerm = fallbackCode.includes('permission-denied') || /insufficient permissions/i.test(String(fallbackErr?.message || ''));
+        if (permissionDenied || fallbackPerm) {
+          setRenoScenarioSaveMessage('Save blocked by Firestore permissions. Local scenario remains active.');
+          return false;
+        }
+        setRenoScenarioSaveMessage('Save failed (network/server).');
+        return false;
+      }
     }
   }, [
     universityId,
@@ -10236,6 +10263,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     renoCostRange,
     renoSpecializedWarning,
     renoConceptualDisclaimer,
+    scenarioSelection,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -10249,6 +10277,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     }
     setRenoScenarioVisible(true);
     setRenoScenarioSaveMessage('');
+    renoSavePermissionBlockedRef.current = false;
     if (!renoPanelPos) {
       const height = mapContainerRef.current?.clientHeight ?? 0;
       const panelHeight = Math.max(320, (height || 0) * 0.6);
@@ -10295,10 +10324,14 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         }
       };
       const addLine = (text, opts = {}) => {
-        ensureSpace(lineHeight);
         const indent = Number(opts.indent || 0);
-        doc.text(String(text), margin + indent, y, { maxWidth: Math.max(80, contentWidth - indent) });
-        y += lineHeight;
+        const maxWidth = Number(opts.maxWidth || (contentWidth - indent));
+        const lines = doc.splitTextToSize(String(text), Math.max(80, maxWidth));
+        lines.forEach((line) => {
+          ensureSpace(lineHeight);
+          doc.text(String(line), margin + indent, y);
+          y += lineHeight;
+        });
       };
       const addSection = (title) => {
         ensureSpace(lineHeight * 1.4);
@@ -10308,8 +10341,20 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         doc.setFont(undefined, 'normal');
       };
 
+      const selectedRenderIds = [];
+      Array.from(scenarioSelection || []).forEach((roomId) => {
+        const meta = scenarioRoomInfoRef.current.get(roomId);
+        if (!meta) return;
+        if (meta.revitId != null) selectedRenderIds.push(meta.revitId);
+        if (meta.roomGuid) selectedRenderIds.push(meta.roomGuid);
+        if (meta.roomNumber) selectedRenderIds.push(meta.roomNumber);
+        if (meta.roomId) selectedRenderIds.push(meta.roomId);
+      });
+
       const imageData = generateFloorplanImageData({
         ...currentFloorContextRef.current,
+        selectedIds: selectedRenderIds,
+        solidFill: true,
         labelOptions: { hideDrawing: true }
       });
       if (imageData) {
@@ -10332,16 +10377,25 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         doc.setFontSize(11);
         y += lineHeight;
         if (renoScenarioLabel?.trim()) {
-          doc.text(renoScenarioLabel.trim(), textX, y, { maxWidth: pageWidth - textX - margin });
-          y += lineHeight;
+          const lines = doc.splitTextToSize(renoScenarioLabel.trim(), Math.max(80, pageWidth - textX - margin));
+          lines.forEach((line) => {
+            doc.text(String(line), textX, y);
+            y += lineHeight;
+          });
         }
-        doc.text(`Building: ${activeBuildingName || selectedBuilding || selectedBuildingId || '-'}`, textX, y, { maxWidth: pageWidth - textX - margin });
-        y += lineHeight;
-        doc.text(`Floor: ${selectedFloor || currentFloorContextRef.current?.floorLabel || '-'}`, textX, y, { maxWidth: pageWidth - textX - margin });
-        y += lineHeight;
-        doc.text(`Renovation Level: ${renoLevelConfig.label}`, textX, y, { maxWidth: pageWidth - textX - margin });
-        y += lineHeight;
-        doc.text(`Conceptual Cost Range: ${formatCurrency(renoCostRange.minCost)} - ${formatCurrency(renoCostRange.maxCost)}`, textX, y, { maxWidth: pageWidth - textX - margin });
+        const metaLines = [
+          `Building: ${activeBuildingName || selectedBuilding || selectedBuildingId || '-'}`,
+          `Floor: ${selectedFloor || currentFloorContextRef.current?.floorLabel || '-'}`,
+          `Renovation Level: ${renoLevelConfig.label}`,
+          `Conceptual Cost Range: ${formatCurrency(renoCostRange.minCost)} - ${formatCurrency(renoCostRange.maxCost)}`
+        ];
+        metaLines.forEach((line) => {
+          const wrapped = doc.splitTextToSize(line, Math.max(80, pageWidth - textX - margin));
+          wrapped.forEach((segment) => {
+            doc.text(String(segment), textX, y);
+            y += lineHeight;
+          });
+        });
         y = Math.max(y + lineHeight, margin + imageHeight + 14);
       } else {
         doc.setFontSize(14);
@@ -10370,10 +10424,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         });
       }
 
-      addSection('Category Mix');
-      if (!renoScenarioSummary.categoryMix.length) {
-        addLine('No category data for selected rooms.');
-      } else {
+      const showCategoryMix =
+        renoScenarioSummary.categoryMix.length > 1 ||
+        (renoScenarioSummary.categoryMix[0] && renoScenarioSummary.categoryMix[0].label !== 'Unspecified');
+      if (showCategoryMix) {
+        addSection('Category Mix');
         renoScenarioSummary.categoryMix.forEach((row) => {
           addLine(`${row.label}: ${row.rooms} rooms, ${Math.round(row.sf).toLocaleString()} SF`, { indent: 8 });
         });
@@ -14886,8 +14941,40 @@ useEffect(() => {
         setDashboardError(null);
         return;
       }
-      console.warn('Dashboard hydration skipped seatless Airtable fallback', hydrateErr);
-      setDashboardError(hydrateErr || new Error('Unable to hydrate campus room seat data'));
+      try {
+        let fallbackManifestRooms = manifestHydrationRoomsRef.current;
+        if (!Array.isArray(fallbackManifestRooms) || !fallbackManifestRooms.length) {
+          let manifest = dashboardManifestRef.current;
+          const hasManifest =
+            manifest &&
+            typeof manifest === 'object' &&
+            manifest.floorsByBuilding &&
+            Object.keys(manifest.floorsByBuilding).length > 0;
+          if (!hasManifest) {
+            manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+            const fetchedValid =
+              manifest &&
+              typeof manifest === 'object' &&
+              manifest.floorsByBuilding &&
+              Object.keys(manifest.floorsByBuilding).length > 0;
+            if (!fetchedValid) throw new Error('Dashboard manifest unavailable');
+            dashboardManifestRef.current = manifest;
+          }
+          fallbackManifestRooms = await buildCampusRoomsFromManifest(manifest);
+          if (!Array.isArray(fallbackManifestRooms) || !fallbackManifestRooms.length) {
+            throw new Error('Fallback manifest room hydration unavailable');
+          }
+          manifestHydrationRoomsRef.current = fallbackManifestRooms;
+        }
+        if (cancelled) return;
+        setCampusRooms(fallbackManifestRooms);
+        setCampusRoomsLoaded(true);
+        setDashboardError(null);
+        return;
+      } catch (fallbackErr) {
+        console.warn('Dashboard hydration skipped seatless Airtable fallback', hydrateErr || fallbackErr);
+        setDashboardError(hydrateErr || fallbackErr || new Error('Unable to hydrate campus room seat data'));
+      }
     })();
 
     return () => { cancelled = true; };
@@ -17512,9 +17599,6 @@ useEffect(() => {
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
-              scenarioSelectedCount={scenarioSelection.size}
-              onLaunchRenoScenario={handleLaunchRenoScenario}
-              renoScenarioVisible={renoScenarioVisible}
               rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
               moveActive={mode === 'admin' && floorAdjustMode === 'move'}
               rotateValue={mode === 'admin' ? floorRotateValue : 0}
