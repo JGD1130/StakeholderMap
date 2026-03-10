@@ -34,6 +34,15 @@ const RENO_LEVELS = [
   { value: 'specialized', label: 'Specialized', minCostPerSf: 260, maxCostPerSf: 480 }
 ];
 const RENO_DEFAULT_LEVEL = 'moderate_interior';
+const RENO_CONVERSION_TYPES = [
+  { value: 'no_use_change', label: 'No use change', multiplier: 1.0 },
+  { value: 'office_to_classroom', label: 'Office to Classroom', multiplier: 1.15 },
+  { value: 'office_to_lab', label: 'Office to Lab', multiplier: 1.35 },
+  { value: 'classroom_refresh', label: 'Classroom refresh', multiplier: 1.0 },
+  { value: 'classroom_to_lab', label: 'Classroom to Lab', multiplier: 1.3 },
+  { value: 'mixed_custom', label: 'Mixed / Custom', multiplier: 1.0 }
+];
+const RENO_DEFAULT_CONVERSION_TYPE = 'no_use_change';
 const RENO_SPECIALIZED_TYPE_KEYWORDS = [
   'lab',
   'laboratory',
@@ -8886,6 +8895,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [renoScenarioVisible, setRenoScenarioVisible] = useState(false);
   const [renoScenarioLabel, setRenoScenarioLabel] = useState('');
   const [renoRenovationLevel, setRenoRenovationLevel] = useState(RENO_DEFAULT_LEVEL);
+  const [renoConversionType, setRenoConversionType] = useState(RENO_DEFAULT_CONVERSION_TYPE);
   const [renoScenarioSaveMessage, setRenoScenarioSaveMessage] = useState('');
   const [renoPanelTop, setRenoPanelTop] = useState(20);
   const [renoPanelPos, setRenoPanelPos] = useState(null);
@@ -9012,6 +9022,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setRenoScenarioVisible(false);
     setRenoScenarioLabel('');
     setRenoRenovationLevel(RENO_DEFAULT_LEVEL);
+    setRenoConversionType(RENO_DEFAULT_CONVERSION_TYPE);
     setRenoScenarioSaveMessage('');
     setRenoPanelPos(null);
     setRenoPanelTop(20);
@@ -10151,19 +10162,51 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     () => RENO_LEVELS.find((level) => level.value === renoRenovationLevel) || RENO_LEVELS[1],
     [renoRenovationLevel]
   );
+  const renoConversionConfig = useMemo(
+    () => RENO_CONVERSION_TYPES.find((type) => type.value === renoConversionType) || RENO_CONVERSION_TYPES[0],
+    [renoConversionType]
+  );
 
-  const renoCostRange = useMemo(() => {
+  const renoBaseCostRange = useMemo(() => {
     const selectedSf = Number(renoScenarioSummary.selectedSf || 0) || 0;
     const minCost = selectedSf * Number(renoLevelConfig?.minCostPerSf || 0);
     const maxCost = selectedSf * Number(renoLevelConfig?.maxCostPerSf || 0);
     return { minCost, maxCost };
   }, [renoScenarioSummary, renoLevelConfig]);
+  const renoCostRange = useMemo(() => {
+    const multiplier = Number(renoConversionConfig?.multiplier || 1) || 1;
+    return {
+      minCost: Number(renoBaseCostRange.minCost || 0) * multiplier,
+      maxCost: Number(renoBaseCostRange.maxCost || 0) * multiplier
+    };
+  }, [renoBaseCostRange, renoConversionConfig]);
+
+  const renoConversionWarning = useMemo(() => {
+    const key = String(renoConversionType || '').trim();
+    if (key === 'office_to_classroom') {
+      return 'Office to Classroom applies a moderate conceptual uplift for use-change scope.';
+    }
+    if (key === 'office_to_lab' || key === 'classroom_to_lab') {
+      return 'Lab conversion applies a larger conceptual uplift for MEP/safety requirements.';
+    }
+    if (key === 'mixed_custom') {
+      return 'Mixed/Custom uses renovation level only; validate room-by-room assumptions before budgeting.';
+    }
+    return '';
+  }, [renoConversionType]);
 
   const renoSpecializedWarning = useMemo(() => {
     if ((renoScenarioSummary.specializedRoomCount || 0) <= 0) return '';
     if (renoRenovationLevel === 'specialized') return '';
     return `${renoScenarioSummary.specializedRoomCount} selected room(s) appear specialized. Consider Specialized level for conceptual planning range.`;
   }, [renoScenarioSummary, renoRenovationLevel]);
+
+  const renoWarningLines = useMemo(() => {
+    const lines = [];
+    if (renoSpecializedWarning) lines.push(renoSpecializedWarning);
+    if (renoConversionWarning) lines.push(renoConversionWarning);
+    return lines;
+  }, [renoSpecializedWarning, renoConversionWarning]);
 
   const renoConceptualDisclaimer = 'Conceptual planning range only. This is not a construction estimate.';
 
@@ -10190,6 +10233,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         label: (renoScenarioLabel || '').trim(),
         renovationLevel: renoLevelConfig?.value || RENO_DEFAULT_LEVEL,
         renovationLevelLabel: renoLevelConfig?.label || 'Moderate Interior',
+        conversionType: renoConversionConfig?.value || RENO_DEFAULT_CONVERSION_TYPE,
+        conversionTypeLabel: renoConversionConfig?.label || 'No use change',
+        conversionMultiplier: Number(renoConversionConfig?.multiplier || 1) || 1,
         selectedRoomIds: Array.from(scenarioSelection || []),
         selectedRooms: roomRows,
         selectedSf: Math.round(renoScenarioSummary.selectedSf || 0),
@@ -10197,11 +10243,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         roomTypeMix: renoScenarioSummary.roomTypeMix,
         categoryMix: renoScenarioSummary.categoryMix,
         specializedRoomCount: Math.round(renoScenarioSummary.specializedRoomCount || 0),
+        baseCostRange: {
+          min: Math.round(renoBaseCostRange.minCost || 0),
+          max: Math.round(renoBaseCostRange.maxCost || 0)
+        },
         costRange: {
           min: Math.round(renoCostRange.minCost || 0),
           max: Math.round(renoCostRange.maxCost || 0)
         },
-        warning: renoSpecializedWarning,
+        warnings: renoWarningLines,
+        warning: renoWarningLines.join(' '),
         conceptualOnly: true,
         conceptualDisclaimer: renoConceptualDisclaimer,
         source: 'selected-room-reno-scenario',
@@ -10227,12 +10278,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
             universityId,
             label: (renoScenarioLabel || '').trim(),
             renovationLevel: renoLevelConfig?.value || RENO_DEFAULT_LEVEL,
+            conversionType: renoConversionConfig?.value || RENO_DEFAULT_CONVERSION_TYPE,
+            conversionMultiplier: Number(renoConversionConfig?.multiplier || 1) || 1,
             selectedRoomIds: Array.from(scenarioSelection || []),
             selectedSf: Math.round(renoScenarioSummary.selectedSf || 0),
             roomCount: Math.round(renoScenarioSummary.roomCount || 0),
+            baseCostRangeMin: Math.round(renoBaseCostRange.minCost || 0),
+            baseCostRangeMax: Math.round(renoBaseCostRange.maxCost || 0),
             costRangeMin: Math.round(renoCostRange.minCost || 0),
             costRangeMax: Math.round(renoCostRange.maxCost || 0),
-            warning: renoSpecializedWarning,
+            warning: renoWarningLines.join(' '),
             conceptualOnly: true,
             reason,
             updatedBy: getAuth().currentUser?.email || 'anonymous'
@@ -10259,11 +10314,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     effectiveScenarioSelectedRooms,
     renoScenarioLabel,
     renoLevelConfig,
+    renoConversionConfig,
     scenarioSelection,
+    renoBaseCostRange,
     renoCostRange,
-    renoSpecializedWarning,
+    renoWarningLines,
     renoConceptualDisclaimer,
-    scenarioSelection,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -10387,6 +10443,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
           `Building: ${activeBuildingName || selectedBuilding || selectedBuildingId || '-'}`,
           `Floor: ${selectedFloor || currentFloorContextRef.current?.floorLabel || '-'}`,
           `Renovation Level: ${renoLevelConfig.label}`,
+          `Conversion Type: ${renoConversionConfig.label}`,
           `Conceptual Cost Range: ${formatCurrency(renoCostRange.minCost)} - ${formatCurrency(renoCostRange.maxCost)}`
         ];
         metaLines.forEach((line) => {
@@ -10409,11 +10466,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       addLine(`Selected SF: ${Math.round(renoScenarioSummary.selectedSf || 0).toLocaleString()}`);
       addLine(`Room Count: ${Math.round(renoScenarioSummary.roomCount || 0).toLocaleString()}`);
       addLine(`Renovation Level: ${renoLevelConfig.label}`);
+      addLine(`Conversion Type: ${renoConversionConfig.label}`);
       addLine(`Conceptual Cost Range: ${formatCurrency(renoCostRange.minCost)} - ${formatCurrency(renoCostRange.maxCost)}`);
       addLine(renoConceptualDisclaimer);
-      if (renoSpecializedWarning) {
-        addLine(`Specialized-space warning: ${renoSpecializedWarning}`);
-      }
+      renoWarningLines.forEach((line) => addLine(`Warning: ${line}`));
 
       addSection('Room Type Mix');
       if (!renoScenarioSummary.roomTypeMix.length) {
@@ -10445,9 +10501,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     renoScenarioSummary,
     renoScenarioLabel,
     renoLevelConfig,
+    renoConversionConfig,
     renoCostRange,
-    renoSpecializedWarning,
+    renoWarningLines,
     renoConceptualDisclaimer,
+    scenarioSelection,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -18137,18 +18195,32 @@ useEffect(() => {
               <option key={level.value} value={level.value}>{level.label}</option>
             ))}
           </select>
+          <label style={{ display: 'block', fontSize: 12, marginTop: 8, marginBottom: 4, fontWeight: 600 }}>Conversion Type</label>
+          <select
+            className="mf-input"
+            value={renoConversionType}
+            onChange={(e) => setRenoConversionType(e.target.value)}
+            style={{ width: '100%' }}
+          >
+            {RENO_CONVERSION_TYPES.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
           <div style={{ marginTop: 6 }}>
             <b>Conceptual Cost Range:</b>{' '}
             {formatCurrency(renoCostRange.minCost)} - {formatCurrency(renoCostRange.maxCost)}
           </div>
+          <div style={{ marginTop: 2, fontSize: 11, color: '#667085' }}>
+            Conversion factor: x{Number(renoConversionConfig?.multiplier || 1).toFixed(2)}
+          </div>
           <div style={{ marginTop: 4, fontSize: 11, color: '#667085' }}>
             {renoConceptualDisclaimer}
           </div>
-          {renoSpecializedWarning ? (
-            <div style={{ marginTop: 6, fontSize: 11, color: '#b54708' }}>
-              <b>Specialized-space warning:</b> {renoSpecializedWarning}
+          {renoWarningLines.map((line, idx) => (
+            <div key={`reno-warning-${idx}`} style={{ marginTop: idx === 0 ? 6 : 2, fontSize: 11, color: '#b54708' }}>
+              <b>Warning:</b> {line}
             </div>
-          ) : null}
+          ))}
         </div>
 
         <div style={{ marginBottom: 8 }}>
