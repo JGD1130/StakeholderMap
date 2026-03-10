@@ -9517,14 +9517,55 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const toggleScenarioRoom = useCallback((roomMeta) => {
     if (!roomMeta?.roomId) return;
+    const sourceRoomId = String(roomMeta.roomId || '').trim();
+    if (!sourceRoomId) return;
+    const mergeState = scenarioMergeStateRef.current || {};
+    const supersededEntry = mergeState.bySourceRoomId?.get(sourceRoomId);
+    let activeRoomId = sourceRoomId;
+    let activeRoomMeta = roomMeta;
+    if (supersededEntry?.isScenarioSuperseded) {
+      const syntheticIds = Array.isArray(supersededEntry.syntheticRoomIds)
+        ? supersededEntry.syntheticRoomIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : [];
+      if (syntheticIds.length !== 1) {
+        console.log('[Planning Scenario Debug] selection ignored for superseded room', {
+          sourceRoomId,
+          syntheticIds
+        });
+        return;
+      }
+      activeRoomId = syntheticIds[0];
+      const syntheticRoom = mergeState.bySyntheticRoomId?.get(activeRoomId) || null;
+      activeRoomMeta = {
+        ...roomMeta,
+        roomId: activeRoomId,
+        buildingId: syntheticRoom?.buildingId || roomMeta.buildingId,
+        buildingName: syntheticRoom?.buildingName || roomMeta.buildingName,
+        floorName: syntheticRoom?.floorName || roomMeta.floorName,
+        revitId: syntheticRoom?.revitId || activeRoomId,
+        roomGuid: syntheticRoom?.roomGuid || activeRoomId,
+        roomNumber: syntheticRoom?.roomNumber || roomMeta.roomNumber,
+        roomType: syntheticRoom?.roomType || roomMeta.roomType,
+        department: syntheticRoom?.department || roomMeta.department,
+        area: Number(syntheticRoom?.area ?? roomMeta.area ?? 0) || 0,
+        categoryCode: syntheticRoom?.categoryCode || roomMeta.categoryCode,
+        seatCount: normalizeScenarioCapacityValue(syntheticRoom?.seatCount ?? roomMeta.seatCount),
+        geometry: syntheticRoom?.geometry ? cloneGeoJsonValue(syntheticRoom.geometry) : roomMeta.geometry
+      };
+      console.log('[Planning Scenario Debug] redirected superseded room selection to active scenario room', {
+        sourceRoomId,
+        activeRoomId
+      });
+    }
     setScenarioSelection((prev) => {
       const next = new Set(prev);
-      if (next.has(roomMeta.roomId)) {
-        next.delete(roomMeta.roomId);
+      if (next.has(activeRoomId)) {
+        next.delete(activeRoomId);
       } else {
-        next.add(roomMeta.roomId);
-        scenarioRoomInfoRef.current.set(roomMeta.roomId, roomMeta);
+        next.add(activeRoomId);
+        scenarioRoomInfoRef.current.set(activeRoomId, activeRoomMeta);
       }
+      if (sourceRoomId !== activeRoomId && next.has(sourceRoomId)) next.delete(sourceRoomId);
       handleScenarioSelectionChange(next);
       return next;
     });
