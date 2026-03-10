@@ -10362,6 +10362,38 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     return cloneGeoJsonValue(accFeature.geometry);
   }, []);
 
+  const buildScenarioAdjacencyGroups = useCallback((rooms = []) => {
+    const normalizedRooms = Array.isArray(rooms)
+      ? rooms.filter((room) => room?.roomId)
+      : [];
+    if (!normalizedRooms.length) return [];
+    const roomById = new Map(normalizedRooms.map((room) => [room.roomId, room]));
+    const groups = [];
+    const visited = new Set();
+    normalizedRooms.forEach((room) => {
+      const rootId = room?.roomId;
+      if (!rootId || visited.has(rootId)) return;
+      const queue = [rootId];
+      const groupIds = [];
+      while (queue.length) {
+        const currentId = queue.shift();
+        if (!currentId || visited.has(currentId)) continue;
+        visited.add(currentId);
+        groupIds.push(currentId);
+        const currentRoom = roomById.get(currentId);
+        if (!currentRoom) continue;
+        normalizedRooms.forEach((candidate) => {
+          const candidateId = candidate?.roomId;
+          if (!candidateId || candidateId === currentId || visited.has(candidateId)) return;
+          if (areScenarioRoomsAdjacent(currentRoom, candidate)) queue.push(candidateId);
+        });
+      }
+      const groupedRooms = groupIds.map((id) => roomById.get(id)).filter(Boolean);
+      if (groupedRooms.length) groups.push(groupedRooms);
+    });
+    return groups;
+  }, [areScenarioRoomsAdjacent]);
+
   const scenarioLayoutMergeValidation = useMemo(() => {
     const rooms = scenarioLayoutRoomCandidates || [];
     if (rooms.length < 2) return { canMerge: false, reason: 'Select at least 2 adjacent rooms.' };
@@ -10371,24 +10403,29 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const firstTokens = floorTokenSets[0] || [];
     const sameFloor = floorTokenSets.every((tokens) => tokens.length && firstTokens.length && tokens.some((token) => firstTokens.includes(token)));
     if (!sameFloor) return { canMerge: false, reason: 'Merge requires rooms from the same floor.' };
-    const visited = new Set();
-    const queue = [rooms[0].roomId];
-    while (queue.length) {
-      const current = queue.shift();
-      if (!current || visited.has(current)) continue;
-      visited.add(current);
-      const currentRoom = rooms.find((room) => room.roomId === current);
-      if (!currentRoom) continue;
-      rooms.forEach((candidate) => {
-        if (candidate.roomId === current || visited.has(candidate.roomId)) return;
-        if (areScenarioRoomsAdjacent(currentRoom, candidate)) queue.push(candidate.roomId);
-      });
+    const mergeGroups = buildScenarioAdjacencyGroups(rooms);
+    if (!mergeGroups.length) return { canMerge: false, reason: 'Select at least 2 adjacent rooms.' };
+    if (mergeGroups.some((group) => (group?.length || 0) < 2)) {
+      return {
+        canMerge: false,
+        reason: 'Each merge group must contain at least 2 adjacent rooms. Deselect isolated rooms and try again.'
+      };
     }
-    if (visited.size !== rooms.length) return { canMerge: false, reason: 'Selected rooms must form one adjacent group.' };
-    const mergedGeometry = buildScenarioUnionGeometry(rooms);
-    if (!mergedGeometry) return { canMerge: false, reason: 'Unable to merge selected room geometry.' };
-    return { canMerge: true, reason: '', mergedGeometry };
-  }, [scenarioLayoutRoomCandidates, areScenarioRoomsAdjacent, buildScenarioUnionGeometry]);
+    const groupsWithGeometry = mergeGroups
+      .map((groupRooms) => ({
+        rooms: groupRooms,
+        mergedGeometry: buildScenarioUnionGeometry(groupRooms)
+      }))
+      .filter((entry) => Array.isArray(entry?.rooms) && entry.rooms.length && entry?.mergedGeometry);
+    if (groupsWithGeometry.length !== mergeGroups.length) {
+      return { canMerge: false, reason: 'Unable to merge selected room geometry.' };
+    }
+    return {
+      canMerge: true,
+      reason: '',
+      mergeGroups: groupsWithGeometry
+    };
+  }, [scenarioLayoutRoomCandidates, buildScenarioAdjacencyGroups, buildScenarioUnionGeometry]);
 
   const scenarioLayoutRemoveDividerValidation = useMemo(() => {
     const rooms = scenarioLayoutRoomCandidates || [];
@@ -10406,52 +10443,71 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert(scenarioLayoutMergeValidation.reason || 'Unable to merge selected rooms.');
       return;
     }
-    const rooms = scenarioLayoutRoomCandidates || [];
-    const first = rooms[0];
-    const sourceRoomIds = rooms.map((room) => room.roomId);
-    const mergedSf = rooms.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
-    const mergedSeats = rooms.reduce((sum, room) => sum + (Number(room.seatCount || 0) || 0), 0);
-    const mergedBaseSeats = rooms.reduce((sum, room) => sum + (Number(room.baseSeatCount || 0) || 0), 0);
-    const categories = Array.from(new Set(rooms.map((room) => normalizeScenarioCategoryCode(room.categoryCode || '')).filter(Boolean)));
-    const departments = Array.from(new Set(rooms.map((room) => norm(room.department || '')).filter(Boolean)));
-    const baseCategories = Array.from(new Set(rooms.map((room) => normalizeScenarioCategoryCode(room.baseCategoryCode || '')).filter(Boolean)));
-    const baseDepartments = Array.from(new Set(rooms.map((room) => norm(room.baseDepartment || '')).filter(Boolean)));
-    const mergeId = `layout-merge-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const syntheticRoomId = `synthetic-${mergeId}`;
-    const syntheticRoom = {
-      roomId: syntheticRoomId,
-      buildingId: first?.buildingId || '',
-      buildingName: first?.buildingName || first?.buildingId || '',
-      floorName: first?.floorName || '',
-      roomNumber: `MERGED-${rooms.length}`,
-      roomType: 'Merged Scenario Room',
-      department: departments.length === 1 ? departments[0] : (scenarioAssignedDept || first?.department || ''),
-      baseDepartment: baseDepartments.length === 1 ? baseDepartments[0] : (first?.baseDepartment || ''),
-      area: mergedSf,
-      categoryCode: categories.length === 1 ? categories[0] : (categories[0] || ''),
-      baseCategoryCode: baseCategories.length === 1 ? baseCategories[0] : (baseCategories[0] || categories[0] || ''),
-      seatCount: mergedSeats,
-      baseSeatCount: mergedBaseSeats,
-      geometry: cloneGeoJsonValue(scenarioLayoutMergeValidation.mergedGeometry),
-      deriveAreaFromSources: false,
-      deriveSeatsFromSources: false
-    };
-    appendScenarioOperation('layoutMerge', {
-      mergeId,
-      sourceRoomIds,
-      syntheticRoomId,
-      syntheticRoom,
-      scenarioGeometry: {
-        scenarioId: scenarioSessionIdRef.current,
+    const mergeGroups = Array.isArray(scenarioLayoutMergeValidation.mergeGroups)
+      ? scenarioLayoutMergeValidation.mergeGroups
+      : [];
+    if (!mergeGroups.length) {
+      alert('Unable to resolve merge groups from selected rooms.');
+      return;
+    }
+    const syntheticRoomIds = [];
+    mergeGroups.forEach((group, idx) => {
+      const rooms = Array.isArray(group?.rooms) ? group.rooms.filter(Boolean) : [];
+      if (rooms.length < 2 || !group?.mergedGeometry) return;
+      const first = rooms[0];
+      const sourceRoomIds = rooms.map((room) => room.roomId);
+      const mergedSf = rooms.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
+      const mergedSeats = rooms.reduce((sum, room) => sum + (Number(room.seatCount || 0) || 0), 0);
+      const mergedBaseSeats = rooms.reduce((sum, room) => sum + (Number(room.baseSeatCount || 0) || 0), 0);
+      const categories = Array.from(new Set(rooms.map((room) => normalizeScenarioCategoryCode(room.categoryCode || '')).filter(Boolean)));
+      const departments = Array.from(new Set(rooms.map((room) => norm(room.department || '')).filter(Boolean)));
+      const baseCategories = Array.from(new Set(rooms.map((room) => normalizeScenarioCategoryCode(room.baseCategoryCode || '')).filter(Boolean)));
+      const baseDepartments = Array.from(new Set(rooms.map((room) => norm(room.baseDepartment || '')).filter(Boolean)));
+      const mergeId = `layout-merge-${Date.now().toString(36)}-${idx + 1}-${Math.random().toString(36).slice(2, 8)}`;
+      const syntheticRoomId = `synthetic-${mergeId}`;
+      const syntheticRoom = {
         roomId: syntheticRoomId,
-        geometry: cloneGeoJsonValue(syntheticRoom.geometry),
+        buildingId: first?.buildingId || '',
+        buildingName: first?.buildingName || first?.buildingId || '',
+        floorName: first?.floorName || '',
+        roomNumber: `MERGED-${rooms.length}`,
+        roomType: 'Merged Scenario Room',
+        department: departments.length === 1 ? departments[0] : (scenarioAssignedDept || first?.department || ''),
+        baseDepartment: baseDepartments.length === 1 ? baseDepartments[0] : (first?.baseDepartment || ''),
+        area: mergedSf,
+        categoryCode: categories.length === 1 ? categories[0] : (categories[0] || ''),
+        baseCategoryCode: baseCategories.length === 1 ? baseCategories[0] : (baseCategories[0] || categories[0] || ''),
+        seatCount: mergedSeats,
+        baseSeatCount: mergedBaseSeats,
+        geometry: cloneGeoJsonValue(group.mergedGeometry),
+        deriveAreaFromSources: false,
+        deriveSeatsFromSources: false
+      };
+      appendScenarioOperation('layoutMerge', {
+        mergeId,
         sourceRoomIds,
-        operationType: 'merge'
-      }
+        syntheticRoomId,
+        syntheticRoom,
+        scenarioGeometry: {
+          scenarioId: scenarioSessionIdRef.current,
+          roomId: syntheticRoomId,
+          geometry: cloneGeoJsonValue(syntheticRoom.geometry),
+          sourceRoomIds,
+          operationType: 'merge'
+        }
+      });
+      syntheticRoomIds.push(syntheticRoomId);
     });
-    setScenarioSelectionToRoomIds([syntheticRoomId]);
-    console.log('[Planning Scenario Debug] layout merge applied', { sourceRoomIds, syntheticRoomId });
-  }, [scenarioLayoutMergeValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation, setScenarioSelectionToRoomIds]);
+    if (!syntheticRoomIds.length) {
+      alert('No adjacent room groups were available to merge.');
+      return;
+    }
+    setScenarioSelectionToRoomIds(syntheticRoomIds);
+    console.log('[Planning Scenario Debug] layout merge applied', {
+      groupCount: syntheticRoomIds.length,
+      syntheticRoomIds
+    });
+  }, [scenarioLayoutMergeValidation, scenarioAssignedDept, appendScenarioOperation, setScenarioSelectionToRoomIds]);
 
   const applyScenarioLayoutRemoveDivider = useCallback(() => {
     if (!scenarioLayoutRemoveDividerValidation.canRemove) {
