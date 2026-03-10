@@ -10418,6 +10418,119 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       [Number(start[0]) - ux * ext, Number(start[1]) - uy * ext],
       [Number(end[0]) + ux * ext, Number(end[1]) + uy * ext]
     ]);
+    const splitByHalfPlaneFallback = () => {
+      const EPS = 1e-12;
+      const geometry = feature?.geometry || null;
+      if (!geometry) return [];
+
+      const buildFeatureFromRing = (ring) => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Polygon', coordinates: [ring] }
+      });
+
+      const squaredDist = (a, b) => {
+        const dx2 = Number(a?.[0] || 0) - Number(b?.[0] || 0);
+        const dy2 = Number(a?.[1] || 0) - Number(b?.[1] || 0);
+        return (dx2 * dx2) + (dy2 * dy2);
+      };
+
+      const dedupeSequential = (coords) => {
+        const out = [];
+        (coords || []).forEach((pt) => {
+          if (!Array.isArray(pt) || pt.length < 2) return;
+          const next = [Number(pt[0]), Number(pt[1])];
+          if (!Number.isFinite(next[0]) || !Number.isFinite(next[1])) return;
+          if (!out.length || squaredDist(out[out.length - 1], next) > EPS) out.push(next);
+        });
+        return out;
+      };
+
+      const getOuterRing = () => {
+        try {
+          if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates?.[0])) {
+            return geometry.coordinates[0];
+          }
+          if (geometry.type === 'MultiPolygon' && Array.isArray(geometry.coordinates)) {
+            let bestRing = null;
+            let bestArea = -1;
+            geometry.coordinates.forEach((polyCoords) => {
+              const ring = Array.isArray(polyCoords?.[0]) ? polyCoords[0] : null;
+              if (!ring) return;
+              try {
+                const area = turf.area(buildFeatureFromRing(ring)) || 0;
+                if (area > bestArea) {
+                  bestArea = area;
+                  bestRing = ring;
+                }
+              } catch {}
+            });
+            return bestRing;
+          }
+        } catch {}
+        return null;
+      };
+
+      const intersectSegmentWithLine = (p1, p2, v1, v2) => {
+        const denom = (v1 - v2);
+        if (Math.abs(denom) < EPS) return null;
+        const t = v1 / denom;
+        if (!Number.isFinite(t) || t < -EPS || t > (1 + EPS)) return null;
+        const x = Number(p1[0]) + t * (Number(p2[0]) - Number(p1[0]));
+        const y = Number(p1[1]) + t * (Number(p2[1]) - Number(p1[1]));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return [x, y];
+      };
+
+      const clipRingBySide = (ring, keepPositive) => {
+        const raw = dedupeSequential(ring || []);
+        if (raw.length < 3) return null;
+        const openRing = squaredDist(raw[0], raw[raw.length - 1]) <= EPS ? raw.slice(0, -1) : raw.slice();
+        if (openRing.length < 3) return null;
+
+        const clipped = [];
+        for (let i = 0; i < openRing.length; i += 1) {
+          const p1 = openRing[i];
+          const p2 = openRing[(i + 1) % openRing.length];
+          const v1 = dx * (Number(p1[1]) - Number(start[1])) - dy * (Number(p1[0]) - Number(start[0]));
+          const v2 = dx * (Number(p2[1]) - Number(start[1])) - dy * (Number(p2[0]) - Number(start[0]));
+          const in1 = keepPositive ? (v1 >= -EPS) : (v1 <= EPS);
+          const in2 = keepPositive ? (v2 >= -EPS) : (v2 <= EPS);
+          if (in1 && in2) {
+            clipped.push(p2);
+          } else if (in1 && !in2) {
+            const iPt = intersectSegmentWithLine(p1, p2, v1, v2);
+            if (iPt) clipped.push(iPt);
+          } else if (!in1 && in2) {
+            const iPt = intersectSegmentWithLine(p1, p2, v1, v2);
+            if (iPt) clipped.push(iPt);
+            clipped.push(p2);
+          }
+        }
+        const clean = dedupeSequential(clipped);
+        if (clean.length < 3) return null;
+        if (squaredDist(clean[0], clean[clean.length - 1]) > EPS) clean.push(clean[0]);
+        if (clean.length < 4) return null;
+        return clean;
+      };
+
+      const outerRing = getOuterRing();
+      if (!outerRing) return [];
+      const posRing = clipRingBySide(outerRing, true);
+      const negRing = clipRingBySide(outerRing, false);
+      const candidates = [posRing, negRing]
+        .filter(Boolean)
+        .map((ring) => buildFeatureFromRing(ring))
+        .filter((part) => {
+          try {
+            return (turf.area(part) || 0) > 1e-8;
+          } catch {
+            return false;
+          }
+        });
+      return candidates;
+    };
+
     let pieces = [];
     try {
       const boundary = turf.polygonToLine(feature);
@@ -10455,6 +10568,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         .sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
     } catch {
       pieces = [];
+    }
+    if (pieces.length < 2) {
+      const fallbackPieces = splitByHalfPlaneFallback();
+      if (fallbackPieces.length >= 2) {
+        pieces = fallbackPieces.sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
+        console.log('[Planning Scenario Debug] split fallback applied', { roomId, piecesCount: pieces.length });
+      }
     }
     if (pieces.length < 2) {
       console.log('[Planning Scenario Debug] split failed: no polygonized pieces', { roomId, piecesCount: pieces.length });
