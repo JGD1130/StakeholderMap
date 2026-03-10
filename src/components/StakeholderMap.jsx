@@ -10215,7 +10215,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     try {
       const featureA = { type: 'Feature', properties: {}, geometry: roomA.geometry };
       const featureB = { type: 'Feature', properties: {}, geometry: roomB.geometry };
-      return turf.booleanIntersects(turf.polygonToLine(featureA), turf.polygonToLine(featureB));
+      if (turf.booleanIntersects(turf.polygonToLine(featureA), turf.polygonToLine(featureB))) return true;
+      // Tolerate tiny drafting gaps between rooms.
+      const bufferedA = turf.buffer(featureA, 0.15, { units: 'meters' });
+      return turf.booleanIntersects(bufferedA, featureB);
     } catch {
       return false;
     }
@@ -10280,6 +10283,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const applyScenarioLayoutMerge = useCallback(() => {
     if (!scenarioLayoutMergeValidation.canMerge) {
+      console.log('[Planning Scenario Debug] merge validation failed', scenarioLayoutMergeValidation);
       alert(scenarioLayoutMergeValidation.reason || 'Unable to merge selected rooms.');
       return;
     }
@@ -10326,10 +10330,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         operationType: 'merge'
       }
     });
+    console.log('[Planning Scenario Debug] layout merge applied', { sourceRoomIds, syntheticRoomId });
   }, [scenarioLayoutMergeValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation]);
 
   const applyScenarioLayoutRemoveDivider = useCallback(() => {
     if (!scenarioLayoutRemoveDividerValidation.canRemove) {
+      console.log('[Planning Scenario Debug] remove divider validation failed', scenarioLayoutRemoveDividerValidation);
       alert(scenarioLayoutRemoveDividerValidation.reason || 'Unable to remove divider for selected rooms.');
       return;
     }
@@ -10376,13 +10382,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         operationType: 'removeDivider'
       }
     });
+    console.log('[Planning Scenario Debug] remove divider applied', { sourceRoomIds, syntheticRoomId });
   }, [scenarioLayoutRemoveDividerValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation]);
 
   const applyScenarioRoomSplit = useCallback((targetRoomId, startCoord, endCoord) => {
     const roomId = String(targetRoomId || '').trim();
     if (!roomId) return false;
+    console.log('[Planning Scenario Debug] split requested', { roomId, startCoord, endCoord });
     const effectiveRoom = buildEffectiveScenarioRoomWithGeometry(roomId);
     if (!effectiveRoom?.geometry) {
+      console.log('[Planning Scenario Debug] split failed: geometry missing', { roomId });
       alert('Unable to resolve room geometry for split.');
       return false;
     }
@@ -10411,14 +10420,26 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     ]);
     let pieces = [];
     try {
-      const splitResult = turf.lineSplit(feature, splitLine);
+      const boundary = turf.polygonToLine(feature);
+      const boundaryLines = turf.flatten(boundary)?.features || [];
+      const lineInputs = [...boundaryLines, splitLine].filter(Boolean);
+      const splitResult = turf.polygonize(turf.featureCollection(lineInputs));
       pieces = (splitResult?.features || [])
         .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'))
+        .filter((part) => {
+          try {
+            const centroid = turf.centroid(part);
+            return turf.booleanPointInPolygon(centroid, feature);
+          } catch {
+            return false;
+          }
+        })
         .sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
     } catch {
       pieces = [];
     }
     if (pieces.length < 2) {
+      console.log('[Planning Scenario Debug] split failed: no polygonized pieces', { roomId, piecesCount: pieces.length });
       alert('Split line must cross the room and start/end on the boundary.');
       return false;
     }
@@ -10488,6 +10509,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         operationType: 'split'
       }))
     });
+    console.log('[Planning Scenario Debug] split applied', { roomId, syntheticCount: syntheticRooms.length });
     return true;
   }, [buildEffectiveScenarioRoomWithGeometry, appendScenarioOperation]);
 
@@ -10502,11 +10524,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const activateScenarioSplitMode = useCallback(() => {
     if (!scenarioSplitValidation.canSplit) {
+      console.log('[Planning Scenario Debug] split mode validation failed', scenarioSplitValidation);
       alert(scenarioSplitValidation.reason || 'Unable to start split mode.');
       return;
     }
     setScenarioLayoutMode('split');
     setScenarioSplitDraft({ targetRoomId: scenarioSplitValidation.roomId, start: null });
+    console.log('[Planning Scenario Debug] split mode armed', { targetRoomId: scenarioSplitValidation.roomId });
   }, [scenarioSplitValidation]);
 
   useEffect(() => {
@@ -10542,6 +10566,49 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       })
       .filter(Boolean);
   }, [scenarioSelection, scenarioRoomOverrides, scenarioMergeState, buildEffectiveScenarioRoom, buildEffectiveSyntheticScenarioRoom]);
+
+  const scenarioSelectionRenderIds = useMemo(() => {
+    const ids = new Set();
+    const addId = (value) => {
+      if (value == null) return;
+      const raw = String(value).trim();
+      if (!raw) return;
+      ids.add(raw);
+      const asNum = Number(raw);
+      if (Number.isFinite(asNum)) ids.add(asNum);
+    };
+    const selectedIds = Array.from(scenarioSelection || []);
+    selectedIds.forEach((roomId) => {
+      addId(roomId);
+      const info = scenarioRoomInfoRef.current.get(roomId);
+      if (!info) return;
+      addId(info.revitId);
+      addId(info.roomGuid);
+      addId(info.roomNumber);
+    });
+    const effectiveIds = toEffectiveScenarioTargetRoomIds(selectedIds);
+    effectiveIds.forEach((roomId) => {
+      addId(roomId);
+      const syntheticRoom = scenarioMergeState.bySyntheticRoomId.get(roomId) || null;
+      const room = syntheticRoom
+        ? (buildEffectiveSyntheticScenarioRoom(syntheticRoom) || syntheticRoom)
+        : buildEffectiveScenarioRoom(roomId);
+      if (!room) return;
+      addId(room.roomId);
+      addId(room.scenarioRoomId);
+      addId(room.revitId);
+      addId(room.roomGuid);
+      addId(room.roomNumber);
+    });
+    return Array.from(ids);
+  }, [
+    scenarioSelection,
+    scenarioMergeState,
+    scenarioRoomOverrides,
+    buildEffectiveScenarioRoom,
+    buildEffectiveSyntheticScenarioRoom,
+    toEffectiveScenarioTargetRoomIds
+  ]);
 
   const scenarioSelectionSeatSummary = useMemo(() => {
     let baseSeats = 0;
@@ -10922,19 +10989,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         doc.setFont(undefined, 'normal');
       };
 
-      const selectedRenderIds = [];
-      Array.from(scenarioSelection || []).forEach((roomId) => {
-        const meta = scenarioRoomInfoRef.current.get(roomId);
-        if (!meta) return;
-        if (meta.revitId != null) selectedRenderIds.push(meta.revitId);
-        if (meta.roomGuid) selectedRenderIds.push(meta.roomGuid);
-        if (meta.roomNumber) selectedRenderIds.push(meta.roomNumber);
-        if (meta.roomId) selectedRenderIds.push(meta.roomId);
-      });
-
       const imageData = generateFloorplanImageData({
         ...currentFloorContextRef.current,
-        selectedIds: selectedRenderIds,
+        selectedIds: scenarioSelectionRenderIds,
         solidFill: true,
         labelOptions: { hideDrawing: true }
       });
@@ -11031,6 +11088,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     renoWarningLines,
     renoConceptualDisclaimer,
     scenarioSelection,
+    scenarioSelectionRenderIds,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -17053,6 +17111,24 @@ useEffect(() => {
 
       if (moveScenarioMode) {
         try {
+          if (scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
+            const targetRoomId = scenarioSplitDraft.targetRoomId;
+            const snappedPoint = snapScenarioPointToBoundary(targetRoomId, e.lngLat);
+            if (!Array.isArray(snappedPoint) || snappedPoint.length < 2) return;
+            const firstPoint = Array.isArray(scenarioSplitDraft.start) ? scenarioSplitDraft.start : null;
+            if (!firstPoint) {
+              console.log('[Planning Scenario Debug] split start point selected', { targetRoomId, point: snappedPoint });
+              setScenarioSplitDraft({ targetRoomId, start: snappedPoint });
+              return;
+            }
+            const splitApplied = applyScenarioRoomSplit(targetRoomId, firstPoint, snappedPoint);
+            if (splitApplied) {
+              setScenarioLayoutMode('');
+              setScenarioSplitDraft(null);
+            }
+            return;
+          }
+
           const rawProps = f.properties || {};
           const effectiveFeature = applyScenarioOverrideToFeature({ ...f, properties: rawProps });
           const scenarioProps = effectiveFeature?.properties || rawProps;
@@ -17102,24 +17178,6 @@ useEffect(() => {
             console.warn('Scenario click: could not build roomId', {
               buildingId, floorName, revitId, props: rawProps
             });
-            return;
-          }
-
-          if (scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
-            const targetRoomId = scenarioSplitDraft.targetRoomId;
-            if (roomId !== targetRoomId) return;
-            const snappedPoint = snapScenarioPointToBoundary(targetRoomId, e.lngLat);
-            if (!Array.isArray(snappedPoint) || snappedPoint.length < 2) return;
-            const firstPoint = Array.isArray(scenarioSplitDraft.start) ? scenarioSplitDraft.start : null;
-            if (!firstPoint) {
-              setScenarioSplitDraft({ targetRoomId, start: snappedPoint });
-              return;
-            }
-            const splitApplied = applyScenarioRoomSplit(targetRoomId, firstPoint, snappedPoint);
-            if (splitApplied) {
-              setScenarioLayoutMode('');
-              setScenarioSplitDraft(null);
-            }
             return;
           }
 
@@ -18464,16 +18522,16 @@ useEffect(() => {
             <button
               className="btn secondary"
               onClick={applyScenarioLayoutMerge}
-              disabled={!scenarioLayoutMergeValidation.canMerge}
-              title={scenarioLayoutMergeValidation.canMerge ? 'Merge adjacent selected rooms into one scenario room.' : scenarioLayoutMergeValidation.reason}
+              disabled={scenarioSelection.size === 0}
+              title={scenarioSelection.size === 0 ? 'Select rooms first.' : (scenarioLayoutMergeValidation.canMerge ? 'Merge adjacent selected rooms into one scenario room.' : scenarioLayoutMergeValidation.reason)}
             >
               Merge Rooms
             </button>
             <button
               className="btn secondary"
               onClick={applyScenarioLayoutRemoveDivider}
-              disabled={!scenarioLayoutRemoveDividerValidation.canRemove}
-              title={scenarioLayoutRemoveDividerValidation.canRemove ? 'Remove divider between two adjacent selected rooms.' : scenarioLayoutRemoveDividerValidation.reason}
+              disabled={scenarioSelection.size === 0}
+              title={scenarioSelection.size === 0 ? 'Select rooms first.' : (scenarioLayoutRemoveDividerValidation.canRemove ? 'Remove divider between two adjacent selected rooms.' : scenarioLayoutRemoveDividerValidation.reason)}
             >
               Remove Divider
             </button>
@@ -18487,11 +18545,11 @@ useEffect(() => {
                 }
                 activateScenarioSplitMode();
               }}
-              disabled={scenarioLayoutMode !== 'split' && !scenarioSplitValidation.canSplit}
+              disabled={scenarioLayoutMode !== 'split' && scenarioSelection.size === 0}
               title={
                 scenarioLayoutMode === 'split'
                   ? 'Cancel split mode.'
-                  : (scenarioSplitValidation.canSplit ? 'Split selected room with a straight line.' : scenarioSplitValidation.reason)
+                  : (scenarioSelection.size === 0 ? 'Select one room first.' : (scenarioSplitValidation.canSplit ? 'Split selected room with a straight line.' : scenarioSplitValidation.reason))
               }
             >
               {scenarioLayoutMode === 'split' ? 'Cancel Split Mode' : 'Split Room'}
@@ -18638,6 +18696,7 @@ useEffect(() => {
               const margin = 20;
               const imgData = generateFloorplanImageData({
                 ...currentFloorContextRef.current,
+                selectedIds: scenarioSelectionRenderIds,
                 labelOptions: { hideDrawing: true }
               });
               let imageAdded = false;
