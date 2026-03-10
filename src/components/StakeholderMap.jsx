@@ -17099,6 +17099,11 @@ useEffect(() => {
     const map = mapRef.current;
 
     const onFloorClick = (e) => {
+      // In split mode, allow the map-level split click handler to receive the event.
+      if (moveScenarioMode && scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
+        return;
+      }
+
       try {
         e.preventDefault?.();
         if (e.originalEvent) {
