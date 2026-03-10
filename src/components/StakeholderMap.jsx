@@ -848,6 +848,30 @@ function buildFloorplanCanvas(fc, options = {}) {
   const selectedIdsSet = new Set(
     (options?.selectedIds || []).map((v) => normalizeId(v)).filter((v) => v != null)
   );
+  const selectedGeometryFeatures = Array.isArray(options?.selectedGeometries)
+    ? options.selectedGeometries
+        .map((value) => {
+          if (!value) return null;
+          if (value.type === 'Feature' && value.geometry) {
+            return { type: 'Feature', properties: {}, geometry: value.geometry };
+          }
+          if (value.type === 'Polygon' || value.type === 'MultiPolygon') {
+            return { type: 'Feature', properties: {}, geometry: value };
+          }
+          return null;
+        })
+        .filter(Boolean)
+    : [];
+  const isSelectedByGeometry = (feature) => {
+    if (!feature?.geometry || !selectedGeometryFeatures.length) return false;
+    const roomFeature = { type: 'Feature', properties: {}, geometry: feature.geometry };
+    for (const selectedFeature of selectedGeometryFeatures) {
+      try {
+        if (turf.booleanIntersects(roomFeature, selectedFeature)) return true;
+      } catch {}
+    }
+    return false;
+  };
   const solidFill = options?.solidFill === true;
   const labelOptions = options?.labelOptions || {};
   const labelsEnabled = labelOptions.enabled !== false;
@@ -944,18 +968,28 @@ function buildFloorplanCanvas(fc, options = {}) {
       : '#f7f7f7';
     let outline = '#2b2b2b';
     let outlineWidth = kind === 'room' ? 2.2 : 1.5;
-    const fidNorm = normalizeId(
-      feature?.id ??
-      props?.RevitId ??
-      props?.Revit_UniqueId ??
-      props?.RevitUniqueId ??
-      props?.Revit_UniqueID ??
-      props?.['Revit Unique Id'] ??
-      props?.['Room GUID'] ??
-      props?.roomGuid ??
-      props?.id
-    );
-    const isSelected = fidNorm != null && selectedIdsSet.has(fidNorm);
+    const fidCandidates = [
+      feature?.id,
+      props?.__scenarioRoomId,
+      props?.scenarioRoomId,
+      props?.roomId,
+      props?.RoomId,
+      props?.RevitId,
+      props?.Revit_UniqueId,
+      props?.RevitUniqueId,
+      props?.Revit_UniqueID,
+      props?.['Revit Unique Id'],
+      props?.['Room GUID'],
+      props?.roomGuid,
+      props?.id,
+      props?.Number,
+      props?.RoomNumber,
+      props?.number
+    ]
+      .map((value) => normalizeId(value))
+      .filter((value) => value != null);
+    const isSelectedById = fidCandidates.some((value) => selectedIdsSet.has(value));
+    const isSelected = kind === 'room' && (isSelectedById || isSelectedByGeometry(feature));
     if (kind === 'door') {
       fill = '#1d1d1d';
       outline = '#0d0d0d';
@@ -10748,6 +10782,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     toEffectiveScenarioTargetRoomIds
   ]);
 
+  const scenarioSelectionRenderGeometries = useMemo(() => {
+    return effectiveScenarioSelectedRooms
+      .map((room) => cloneGeoJsonValue(room?.geometry))
+      .filter((geometry) => geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon'));
+  }, [effectiveScenarioSelectedRooms]);
+
   const scenarioSelectionSeatSummary = useMemo(() => {
     let baseSeats = 0;
     let scenarioSeats = 0;
@@ -11138,6 +11178,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         ...(currentFloorContextRef.current || {}),
         fc: liveFloorFc,
         selectedIds: scenarioSelectionRenderIds,
+        selectedGeometries: scenarioSelectionRenderGeometries,
         solidFill: true,
         labelOptions: { hideDrawing: true }
       });
@@ -11235,6 +11276,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     renoConceptualDisclaimer,
     scenarioSelection,
     scenarioSelectionRenderIds,
+    scenarioSelectionRenderGeometries,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -18885,6 +18927,7 @@ useEffect(() => {
                 ...(currentFloorContextRef.current || {}),
                 fc: liveFloorFc,
                 selectedIds: scenarioSelectionRenderIds,
+                selectedGeometries: scenarioSelectionRenderGeometries,
                 solidFill: true,
                 labelOptions: { hideDrawing: true }
               });
