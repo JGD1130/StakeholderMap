@@ -17099,11 +17099,6 @@ useEffect(() => {
     const map = mapRef.current;
 
     const onFloorClick = (e) => {
-      // In split mode, allow the map-level split click handler to receive the event.
-      if (moveScenarioMode && scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
-        return;
-      }
-
       try {
         e.preventDefault?.();
         if (e.originalEvent) {
@@ -17124,11 +17119,6 @@ useEffect(() => {
 
       if (moveScenarioMode) {
         try {
-          if (scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
-            // Split mode click handling is managed by map-level handler to allow boundary clicks.
-            return;
-          }
-
           const rawProps = f.properties || {};
           const effectiveFeature = applyScenarioOverrideToFeature({ ...f, properties: rawProps });
           const scenarioProps = effectiveFeature?.properties || rawProps;
@@ -17178,6 +17168,39 @@ useEffect(() => {
             console.warn('Scenario click: could not build roomId', {
               buildingId, floorName, revitId, props: rawProps
             });
+            return;
+          }
+
+          if (scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
+            const targetRoomId = String(scenarioSplitDraft.targetRoomId || '').trim();
+            const effectiveClickedIds = new Set(
+              toEffectiveScenarioTargetRoomIds([roomId]).map((id) => String(id || '').trim()).filter(Boolean)
+            );
+            const clickedRoomMatchesTarget = roomId === targetRoomId || effectiveClickedIds.has(targetRoomId);
+            if (!clickedRoomMatchesTarget) {
+              console.log('[Planning Scenario Debug] split click ignored: clicked room does not match split target', {
+                targetRoomId,
+                clickedRoomId: roomId,
+                effectiveClickedIds: Array.from(effectiveClickedIds)
+              });
+              return;
+            }
+            const snappedPoint = snapScenarioPointToBoundary(targetRoomId, e?.lngLat);
+            if (!Array.isArray(snappedPoint) || snappedPoint.length < 2) {
+              console.log('[Planning Scenario Debug] split click ignored: unable to snap point to boundary', { targetRoomId });
+              return;
+            }
+            const firstPoint = Array.isArray(scenarioSplitDraft.start) ? scenarioSplitDraft.start : null;
+            if (!firstPoint) {
+              console.log('[Planning Scenario Debug] split start point selected', { targetRoomId, point: snappedPoint });
+              setScenarioSplitDraft({ targetRoomId, start: snappedPoint });
+              return;
+            }
+            const splitApplied = applyScenarioRoomSplit(targetRoomId, firstPoint, snappedPoint);
+            if (splitApplied) {
+              setScenarioLayoutMode('');
+              setScenarioSplitDraft(null);
+            }
             return;
           }
 
@@ -17699,75 +17722,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, snapScenarioPointToBoundary, applyScenarioRoomSplit]);
-
-  useEffect(() => {
-    if (!mapLoaded || !mapRef.current) return;
-    if (!moveScenarioMode) return;
-    if (scenarioLayoutMode !== 'split') return;
-    if (!scenarioSplitDraft?.targetRoomId) return;
-    const map = mapRef.current;
-    const onSplitMapClick = (e) => {
-      const targetRoomId = scenarioSplitDraft.targetRoomId;
-      if (!targetRoomId) return;
-      const raw = [Number(e?.lngLat?.lng), Number(e?.lngLat?.lat)];
-      if (!Number.isFinite(raw[0]) || !Number.isFinite(raw[1])) {
-        console.log('[Planning Scenario Debug] split click ignored: invalid map point', { targetRoomId, raw });
-        return;
-      }
-      const targetGeometry = resolveScenarioRoomGeometry(targetRoomId);
-      let isInsideTarget = false;
-      let nearBoundaryMeters = Number.POSITIVE_INFINITY;
-      try {
-        if (targetGeometry) {
-          const targetFeature = { type: 'Feature', properties: {}, geometry: targetGeometry };
-          isInsideTarget = turf.booleanPointInPolygon(turf.point(raw), targetFeature);
-          const boundary = turf.polygonToLine(targetFeature);
-          const snappedForDistance = turf.nearestPointOnLine(boundary, turf.point(raw));
-          const snappedCoord = snappedForDistance?.geometry?.coordinates;
-          if (Array.isArray(snappedCoord) && Number.isFinite(snappedCoord[0]) && Number.isFinite(snappedCoord[1])) {
-            nearBoundaryMeters = turf.distance(turf.point(raw), turf.point(snappedCoord), { units: 'meters' }) || 0;
-          }
-        }
-      } catch {}
-      if (!isInsideTarget && nearBoundaryMeters > 20) {
-        console.log('[Planning Scenario Debug] split click ignored: outside target room', {
-          targetRoomId,
-          raw,
-          nearBoundaryMeters
-        });
-        return;
-      }
-      const snappedPoint = snapScenarioPointToBoundary(targetRoomId, e?.lngLat);
-      if (!Array.isArray(snappedPoint) || snappedPoint.length < 2) {
-        console.log('[Planning Scenario Debug] split click ignored: snap failed', { targetRoomId, raw });
-        return;
-      }
-      const firstPoint = Array.isArray(scenarioSplitDraft.start) ? scenarioSplitDraft.start : null;
-      if (!firstPoint) {
-        console.log('[Planning Scenario Debug] split start point selected', { targetRoomId, point: snappedPoint });
-        setScenarioSplitDraft({ targetRoomId, start: snappedPoint });
-        return;
-      }
-      const splitApplied = applyScenarioRoomSplit(targetRoomId, firstPoint, snappedPoint);
-      if (splitApplied) {
-        setScenarioLayoutMode('');
-        setScenarioSplitDraft(null);
-      }
-    };
-    map.on('click', onSplitMapClick);
-    return () => {
-      try { map.off('click', onSplitMapClick); } catch {}
-    };
-  }, [
-    mapLoaded,
-    moveScenarioMode,
-    scenarioLayoutMode,
-    scenarioSplitDraft,
-    resolveScenarioRoomGeometry,
-    snapScenarioPointToBoundary,
-    applyScenarioRoomSplit
-  ]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, snapScenarioPointToBoundary, applyScenarioRoomSplit, toEffectiveScenarioTargetRoomIds]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
