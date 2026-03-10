@@ -9207,16 +9207,33 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const toEffectiveScenarioTargetRoomIds = useCallback((roomIds = []) => {
     const mergeState = scenarioMergeStateRef.current || { bySourceRoomId: new Map(), sourceToSyntheticIds: new Map() };
     const nextIds = new Set();
-    (roomIds || []).forEach((roomId) => {
+    const queue = Array.from(roomIds || []).map((id) => String(id || '').trim()).filter(Boolean);
+    const visited = new Set();
+    while (queue.length) {
+      const roomId = String(queue.shift() || '').trim();
+      if (!roomId || visited.has(roomId)) continue;
+      visited.add(roomId);
       const mappedIds = mergeState.sourceToSyntheticIds?.get(roomId);
       if (Array.isArray(mappedIds) && mappedIds.length) {
-        mappedIds.forEach((id) => nextIds.add(id));
-        return;
+        mappedIds.forEach((id) => {
+          const key = String(id || '').trim();
+          if (key && !visited.has(key)) queue.push(key);
+        });
+        continue;
       }
-      const mergeEntry = mergeState.bySourceRoomId.get(roomId);
-      if (mergeEntry?.syntheticRoomId) nextIds.add(mergeEntry.syntheticRoomId);
-      else nextIds.add(roomId);
-    });
+      const mergeEntry = mergeState.bySourceRoomId?.get(roomId);
+      const syntheticIds = Array.isArray(mergeEntry?.syntheticRoomIds)
+        ? mergeEntry.syntheticRoomIds
+        : (mergeEntry?.syntheticRoomId ? [mergeEntry.syntheticRoomId] : []);
+      if (syntheticIds.length) {
+        syntheticIds.forEach((id) => {
+          const key = String(id || '').trim();
+          if (key && !visited.has(key)) queue.push(key);
+        });
+        continue;
+      }
+      nextIds.add(roomId);
+    }
     return Array.from(nextIds);
   }, []);
 
@@ -9496,6 +9513,33 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     applyScenarioHighlight(highlightIds);
     cleanScenarioAssignments(nextSelection);
   }, [recomputeScenarioTotals, applyScenarioHighlight, clearScenarioFeatureStates, cleanScenarioAssignments]);
+
+  const setScenarioSelectionToRoomIds = useCallback((roomIds = []) => {
+    const normalizedIds = Array.from(new Set((roomIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+    const nextSelection = new Set(normalizedIds);
+    normalizedIds.forEach((roomId) => {
+      if (scenarioRoomInfoRef.current.has(roomId)) return;
+      const synthetic = scenarioMergeStateRef.current?.bySyntheticRoomId?.get(roomId) || null;
+      if (!synthetic) return;
+      scenarioRoomInfoRef.current.set(roomId, {
+        roomId,
+        buildingId: synthetic.buildingId || '',
+        buildingName: synthetic.buildingName || synthetic.buildingId || '',
+        floorName: synthetic.floorName || '',
+        revitId: synthetic.revitId ?? synthetic.roomId ?? roomId,
+        roomGuid: synthetic.roomGuid ?? synthetic.roomId ?? roomId,
+        roomNumber: synthetic.roomNumber || roomId,
+        roomType: synthetic.roomType || '',
+        department: synthetic.department || '',
+        area: Number(synthetic.area || 0) || 0,
+        categoryCode: synthetic.categoryCode || '',
+        seatCount: normalizeScenarioCapacityValue(synthetic.seatCount),
+        geometry: synthetic.geometry ? cloneGeoJsonValue(synthetic.geometry) : null
+      });
+    });
+    setScenarioSelection(nextSelection);
+    handleScenarioSelectionChange(nextSelection);
+  }, [handleScenarioSelectionChange]);
 
   const applyScenarioCandidates = useCallback((candidates = []) => {
     const prevSelection = previousScenarioSelectionRef.current;
@@ -10405,8 +10449,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         operationType: 'merge'
       }
     });
+    setScenarioSelectionToRoomIds([syntheticRoomId]);
     console.log('[Planning Scenario Debug] layout merge applied', { sourceRoomIds, syntheticRoomId });
-  }, [scenarioLayoutMergeValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation]);
+  }, [scenarioLayoutMergeValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation, setScenarioSelectionToRoomIds]);
 
   const applyScenarioLayoutRemoveDivider = useCallback(() => {
     if (!scenarioLayoutRemoveDividerValidation.canRemove) {
@@ -10457,8 +10502,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         operationType: 'removeDivider'
       }
     });
+    setScenarioSelectionToRoomIds([syntheticRoomId]);
     console.log('[Planning Scenario Debug] remove divider applied', { sourceRoomIds, syntheticRoomId });
-  }, [scenarioLayoutRemoveDividerValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation]);
+  }, [scenarioLayoutRemoveDividerValidation, scenarioLayoutRoomCandidates, scenarioAssignedDept, appendScenarioOperation, setScenarioSelectionToRoomIds]);
 
   const applyScenarioRoomSplit = useCallback((targetRoomId, startCoord, endCoord) => {
     const roomId = String(targetRoomId || '').trim();
@@ -10722,9 +10768,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         operationType: 'split'
       }))
     });
+    setScenarioSelectionToRoomIds(syntheticRooms.map((room) => room.roomId));
     console.log('[Planning Scenario Debug] split applied', { roomId, syntheticCount: syntheticRooms.length });
     return true;
-  }, [buildEffectiveScenarioRoomWithGeometry, appendScenarioOperation]);
+  }, [buildEffectiveScenarioRoomWithGeometry, appendScenarioOperation, setScenarioSelectionToRoomIds]);
 
   const scenarioSplitValidation = useMemo(() => {
     if (scenarioLayoutRoomCandidates.length !== 1) {
