@@ -17173,30 +17173,37 @@ useEffect(() => {
 
           if (scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId) {
             const targetRoomId = String(scenarioSplitDraft.targetRoomId || '').trim();
-            const effectiveClickedIds = new Set(
-              toEffectiveScenarioTargetRoomIds([roomId]).map((id) => String(id || '').trim()).filter(Boolean)
-            );
-            const clickedRoomMatchesTarget = roomId === targetRoomId || effectiveClickedIds.has(targetRoomId);
-            if (!clickedRoomMatchesTarget) {
-              console.log('[Planning Scenario Debug] split click ignored: clicked room does not match split target', {
-                targetRoomId,
-                clickedRoomId: roomId,
-                effectiveClickedIds: Array.from(effectiveClickedIds)
-              });
+            const rawPoint = [Number(e?.lngLat?.lng), Number(e?.lngLat?.lat)];
+            if (!Number.isFinite(rawPoint[0]) || !Number.isFinite(rawPoint[1])) {
+              console.log('[Planning Scenario Debug] split click ignored: invalid point', { targetRoomId, rawPoint });
               return;
             }
-            const snappedPoint = snapScenarioPointToBoundary(targetRoomId, e?.lngLat);
-            if (!Array.isArray(snappedPoint) || snappedPoint.length < 2) {
-              console.log('[Planning Scenario Debug] split click ignored: unable to snap point to boundary', { targetRoomId });
+
+            const targetGeometry = resolveScenarioRoomGeometry(targetRoomId);
+            if (!targetGeometry) {
+              console.log('[Planning Scenario Debug] split click ignored: target geometry missing', { targetRoomId });
+              alert('Unable to resolve selected room geometry for split.');
+              return;
+            }
+
+            let pointIsInsideTarget = false;
+            try {
+              const targetFeature = { type: 'Feature', properties: {}, geometry: targetGeometry };
+              pointIsInsideTarget = turf.booleanPointInPolygon(turf.point(rawPoint), targetFeature);
+            } catch {
+              pointIsInsideTarget = false;
+            }
+            if (!pointIsInsideTarget) {
+              console.log('[Planning Scenario Debug] split click ignored: point outside selected room', { targetRoomId, rawPoint });
               return;
             }
             const firstPoint = Array.isArray(scenarioSplitDraft.start) ? scenarioSplitDraft.start : null;
             if (!firstPoint) {
-              console.log('[Planning Scenario Debug] split start point selected', { targetRoomId, point: snappedPoint });
-              setScenarioSplitDraft({ targetRoomId, start: snappedPoint });
+              console.log('[Planning Scenario Debug] split start point selected', { targetRoomId, point: rawPoint });
+              setScenarioSplitDraft({ targetRoomId, start: rawPoint });
               return;
             }
-            const splitApplied = applyScenarioRoomSplit(targetRoomId, firstPoint, snappedPoint);
+            const splitApplied = applyScenarioRoomSplit(targetRoomId, firstPoint, rawPoint);
             if (splitApplied) {
               setScenarioLayoutMode('');
               setScenarioSplitDraft(null);
@@ -17722,7 +17729,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, snapScenarioPointToBoundary, applyScenarioRoomSplit, toEffectiveScenarioTargetRoomIds]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
