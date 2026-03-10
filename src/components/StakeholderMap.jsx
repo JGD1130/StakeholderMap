@@ -17325,14 +17325,26 @@ useEffect(() => {
             }
 
             let pointIsInsideTarget = false;
+            let nearBoundaryMeters = Number.POSITIVE_INFINITY;
             try {
               const targetFeature = { type: 'Feature', properties: {}, geometry: targetGeometry };
               pointIsInsideTarget = turf.booleanPointInPolygon(turf.point(rawPoint), targetFeature);
+              const boundary = turf.polygonToLine(targetFeature);
+              const snappedToBoundary = turf.nearestPointOnLine(boundary, turf.point(rawPoint));
+              const boundaryCoord = snappedToBoundary?.geometry?.coordinates;
+              if (Array.isArray(boundaryCoord) && Number.isFinite(boundaryCoord[0]) && Number.isFinite(boundaryCoord[1])) {
+                nearBoundaryMeters = turf.distance(turf.point(rawPoint), turf.point(boundaryCoord), { units: 'meters' }) || 0;
+              }
             } catch {
               pointIsInsideTarget = false;
             }
-            if (!pointIsInsideTarget) {
-              console.log('[Planning Scenario Debug] split click ignored: point outside selected room', { targetRoomId, rawPoint });
+            // Allow slight miss-clicks on/near boundary; strict point-in-polygon is too brittle for traced floor geometry.
+            if (!pointIsInsideTarget && !(nearBoundaryMeters <= 8)) {
+              console.log('[Planning Scenario Debug] split click ignored: point outside selected room', {
+                targetRoomId,
+                rawPoint,
+                nearBoundaryMeters
+              });
               return;
             }
             const firstPoint = Array.isArray(scenarioSplitDraft.start) ? scenarioSplitDraft.start : null;
