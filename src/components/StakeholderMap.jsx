@@ -4445,7 +4445,9 @@ function createEmptySummaryAccumulator() {
     labCount: 0,
     officeSf: 0,
     officeCount: 0,
-    deptCounts: new Map()
+    deptCounts: new Map(),
+    roomTypes: {},
+    sfByRoomType: {}
   };
 }
 
@@ -4506,6 +4508,10 @@ function accumulateSummaryFromProps(accumulator, props = {}) {
   if (dept) {
     accumulator.deptCounts.set(dept, (accumulator.deptCounts.get(dept) || 0) + numericArea);
   }
+
+  const roomType = norm(getTypeFromProps(props)) || 'Unknown';
+  accumulator.roomTypes[roomType] = (accumulator.roomTypes[roomType] || 0) + 1;
+  accumulator.sfByRoomType[roomType] = (accumulator.sfByRoomType[roomType] || 0) + numericArea;
 }
 
 function isPolygonGeometryType(geomType) {
@@ -4560,6 +4566,8 @@ function finalizeCombinedSummary(combined) {
     officeCount: combined.officeCount || 0,
     deptCounts: totalsByDept,
     totalsByDept,
+    roomTypes: combined.roomTypes || {},
+    sfByRoomType: combined.sfByRoomType || {},
     keyDepts: sorted.slice(0, 6).map(([name]) => name)
   };
 }
