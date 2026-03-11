@@ -13271,6 +13271,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [getBuildingFolderKey, getAvailableFloors, fetchFloorSummary, ensureFloorsForBuilding]);
 
   const showBuildingStats = useCallback((buildingId) => {
+    if (engagementMode) {
+      setBuildingStats(null);
+      setFloorStats(null);
+      setPanelStats(null);
+      return;
+    }
     setPopupMode('building');
     setFloorStats(null);
     if (!buildingId) {
@@ -13296,7 +13302,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         setBuildingStats(null);
         setPanelStats(formatSummaryForPanel(null, 'building'));
       });
-  }, [computeBuildingTotals, resolveBuildingPlanKey]);
+  }, [computeBuildingTotals, engagementMode, resolveBuildingPlanKey]);
 
   const showFloorStats = useCallback((url) => {
     if (!url) return;
@@ -19920,7 +19926,7 @@ useEffect(() => {
       </>
     )}
 
-    {mapView === MAP_VIEWS.SPACE_DATA && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+    {mapView === MAP_VIEWS.SPACE_DATA && !engagementMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
       const containerWidth = mapContainerRef.current?.clientWidth || 1000;
       const containerHeight = mapContainerRef.current?.clientHeight || 800;
       const PANEL_WIDTH = 360;
