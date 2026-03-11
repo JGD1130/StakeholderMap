@@ -10904,7 +10904,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [scenarioLayoutRoomCandidates, buildScenarioAdjacencyGroups]);
 
   const scenarioLayoutMergeValidation = useMemo(() => {
-    const rooms = scenarioLayoutSelectionAnalysis.activeRooms || [];
+    const activeRooms = scenarioLayoutSelectionAnalysis.activeRooms || [];
+    const nonSyntheticRooms = activeRooms.filter((room) => !room?.isScenarioSynthetic);
+    const rooms = nonSyntheticRooms.length >= 2 ? nonSyntheticRooms : activeRooms;
     if (rooms.length < 2) return { canMerge: false, reason: 'Select at least 2 adjacent rooms.' };
     const buildingKeys = new Set(rooms.map((room) => normalizeDashboardKey(room?.buildingId || room?.buildingName || '')));
     if (buildingKeys.size > 1) return { canMerge: false, reason: 'Merge requires rooms from the same building.' };
@@ -10932,6 +10934,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     return {
       canMerge: true,
       reason: '',
+      mergeCandidateRoomIds: rooms.map((room) => room?.roomId).filter(Boolean),
       mergeGroups: groupsWithGeometry
     };
   }, [scenarioLayoutSelectionAnalysis, buildScenarioAdjacencyGroups, buildScenarioUnionGeometry]);
