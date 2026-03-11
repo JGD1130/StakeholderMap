@@ -27,6 +27,7 @@ Last updated: 2026-03-11
 - Updated planning-scenario layout selection logic so previously created synthetic scenario rooms can remain selected while applying a new merge/remove-divider/split edit.
 - Updated layout operations so they replace only the rooms affected by the current edit instead of replacing the entire scenario selection.
 - Updated scenario operation logging so layout ops persist the explicit source room ids they acted on.
+- Updated planning and reno PDF exports to highlight only the effective selected scenario rooms, avoiding adjacent/source-room over-highlighting in exported floorplan images.
 
 ## Known follow-up checks
 

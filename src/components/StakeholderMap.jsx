@@ -10925,7 +10925,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       .filter(Boolean);
   }, [scenarioSelection, scenarioRoomOverrides, scenarioMergeState, buildEffectiveScenarioRoom, buildEffectiveSyntheticScenarioRoom]);
 
-  const scenarioSelectionRenderIds = useMemo(() => {
+  const scenarioPdfRenderIds = useMemo(() => {
     const ids = new Set();
     const addId = (value) => {
       if (value == null) return;
@@ -10935,43 +10935,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       const asNum = Number(raw);
       if (Number.isFinite(asNum)) ids.add(asNum);
     };
-    const selectedIds = Array.from(scenarioSelection || []);
-    selectedIds.forEach((roomId) => {
-      addId(roomId);
-      const info = scenarioRoomInfoRef.current.get(roomId);
-      if (!info) return;
-      addId(info.revitId);
-      addId(info.roomGuid);
-      addId(info.roomNumber);
-    });
-    const effectiveIds = toEffectiveScenarioTargetRoomIds(selectedIds);
-    effectiveIds.forEach((roomId) => {
-      addId(roomId);
-      const syntheticRoom = scenarioMergeState.bySyntheticRoomId.get(roomId) || null;
-      const room = syntheticRoom
-        ? (buildEffectiveSyntheticScenarioRoom(syntheticRoom) || syntheticRoom)
-        : buildEffectiveScenarioRoom(roomId);
-      if (!room) return;
-      addId(room.roomId);
-      addId(room.scenarioRoomId);
-      addId(room.revitId);
-      addId(room.roomGuid);
-      addId(room.roomNumber);
+    effectiveScenarioSelectedRooms.forEach((room) => {
+      addId(room?.roomId);
+      addId(room?.scenarioRoomId);
+      addId(room?.revitId);
+      addId(room?.roomGuid);
     });
     return Array.from(ids);
-  }, [
-    scenarioSelection,
-    scenarioMergeState,
-    scenarioRoomOverrides,
-    buildEffectiveScenarioRoom,
-    buildEffectiveSyntheticScenarioRoom,
-    toEffectiveScenarioTargetRoomIds
-  ]);
-
-  const scenarioSelectionRenderGeometries = useMemo(() => {
-    return effectiveScenarioSelectedRooms
-      .map((room) => cloneGeoJsonValue(room?.geometry))
-      .filter((geometry) => geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon'));
   }, [effectiveScenarioSelectedRooms]);
 
   const scenarioSelectionSeatSummary = useMemo(() => {
@@ -11363,8 +11333,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       const imageData = generateFloorplanImageData({
         ...(currentFloorContextRef.current || {}),
         fc: liveFloorFc,
-        selectedIds: scenarioSelectionRenderIds,
-        selectedGeometries: scenarioSelectionRenderGeometries,
+        selectedIds: scenarioPdfRenderIds,
+        selectedGeometries: [],
         solidFill: true,
         labelOptions: { hideDrawing: true }
       });
@@ -11461,8 +11431,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     renoWarningLines,
     renoConceptualDisclaimer,
     scenarioSelection,
-    scenarioSelectionRenderIds,
-    scenarioSelectionRenderGeometries,
+    scenarioPdfRenderIds,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -19112,8 +19081,8 @@ useEffect(() => {
               const imgData = generateFloorplanImageData({
                 ...(currentFloorContextRef.current || {}),
                 fc: liveFloorFc,
-                selectedIds: scenarioSelectionRenderIds,
-                selectedGeometries: scenarioSelectionRenderGeometries,
+                selectedIds: scenarioPdfRenderIds,
+                selectedGeometries: [],
                 solidFill: true,
                 labelOptions: { hideDrawing: true }
               });
