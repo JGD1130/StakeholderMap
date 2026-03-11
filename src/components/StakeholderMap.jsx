@@ -13300,8 +13300,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const showFloorStats = useCallback((url) => {
     if (!url) return;
-    setPopupMode('floor');
     currentFloorUrlRef.current = url;
+    if (engagementMode) {
+      setFloorStats(null);
+      return;
+    }
+    setPopupMode('floor');
     setPanelStats({ loading: true, mode: 'floor' });
     const ctx = currentFloorContextRef.current;
     const cachedUrlSummary = floorStatsCache.current[url];
@@ -13339,7 +13343,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         setFloorStats(null);
         setPanelStats(formatSummaryForPanel(null, 'floor'));
       });
-  }, [buildLegendForMode, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
+  }, [buildLegendForMode, engagementMode, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
@@ -19975,13 +19979,14 @@ useEffect(() => {
           overflow: 'auto'
         }
         : buildingPanelStyle;
-      const panelStyle = popupMode === 'floor' ? floorPanelStyle : buildingPanelStyle;
+      const effectivePopupMode = engagementMode && popupMode === 'floor' ? 'building' : popupMode;
+      const panelStyle = effectivePopupMode === 'floor' ? floorPanelStyle : buildingPanelStyle;
       const resolvedPanelStyle = spacePanelPos
         ? { ...panelStyle, left: spacePanelPos.x, top: spacePanelPos.y }
         : panelStyle;
       return (
         <div ref={spacePanelRef} className="floating-panel" style={resolvedPanelStyle}>
-          {popupMode === 'building' && (
+          {effectivePopupMode === 'building' && (
             <BuildingPanel
               buildingName={activeBuildingName}
               stats={buildingStats}
@@ -20014,7 +20019,7 @@ useEffect(() => {
               dragHandleProps={spacePanelDragHandleProps}
             />
           )}
-          {popupMode === 'floor' && (
+          {effectivePopupMode === 'floor' && !engagementMode && (
             <FloorPanel
               buildingName={activeBuildingName}
               floorLabel={floorStats?.floorLabel || panelSelectedFloor}

@@ -42,6 +42,7 @@ Last updated: 2026-03-11
 - Added a Program Test Fit tool shell with launchers from building panel, floor panel, and selected rooms, including program rows, fit calculations, and PDF export.
 - Updated Program Test Fit to use an explicit primary `Run Test Fit` action, keep displayed results tied to the last run, auto-refresh results after the first run, and populate program row space types from current room-type options in the selected target area.
 - Added a `Fit Quality Warning` layer to Program Test Fit so results now compare requested space types against the current target-area room mix, flag missing specialized spaces, and generate a short planning note alongside the SF fit result.
+- Disabled the right-side floor summary panel in the stakeholder engagement map so floorplans can still load there without opening the full Floor Panel UI.
 
 ## Known follow-up checks
 
