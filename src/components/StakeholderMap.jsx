@@ -132,6 +132,153 @@ function computeProgramTestFitSummary({
   };
 }
 
+function inferProgramTestFitTypeGroup(value = '') {
+  const normalized = normalizeTypeMatch(value);
+  if (!normalized) return { key: 'unknown', label: 'Unspecified', specialized: false };
+  if (/(lab|laboratory|science|research)/.test(normalized)) return { key: 'lab', label: 'Lab', specialized: true };
+  if (/(studio|music|art|theater|theatre|rehearsal)/.test(normalized)) return { key: 'studio', label: 'Studio / Arts', specialized: true };
+  if (/(shop|maker|fabrication|wood|metal)/.test(normalized)) return { key: 'shop', label: 'Shop / Maker', specialized: true };
+  if (/(clinic|health|exam|treatment)/.test(normalized)) return { key: 'clinic', label: 'Clinic', specialized: true };
+  if (/(kitchen|culinary|food)/.test(normalized)) return { key: 'kitchen', label: 'Kitchen / Food', specialized: true };
+  if (/(classroom|lecture|seminar|training|teaching|instruction)/.test(normalized)) return { key: 'classroom', label: 'Classroom', specialized: false };
+  if (/(conference|meeting|board|collaboration)/.test(normalized)) return { key: 'meeting', label: 'Meeting', specialized: false };
+  if (/(office|admin|administration|reception|staff|faculty|workroom)/.test(normalized)) return { key: 'office', label: 'Office', specialized: false };
+  if (/(corridor|lobby|circulation|vestibule|stair|elevator|restroom|toilet|custodial|mechanical|electrical|storage|support)/.test(normalized)) {
+    return { key: 'support', label: 'Support / Shared', specialized: false };
+  }
+  return { key: 'other', label: 'Other', specialized: false };
+}
+
+function buildProgramTestFitInventorySummary(target = {}) {
+  const roomTypes = target?.roomTypes || {};
+  const sfByRoomType = target?.sfByRoomType || {};
+  const normalizedTypeMap = new Map();
+  const groups = new Map();
+
+  Object.entries(roomTypes).forEach(([roomType, count]) => {
+    const label = String(roomType || '').trim();
+    if (!label) return;
+    const normalized = normalizeTypeMatch(label);
+    if (normalized) normalizedTypeMap.set(normalized, label);
+    const group = inferProgramTestFitTypeGroup(label);
+    const prev = groups.get(group.key) || {
+      key: group.key,
+      label: group.label,
+      specialized: group.specialized,
+      count: 0,
+      sf: 0,
+      types: []
+    };
+    prev.count += Number(count || 0) || 0;
+    prev.sf += Number(sfByRoomType?.[roomType] || 0) || 0;
+    prev.types.push(label);
+    groups.set(group.key, prev);
+  });
+
+  return {
+    normalizedTypeMap,
+    groups
+  };
+}
+
+function computeProgramTestFitQuality(summary, target = {}) {
+  if (!summary) return null;
+  const requestedRows = (summary.rows || []).filter((row) => row.spaceType || row.qty || row.targetSfEach);
+  if (!requestedRows.length) {
+    return {
+      mathematicalFit: summary.fitResult,
+      roomTypeMatch: 'Not Evaluated',
+      warnings: [],
+      planningNote: 'Enter at least one program row to evaluate room-type fit quality.'
+    };
+  }
+
+  const inventory = buildProgramTestFitInventorySummary(target);
+  let totalRequestedSf = 0;
+  let matchedRequestedSf = 0;
+  const warnings = [];
+  const seenWarnings = new Set();
+  const groupDemand = new Map();
+
+  requestedRows.forEach((row) => {
+    const label = String(row.spaceType || '').trim();
+    const normalized = normalizeTypeMatch(label);
+    const group = inferProgramTestFitTypeGroup(label);
+    const requestedSf = Number(row.totalSf || 0) || 0;
+    totalRequestedSf += requestedSf;
+
+    const existingExactType = normalized ? inventory.normalizedTypeMap.has(normalized) : false;
+    const existingGroup = inventory.groups.get(group.key);
+    const hasMatch = existingExactType || Boolean(existingGroup?.count);
+    if (hasMatch) matchedRequestedSf += requestedSf;
+
+    const demand = groupDemand.get(group.key) || {
+      label: group.label,
+      specialized: group.specialized,
+      qty: 0,
+      totalSf: 0,
+      hasMatch: false
+    };
+    demand.qty += Number(row.qty || 0) || 0;
+    demand.totalSf += requestedSf;
+    demand.hasMatch = demand.hasMatch || hasMatch;
+    groupDemand.set(group.key, demand);
+  });
+
+  const matchRatio = totalRequestedSf > 0 ? matchedRequestedSf / totalRequestedSf : 0;
+  const roomTypeMatch = matchRatio >= 0.75
+    ? 'Good'
+    : matchRatio >= 0.4
+      ? 'Partial'
+      : 'Weak';
+
+  groupDemand.forEach((demand, groupKey) => {
+    if (demand.hasMatch) return;
+    const warning = demand.specialized
+      ? `${Math.round(demand.qty).toLocaleString()} ${demand.label.toLowerCase()} ${demand.qty === 1 ? 'space is' : 'spaces are'} required, none detected in target area.`
+      : `${demand.label} space is requested, but no matching existing room types were detected in the target area.`;
+    if (!seenWarnings.has(warning)) {
+      warnings.push(warning);
+      seenWarnings.add(warning);
+    }
+    if (groupKey === 'support' && summary.supportPct < 15) {
+      const supportWarning = 'Support / shared space allocation may be low for the requested mix.';
+      if (!seenWarnings.has(supportWarning)) {
+        warnings.push(supportWarning);
+        seenWarnings.add(supportWarning);
+      }
+    }
+  });
+
+  if (summary.supportPct < 15 && groupDemand.size >= 3) {
+    const supportWarning = 'Support / shared space allocation may be low for a multi-space program.';
+    if (!seenWarnings.has(supportWarning)) {
+      warnings.push(supportWarning);
+      seenWarnings.add(supportWarning);
+    }
+  }
+
+  let planningNote = '';
+  if (summary.fitResult === 'Does Not Fit') {
+    planningNote = 'Space does not fit by SF before considering room-type suitability or reconfiguration.';
+  } else if (roomTypeMatch === 'Good' && warnings.length === 0) {
+    planningNote = summary.fitResult === 'Tight Fit'
+      ? 'Space is close on SF, but the existing room mix generally aligns with the program.'
+      : 'Space fits by SF and the existing room mix generally aligns with the program.';
+  } else if (summary.fitResult === 'Fit' || summary.fitResult === 'Tight Fit') {
+    planningNote = 'Space fits by SF, but room-type gaps suggest reconfiguration or conversions may be needed.';
+  } else {
+    planningNote = 'Program requires closer review of both SF and room-type suitability.';
+  }
+
+  return {
+    mathematicalFit: summary.fitResult,
+    roomTypeMatch,
+    warnings,
+    planningNote
+  };
+}
+
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
   if (envBase) return envBase;
@@ -8867,6 +9014,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setProgramTestFitResults(programTestFitSummary);
   }, [programTestFitHasRun, programTestFitSummary]);
   const programTestFitDisplayedSummary = programTestFitResults || null;
+  const programTestFitQuality = useMemo(() => (
+    programTestFitDisplayedSummary
+      ? computeProgramTestFitQuality(programTestFitDisplayedSummary, programTestFitTarget)
+      : null
+  ), [programTestFitDisplayedSummary, programTestFitTarget]);
   const exportProgramTestFitPdf = useCallback(() => {
     if (!programTestFitTarget || !programTestFitDisplayedSummary) {
       alert('Run Test Fit before exporting the PDF.');
@@ -8906,6 +9058,18 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       addLine(`Adjusted Required SF: ${Math.round(programTestFitDisplayedSummary.adjustedRequiredSf).toLocaleString()}`);
       addLine(`Surplus / Deficit: ${programTestFitDisplayedSummary.fitGap >= 0 ? '+' : ''}${Math.round(programTestFitDisplayedSummary.fitGap).toLocaleString()} SF`);
       addLine(`Fit Result: ${programTestFitDisplayedSummary.fitResult}`);
+      if (programTestFitQuality) {
+        y += 8;
+        addLine('Fit Quality Warning', { bold: true, fontSize: 12 });
+        addLine(`Mathematical Fit: ${programTestFitQuality.mathematicalFit}`);
+        addLine(`Room Type Match: ${programTestFitQuality.roomTypeMatch}`);
+        if (programTestFitQuality.warnings.length) {
+          programTestFitQuality.warnings.forEach((warning) => addLine(`Warning: ${warning}`, { fontSize: 10, lineHeight: 14 }));
+        } else {
+          addLine('Warning: None');
+        }
+        addLine(`Planning Note: ${programTestFitQuality.planningNote}`, { fontSize: 10, lineHeight: 14 });
+      }
       y += 8;
       addLine('Program Summary', { bold: true, fontSize: 12 });
       const rows = programTestFitDisplayedSummary.rows.filter((row) => row.spaceType || row.qty || row.targetSfEach);
@@ -8926,7 +9090,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       console.error('Program Test Fit PDF export failed', err);
       alert('Program Test Fit PDF export failed.');
     }
-  }, [programTestFitDisplayedSummary, programTestFitName, programTestFitTarget]);
+  }, [programTestFitDisplayedSummary, programTestFitName, programTestFitQuality, programTestFitTarget]);
   const OCCUPANCY_OPTIONS = ['Occupied', 'Vacant', 'Unknown'];
     const resolveOccupancyStatusValue = (props = {}) => (
       props.occupancyStatus ??
@@ -9071,6 +9235,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       floorLabel: '',
       availableSf,
       roomCount: Number(buildingStats?.rooms || 0) || 0,
+      roomTypes: { ...(buildingStats?.roomTypes || {}) },
+      sfByRoomType: { ...(buildingStats?.sfByRoomType || {}) },
       spaceTypeOptions: getSortedProgramTestFitSpaceTypes(Object.keys(buildingStats?.roomTypes || {})),
       defaultProgramName: `${String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building'} Program Test Fit`
     });
@@ -9091,6 +9257,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       floorLabel,
       availableSf,
       roomCount: Number(floorStats?.rooms || 0) || 0,
+      roomTypes: { ...(floorStats?.roomTypes || {}) },
+      sfByRoomType: { ...(floorStats?.sfByRoomType || {}) },
       spaceTypeOptions: getSortedProgramTestFitSpaceTypes(Object.keys(floorStats?.roomTypes || {})),
       defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
     });
@@ -9114,6 +9282,15 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         return getTypeFromProps(mergedProps);
       })
     );
+    const roomTypes = {};
+    const sfByRoomType = {};
+    targets.forEach((target) => {
+      const mergedProps = { ...(target?.feature?.properties || {}), ...(target?.properties || {}) };
+      const roomType = norm(getTypeFromProps(mergedProps)) || 'Unknown';
+      const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
+      roomTypes[roomType] = (roomTypes[roomType] || 0) + 1;
+      sfByRoomType[roomType] = (sfByRoomType[roomType] || 0) + areaValue;
+    });
     const buildingLabel = String(targets[0]?.buildingName || activeBuildingName || selectedBuildingId || selectedBuilding || 'Selected Rooms').trim() || 'Selected Rooms';
     const floorLabel = String(targets[0]?.floorName || selectedFloor || '').trim();
     openProgramTestFit({
@@ -9124,6 +9301,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       floorLabel,
       availableSf,
       roomCount: targets.length,
+      roomTypes,
+      sfByRoomType,
       spaceTypeOptions,
       selectedRooms: targets.map((target) => ({
         roomLabel: target.roomLabel || target.roomNumber || target.feature?.properties?.name || '',
@@ -19306,34 +19485,55 @@ useEffect(() => {
             <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 10, background: '#f9fafb' }}>
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Fit Summary</div>
               {programTestFitDisplayedSummary ? (
-                <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                  <div><b>Available SF:</b> {Math.round(programTestFitDisplayedSummary.availableSf).toLocaleString()}</div>
-                  <div><b>Program SF:</b> {Math.round(programTestFitDisplayedSummary.programSf).toLocaleString()}</div>
-                  <div><b>Required SF:</b> {Math.round(programTestFitDisplayedSummary.adjustedRequiredSf).toLocaleString()}</div>
-                  <div>
-                    <b>Surplus / Deficit:</b>{' '}
-                    <span style={{ color: programTestFitDisplayedSummary.fitGap >= 0 ? '#166534' : '#b42318', fontWeight: 700 }}>
-                      {programTestFitDisplayedSummary.fitGap >= 0 ? '+' : ''}{Math.round(programTestFitDisplayedSummary.fitGap).toLocaleString()} SF
-                    </span>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+                    <div><b>Available SF:</b> {Math.round(programTestFitDisplayedSummary.availableSf).toLocaleString()}</div>
+                    <div><b>Program SF:</b> {Math.round(programTestFitDisplayedSummary.programSf).toLocaleString()}</div>
+                    <div><b>Required SF:</b> {Math.round(programTestFitDisplayedSummary.adjustedRequiredSf).toLocaleString()}</div>
+                    <div>
+                      <b>Surplus / Deficit:</b>{' '}
+                      <span style={{ color: programTestFitDisplayedSummary.fitGap >= 0 ? '#166534' : '#b42318', fontWeight: 700 }}>
+                        {programTestFitDisplayedSummary.fitGap >= 0 ? '+' : ''}{Math.round(programTestFitDisplayedSummary.fitGap).toLocaleString()} SF
+                      </span>
+                    </div>
+                    <div>
+                      <b>Fit Result:</b>{' '}
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          color:
+                            programTestFitDisplayedSummary.fitResult === 'Fit'
+                              ? '#166534'
+                              : programTestFitDisplayedSummary.fitResult === 'Tight Fit'
+                                ? '#b54708'
+                                : programTestFitDisplayedSummary.fitResult === 'Does Not Fit'
+                                  ? '#b42318'
+                                  : '#667085'
+                        }}
+                      >
+                        {programTestFitDisplayedSummary.fitResult}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <b>Fit Result:</b>{' '}
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        color:
-                          programTestFitDisplayedSummary.fitResult === 'Fit'
-                            ? '#166534'
-                            : programTestFitDisplayedSummary.fitResult === 'Tight Fit'
-                              ? '#b54708'
-                              : programTestFitDisplayedSummary.fitResult === 'Does Not Fit'
-                                ? '#b42318'
-                                : '#667085'
-                      }}
-                    >
-                      {programTestFitDisplayedSummary.fitResult}
-                    </span>
-                  </div>
+                  {programTestFitQuality ? (
+                    <div style={{ borderTop: '1px solid #e4e7ec', paddingTop: 10, display: 'grid', gap: 6, fontSize: 12 }}>
+                      <div style={{ fontWeight: 700 }}>Fit Quality Warning</div>
+                      <div><b>Mathematical Fit:</b> {programTestFitQuality.mathematicalFit}</div>
+                      <div><b>Room Type Match:</b> {programTestFitQuality.roomTypeMatch}</div>
+                      {programTestFitQuality.warnings.length ? (
+                        <div style={{ display: 'grid', gap: 4 }}>
+                          {programTestFitQuality.warnings.map((warning, idx) => (
+                            <div key={`${warning}-${idx}`} style={{ color: '#b42318' }}>
+                              <b>Warning:</b> {warning}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#166534' }}><b>Warning:</b> No major room-type conflicts detected.</div>
+                      )}
+                      <div><b>Planning Note:</b> {programTestFitQuality.planningNote}</div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: '#667085' }}>
