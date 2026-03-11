@@ -13106,7 +13106,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       classroomCount: 0,
       labCount: 0,
       officeCount: 0,
-      deptCounts: new Map()
+      deptCounts: new Map(),
+      roomTypes: {},
+      sfByRoomType: {}
     };
 
     for (const floorLabel of available) {
@@ -13131,6 +13133,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       combined.officeCount += stats.officeCount || 0;
       Object.entries(stats.deptCounts || {}).forEach(([dept, area]) => {
         combined.deptCounts.set(dept, (combined.deptCounts.get(dept) || 0) + area);
+      });
+      Object.entries(stats.roomTypes || {}).forEach(([roomType, count]) => {
+        combined.roomTypes[roomType] = (combined.roomTypes[roomType] || 0) + (Number(count || 0) || 0);
+      });
+      Object.entries(stats.sfByRoomType || {}).forEach(([roomType, sf]) => {
+        combined.sfByRoomType[roomType] = (combined.sfByRoomType[roomType] || 0) + (Number(sf || 0) || 0);
       });
     }
 
