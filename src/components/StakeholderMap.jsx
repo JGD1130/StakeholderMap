@@ -3180,6 +3180,10 @@ const FLOOR_HL_BORDER_ID = "floor-highlight-border";
 const FLOOR_ROOM_LABEL_LAYER = "floor-room-labels";
 const FLOOR_DOOR_LAYER = "floor-doors";
 const FLOOR_STAIR_LAYER = "floor-stairs";
+const SCENARIO_BASELINE_SOURCE = 'scenario-baseline-source';
+const SCENARIO_BASELINE_FILL_ID = 'scenario-baseline-fill';
+const SCENARIO_BASELINE_LINE_ID = 'scenario-baseline-line';
+const SCENARIO_BASELINE_LABEL_LAYER = 'scenario-baseline-labels';
 const SCENARIO_MERGE_OUTLINE_LAYER_ID = 'scenario-merge-outline';
 const ENGAGEMENT_HEAT_SOURCE_ID = 'engagement-heat-source';
 const ENGAGEMENT_HEAT_LAYER_ID = 'engagement-heat-warm-halo-layer';
@@ -3294,8 +3298,8 @@ const STAIR_PAINT = {
   "line-opacity": 0.95
 };
 
-function applyFloorFillExpression(map, mode = 'department', options = {}) {
-  if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOOR_FILL_ID) {
+  if (!map || !map.getLayer(targetLayerId)) return;
   const occupantExpr = [
     '>',
     ['length', ['coalesce', ['to-string', ['get', 'occupant']], ['to-string', ['get', 'Occupant']], '']],
@@ -3385,13 +3389,13 @@ function applyFloorFillExpression(map, mode = 'department', options = {}) {
   ];
   try {
     if (mode === 'occupancy') {
-      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', occupancyColorExpr);
+      map.setPaintProperty(targetLayerId, 'fill-color', occupancyColorExpr);
     } else if (mode === 'vacancy') {
-      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', vacancyColorExpr);
+      map.setPaintProperty(targetLayerId, 'fill-color', vacancyColorExpr);
     } else {
-      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', deptFillExpression());
+      map.setPaintProperty(targetLayerId, 'fill-color', deptFillExpression());
     }
-    map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+    map.setPaintProperty(targetLayerId, 'fill-opacity', 1);
   } catch {}
 }
 
@@ -7564,12 +7568,16 @@ function unloadFloorplan(map, currentFloorUrlRef) {
   try {
     if (map.getLayer(FLOOR_HL_ID)) map.removeLayer(FLOOR_HL_ID);
     if (map.getLayer(FLOOR_HL_BORDER_ID)) map.removeLayer(FLOOR_HL_BORDER_ID);
+    if (map.getLayer(SCENARIO_BASELINE_LABEL_LAYER)) map.removeLayer(SCENARIO_BASELINE_LABEL_LAYER);
+    if (map.getLayer(SCENARIO_BASELINE_LINE_ID)) map.removeLayer(SCENARIO_BASELINE_LINE_ID);
+    if (map.getLayer(SCENARIO_BASELINE_FILL_ID)) map.removeLayer(SCENARIO_BASELINE_FILL_ID);
     if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) map.removeLayer(FLOOR_ROOM_LABEL_LAYER);
     if (map.getLayer(FLOOR_DRAWING_LAYER)) map.removeLayer(FLOOR_DRAWING_LAYER);
     if (map.getLayer(FLOOR_LINE_ID)) map.removeLayer(FLOOR_LINE_ID);
     if (map.getLayer(FLOOR_DOOR_LAYER)) map.removeLayer(FLOOR_DOOR_LAYER);
     if (map.getLayer(FLOOR_STAIR_LAYER)) map.removeLayer(FLOOR_STAIR_LAYER);
     if (map.getLayer(FLOOR_FILL_ID)) map.removeLayer(FLOOR_FILL_ID);
+    if (getGeojsonSource(map, SCENARIO_BASELINE_SOURCE)) map.removeSource(SCENARIO_BASELINE_SOURCE);
     if (getGeojsonSource(map, FLOOR_SOURCE)) map.removeSource(FLOOR_SOURCE);
   if (map.getLayer(WALLS_LAYER)) map.removeLayer(WALLS_LAYER);
   if (map.getSource(WALLS_SOURCE)) map.removeSource(WALLS_SOURCE);
@@ -7597,8 +7605,7 @@ function centerOnCurrentFloor(map) {
   } catch {}
 }
 
-function ensureFloorRoomLabelLayer(map, colorMode = 'department') {
-  if (!map) return;
+function buildFloorRoomLabelExpressions(colorMode = 'department') {
   const scenarioDeptField = [
     'coalesce',
     ['get', 'scenarioDepartment'],
@@ -7672,6 +7679,12 @@ function ensureFloorRoomLabelLayer(map, colorMode = 'department') {
     18, 7,
     19, 10
   ];
+  return { textField, textSizeExpr };
+}
+
+function ensureFloorRoomLabelLayer(map, colorMode = 'department') {
+  if (!map) return;
+  const { textField, textSizeExpr } = buildFloorRoomLabelExpressions(colorMode);
   if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) {
     try {
       map.setLayoutProperty(FLOOR_ROOM_LABEL_LAYER, 'text-field', textField);
@@ -7718,6 +7731,96 @@ function ensureFloorRoomLabelLayer(map, colorMode = 'department') {
     );
     bringFloorRoomLabelsToFront(map);
   } catch {}
+}
+
+function ensureScenarioBaselinePreviewLayers(map, colorMode = 'department') {
+  if (!map) return;
+  if (!getGeojsonSource(map, SCENARIO_BASELINE_SOURCE)) {
+    try {
+      map.addSource(SCENARIO_BASELINE_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        promoteId: 'RevitId'
+      });
+    } catch {}
+  }
+  if (!map.getLayer(SCENARIO_BASELINE_FILL_ID)) {
+    try {
+      map.addLayer({
+        id: SCENARIO_BASELINE_FILL_ID,
+        type: 'fill',
+        source: SCENARIO_BASELINE_SOURCE,
+        paint: {
+          ...FLOOR_FILL_PAINT,
+          'fill-opacity': 0
+        },
+        filter: ROOMS_ONLY_FILTER
+      }, FLOOR_FILL_ID);
+    } catch {}
+  } else {
+    try { map.setFilter(SCENARIO_BASELINE_FILL_ID, ROOMS_ONLY_FILTER); } catch {}
+  }
+  if (!map.getLayer(SCENARIO_BASELINE_LINE_ID)) {
+    try {
+      map.addLayer({
+        id: SCENARIO_BASELINE_LINE_ID,
+        type: 'line',
+        source: SCENARIO_BASELINE_SOURCE,
+        paint: {
+          'line-color': '#444',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            16, 0.4,
+            18, 0.8,
+            20, 1.2
+          ],
+          'line-opacity': 0
+        },
+        filter: ROOMS_ONLY_FILTER
+      }, FLOOR_LINE_ID);
+    } catch {}
+  } else {
+    try { map.setFilter(SCENARIO_BASELINE_LINE_ID, ROOMS_ONLY_FILTER); } catch {}
+  }
+
+  const { textField, textSizeExpr } = buildFloorRoomLabelExpressions(colorMode);
+  if (map.getLayer(SCENARIO_BASELINE_LABEL_LAYER)) {
+    try {
+      map.setLayoutProperty(SCENARIO_BASELINE_LABEL_LAYER, 'text-field', textField);
+      map.setLayoutProperty(SCENARIO_BASELINE_LABEL_LAYER, 'text-size', textSizeExpr);
+      map.setFilter(SCENARIO_BASELINE_LABEL_LAYER, ['all', ROOMS_ONLY_FILTER, ['!=', ['id'], -1]]);
+    } catch {}
+  } else {
+    try {
+      map.addLayer({
+        id: SCENARIO_BASELINE_LABEL_LAYER,
+        type: 'symbol',
+        source: SCENARIO_BASELINE_SOURCE,
+        filter: ['all', ROOMS_ONLY_FILTER, ['!=', ['id'], -1]],
+        layout: {
+          'text-field': textField,
+          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+          'text-size': textSizeExpr,
+          'text-line-height': 1.0,
+          'text-variable-anchor': ['center'],
+          'text-radial-offset': 0,
+          'text-anchor': 'center',
+          'text-justify': 'center',
+          'symbol-placement': 'point',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'text-max-width': 6,
+          'visibility': 'visible'
+        },
+        paint: {
+          'text-color': '#0b0b0b',
+          'text-halo-color': 'rgba(255,255,255,0.95)',
+          'text-halo-width': 1,
+          'text-opacity': 0
+        }
+      }, FLOOR_ROOM_LABEL_LAYER);
+    } catch {}
+  }
 }
 
 function bringFloorRoomLabelsToFront(map) {
@@ -8460,6 +8563,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setFloorLegendLookup(new Map(items.map((item) => [item.name, item.ids || []])));
   }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY]);
 
+  const syncScenarioBaselineFillColor = useCallback((map, fillColor) => {
+    if (!map || !map.getLayer(SCENARIO_BASELINE_FILL_ID)) return;
+    try {
+      map.setPaintProperty(SCENARIO_BASELINE_FILL_ID, 'fill-color', fillColor);
+    } catch {}
+  }, []);
+
   const applyFloorColorMode = useCallback((mode) => {
     const map = mapRef.current;
     if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
@@ -8474,6 +8584,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#f3f4f6');
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.86);
+        syncScenarioBaselineFillColor(map, '#f3f4f6');
         setFloorLegendItems([]);
         setFloorLegendLookup(new Map());
         setFloorLegendSelection(null);
@@ -8529,6 +8640,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', deptExpr);
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        syncScenarioBaselineFillColor(map, deptExpr);
         const legend = Array.from(deptColorMap.entries()).map(([name, color]) => ({
           name,
           color,
@@ -8582,6 +8694,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       try {
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', typeExpr);
         map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        syncScenarioBaselineFillColor(map, typeExpr);
         const legend = Array.from(typeColorMap.entries()).map(([name, color]) => ({
           name,
           color,
@@ -8596,10 +8709,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     }
 
     applyFloorFillExpression(map, effectiveMode);
+    applyFloorFillExpression(map, effectiveMode, SCENARIO_BASELINE_FILL_ID);
     ensureFloorRoomLabelLayer(map, effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
-  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, engagementMode, engagementRoomSentimentOn]);
+  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, engagementMode, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
   useEffect(() => {
     roomEditSelectionRef.current = roomEditSelection;
   }, [roomEditSelection]);
@@ -8931,6 +9045,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const previousScenarioSelectionRef = useRef(new Set());
   const [scenarioPanelTop, setScenarioPanelTop] = useState(20);
   const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
+  const [scenarioBaselineBlend, setScenarioBaselineBlend] = useState(1);
   const [scenarioOverridesCollapsed, setScenarioOverridesCollapsed] = useState(true);
   const [scenarioImpactCollapsed, setScenarioImpactCollapsed] = useState(true);
   const [planningScenarioSaveMessage, setPlanningScenarioSaveMessage] = useState('');
@@ -9072,6 +9187,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setScenarioPanelVisible(false);
     setScenarioPanelPos(null);
     setScenarioPanelTop(20);
+    setScenarioBaselineBlend(1);
     setRenoScenarioVisible(false);
     setRenoScenarioLabel('');
     setRenoRenovationLevel(RENO_DEFAULT_LEVEL);
@@ -12343,6 +12459,54 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     scenarioSelection,
     resolveScenarioMergeForFeature,
     scenarioSyntheticFloorFeatures,
+    floorColorMode,
+    applyFloorColorMode
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !loadedSingleFloor) return;
+
+    const scenarioOpacity = Math.max(0, Math.min(1, Number(scenarioBaselineBlend) || 0));
+    const baselineOpacity = 1 - scenarioOpacity;
+    const fillBaseOpacity = floorColorMode === FLOOR_COLOR_MODES.PLAIN ? 0.86 : 1;
+
+    const setPaint = (layerId, prop, value) => {
+      if (!map.getLayer(layerId)) return;
+      try { map.setPaintProperty(layerId, prop, value); } catch {}
+    };
+
+    if (moveScenarioMode && scenarioFloorBaseFcRef.current?.features?.length) {
+      ensureScenarioBaselinePreviewLayers(map, floorColorMode);
+      const baselineSrc = getGeojsonSource(map, SCENARIO_BASELINE_SOURCE);
+      if (baselineSrc) {
+        try { baselineSrc.setData(cloneGeoJsonValue(scenarioFloorBaseFcRef.current)); } catch {}
+      }
+      applyFloorColorMode(floorColorMode);
+      setPaint(SCENARIO_BASELINE_FILL_ID, 'fill-opacity', fillBaseOpacity * baselineOpacity);
+      setPaint(SCENARIO_BASELINE_LINE_ID, 'line-opacity', 0.7 * baselineOpacity);
+      setPaint(SCENARIO_BASELINE_LABEL_LAYER, 'text-opacity', baselineOpacity);
+      setPaint(FLOOR_FILL_ID, 'fill-opacity', fillBaseOpacity * scenarioOpacity);
+      setPaint(FLOOR_LINE_ID, 'line-opacity', 0.7 * scenarioOpacity);
+      setPaint(FLOOR_ROOM_LABEL_LAYER, 'text-opacity', scenarioOpacity);
+      setPaint(SCENARIO_LAYER_ID, 'fill-opacity', scenarioOpacity);
+      setPaint(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-opacity', 0.95 * scenarioOpacity);
+      return;
+    }
+
+    setPaint(FLOOR_FILL_ID, 'fill-opacity', fillBaseOpacity);
+    setPaint(FLOOR_LINE_ID, 'line-opacity', 0.7);
+    setPaint(FLOOR_ROOM_LABEL_LAYER, 'text-opacity', 1);
+    setPaint(SCENARIO_LAYER_ID, 'fill-opacity', 1);
+    setPaint(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-opacity', 0.95);
+    setPaint(SCENARIO_BASELINE_FILL_ID, 'fill-opacity', 0);
+    setPaint(SCENARIO_BASELINE_LINE_ID, 'line-opacity', 0);
+    setPaint(SCENARIO_BASELINE_LABEL_LAYER, 'text-opacity', 0);
+  }, [
+    mapLoaded,
+    loadedSingleFloor,
+    moveScenarioMode,
+    scenarioBaselineBlend,
     floorColorMode,
     applyFloorColorMode
   ]);
@@ -19388,6 +19552,24 @@ useEffect(() => {
         >
           {renoScenarioVisible ? 'Reno Scenario Open' : 'Launch Reno Scenario'}
         </button>
+
+        {moveScenarioMode && loadedSingleFloor ? (
+          <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario View</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#667085' }}>Baseline</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round((Number(scenarioBaselineBlend) || 0) * 100)}
+                onChange={(e) => setScenarioBaselineBlend(Math.max(0, Math.min(1, Number(e.target.value || 0) / 100)))}
+              />
+              <span style={{ fontSize: 12, color: '#667085' }}>Scenario</span>
+            </div>
+          </div>
+        ) : null}
 
         <div style={{ marginBottom: 8 }}>
           <div><b>Total SF:</b> {Math.round(scenarioTotals.totalSF).toLocaleString()}</div>
