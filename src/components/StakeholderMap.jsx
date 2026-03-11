@@ -12475,6 +12475,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       if (!map.getLayer(layerId)) return;
       try { map.setPaintProperty(layerId, prop, value); } catch {}
     };
+    const setLayout = (layerId, prop, value) => {
+      if (!map.getLayer(layerId)) return;
+      try { map.setLayoutProperty(layerId, prop, value); } catch {}
+    };
 
     if (moveScenarioMode && scenarioFloorBaseFcRef.current?.features?.length) {
       ensureScenarioBaselinePreviewLayers(map, floorColorMode);
@@ -12483,12 +12487,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         try { baselineSrc.setData(cloneGeoJsonValue(scenarioFloorBaseFcRef.current)); } catch {}
       }
       applyFloorColorMode(floorColorMode);
+      const showBaselineLabels = baselineOpacity >= 0.5;
+      const showScenarioLabels = scenarioOpacity > 0.5;
       setPaint(SCENARIO_BASELINE_FILL_ID, 'fill-opacity', fillBaseOpacity * baselineOpacity);
       setPaint(SCENARIO_BASELINE_LINE_ID, 'line-opacity', 0.7 * baselineOpacity);
       setPaint(SCENARIO_BASELINE_LABEL_LAYER, 'text-opacity', baselineOpacity);
       setPaint(FLOOR_FILL_ID, 'fill-opacity', fillBaseOpacity * scenarioOpacity);
       setPaint(FLOOR_LINE_ID, 'line-opacity', 0.7 * scenarioOpacity);
       setPaint(FLOOR_ROOM_LABEL_LAYER, 'text-opacity', scenarioOpacity);
+      setLayout(SCENARIO_BASELINE_LABEL_LAYER, 'visibility', showBaselineLabels ? 'visible' : 'none');
+      setLayout(FLOOR_ROOM_LABEL_LAYER, 'visibility', showScenarioLabels ? 'visible' : 'none');
       setPaint(SCENARIO_LAYER_ID, 'fill-opacity', scenarioOpacity);
       setPaint(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-opacity', 0.95 * scenarioOpacity);
       return;
@@ -12497,6 +12505,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setPaint(FLOOR_FILL_ID, 'fill-opacity', fillBaseOpacity);
     setPaint(FLOOR_LINE_ID, 'line-opacity', 0.7);
     setPaint(FLOOR_ROOM_LABEL_LAYER, 'text-opacity', 1);
+    setLayout(FLOOR_ROOM_LABEL_LAYER, 'visibility', 'visible');
+    setLayout(SCENARIO_BASELINE_LABEL_LAYER, 'visibility', 'none');
     setPaint(SCENARIO_LAYER_ID, 'fill-opacity', 1);
     setPaint(SCENARIO_MERGE_OUTLINE_LAYER_ID, 'line-opacity', 0.95);
     setPaint(SCENARIO_BASELINE_FILL_ID, 'fill-opacity', 0);
