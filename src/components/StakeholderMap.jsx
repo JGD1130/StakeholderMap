@@ -63,6 +63,17 @@ const RENO_SPECIALIZED_TYPE_KEYWORDS = [
 const SCENARIO_LAYOUT_OP_TYPES = new Set(['layoutMerge', 'layoutRemoveDivider', 'layoutSplit']);
 const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
 const LOCAL_RENO_SCENARIO_STORAGE_PREFIX = 'mf-reno-scenarios';
+const PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT = 20;
+const PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY = 1.0;
+
+function createProgramTestFitRow() {
+  return {
+    id: `program-row-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    spaceType: '',
+    qty: '1',
+    targetSfEach: ''
+  };
+}
 
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
@@ -8453,7 +8464,15 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [roomEditData, setRoomEditData] = useState(null);
   const [roomEditSelection, setRoomEditSelection] = useState([]);
   const [roomEditPanelPos, setRoomEditPanelPos] = useState(null);
+  const [programTestFitOpen, setProgramTestFitOpen] = useState(false);
+  const [programTestFitTarget, setProgramTestFitTarget] = useState(null);
+  const [programTestFitPos, setProgramTestFitPos] = useState(null);
+  const [programTestFitName, setProgramTestFitName] = useState('');
+  const [programTestFitRows, setProgramTestFitRows] = useState([createProgramTestFitRow()]);
+  const [programTestFitSupportPct, setProgramTestFitSupportPct] = useState(String(PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT));
+  const [programTestFitEfficiency, setProgramTestFitEfficiency] = useState(String(PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY));
   const roomEditSelectionRef = useRef([]);
+  const programTestFitPanelRef = useRef(null);
   const getHighlightIdsForSelection = useCallback((selection = []) => {
     return (selection || [])
       .map((t) => t?.highlightId ?? t?.revitId ?? t?.roomId ?? null)
@@ -8742,7 +8761,188 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const primaryRoomEditTarget = roomEditTargets[0] || null;
   const roomEditFeatureProps = primaryRoomEditTarget?.feature?.properties || {};
     const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
-    const OCCUPANCY_OPTIONS = ['Occupied', 'Vacant', 'Unknown'];
+  const closeProgramTestFit = useCallback(() => {
+    setProgramTestFitOpen(false);
+    setProgramTestFitPos(null);
+  }, []);
+  const resetProgramTestFitInputs = useCallback(() => {
+    setProgramTestFitRows([createProgramTestFitRow()]);
+    setProgramTestFitSupportPct(String(PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT));
+    setProgramTestFitEfficiency(String(PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY));
+  }, []);
+  const openProgramTestFit = useCallback((target) => {
+    if (!target || !Number.isFinite(Number(target.availableSf || 0))) {
+      alert('Unable to resolve available SF for Program Test Fit.');
+      return;
+    }
+    setProgramTestFitTarget(target);
+    setProgramTestFitName(String(target.defaultProgramName || '').trim());
+    resetProgramTestFitInputs();
+    setProgramTestFitPos(null);
+    setProgramTestFitOpen(true);
+  }, [resetProgramTestFitInputs]);
+  const openProgramTestFitForBuilding = useCallback(() => {
+    const availableSf = Number(buildingStats?.totalSf || 0) || 0;
+    if (!availableSf) {
+      alert('No building SF available for Program Test Fit.');
+      return;
+    }
+    openProgramTestFit({
+      scope: 'building',
+      scopeLabel: 'Building',
+      targetLabel: String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building',
+      buildingName: String(activeBuildingName || selectedBuildingId || selectedBuilding || '').trim(),
+      floorLabel: '',
+      availableSf,
+      roomCount: Number(buildingStats?.rooms || 0) || 0,
+      defaultProgramName: `${String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building'} Program Test Fit`
+    });
+  }, [buildingStats, activeBuildingName, selectedBuildingId, selectedBuilding, openProgramTestFit]);
+  const openProgramTestFitForFloor = useCallback(() => {
+    const availableSf = Number(floorStats?.totalSf || 0) || 0;
+    if (!availableSf) {
+      alert('No floor SF available for Program Test Fit.');
+      return;
+    }
+    const buildingLabel = String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building';
+    const floorLabel = String(floorStats?.floorLabel || selectedFloor || '').trim() || 'Floor';
+    openProgramTestFit({
+      scope: 'floor',
+      scopeLabel: 'Floor',
+      targetLabel: `${buildingLabel} ${floorLabel}`.trim(),
+      buildingName: buildingLabel,
+      floorLabel,
+      availableSf,
+      roomCount: Number(floorStats?.rooms || 0) || 0,
+      defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
+    });
+  }, [floorStats, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
+  const openProgramTestFitForSelectedRooms = useCallback(() => {
+    const includedKeys = roomEditIncluded || new Set();
+    const targets = roomEditTargets.length
+      ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
+      : [];
+    if (!targets.length) {
+      alert('Select one or more rooms first.');
+      return;
+    }
+    const availableSf = targets.reduce((sum, target) => {
+      const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
+      return sum + areaValue;
+    }, 0);
+    const buildingLabel = String(targets[0]?.buildingName || activeBuildingName || selectedBuildingId || selectedBuilding || 'Selected Rooms').trim() || 'Selected Rooms';
+    const floorLabel = String(targets[0]?.floorName || selectedFloor || '').trim();
+    openProgramTestFit({
+      scope: 'selectedRooms',
+      scopeLabel: 'Selected Rooms',
+      targetLabel: floorLabel ? `${buildingLabel} ${floorLabel} Selected Rooms` : `${buildingLabel} Selected Rooms`,
+      buildingName: buildingLabel,
+      floorLabel,
+      availableSf,
+      roomCount: targets.length,
+      selectedRooms: targets.map((target) => ({
+        roomLabel: target.roomLabel || target.roomNumber || target.feature?.properties?.name || '',
+        sf: Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0
+      })),
+      defaultProgramName: `${buildingLabel} Selected Rooms Test Fit`
+    });
+  }, [roomEditIncluded, roomEditTargets, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
+  const programTestFitSummary = useMemo(() => {
+    const normalizedRows = (Array.isArray(programTestFitRows) ? programTestFitRows : []).map((row) => {
+      const qty = Math.max(0, Number(row?.qty || 0) || 0);
+      const targetSfEach = Math.max(0, Number(row?.targetSfEach || 0) || 0);
+      const totalSf = qty * targetSfEach;
+      return {
+        ...row,
+        qty,
+        targetSfEach,
+        totalSf
+      };
+    });
+    const programSf = normalizedRows.reduce((sum, row) => sum + row.totalSf, 0);
+    const supportPct = Math.max(0, Number(programTestFitSupportPct || 0) || 0);
+    const efficiencyFactor = Math.max(0.01, Number(programTestFitEfficiency || 0) || PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY);
+    const adjustedRequiredSf = (programSf * (1 + supportPct / 100)) / efficiencyFactor;
+    const availableSf = Math.max(0, Number(programTestFitTarget?.availableSf || 0) || 0);
+    const fitGap = availableSf - adjustedRequiredSf;
+    const fitPct = adjustedRequiredSf > 0 ? fitGap / adjustedRequiredSf : 0;
+    const fitResult = adjustedRequiredSf <= 0
+      ? 'No Program'
+      : fitPct >= 0.10
+        ? 'Fit'
+        : fitPct >= -0.10
+          ? 'Tight Fit'
+          : 'Does Not Fit';
+    return {
+      rows: normalizedRows,
+      programSf,
+      supportPct,
+      efficiencyFactor,
+      adjustedRequiredSf,
+      availableSf,
+      fitGap,
+      fitPct,
+      fitResult
+    };
+  }, [programTestFitRows, programTestFitSupportPct, programTestFitEfficiency, programTestFitTarget]);
+  const exportProgramTestFitPdf = useCallback(() => {
+    if (!programTestFitTarget) return;
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 24;
+      const lineHeight = 16;
+      let y = margin;
+      const ensureSpace = (height = lineHeight) => {
+        if (y + height <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+      const addLine = (text, opts = {}) => {
+        ensureSpace(opts.height || lineHeight);
+        doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+        doc.setFontSize(opts.fontSize || 11);
+        const lines = doc.splitTextToSize(String(text || ''), pageWidth - margin * 2);
+        doc.text(lines, margin, y);
+        y += (opts.lineHeight || lineHeight) * Math.max(1, lines.length);
+      };
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.text('Program Test Fit', margin, y);
+      y += 22;
+      addLine(`Program Name: ${programTestFitName || programTestFitTarget.defaultProgramName || 'Untitled Program'}`);
+      addLine(`Target Area: ${programTestFitTarget.scopeLabel} - ${programTestFitTarget.targetLabel || '-'}`);
+      addLine(`Available SF: ${Math.round(programTestFitSummary.availableSf).toLocaleString()}`);
+      addLine(`Program SF: ${Math.round(programTestFitSummary.programSf).toLocaleString()}`);
+      addLine(`Support / Shared Space %: ${programTestFitSummary.supportPct.toFixed(1)}%`);
+      addLine(`Efficiency Factor: ${programTestFitSummary.efficiencyFactor.toFixed(2)}`);
+      addLine(`Adjusted Required SF: ${Math.round(programTestFitSummary.adjustedRequiredSf).toLocaleString()}`);
+      addLine(`Surplus / Deficit: ${programTestFitSummary.fitGap >= 0 ? '+' : ''}${Math.round(programTestFitSummary.fitGap).toLocaleString()} SF`);
+      addLine(`Fit Result: ${programTestFitSummary.fitResult}`);
+      y += 8;
+      addLine('Program Summary', { bold: true, fontSize: 12 });
+      const rows = programTestFitSummary.rows.filter((row) => row.spaceType || row.qty || row.targetSfEach);
+      if (!rows.length) {
+        addLine('No program rows entered.');
+      } else {
+        rows.forEach((row) => {
+          addLine(`${row.spaceType || 'Untitled Space'} | Qty: ${Math.round(row.qty).toLocaleString()} | Target SF Each: ${Math.round(row.targetSfEach).toLocaleString()} | Total: ${Math.round(row.totalSf).toLocaleString()}`, { fontSize: 10, lineHeight: 14 });
+        });
+      }
+      const filename = String(programTestFitName || programTestFitTarget.targetLabel || 'program-test-fit')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'program-test-fit';
+      doc.save(`${filename}.pdf`);
+    } catch (err) {
+      console.error('Program Test Fit PDF export failed', err);
+      alert('Program Test Fit PDF export failed.');
+    }
+  }, [programTestFitName, programTestFitSummary, programTestFitTarget]);
+  const OCCUPANCY_OPTIONS = ['Occupied', 'Vacant', 'Unknown'];
     const resolveOccupancyStatusValue = (props = {}) => (
       props.occupancyStatus ??
       props['Occupancy Status'] ??
@@ -15564,6 +15764,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     (event) => beginPanelDrag(event, renoPanelRef, setRenoPanelPos, getMapPageBounds),
     [getMapPageBounds]
   );
+  const handleProgramTestFitDragStart = useCallback(
+    (event) => beginPanelDrag(event, programTestFitPanelRef, setProgramTestFitPos, getViewportBounds),
+    [getViewportBounds]
+  );
   const aiScenarioPanelRef = useRef(null);
   const aiCreateScenarioResultRef = useRef(null);
   const handleAiScenarioDragStart = useCallback(
@@ -15588,6 +15792,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   };
   const renoPanelDragHandleProps = {
     onPointerDown: handleRenoPanelDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const programTestFitDragHandleProps = {
+    onPointerDown: handleProgramTestFitDragStart,
     style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
   };
   const aiScenarioDragHandleProps = {
@@ -18944,6 +19152,210 @@ useEffect(() => {
       </div>
     )}
 
+    {programTestFitOpen && programTestFitTarget && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10006,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.45)'
+        }}
+      >
+        <div
+          ref={programTestFitPanelRef}
+          className="mf-ai-modal-panel"
+          style={{
+            position: 'fixed',
+            left: programTestFitPos ? programTestFitPos.x : '50%',
+            top: programTestFitPos ? programTestFitPos.y : '50%',
+            transform: programTestFitPos ? 'none' : 'translate(-50%, -50%)',
+            width: 'min(760px, 94vw)',
+            maxHeight: '88vh',
+            overflow: 'auto',
+            padding: 14,
+            lineHeight: 1.35
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div {...programTestFitDragHandleProps}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Program Test Fit</div>
+              <div style={{ fontSize: 12, color: '#555' }}>
+                {programTestFitTarget.scopeLabel}: {programTestFitTarget.targetLabel || '-'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={exportProgramTestFitPdf}>Export PDF</button>
+              <button className="btn" onClick={closeProgramTestFit}>Close</button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)', gap: 10 }}>
+            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Program Name</label>
+              <input
+                className="mf-input"
+                value={programTestFitName}
+                onChange={(e) => setProgramTestFitName(e.target.value)}
+                placeholder="e.g. Art Department Test Fit"
+              />
+              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#667085' }}>Available SF</div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{Math.round(programTestFitSummary.availableSf).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#667085' }}>Room Count</div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{Math.round(Number(programTestFitTarget.roomCount || 0)).toLocaleString()}</div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#667085', marginBottom: 2 }}>Support / Shared Space %</label>
+                  <input
+                    className="mf-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={programTestFitSupportPct}
+                    onChange={(e) => setProgramTestFitSupportPct(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#667085', marginBottom: 2 }}>Efficiency Factor</label>
+                  <input
+                    className="mf-input"
+                    type="number"
+                    min="0.1"
+                    step="0.05"
+                    value={programTestFitEfficiency}
+                    onChange={(e) => setProgramTestFitEfficiency(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
+                Analytical only. Does not generate layouts or modify Airtable.
+              </div>
+            </div>
+            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 10, background: '#f9fafb' }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Fit Summary</div>
+              <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+                <div><b>Program SF:</b> {Math.round(programTestFitSummary.programSf).toLocaleString()}</div>
+                <div><b>Required SF:</b> {Math.round(programTestFitSummary.adjustedRequiredSf).toLocaleString()}</div>
+                <div>
+                  <b>Surplus / Deficit:</b>{' '}
+                  <span style={{ color: programTestFitSummary.fitGap >= 0 ? '#166534' : '#b42318', fontWeight: 700 }}>
+                    {programTestFitSummary.fitGap >= 0 ? '+' : ''}{Math.round(programTestFitSummary.fitGap).toLocaleString()} SF
+                  </span>
+                </div>
+                <div>
+                  <b>Fit Result:</b>{' '}
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color:
+                        programTestFitSummary.fitResult === 'Fit'
+                          ? '#166534'
+                          : programTestFitSummary.fitResult === 'Tight Fit'
+                            ? '#b54708'
+                            : programTestFitSummary.fitResult === 'Does Not Fit'
+                              ? '#b42318'
+                              : '#667085'
+                    }}
+                  >
+                    {programTestFitSummary.fitResult}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10, border: '1px solid #e4e7ec', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#f8f9fb' }}>
+              <div style={{ fontWeight: 700 }}>Program Summary Table</div>
+              <button
+                className="btn"
+                onClick={() => setProgramTestFitRows((prev) => [...(prev || []), createProgramTestFitRow()])}
+              >
+                Add Row
+              </button>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ background: '#f8f9fb' }}>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '6px 8px' }}>Space Type</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px' }}>Qty</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px' }}>Target SF Each</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px' }}>Program SF</th>
+                    <th style={{ textAlign: 'center', padding: '6px 8px' }}>&nbsp;</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {programTestFitSummary.rows.map((row, idx) => (
+                    <tr key={row.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input
+                          className="mf-input"
+                          value={row.spaceType}
+                          onChange={(e) => setProgramTestFitRows((prev) => prev.map((entry) => entry.id === row.id ? { ...entry, spaceType: e.target.value } : entry))}
+                          placeholder={`Space ${idx + 1}`}
+                        />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input
+                          className="mf-input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={row.qty}
+                          onChange={(e) => setProgramTestFitRows((prev) => prev.map((entry) => entry.id === row.id ? { ...entry, qty: e.target.value } : entry))}
+                        />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input
+                          className="mf-input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={row.targetSfEach}
+                          onChange={(e) => setProgramTestFitRows((prev) => prev.map((entry) => entry.id === row.id ? { ...entry, targetSfEach: e.target.value } : entry))}
+                        />
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {Math.round(row.totalSf).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <button
+                          className="btn"
+                          onClick={() => setProgramTestFitRows((prev) => prev.length > 1 ? prev.filter((entry) => entry.id !== row.id) : [createProgramTestFitRow()])}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {programTestFitTarget.scope === 'selectedRooms' && Array.isArray(programTestFitTarget.selectedRooms) && programTestFitTarget.selectedRooms.length ? (
+            <div style={{ marginTop: 10, border: '1px solid #e4e7ec', borderRadius: 8, padding: 10 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Selected Room Inventory</div>
+              <div style={{ display: 'grid', gap: 3, fontSize: 11 }}>
+                {programTestFitTarget.selectedRooms.map((room, idx) => (
+                  <div key={`${room.roomLabel || 'room'}-${idx}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.roomLabel || `Room ${idx + 1}`}</span>
+                    <span>{Math.round(Number(room.sf || 0)).toLocaleString()} SF</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )}
+
     {mode === 'admin' && !presentationMode && (
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
@@ -19292,6 +19704,7 @@ useEffect(() => {
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onOpenProgramTestFit={openProgramTestFitForBuilding}
               onClose={() => {
                 setIsBuildingPanelCollapsed(true);
                 setSelectedBuildingId(null);
@@ -19333,6 +19746,7 @@ useEffect(() => {
               onLoadFloorplan={loadSelectedFloor}
               onUnloadFloorplan={handleUnloadFloorplan}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onOpenProgramTestFit={openProgramTestFitForFloor}
               colorMode={floorColorMode}
               onChangeColorMode={(mode) => {
                 setFloorColorMode(mode);
@@ -20949,6 +21363,13 @@ useEffect(() => {
 
         <div className="mf-actions">
           <button className="btn" onClick={closeRoomEdit}>Cancel</button>
+          <button
+            className="btn"
+            onClick={openProgramTestFitForSelectedRooms}
+            disabled={!roomEditTargets.length || roomEditIncluded.size === 0}
+          >
+            Program Test Fit
+          </button>
           <button
             className="btn"
             onClick={async () => {

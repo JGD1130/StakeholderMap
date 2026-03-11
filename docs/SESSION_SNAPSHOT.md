@@ -39,6 +39,7 @@ Last updated: 2026-03-11
 - Moved both Scenario Overrides and Scenario Impact to the bottom of the Planning Scenario panel and made both collapsed by default.
 - Added a repo-managed `firestore.rules` file and wired `firebase.json` to deploy it, covering public map reads, admin writes, scenario saves, and public drawing-entry submissions.
 - Added a Planning Scenario baseline-to-scenario slider that crossfades baseline fill/line/label layers against the live scenario layout.
+- Added a Program Test Fit tool shell with launchers from building panel, floor panel, and selected rooms, including program rows, fit calculations, and PDF export.
 
 ## Known follow-up checks
 

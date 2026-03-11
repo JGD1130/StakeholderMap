@@ -15,6 +15,7 @@ export default function FloorPanel({
   onClose,
   onExportPDF,
   onExportCSV,
+  onOpenProgramTestFit,
   colorMode = 'department',
   onChangeColorMode,
   legendTitle = 'Key Departments',
@@ -162,6 +163,7 @@ export default function FloorPanel({
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
           <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
           {onExportCSV ? <button className="btn" onClick={onExportCSV}>Export CSV</button> : null}
+          {onOpenProgramTestFit ? <button className="btn" onClick={onOpenProgramTestFit}>Program Test Fit</button> : null}
           <button
             className="btn"
             onClick={onExplainFloor}

@@ -14,6 +14,7 @@ export default function BuildingPanel({
   onClose,
   onExportPDF,
   onExportCSV,
+  onOpenProgramTestFit,
   onExplainBuilding,
   explainBuildingLoading = false,
   explainBuildingDisabled = false,
@@ -145,6 +146,9 @@ export default function BuildingPanel({
         <button className="btn primary" onClick={onLoadFloorplan}>Load</button>
         <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
         <button className="btn" onClick={onExportCSV}>Export CSV</button>
+        {onOpenProgramTestFit ? (
+          <button className="btn" onClick={onOpenProgramTestFit}>Program Test Fit</button>
+        ) : null}
         <button
           className="btn"
           onClick={onExplainBuilding}
