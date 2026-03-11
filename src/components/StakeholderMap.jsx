@@ -10658,6 +10658,21 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       [Number(start[0]) - ux * ext, Number(start[1]) - uy * ext],
       [Number(end[0]) + ux * ext, Number(end[1]) + uy * ext]
     ]);
+    const clipSplitPieceToTarget = (part) => {
+      if (!part?.geometry) return null;
+      let clipped = part;
+      try {
+        const intersection = turf.intersect(turf.featureCollection([part, feature]));
+        if (intersection?.geometry) clipped = intersection;
+      } catch {}
+      const geometry = clipped?.geometry;
+      if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return null;
+      try {
+        return (turf.area(clipped) || 0) > 1e-8 ? clipped : null;
+      } catch {
+        return null;
+      }
+    };
     const splitByHalfPlaneFallback = () => {
       const EPS = 1e-12;
       const geometry = feature?.geometry || null;
@@ -10760,14 +10775,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       const negRing = clipRingBySide(outerRing, false);
       const candidates = [posRing, negRing]
         .filter(Boolean)
-        .map((ring) => buildFeatureFromRing(ring))
-        .filter((part) => {
-          try {
-            return (turf.area(part) || 0) > 1e-8;
-          } catch {
-            return false;
-          }
-        });
+        .map((ring) => clipSplitPieceToTarget(buildFeatureFromRing(ring)))
+        .filter(Boolean);
       return candidates;
     };
 
@@ -10796,6 +10805,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       const lineInputs = [...nodedBoundaryLines, ...nodedSplitLines].filter(Boolean);
       const splitResult = turf.polygonize(turf.featureCollection(lineInputs));
       pieces = (splitResult?.features || [])
+        .map((part) => clipSplitPieceToTarget(part))
+        .filter(Boolean)
         .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'))
         .filter((part) => {
           try {

@@ -30,6 +30,7 @@ Last updated: 2026-03-11
 - Updated planning and reno PDF exports to highlight only the effective selected scenario rooms, avoiding adjacent/source-room over-highlighting in exported floorplan images.
 - Fixed synthetic scenario room registration so later department commits can apply consistently to split rooms as well as merged rooms.
 - Updated split validation so a new split can target the most recently selected scenario room even while earlier scenario rooms remain selected in the same session.
+- Hardened split geometry fallback so concave rooms like corridors get clipped back to the selected room shape instead of creating shortcut triangles through adjacent space.
 
 ## Known follow-up checks
 
