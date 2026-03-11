@@ -32,6 +32,7 @@ Last updated: 2026-03-11
 - Updated split validation so a new split can target the most recently selected scenario room even while earlier scenario rooms remain selected in the same session.
 - Hardened split geometry fallback so concave rooms like corridors get clipped back to the selected room shape instead of creating shortcut triangles through adjacent space.
 - Added first-pass Planning Scenario save/load/rename/duplicate using Firestore-backed scenario documents with saved room metadata, operations, overrides, and Reno settings for current-floor reloads.
+- Added browser-local fallback for Planning Scenario save/duplicate/rename so saved scenarios still work when Firestore write permissions block scenario documents.
 
 ## Known follow-up checks
 

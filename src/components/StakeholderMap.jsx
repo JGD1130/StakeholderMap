@@ -61,6 +61,7 @@ const RENO_SPECIALIZED_TYPE_KEYWORDS = [
   'maintenance'
 ];
 const SCENARIO_LAYOUT_OP_TYPES = new Set(['layoutMerge', 'layoutRemoveDivider', 'layoutSplit']);
+const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
 
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
@@ -8932,6 +8933,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [planningScenarioSaveMessage, setPlanningScenarioSaveMessage] = useState('');
   const [savedPlanningScenarios, setSavedPlanningScenarios] = useState([]);
   const [savedPlanningScenariosLoading, setSavedPlanningScenariosLoading] = useState(false);
+  const [localPlanningScenarios, setLocalPlanningScenarios] = useState([]);
   const [selectedPlanningScenarioId, setSelectedPlanningScenarioId] = useState('');
   const [activePlanningScenarioId, setActivePlanningScenarioId] = useState('');
   const [renoScenarioVisible, setRenoScenarioVisible] = useState(false);
@@ -9095,6 +9097,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     return collection(db, 'universities', universityId, 'planningScenarios');
   }, [universityId]);
 
+  const planningScenarioLocalStorageKey = useMemo(() => {
+    const scope = String(universityId || 'default').trim() || 'default';
+    return `${LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX}:${scope}`;
+  }, [universityId]);
+
   const persistScenarioOperation = useCallback(async (op) => {
     if (!SCENARIO_OP_PERSIST_ENABLED) return;
     if (!scenarioOpsCollection || !op) return;
@@ -9154,6 +9161,92 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       try { unsubscribe(); } catch {}
     };
   }, [planningScenariosCollection]);
+
+  const readLocalPlanningScenarios = useCallback(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(planningScenarioLocalStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [planningScenarioLocalStorageKey]);
+
+  const writeLocalPlanningScenarios = useCallback((items = []) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(planningScenarioLocalStorageKey, JSON.stringify(items || []));
+    } catch {}
+  }, [planningScenarioLocalStorageKey]);
+
+  useEffect(() => {
+    setLocalPlanningScenarios(readLocalPlanningScenarios());
+  }, [readLocalPlanningScenarios]);
+
+  const upsertLocalPlanningScenarioRecord = useCallback(({
+    payload = null,
+    duplicate = false,
+    scenarioName = '',
+    currentRecord = null
+  } = {}) => {
+    if (!payload || typeof payload !== 'object') return null;
+    const localItems = readLocalPlanningScenarios();
+    const nowMs = Date.now();
+    const existingId = (!duplicate && (String(activePlanningScenarioId || '').startsWith('local-')
+      ? activePlanningScenarioId
+      : (String(selectedPlanningScenarioId || '').startsWith('local-') ? selectedPlanningScenarioId : ''))) || '';
+    const localId = existingId || `local-${nowMs.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const nextRecord = {
+      ...(currentRecord && typeof currentRecord === 'object' ? currentRecord : {}),
+      ...payload,
+      id: localId,
+      name: String(scenarioName || payload?.name || currentRecord?.name || 'Scenario').trim() || 'Scenario',
+      scenarioLabel: String(payload?.scenarioLabel || scenarioName || currentRecord?.scenarioLabel || '').trim(),
+      createdAtMs: (!duplicate && currentRecord?.createdAtMs) ? currentRecord.createdAtMs : nowMs,
+      updatedAtMs: nowMs,
+      storage: 'local'
+    };
+    const withoutExisting = localItems.filter((entry) => String(entry?.id || '').trim() !== localId);
+    const nextItems = [nextRecord, ...withoutExisting];
+    writeLocalPlanningScenarios(nextItems);
+    setLocalPlanningScenarios(nextItems);
+    setActivePlanningScenarioId(localId);
+    setSelectedPlanningScenarioId(localId);
+    return nextRecord;
+  }, [
+    readLocalPlanningScenarios,
+    writeLocalPlanningScenarios,
+    activePlanningScenarioId,
+    selectedPlanningScenarioId
+  ]);
+
+  const renameLocalPlanningScenarioRecord = useCallback((targetId, nextName) => {
+    const normalizedId = String(targetId || '').trim();
+    const trimmedName = String(nextName || '').trim();
+    if (!normalizedId || !trimmedName) return null;
+    const localItems = readLocalPlanningScenarios();
+    const nowMs = Date.now();
+    let renamedRecord = null;
+    const nextItems = localItems.map((entry) => {
+      if (String(entry?.id || '').trim() !== normalizedId) return entry;
+      renamedRecord = {
+        ...entry,
+        name: trimmedName,
+        scenarioLabel: trimmedName,
+        updatedAtMs: nowMs,
+        updatedBy: getAuth().currentUser?.email || 'anonymous',
+        storage: 'local'
+      };
+      return renamedRecord;
+    });
+    if (!renamedRecord) return null;
+    writeLocalPlanningScenarios(nextItems);
+    setLocalPlanningScenarios(nextItems);
+    setActivePlanningScenarioId(normalizedId);
+    setSelectedPlanningScenarioId(normalizedId);
+    return renamedRecord;
+  }, [readLocalPlanningScenarios, writeLocalPlanningScenarios]);
 
   const ensureScenarioLayer = useCallback(() => {
     const map = mapRef.current;
@@ -10092,7 +10185,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [scenarioOperations, persistScenarioOperation]);
 
   const visiblePlanningScenarios = useMemo(() => {
-    return (savedPlanningScenarios || []).map((entry) => {
+    const merged = [...(savedPlanningScenarios || []), ...(localPlanningScenarios || [])];
+    return merged.map((entry) => {
       const buildingName = String(entry?.buildingName || entry?.buildingId || '').trim();
       const floorName = String(entry?.floorName || '').trim();
       const suffix = [buildingName, floorName].filter(Boolean).join(' - ');
@@ -10100,8 +10194,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         ...entry,
         optionLabel: suffix ? `${entry?.name || 'Untitled Scenario'} (${suffix})` : (entry?.name || 'Untitled Scenario')
       };
+    }).sort((a, b) => {
+      const aMs = Number(a?.updatedAtMs || a?.createdAtMs || a?.updatedAt?.seconds || a?.createdAt?.seconds || 0);
+      const bMs = Number(b?.updatedAtMs || b?.createdAtMs || b?.updatedAt?.seconds || b?.createdAt?.seconds || 0);
+      return bMs - aMs;
     });
-  }, [savedPlanningScenarios]);
+  }, [savedPlanningScenarios, localPlanningScenarios]);
 
   useEffect(() => {
     if (selectedPlanningScenarioId) return;
@@ -10111,10 +10209,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [selectedPlanningScenarioId, activePlanningScenarioId]);
 
   const savePlanningScenario = useCallback(async ({ duplicate = false } = {}) => {
-    if (!planningScenariosCollection) {
-      setPlanningScenarioSaveMessage('Save unavailable.');
-      return false;
-    }
     const hasScenarioContent = scenarioSelection.size > 0 || scenarioOperations.length > 0 || Object.keys(scenarioAssignments || {}).length > 0;
     if (!hasScenarioContent) {
       alert('Select rooms or make scenario edits before saving.');
@@ -10125,10 +10219,28 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const scenarioName = duplicate
       ? (baseName || currentRecord?.name || 'Scenario') + ' Copy'
       : (baseName || currentRecord?.name || 'Scenario');
-    const targetRef = (!duplicate && activePlanningScenarioId)
+    const payload = buildPlanningScenarioSnapshot(scenarioName);
+    const saveLocalFallback = () => {
+      const nextRecord = upsertLocalPlanningScenarioRecord({
+        payload,
+        duplicate,
+        scenarioName,
+        currentRecord
+      });
+      if (!nextRecord) {
+        setPlanningScenarioSaveMessage(`${duplicate ? 'Duplicate' : 'Save'} failed.`);
+        return false;
+      }
+      setPlanningScenarioSaveMessage(`${duplicate ? 'Duplicated' : 'Saved'} locally as ${scenarioName}`);
+      if (duplicate || !String(scenarioLabel || '').trim()) setScenarioLabel(scenarioName);
+      return true;
+    };
+    if (!planningScenariosCollection) {
+      return saveLocalFallback();
+    }
+    const targetRef = (!duplicate && activePlanningScenarioId && !String(activePlanningScenarioId).startsWith('local-'))
       ? doc(planningScenariosCollection, activePlanningScenarioId)
       : doc(planningScenariosCollection);
-    const payload = buildPlanningScenarioSnapshot(scenarioName);
     try {
       await setDoc(targetRef, {
         ...payload,
@@ -10141,8 +10253,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       if (duplicate || !String(scenarioLabel || '').trim()) setScenarioLabel(scenarioName);
       return true;
     } catch {
-      setPlanningScenarioSaveMessage(`${duplicate ? 'Duplicate' : 'Save'} failed.`);
-      return false;
+      return saveLocalFallback();
     }
   }, [
     planningScenariosCollection,
@@ -10151,8 +10262,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     scenarioAssignments,
     visiblePlanningScenarios,
     activePlanningScenarioId,
+    selectedPlanningScenarioId,
     scenarioLabel,
-    buildPlanningScenarioSnapshot
+    buildPlanningScenarioSnapshot,
+    upsertLocalPlanningScenarioRecord
   ]);
 
   const renamePlanningScenario = useCallback(async () => {
@@ -10166,9 +10279,34 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert('Enter a scenario label before renaming.');
       return false;
     }
-    if (!planningScenariosCollection) {
-      setPlanningScenarioSaveMessage('Rename unavailable.');
-      return false;
+    const renameLocalFallback = () => {
+      const renamedLocal = renameLocalPlanningScenarioRecord(targetId, nextName);
+      if (renamedLocal) {
+        setPlanningScenarioSaveMessage(`Renamed locally to ${nextName}`);
+        return true;
+      }
+      const currentRecord = visiblePlanningScenarios.find((entry) => String(entry?.id || '').trim() === targetId) || null;
+      const payload = buildPlanningScenarioSnapshot(nextName);
+      const localRecord = upsertLocalPlanningScenarioRecord({
+        payload: {
+          ...(currentRecord && typeof currentRecord === 'object' ? currentRecord : {}),
+          ...payload,
+          name: nextName,
+          scenarioLabel: nextName
+        },
+        duplicate: true,
+        scenarioName: nextName,
+        currentRecord
+      });
+      if (!localRecord) {
+        setPlanningScenarioSaveMessage('Rename failed.');
+        return false;
+      }
+      setPlanningScenarioSaveMessage(`Renamed locally to ${nextName}`);
+      return true;
+    };
+    if (String(targetId || '').startsWith('local-') || !planningScenariosCollection) {
+      return renameLocalFallback();
     }
     try {
       await setDoc(doc(planningScenariosCollection, targetId), {
@@ -10182,10 +10320,18 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       setPlanningScenarioSaveMessage(`Renamed to ${nextName}`);
       return true;
     } catch {
-      setPlanningScenarioSaveMessage('Rename failed.');
-      return false;
+      return renameLocalFallback();
     }
-  }, [activePlanningScenarioId, selectedPlanningScenarioId, scenarioLabel, planningScenariosCollection]);
+  }, [
+    activePlanningScenarioId,
+    selectedPlanningScenarioId,
+    scenarioLabel,
+    planningScenariosCollection,
+    renameLocalPlanningScenarioRecord,
+    visiblePlanningScenarios,
+    buildPlanningScenarioSnapshot,
+    upsertLocalPlanningScenarioRecord
+  ]);
 
   const handleLoadSavedPlanningScenario = useCallback(() => {
     const targetId = String(selectedPlanningScenarioId || activePlanningScenarioId || '').trim();
