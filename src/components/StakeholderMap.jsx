@@ -62,6 +62,7 @@ const RENO_SPECIALIZED_TYPE_KEYWORDS = [
 ];
 const SCENARIO_LAYOUT_OP_TYPES = new Set(['layoutMerge', 'layoutRemoveDivider', 'layoutSplit']);
 const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
+const LOCAL_RENO_SCENARIO_STORAGE_PREFIX = 'mf-reno-scenarios';
 
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
@@ -9102,6 +9103,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     return `${LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX}:${scope}`;
   }, [universityId]);
 
+  const renoScenarioLocalStorageKey = useMemo(() => {
+    const scope = String(universityId || 'default').trim() || 'default';
+    return `${LOCAL_RENO_SCENARIO_STORAGE_PREFIX}:${scope}`;
+  }, [universityId]);
+
   const persistScenarioOperation = useCallback(async (op) => {
     if (!SCENARIO_OP_PERSIST_ENABLED) return;
     if (!scenarioOpsCollection || !op) return;
@@ -9179,6 +9185,24 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       window.localStorage.setItem(planningScenarioLocalStorageKey, JSON.stringify(items || []));
     } catch {}
   }, [planningScenarioLocalStorageKey]);
+
+  const readLocalRenoScenarios = useCallback(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(renoScenarioLocalStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [renoScenarioLocalStorageKey]);
+
+  const writeLocalRenoScenarios = useCallback((items = []) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(renoScenarioLocalStorageKey, JSON.stringify(items || []));
+    } catch {}
+  }, [renoScenarioLocalStorageKey]);
 
   useEffect(() => {
     setLocalPlanningScenarios(readLocalPlanningScenarios());
@@ -11608,58 +11632,109 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const renoConceptualDisclaimer = 'Conceptual planning range only. This is not a construction estimate.';
 
+  const buildRenoScenarioPayload = useCallback((reason = 'manual') => {
+    const roomRows = (effectiveScenarioSelectedRooms || []).map((room) => ({
+      roomId: room.roomId || '',
+      roomNumber: room.roomNumber || '',
+      roomType: room.roomType || room.type || '',
+      categoryCode: normalizeScenarioCategoryCode(room.categoryCode || room.baseCategoryCode || '') || '',
+      department: norm(room.department || '') || '',
+      sf: Math.round(Number(room.area || 0) || 0)
+    }));
+    return {
+      scenarioId: renoScenarioIdRef.current,
+      planningScenarioId: scenarioSessionIdRef.current,
+      universityId,
+      campus: universityId,
+      building: activeBuildingName || selectedBuilding || selectedBuildingId || '',
+      floor: selectedFloor || currentFloorContextRef.current?.floorLabel || '',
+      label: (renoScenarioLabel || '').trim(),
+      renovationLevel: renoLevelConfig?.value || RENO_DEFAULT_LEVEL,
+      renovationLevelLabel: renoLevelConfig?.label || 'Moderate Interior',
+      conversionType: renoConversionConfig?.value || RENO_DEFAULT_CONVERSION_TYPE,
+      conversionTypeLabel: renoConversionConfig?.label || 'No use change',
+      conversionMultiplier: Number(renoConversionConfig?.multiplier || 1) || 1,
+      selectedRoomIds: Array.from(scenarioSelection || []),
+      selectedRooms: roomRows,
+      selectedSf: Math.round(renoScenarioSummary.selectedSf || 0),
+      roomCount: Math.round(renoScenarioSummary.roomCount || 0),
+      roomTypeMix: renoScenarioSummary.roomTypeMix,
+      categoryMix: renoScenarioSummary.categoryMix,
+      specializedRoomCount: Math.round(renoScenarioSummary.specializedRoomCount || 0),
+      baseCostRange: {
+        min: Math.round(renoBaseCostRange.minCost || 0),
+        max: Math.round(renoBaseCostRange.maxCost || 0)
+      },
+      costRange: {
+        min: Math.round(renoCostRange.minCost || 0),
+        max: Math.round(renoCostRange.maxCost || 0)
+      },
+      warnings: renoWarningLines,
+      warning: renoWarningLines.join(' '),
+      conceptualOnly: true,
+      conceptualDisclaimer: renoConceptualDisclaimer,
+      source: 'selected-room-reno-scenario',
+      reason,
+      updatedBy: getAuth().currentUser?.email || 'anonymous'
+    };
+  }, [
+    effectiveScenarioSelectedRooms,
+    universityId,
+    activeBuildingName,
+    selectedBuilding,
+    selectedBuildingId,
+    selectedFloor,
+    renoScenarioLabel,
+    renoLevelConfig,
+    renoConversionConfig,
+    scenarioSelection,
+    renoScenarioSummary,
+    renoBaseCostRange,
+    renoCostRange,
+    renoWarningLines,
+    renoConceptualDisclaimer
+  ]);
+
+  const persistLocalRenoScenarioState = useCallback((payload, reason = 'manual') => {
+    if (!payload || typeof payload !== 'object') return false;
+    const nowMs = Date.now();
+    const scenarioId = String(payload?.scenarioId || renoScenarioIdRef.current || `reno-${nowMs.toString(36)}`).trim();
+    const existingItems = readLocalRenoScenarios();
+    const nextRecord = {
+      ...payload,
+      id: scenarioId,
+      scenarioId,
+      reason,
+      storage: 'local',
+      updatedAtMs: nowMs
+    };
+    const nextItems = [nextRecord, ...existingItems.filter((entry) => String(entry?.scenarioId || entry?.id || '').trim() !== scenarioId)];
+    writeLocalRenoScenarios(nextItems);
+    return true;
+  }, [readLocalRenoScenarios, writeLocalRenoScenarios]);
+
   const persistRenoScenarioState = useCallback(async (reason = 'manual') => {
-    if (!universityId) return false;
     if (!renoScenarioSummary.roomCount) return false;
     if (renoSavePermissionBlockedRef.current && reason !== 'manualSave') return false;
+    const payload = buildRenoScenarioPayload(reason);
+    const saveLocalFallback = (message = 'Saved locally') => {
+      const savedLocal = persistLocalRenoScenarioState(payload, reason);
+      if (!savedLocal) {
+        setRenoScenarioSaveMessage('Save failed.');
+        return false;
+      }
+      setRenoScenarioSaveMessage(message);
+      return true;
+    };
+    if (!universityId) {
+      return saveLocalFallback('Saved locally');
+    }
     try {
-      const roomRows = (effectiveScenarioSelectedRooms || []).map((room) => ({
-        roomId: room.roomId || '',
-        roomNumber: room.roomNumber || '',
-        roomType: room.roomType || room.type || '',
-        categoryCode: normalizeScenarioCategoryCode(room.categoryCode || room.baseCategoryCode || '') || '',
-        department: norm(room.department || '') || '',
-        sf: Math.round(Number(room.area || 0) || 0)
-      }));
-      const payload = {
-        scenarioId: renoScenarioIdRef.current,
-        planningScenarioId: scenarioSessionIdRef.current,
-        universityId,
-        campus: universityId,
-        building: activeBuildingName || selectedBuilding || selectedBuildingId || '',
-        floor: selectedFloor || currentFloorContextRef.current?.floorLabel || '',
-        label: (renoScenarioLabel || '').trim(),
-        renovationLevel: renoLevelConfig?.value || RENO_DEFAULT_LEVEL,
-        renovationLevelLabel: renoLevelConfig?.label || 'Moderate Interior',
-        conversionType: renoConversionConfig?.value || RENO_DEFAULT_CONVERSION_TYPE,
-        conversionTypeLabel: renoConversionConfig?.label || 'No use change',
-        conversionMultiplier: Number(renoConversionConfig?.multiplier || 1) || 1,
-        selectedRoomIds: Array.from(scenarioSelection || []),
-        selectedRooms: roomRows,
-        selectedSf: Math.round(renoScenarioSummary.selectedSf || 0),
-        roomCount: Math.round(renoScenarioSummary.roomCount || 0),
-        roomTypeMix: renoScenarioSummary.roomTypeMix,
-        categoryMix: renoScenarioSummary.categoryMix,
-        specializedRoomCount: Math.round(renoScenarioSummary.specializedRoomCount || 0),
-        baseCostRange: {
-          min: Math.round(renoBaseCostRange.minCost || 0),
-          max: Math.round(renoBaseCostRange.maxCost || 0)
-        },
-        costRange: {
-          min: Math.round(renoCostRange.minCost || 0),
-          max: Math.round(renoCostRange.maxCost || 0)
-        },
-        warnings: renoWarningLines,
-        warning: renoWarningLines.join(' '),
-        conceptualOnly: true,
-        conceptualDisclaimer: renoConceptualDisclaimer,
-        source: 'selected-room-reno-scenario',
-        reason,
-        updatedBy: getAuth().currentUser?.email || 'anonymous',
-        updatedAt: serverTimestamp()
-      };
       const renoDocRef = doc(db, 'universities', universityId, 'renoScenarios', renoScenarioIdRef.current);
-      await setDoc(renoDocRef, payload, { merge: true });
+      await setDoc(renoDocRef, {
+        ...payload,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
       renoSavePermissionBlockedRef.current = false;
       setRenoScenarioSaveMessage(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
       return true;
@@ -11699,29 +11774,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         const fallbackCode = String(fallbackErr?.code || '');
         const fallbackPerm = fallbackCode.includes('permission-denied') || /insufficient permissions/i.test(String(fallbackErr?.message || ''));
         if (permissionDenied || fallbackPerm) {
-          setRenoScenarioSaveMessage('Save blocked by Firestore permissions. Local scenario remains active.');
-          return false;
+          return saveLocalFallback('Saved locally. Firestore permissions blocked remote save.');
         }
-        setRenoScenarioSaveMessage('Save failed (network/server).');
-        return false;
+        return saveLocalFallback('Saved locally after remote save failed.');
       }
     }
   }, [
     universityId,
     renoScenarioSummary,
-    effectiveScenarioSelectedRooms,
-    renoScenarioLabel,
-    renoLevelConfig,
-    renoConversionConfig,
-    scenarioSelection,
-    renoBaseCostRange,
-    renoCostRange,
-    renoWarningLines,
-    renoConceptualDisclaimer,
-    activeBuildingName,
-    selectedBuilding,
-    selectedBuildingId,
-    selectedFloor
+    buildRenoScenarioPayload,
+    persistLocalRenoScenarioState
   ]);
 
   const handleLaunchRenoScenario = useCallback(() => {
