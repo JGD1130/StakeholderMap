@@ -36,6 +36,7 @@ Last updated: 2026-03-11
 - Added browser-local fallback for Reno Scenario save so the conceptual renovation snapshot persists even when Firestore blocks remote writes.
 - Updated merge validation so a new merge can ignore already-selected synthetic merged rooms when at least two newly selected non-synthetic rooms are present, allowing distinct adjacent merged sets to remain separate.
 - Moved Scenario Impact to the bottom of the Planning Scenario panel and made it collapsed by default so layout-edit controls stay visible first.
+- Moved both Scenario Overrides and Scenario Impact to the bottom of the Planning Scenario panel and made both collapsed by default.
 - Added a repo-managed `firestore.rules` file and wired `firebase.json` to deploy it, covering public map reads, admin writes, scenario saves, and public drawing-entry submissions.
 
 ## Known follow-up checks

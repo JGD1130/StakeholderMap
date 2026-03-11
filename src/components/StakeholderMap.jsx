@@ -8931,6 +8931,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const previousScenarioSelectionRef = useRef(new Set());
   const [scenarioPanelTop, setScenarioPanelTop] = useState(20);
   const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
+  const [scenarioOverridesCollapsed, setScenarioOverridesCollapsed] = useState(true);
   const [scenarioImpactCollapsed, setScenarioImpactCollapsed] = useState(true);
   const [planningScenarioSaveMessage, setPlanningScenarioSaveMessage] = useState('');
   const [savedPlanningScenarios, setSavedPlanningScenarios] = useState([]);
@@ -19403,58 +19404,6 @@ useEffect(() => {
         </div>
 
         <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario Overrides (Selected Rooms)</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
-            <div>
-              <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Category Code</label>
-              <input
-                className="mf-input"
-                value={scenarioCategoryCodeInput}
-                onChange={(e) => setScenarioCategoryCodeInput(e.target.value)}
-                placeholder="e.g. 100 or 200"
-                list="scenario-category-code-options"
-              />
-              <datalist id="scenario-category-code-options">
-                {scenarioCategoryOptions.map((code) => (
-                  <option key={code} value={code} />
-                ))}
-              </datalist>
-            </div>
-            <button
-              className="btn secondary"
-              style={{ alignSelf: 'end', whiteSpace: 'nowrap' }}
-              onClick={applyScenarioCategoryOverride}
-              disabled={scenarioSelection.size === 0}
-            >
-              Apply Category
-            </button>
-            <div>
-              <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Capacity (Seats)</label>
-              <input
-                className="mf-input"
-                type="number"
-                min="0"
-                step="1"
-                value={scenarioCapacityInput}
-                onChange={(e) => setScenarioCapacityInput(e.target.value)}
-                placeholder="e.g. 32"
-              />
-            </div>
-            <button
-              className="btn secondary"
-              style={{ alignSelf: 'end', whiteSpace: 'nowrap' }}
-              onClick={applyScenarioCapacityOverride}
-              disabled={scenarioSelection.size === 0}
-            >
-              Apply Capacity
-            </button>
-          </div>
-          <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
-            Edits are scenario-only and recalculate seat supply and gap metrics.
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Layout Edit Mode</div>
           <div style={{ display: 'grid', gap: 6 }}>
             <button
@@ -19621,6 +19570,70 @@ useEffect(() => {
             {aiScenarioLoading ? 'Comparing...' : '\u2728 Compare scenario vs current'}
           </button>
           {aiScenarioErr ? <div style={{ color: 'crimson', fontSize: 12 }}>{aiScenarioErr}</div> : null}
+        </div>
+
+        <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <button
+            type="button"
+            className="btn secondary"
+            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            onClick={() => setScenarioOverridesCollapsed((prev) => !prev)}
+          >
+            <span>Scenario Overrides (Selected Rooms)</span>
+            <span style={{ fontSize: 12 }}>{scenarioOverridesCollapsed ? 'Show' : 'Hide'}</span>
+          </button>
+          {!scenarioOverridesCollapsed ? (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+                <div>
+                  <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Category Code</label>
+                  <input
+                    className="mf-input"
+                    value={scenarioCategoryCodeInput}
+                    onChange={(e) => setScenarioCategoryCodeInput(e.target.value)}
+                    placeholder="e.g. 100 or 200"
+                    list="scenario-category-code-options"
+                  />
+                  <datalist id="scenario-category-code-options">
+                    {scenarioCategoryOptions.map((code) => (
+                      <option key={code} value={code} />
+                    ))}
+                  </datalist>
+                </div>
+                <button
+                  className="btn secondary"
+                  style={{ alignSelf: 'end', whiteSpace: 'nowrap' }}
+                  onClick={applyScenarioCategoryOverride}
+                  disabled={scenarioSelection.size === 0}
+                >
+                  Apply Category
+                </button>
+                <div>
+                  <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Capacity (Seats)</label>
+                  <input
+                    className="mf-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={scenarioCapacityInput}
+                    onChange={(e) => setScenarioCapacityInput(e.target.value)}
+                    placeholder="e.g. 32"
+                  />
+                </div>
+                <button
+                  className="btn secondary"
+                  style={{ alignSelf: 'end', whiteSpace: 'nowrap' }}
+                  onClick={applyScenarioCapacityOverride}
+                  disabled={scenarioSelection.size === 0}
+                >
+                  Apply Capacity
+                </button>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
+                Edits are scenario-only and recalculate seat supply and gap metrics.
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
