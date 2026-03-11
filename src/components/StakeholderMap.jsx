@@ -8781,72 +8781,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setProgramTestFitPos(null);
     setProgramTestFitOpen(true);
   }, [resetProgramTestFitInputs]);
-  const openProgramTestFitForBuilding = useCallback(() => {
-    const availableSf = Number(buildingStats?.totalSf || 0) || 0;
-    if (!availableSf) {
-      alert('No building SF available for Program Test Fit.');
-      return;
-    }
-    openProgramTestFit({
-      scope: 'building',
-      scopeLabel: 'Building',
-      targetLabel: String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building',
-      buildingName: String(activeBuildingName || selectedBuildingId || selectedBuilding || '').trim(),
-      floorLabel: '',
-      availableSf,
-      roomCount: Number(buildingStats?.rooms || 0) || 0,
-      defaultProgramName: `${String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building'} Program Test Fit`
-    });
-  }, [buildingStats, activeBuildingName, selectedBuildingId, selectedBuilding, openProgramTestFit]);
-  const openProgramTestFitForFloor = useCallback(() => {
-    const availableSf = Number(floorStats?.totalSf || 0) || 0;
-    if (!availableSf) {
-      alert('No floor SF available for Program Test Fit.');
-      return;
-    }
-    const buildingLabel = String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building';
-    const floorLabel = String(floorStats?.floorLabel || selectedFloor || '').trim() || 'Floor';
-    openProgramTestFit({
-      scope: 'floor',
-      scopeLabel: 'Floor',
-      targetLabel: `${buildingLabel} ${floorLabel}`.trim(),
-      buildingName: buildingLabel,
-      floorLabel,
-      availableSf,
-      roomCount: Number(floorStats?.rooms || 0) || 0,
-      defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
-    });
-  }, [floorStats, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
-  const openProgramTestFitForSelectedRooms = useCallback(() => {
-    const includedKeys = roomEditIncluded || new Set();
-    const targets = roomEditTargets.length
-      ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
-      : [];
-    if (!targets.length) {
-      alert('Select one or more rooms first.');
-      return;
-    }
-    const availableSf = targets.reduce((sum, target) => {
-      const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
-      return sum + areaValue;
-    }, 0);
-    const buildingLabel = String(targets[0]?.buildingName || activeBuildingName || selectedBuildingId || selectedBuilding || 'Selected Rooms').trim() || 'Selected Rooms';
-    const floorLabel = String(targets[0]?.floorName || selectedFloor || '').trim();
-    openProgramTestFit({
-      scope: 'selectedRooms',
-      scopeLabel: 'Selected Rooms',
-      targetLabel: floorLabel ? `${buildingLabel} ${floorLabel} Selected Rooms` : `${buildingLabel} Selected Rooms`,
-      buildingName: buildingLabel,
-      floorLabel,
-      availableSf,
-      roomCount: targets.length,
-      selectedRooms: targets.map((target) => ({
-        roomLabel: target.roomLabel || target.roomNumber || target.feature?.properties?.name || '',
-        sf: Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0
-      })),
-      defaultProgramName: `${buildingLabel} Selected Rooms Test Fit`
-    });
-  }, [roomEditIncluded, roomEditTargets, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
   const programTestFitSummary = useMemo(() => {
     const normalizedRows = (Array.isArray(programTestFitRows) ? programTestFitRows : []).map((row) => {
       const qty = Math.max(0, Number(row?.qty || 0) || 0);
@@ -9072,6 +9006,72 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     'Building';
   const activeBuildingId = selectedBuildingId || selectedBuilding || '';
   const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
+  const openProgramTestFitForBuilding = useCallback(() => {
+    const availableSf = Number(buildingStats?.totalSf || 0) || 0;
+    if (!availableSf) {
+      alert('No building SF available for Program Test Fit.');
+      return;
+    }
+    openProgramTestFit({
+      scope: 'building',
+      scopeLabel: 'Building',
+      targetLabel: String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building',
+      buildingName: String(activeBuildingName || selectedBuildingId || selectedBuilding || '').trim(),
+      floorLabel: '',
+      availableSf,
+      roomCount: Number(buildingStats?.rooms || 0) || 0,
+      defaultProgramName: `${String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building'} Program Test Fit`
+    });
+  }, [buildingStats, activeBuildingName, selectedBuildingId, selectedBuilding, openProgramTestFit]);
+  const openProgramTestFitForFloor = useCallback(() => {
+    const availableSf = Number(floorStats?.totalSf || 0) || 0;
+    if (!availableSf) {
+      alert('No floor SF available for Program Test Fit.');
+      return;
+    }
+    const buildingLabel = String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building';
+    const floorLabel = String(floorStats?.floorLabel || selectedFloor || '').trim() || 'Floor';
+    openProgramTestFit({
+      scope: 'floor',
+      scopeLabel: 'Floor',
+      targetLabel: `${buildingLabel} ${floorLabel}`.trim(),
+      buildingName: buildingLabel,
+      floorLabel,
+      availableSf,
+      roomCount: Number(floorStats?.rooms || 0) || 0,
+      defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
+    });
+  }, [floorStats, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
+  const openProgramTestFitForSelectedRooms = useCallback(() => {
+    const includedKeys = roomEditIncluded || new Set();
+    const targets = roomEditTargets.length
+      ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
+      : [];
+    if (!targets.length) {
+      alert('Select one or more rooms first.');
+      return;
+    }
+    const availableSf = targets.reduce((sum, target) => {
+      const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
+      return sum + areaValue;
+    }, 0);
+    const buildingLabel = String(targets[0]?.buildingName || activeBuildingName || selectedBuildingId || selectedBuilding || 'Selected Rooms').trim() || 'Selected Rooms';
+    const floorLabel = String(targets[0]?.floorName || selectedFloor || '').trim();
+    openProgramTestFit({
+      scope: 'selectedRooms',
+      scopeLabel: 'Selected Rooms',
+      targetLabel: floorLabel ? `${buildingLabel} ${floorLabel} Selected Rooms` : `${buildingLabel} Selected Rooms`,
+      buildingName: buildingLabel,
+      floorLabel,
+      availableSf,
+      roomCount: targets.length,
+      selectedRooms: targets.map((target) => ({
+        roomLabel: target.roomLabel || target.roomNumber || target.feature?.properties?.name || '',
+        sf: Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0
+      })),
+      defaultProgramName: `${buildingLabel} Selected Rooms Test Fit`
+    });
+  }, [roomEditIncluded, roomEditTargets, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
   const isEngagementFloorScope = engagementMode && engagementScopeMode === 'floor';
   const getAvailableFloors = useCallback((buildingKey) => {
     if (!buildingKey) return [];
