@@ -75,6 +75,63 @@ function createProgramTestFitRow() {
   };
 }
 
+function getSortedProgramTestFitSpaceTypes(values = []) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+function computeProgramTestFitSummary({
+  rows = [],
+  supportPct = 0,
+  efficiencyFactor = PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY,
+  availableSf = 0
+} = {}) {
+  const normalizedRows = (Array.isArray(rows) ? rows : []).map((row) => {
+    const qty = Math.max(0, Number(row?.qty || 0) || 0);
+    const targetSfEach = Math.max(0, Number(row?.targetSfEach || 0) || 0);
+    const totalSf = qty * targetSfEach;
+    return {
+      ...row,
+      qty,
+      targetSfEach,
+      totalSf
+    };
+  });
+  const programSf = normalizedRows.reduce((sum, row) => sum + row.totalSf, 0);
+  const normalizedSupportPct = Math.max(0, Number(supportPct || 0) || 0);
+  const normalizedEfficiencyFactor = Math.max(
+    0.01,
+    Number(efficiencyFactor || 0) || PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY
+  );
+  const adjustedRequiredSf = (programSf * (1 + normalizedSupportPct / 100)) / normalizedEfficiencyFactor;
+  const normalizedAvailableSf = Math.max(0, Number(availableSf || 0) || 0);
+  const fitGap = normalizedAvailableSf - adjustedRequiredSf;
+  const fitPct = adjustedRequiredSf > 0 ? fitGap / adjustedRequiredSf : 0;
+  const fitResult = adjustedRequiredSf <= 0
+    ? 'No Program'
+    : fitPct >= 0.10
+      ? 'Fit'
+      : fitPct >= -0.10
+        ? 'Tight Fit'
+        : 'Does Not Fit';
+  return {
+    rows: normalizedRows,
+    programSf,
+    supportPct: normalizedSupportPct,
+    efficiencyFactor: normalizedEfficiencyFactor,
+    adjustedRequiredSf,
+    availableSf: normalizedAvailableSf,
+    fitGap,
+    fitPct,
+    fitResult
+  };
+}
+
 function getAiBaseUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
   if (envBase) return envBase;
@@ -8471,6 +8528,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [programTestFitRows, setProgramTestFitRows] = useState([createProgramTestFitRow()]);
   const [programTestFitSupportPct, setProgramTestFitSupportPct] = useState(String(PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT));
   const [programTestFitEfficiency, setProgramTestFitEfficiency] = useState(String(PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY));
+  const [programTestFitResults, setProgramTestFitResults] = useState(null);
+  const [programTestFitHasRun, setProgramTestFitHasRun] = useState(false);
   const roomEditSelectionRef = useRef([]);
   const programTestFitPanelRef = useRef(null);
   const getHighlightIdsForSelection = useCallback((selection = []) => {
@@ -8769,6 +8828,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setProgramTestFitRows([createProgramTestFitRow()]);
     setProgramTestFitSupportPct(String(PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT));
     setProgramTestFitEfficiency(String(PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY));
+    setProgramTestFitResults(null);
+    setProgramTestFitHasRun(false);
   }, []);
   const openProgramTestFit = useCallback((target) => {
     if (!target || !Number.isFinite(Number(target.availableSf || 0))) {
@@ -8782,45 +8843,27 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setProgramTestFitOpen(true);
   }, [resetProgramTestFitInputs]);
   const programTestFitSummary = useMemo(() => {
-    const normalizedRows = (Array.isArray(programTestFitRows) ? programTestFitRows : []).map((row) => {
-      const qty = Math.max(0, Number(row?.qty || 0) || 0);
-      const targetSfEach = Math.max(0, Number(row?.targetSfEach || 0) || 0);
-      const totalSf = qty * targetSfEach;
-      return {
-        ...row,
-        qty,
-        targetSfEach,
-        totalSf
-      };
+    return computeProgramTestFitSummary({
+      rows: programTestFitRows,
+      supportPct: programTestFitSupportPct,
+      efficiencyFactor: programTestFitEfficiency,
+      availableSf: programTestFitTarget?.availableSf || 0
     });
-    const programSf = normalizedRows.reduce((sum, row) => sum + row.totalSf, 0);
-    const supportPct = Math.max(0, Number(programTestFitSupportPct || 0) || 0);
-    const efficiencyFactor = Math.max(0.01, Number(programTestFitEfficiency || 0) || PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY);
-    const adjustedRequiredSf = (programSf * (1 + supportPct / 100)) / efficiencyFactor;
-    const availableSf = Math.max(0, Number(programTestFitTarget?.availableSf || 0) || 0);
-    const fitGap = availableSf - adjustedRequiredSf;
-    const fitPct = adjustedRequiredSf > 0 ? fitGap / adjustedRequiredSf : 0;
-    const fitResult = adjustedRequiredSf <= 0
-      ? 'No Program'
-      : fitPct >= 0.10
-        ? 'Fit'
-        : fitPct >= -0.10
-          ? 'Tight Fit'
-          : 'Does Not Fit';
-    return {
-      rows: normalizedRows,
-      programSf,
-      supportPct,
-      efficiencyFactor,
-      adjustedRequiredSf,
-      availableSf,
-      fitGap,
-      fitPct,
-      fitResult
-    };
   }, [programTestFitRows, programTestFitSupportPct, programTestFitEfficiency, programTestFitTarget]);
+  const runProgramTestFit = useCallback(() => {
+    setProgramTestFitResults(programTestFitSummary);
+    setProgramTestFitHasRun(true);
+  }, [programTestFitSummary]);
+  useEffect(() => {
+    if (!programTestFitHasRun) return;
+    setProgramTestFitResults(programTestFitSummary);
+  }, [programTestFitHasRun, programTestFitSummary]);
+  const programTestFitDisplayedSummary = programTestFitResults || null;
   const exportProgramTestFitPdf = useCallback(() => {
-    if (!programTestFitTarget) return;
+    if (!programTestFitTarget || !programTestFitDisplayedSummary) {
+      alert('Run Test Fit before exporting the PDF.');
+      return;
+    }
     try {
       const doc = new jsPDF('p', 'pt', 'letter');
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -8848,16 +8891,16 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       y += 22;
       addLine(`Program Name: ${programTestFitName || programTestFitTarget.defaultProgramName || 'Untitled Program'}`);
       addLine(`Target Area: ${programTestFitTarget.scopeLabel} - ${programTestFitTarget.targetLabel || '-'}`);
-      addLine(`Available SF: ${Math.round(programTestFitSummary.availableSf).toLocaleString()}`);
-      addLine(`Program SF: ${Math.round(programTestFitSummary.programSf).toLocaleString()}`);
-      addLine(`Support / Shared Space %: ${programTestFitSummary.supportPct.toFixed(1)}%`);
-      addLine(`Efficiency Factor: ${programTestFitSummary.efficiencyFactor.toFixed(2)}`);
-      addLine(`Adjusted Required SF: ${Math.round(programTestFitSummary.adjustedRequiredSf).toLocaleString()}`);
-      addLine(`Surplus / Deficit: ${programTestFitSummary.fitGap >= 0 ? '+' : ''}${Math.round(programTestFitSummary.fitGap).toLocaleString()} SF`);
-      addLine(`Fit Result: ${programTestFitSummary.fitResult}`);
+      addLine(`Available SF: ${Math.round(programTestFitDisplayedSummary.availableSf).toLocaleString()}`);
+      addLine(`Program SF: ${Math.round(programTestFitDisplayedSummary.programSf).toLocaleString()}`);
+      addLine(`Support / Shared Space %: ${programTestFitDisplayedSummary.supportPct.toFixed(1)}%`);
+      addLine(`Efficiency Factor: ${programTestFitDisplayedSummary.efficiencyFactor.toFixed(2)}`);
+      addLine(`Adjusted Required SF: ${Math.round(programTestFitDisplayedSummary.adjustedRequiredSf).toLocaleString()}`);
+      addLine(`Surplus / Deficit: ${programTestFitDisplayedSummary.fitGap >= 0 ? '+' : ''}${Math.round(programTestFitDisplayedSummary.fitGap).toLocaleString()} SF`);
+      addLine(`Fit Result: ${programTestFitDisplayedSummary.fitResult}`);
       y += 8;
       addLine('Program Summary', { bold: true, fontSize: 12 });
-      const rows = programTestFitSummary.rows.filter((row) => row.spaceType || row.qty || row.targetSfEach);
+      const rows = programTestFitDisplayedSummary.rows.filter((row) => row.spaceType || row.qty || row.targetSfEach);
       if (!rows.length) {
         addLine('No program rows entered.');
       } else {
@@ -8875,7 +8918,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       console.error('Program Test Fit PDF export failed', err);
       alert('Program Test Fit PDF export failed.');
     }
-  }, [programTestFitName, programTestFitSummary, programTestFitTarget]);
+  }, [programTestFitDisplayedSummary, programTestFitName, programTestFitTarget]);
   const OCCUPANCY_OPTIONS = ['Occupied', 'Vacant', 'Unknown'];
     const resolveOccupancyStatusValue = (props = {}) => (
       props.occupancyStatus ??
@@ -9020,6 +9063,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       floorLabel: '',
       availableSf,
       roomCount: Number(buildingStats?.rooms || 0) || 0,
+      spaceTypeOptions: getSortedProgramTestFitSpaceTypes(Object.keys(buildingStats?.roomTypes || {})),
       defaultProgramName: `${String(activeBuildingName || selectedBuildingId || selectedBuilding || 'Building').trim() || 'Building'} Program Test Fit`
     });
   }, [buildingStats, activeBuildingName, selectedBuildingId, selectedBuilding, openProgramTestFit]);
@@ -9039,6 +9083,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       floorLabel,
       availableSf,
       roomCount: Number(floorStats?.rooms || 0) || 0,
+      spaceTypeOptions: getSortedProgramTestFitSpaceTypes(Object.keys(floorStats?.roomTypes || {})),
       defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
     });
   }, [floorStats, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
@@ -9055,6 +9100,12 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
       return sum + areaValue;
     }, 0);
+    const spaceTypeOptions = getSortedProgramTestFitSpaceTypes(
+      targets.map((target) => {
+        const mergedProps = { ...(target?.feature?.properties || {}), ...(target?.properties || {}) };
+        return getTypeFromProps(mergedProps);
+      })
+    );
     const buildingLabel = String(targets[0]?.buildingName || activeBuildingName || selectedBuildingId || selectedBuilding || 'Selected Rooms').trim() || 'Selected Rooms';
     const floorLabel = String(targets[0]?.floorName || selectedFloor || '').trim();
     openProgramTestFit({
@@ -9065,8 +9116,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       floorLabel,
       availableSf,
       roomCount: targets.length,
+      spaceTypeOptions,
       selectedRooms: targets.map((target) => ({
         roomLabel: target.roomLabel || target.roomNumber || target.feature?.properties?.name || '',
+        roomType: getTypeFromProps({ ...(target?.feature?.properties || {}), ...(target?.properties || {}) }),
         sf: Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0
       })),
       defaultProgramName: `${buildingLabel} Selected Rooms Test Fit`
@@ -19186,7 +19239,7 @@ useEffect(() => {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn" onClick={exportProgramTestFitPdf}>Export PDF</button>
+              <button className="btn" onClick={exportProgramTestFitPdf} disabled={!programTestFitDisplayedSummary}>Export PDF</button>
               <button className="btn" onClick={closeProgramTestFit}>Close</button>
             </div>
           </div>
@@ -19235,37 +19288,50 @@ useEffect(() => {
               <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
                 Analytical only. Does not generate layouts or modify Airtable.
               </div>
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 11, color: '#667085' }}>
+                  Click <b>Run Test Fit</b> to calculate results. After the first run, results auto-refresh as values change.
+                </div>
+                <button className="btn primary" onClick={runProgramTestFit}>Run Test Fit</button>
+              </div>
             </div>
             <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 10, background: '#f9fafb' }}>
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Fit Summary</div>
-              <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                <div><b>Program SF:</b> {Math.round(programTestFitSummary.programSf).toLocaleString()}</div>
-                <div><b>Required SF:</b> {Math.round(programTestFitSummary.adjustedRequiredSf).toLocaleString()}</div>
-                <div>
-                  <b>Surplus / Deficit:</b>{' '}
-                  <span style={{ color: programTestFitSummary.fitGap >= 0 ? '#166534' : '#b42318', fontWeight: 700 }}>
-                    {programTestFitSummary.fitGap >= 0 ? '+' : ''}{Math.round(programTestFitSummary.fitGap).toLocaleString()} SF
-                  </span>
+              {programTestFitDisplayedSummary ? (
+                <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+                  <div><b>Available SF:</b> {Math.round(programTestFitDisplayedSummary.availableSf).toLocaleString()}</div>
+                  <div><b>Program SF:</b> {Math.round(programTestFitDisplayedSummary.programSf).toLocaleString()}</div>
+                  <div><b>Required SF:</b> {Math.round(programTestFitDisplayedSummary.adjustedRequiredSf).toLocaleString()}</div>
+                  <div>
+                    <b>Surplus / Deficit:</b>{' '}
+                    <span style={{ color: programTestFitDisplayedSummary.fitGap >= 0 ? '#166534' : '#b42318', fontWeight: 700 }}>
+                      {programTestFitDisplayedSummary.fitGap >= 0 ? '+' : ''}{Math.round(programTestFitDisplayedSummary.fitGap).toLocaleString()} SF
+                    </span>
+                  </div>
+                  <div>
+                    <b>Fit Result:</b>{' '}
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color:
+                          programTestFitDisplayedSummary.fitResult === 'Fit'
+                            ? '#166534'
+                            : programTestFitDisplayedSummary.fitResult === 'Tight Fit'
+                              ? '#b54708'
+                              : programTestFitDisplayedSummary.fitResult === 'Does Not Fit'
+                                ? '#b42318'
+                                : '#667085'
+                      }}
+                    >
+                      {programTestFitDisplayedSummary.fitResult}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <b>Fit Result:</b>{' '}
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color:
-                        programTestFitSummary.fitResult === 'Fit'
-                          ? '#166534'
-                          : programTestFitSummary.fitResult === 'Tight Fit'
-                            ? '#b54708'
-                            : programTestFitSummary.fitResult === 'Does Not Fit'
-                              ? '#b42318'
-                              : '#667085'
-                    }}
-                  >
-                    {programTestFitSummary.fitResult}
-                  </span>
+              ) : (
+                <div style={{ fontSize: 12, color: '#667085' }}>
+                  Enter program rows, then click <b>Run Test Fit</b> to calculate Available SF, Required SF, Surplus / Deficit, and Fit result.
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -19294,12 +19360,16 @@ useEffect(() => {
                   {programTestFitSummary.rows.map((row, idx) => (
                     <tr key={row.id} style={{ borderTop: '1px solid #f0f0f0' }}>
                       <td style={{ padding: '6px 8px' }}>
-                        <input
+                        <select
                           className="mf-input"
                           value={row.spaceType}
                           onChange={(e) => setProgramTestFitRows((prev) => prev.map((entry) => entry.id === row.id ? { ...entry, spaceType: e.target.value } : entry))}
-                          placeholder={`Space ${idx + 1}`}
-                        />
+                        >
+                          <option value="">{`Choose room type...`}</option>
+                          {(programTestFitTarget.spaceTypeOptions || []).map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
                       </td>
                       <td style={{ padding: '6px 8px' }}>
                         <input
@@ -19345,7 +19415,9 @@ useEffect(() => {
               <div style={{ display: 'grid', gap: 3, fontSize: 11 }}>
                 {programTestFitTarget.selectedRooms.map((room, idx) => (
                   <div key={`${room.roomLabel || 'room'}-${idx}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.roomLabel || `Room ${idx + 1}`}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {room.roomLabel || `Room ${idx + 1}`}{room.roomType ? ` (${room.roomType})` : ''}
+                    </span>
                     <span>{Math.round(Number(room.sf || 0)).toLocaleString()} SF</span>
                   </div>
                 ))}

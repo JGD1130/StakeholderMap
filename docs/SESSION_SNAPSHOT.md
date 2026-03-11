@@ -40,6 +40,7 @@ Last updated: 2026-03-11
 - Added a repo-managed `firestore.rules` file and wired `firebase.json` to deploy it, covering public map reads, admin writes, scenario saves, and public drawing-entry submissions.
 - Added a Planning Scenario baseline-to-scenario slider that crossfades baseline fill/line/label layers against the live scenario layout.
 - Added a Program Test Fit tool shell with launchers from building panel, floor panel, and selected rooms, including program rows, fit calculations, and PDF export.
+- Updated Program Test Fit to use an explicit primary `Run Test Fit` action, keep displayed results tied to the last run, auto-refresh results after the first run, and populate program row space types from current room-type options in the selected target area.
 
 ## Known follow-up checks
 
