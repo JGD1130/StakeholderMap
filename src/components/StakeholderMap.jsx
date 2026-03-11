@@ -8929,6 +8929,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const previousScenarioSelectionRef = useRef(new Set());
   const [scenarioPanelTop, setScenarioPanelTop] = useState(20);
   const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
+  const [planningScenarioSaveMessage, setPlanningScenarioSaveMessage] = useState('');
+  const [savedPlanningScenarios, setSavedPlanningScenarios] = useState([]);
+  const [savedPlanningScenariosLoading, setSavedPlanningScenariosLoading] = useState(false);
+  const [selectedPlanningScenarioId, setSelectedPlanningScenarioId] = useState('');
+  const [activePlanningScenarioId, setActivePlanningScenarioId] = useState('');
   const [renoScenarioVisible, setRenoScenarioVisible] = useState(false);
   const [renoScenarioLabel, setRenoScenarioLabel] = useState('');
   const [renoRenovationLevel, setRenoRenovationLevel] = useState(RENO_DEFAULT_LEVEL);
@@ -9056,6 +9061,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     setScenarioLayoutMode('');
     setScenarioSplitDraft(null);
     setScenarioLabel('');
+    setPlanningScenarioSaveMessage('');
+    setSelectedPlanningScenarioId('');
+    setActivePlanningScenarioId('');
     setScenarioPanelVisible(false);
     setScenarioPanelPos(null);
     setScenarioPanelTop(20);
@@ -9080,6 +9088,11 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
     return collection(db, 'moves');
+  }, [universityId]);
+
+  const planningScenariosCollection = useMemo(() => {
+    if (!universityId) return null;
+    return collection(db, 'universities', universityId, 'planningScenarios');
   }, [universityId]);
 
   const persistScenarioOperation = useCallback(async (op) => {
@@ -9112,6 +9125,35 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       // Keep layout edits local if Firestore rules block writes.
     }
   }, [universityId]);
+
+  useEffect(() => {
+    if (!planningScenariosCollection) {
+      setSavedPlanningScenarios([]);
+      setSavedPlanningScenariosLoading(false);
+      return undefined;
+    }
+    setSavedPlanningScenariosLoading(true);
+    const unsubscribe = onSnapshot(planningScenariosCollection, (snap) => {
+      const next = (snap?.docs || [])
+        .map((entry) => ({ id: entry.id, ...(entry.data() || {}) }))
+        .sort((a, b) => {
+          const aSec = Number(a?.updatedAt?.seconds || a?.createdAt?.seconds || 0);
+          const bSec = Number(b?.updatedAt?.seconds || b?.createdAt?.seconds || 0);
+          const aNano = Number(a?.updatedAt?.nanoseconds || a?.createdAt?.nanoseconds || 0);
+          const bNano = Number(b?.updatedAt?.nanoseconds || b?.createdAt?.nanoseconds || 0);
+          if (bSec !== aSec) return bSec - aSec;
+          return bNano - aNano;
+        });
+      setSavedPlanningScenarios(next);
+      setSavedPlanningScenariosLoading(false);
+    }, () => {
+      setSavedPlanningScenarios([]);
+      setSavedPlanningScenariosLoading(false);
+    });
+    return () => {
+      try { unsubscribe(); } catch {}
+    };
+  }, [planningScenariosCollection]);
 
   const ensureScenarioLayer = useCallback(() => {
     const map = mapRef.current;
@@ -9545,6 +9587,134 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     });
   }, [upsertScenarioRoomInfoFromSynthetic]);
 
+  const serializeScenarioRoomInfos = useCallback(() => {
+    return Array.from(scenarioRoomInfoRef.current.values()).map((info) => ({
+      roomId: String(info?.roomId || '').trim(),
+      buildingId: info?.buildingId || '',
+      buildingName: info?.buildingName || '',
+      floorName: info?.floorName || '',
+      revitId: info?.revitId ?? null,
+      roomGuid: info?.roomGuid ?? null,
+      roomNumber: info?.roomNumber || '',
+      roomType: info?.roomType || '',
+      department: info?.department || '',
+      area: Number(info?.area || 0) || 0,
+      categoryCode: info?.categoryCode || '',
+      seatCount: normalizeScenarioCapacityValue(info?.seatCount),
+      geometry: info?.geometry ? cloneGeoJsonValue(info.geometry) : null
+    })).filter((info) => info.roomId);
+  }, []);
+
+  const buildPlanningScenarioSnapshot = useCallback((nameOverride = '') => {
+    const trimmedName = String(nameOverride || scenarioLabel || '').trim();
+    const scenarioName = trimmedName || `Scenario ${new Date().toLocaleString()}`;
+    return {
+      name: scenarioName,
+      scenarioLabel: String(scenarioLabel || '').trim(),
+      buildingId: selectedBuildingId || selectedBuilding || '',
+      buildingName: activeBuildingName || selectedBuilding || selectedBuildingId || '',
+      floorName: selectedFloor || currentFloorContextRef.current?.floorLabel || '',
+      scenarioSessionId: scenarioSessionIdRef.current,
+      selectedRoomIds: Array.from(scenarioSelection || []).map((roomId) => String(roomId || '').trim()).filter(Boolean),
+      roomInfos: serializeScenarioRoomInfos(),
+      operations: cloneGeoJsonValue(scenarioOperations) || [],
+      assignments: cloneGeoJsonValue(scenarioAssignments) || {},
+      assignedDept: String(scenarioAssignedDept || '').trim(),
+      categoryCodeInput: String(scenarioCategoryCodeInput || '').trim(),
+      capacityInput: String(scenarioCapacityInput || '').trim(),
+      totalSf: Math.round(Number(scenarioTotals?.totalSF || 0) || 0),
+      roomCount: Math.round(Number(scenarioTotals?.rooms || 0) || 0),
+      renoScenario: {
+        visible: Boolean(renoScenarioVisible),
+        label: String(renoScenarioLabel || '').trim(),
+        renovationLevel: renoRenovationLevel || RENO_DEFAULT_LEVEL,
+        conversionType: renoConversionType || RENO_DEFAULT_CONVERSION_TYPE
+      },
+      updatedBy: getAuth().currentUser?.email || 'anonymous'
+    };
+  }, [
+    scenarioLabel,
+    selectedBuildingId,
+    selectedBuilding,
+    activeBuildingName,
+    selectedFloor,
+    scenarioSelection,
+    serializeScenarioRoomInfos,
+    scenarioOperations,
+    scenarioAssignments,
+    scenarioAssignedDept,
+    scenarioCategoryCodeInput,
+    scenarioCapacityInput,
+    scenarioTotals,
+    renoScenarioVisible,
+    renoScenarioLabel,
+    renoRenovationLevel,
+    renoConversionType
+  ]);
+
+  const loadSavedPlanningScenario = useCallback((savedScenario) => {
+    if (!savedScenario) return;
+    const savedBuildingKey = normalizeDashboardKey(savedScenario?.buildingId || savedScenario?.buildingName || '');
+    const currentBuildingKey = normalizeDashboardKey(selectedBuildingId || selectedBuilding || activeBuildingName || '');
+    const savedFloorTokens = normalizeFloorTokens(savedScenario?.floorName || '');
+    const currentFloorTokens = normalizeFloorTokens(selectedFloor || currentFloorContextRef.current?.floorLabel || '');
+    const buildingMismatch = savedBuildingKey && currentBuildingKey && savedBuildingKey !== currentBuildingKey;
+    const floorMismatch = savedFloorTokens.length && currentFloorTokens.length && !savedFloorTokens.some((token) => currentFloorTokens.includes(token));
+    if (buildingMismatch || floorMismatch) {
+      alert(`Load ${savedScenario?.buildingName || savedScenario?.buildingId || 'the matching building'} ${savedScenario?.floorName ? `(${savedScenario.floorName})` : ''} first, then load this scenario.`);
+      return;
+    }
+
+    resetScenarioModeState();
+
+    const roomInfos = Array.isArray(savedScenario?.roomInfos) ? savedScenario.roomInfos : [];
+    scenarioRoomInfoRef.current = new Map(
+      roomInfos
+        .map((info) => ({
+          ...info,
+          roomId: String(info?.roomId || '').trim(),
+          geometry: info?.geometry ? cloneGeoJsonValue(info.geometry) : null
+        }))
+        .filter((info) => info.roomId)
+        .map((info) => [info.roomId, info])
+    );
+    previousScenarioSelectionRef.current = new Set();
+
+    const nextSelection = new Set(
+      (Array.isArray(savedScenario?.selectedRoomIds) ? savedScenario.selectedRoomIds : [])
+        .map((roomId) => String(roomId || '').trim())
+        .filter(Boolean)
+    );
+
+    setScenarioOperations(Array.isArray(savedScenario?.operations) ? cloneGeoJsonValue(savedScenario.operations) || [] : []);
+    setScenarioAssignments(savedScenario?.assignments && typeof savedScenario.assignments === 'object'
+      ? { ...savedScenario.assignments }
+      : {});
+    setScenarioAssignedDept(String(savedScenario?.assignedDept || '').trim());
+    setScenarioCategoryCodeInput(String(savedScenario?.categoryCodeInput || '').trim());
+    setScenarioCapacityInput(String(savedScenario?.capacityInput || '').trim());
+    setScenarioLabel(String(savedScenario?.scenarioLabel || savedScenario?.name || '').trim());
+    setScenarioSelection(nextSelection);
+    setScenarioPanelVisible(nextSelection.size > 0);
+    setPlanningScenarioSaveMessage(`Loaded ${savedScenario?.name || 'scenario'}`);
+    setActivePlanningScenarioId(String(savedScenario?.id || '').trim());
+    setSelectedPlanningScenarioId(String(savedScenario?.id || '').trim());
+    scenarioSessionIdRef.current = String(savedScenario?.scenarioSessionId || savedScenario?.id || `scenario-${Date.now().toString(36)}`).trim();
+
+    const renoSnapshot = savedScenario?.renoScenario || {};
+    setRenoScenarioLabel(String(renoSnapshot?.label || '').trim());
+    setRenoRenovationLevel(String(renoSnapshot?.renovationLevel || RENO_DEFAULT_LEVEL).trim() || RENO_DEFAULT_LEVEL);
+    setRenoConversionType(String(renoSnapshot?.conversionType || RENO_DEFAULT_CONVERSION_TYPE).trim() || RENO_DEFAULT_CONVERSION_TYPE);
+    setRenoScenarioVisible(Boolean(renoSnapshot?.visible) && nextSelection.size > 0);
+    setRenoScenarioSaveMessage('');
+  }, [
+    selectedBuildingId,
+    selectedBuilding,
+    activeBuildingName,
+    selectedFloor,
+    resetScenarioModeState
+  ]);
+
   const setScenarioSelectionToRoomIds = useCallback((roomIds = []) => {
     const normalizedIds = Array.from(new Set((roomIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
     ensureScenarioRoomInfoForIds(normalizedIds);
@@ -9920,6 +10090,116 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       removedOpType: removed.opType
     });
   }, [scenarioOperations, persistScenarioOperation]);
+
+  const visiblePlanningScenarios = useMemo(() => {
+    return (savedPlanningScenarios || []).map((entry) => {
+      const buildingName = String(entry?.buildingName || entry?.buildingId || '').trim();
+      const floorName = String(entry?.floorName || '').trim();
+      const suffix = [buildingName, floorName].filter(Boolean).join(' - ');
+      return {
+        ...entry,
+        optionLabel: suffix ? `${entry?.name || 'Untitled Scenario'} (${suffix})` : (entry?.name || 'Untitled Scenario')
+      };
+    });
+  }, [savedPlanningScenarios]);
+
+  useEffect(() => {
+    if (selectedPlanningScenarioId) return;
+    if (activePlanningScenarioId) {
+      setSelectedPlanningScenarioId(activePlanningScenarioId);
+    }
+  }, [selectedPlanningScenarioId, activePlanningScenarioId]);
+
+  const savePlanningScenario = useCallback(async ({ duplicate = false } = {}) => {
+    if (!planningScenariosCollection) {
+      setPlanningScenarioSaveMessage('Save unavailable.');
+      return false;
+    }
+    const hasScenarioContent = scenarioSelection.size > 0 || scenarioOperations.length > 0 || Object.keys(scenarioAssignments || {}).length > 0;
+    if (!hasScenarioContent) {
+      alert('Select rooms or make scenario edits before saving.');
+      return false;
+    }
+    const currentRecord = visiblePlanningScenarios.find((entry) => entry.id === activePlanningScenarioId) || null;
+    const baseName = String(scenarioLabel || '').trim();
+    const scenarioName = duplicate
+      ? (baseName || currentRecord?.name || 'Scenario') + ' Copy'
+      : (baseName || currentRecord?.name || 'Scenario');
+    const targetRef = (!duplicate && activePlanningScenarioId)
+      ? doc(planningScenariosCollection, activePlanningScenarioId)
+      : doc(planningScenariosCollection);
+    const payload = buildPlanningScenarioSnapshot(scenarioName);
+    try {
+      await setDoc(targetRef, {
+        ...payload,
+        createdAt: (!duplicate && currentRecord?.createdAt) ? currentRecord.createdAt : serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setActivePlanningScenarioId(targetRef.id);
+      setSelectedPlanningScenarioId(targetRef.id);
+      setPlanningScenarioSaveMessage(`${duplicate ? 'Duplicated' : 'Saved'} ${scenarioName}`);
+      if (duplicate || !String(scenarioLabel || '').trim()) setScenarioLabel(scenarioName);
+      return true;
+    } catch {
+      setPlanningScenarioSaveMessage(`${duplicate ? 'Duplicate' : 'Save'} failed.`);
+      return false;
+    }
+  }, [
+    planningScenariosCollection,
+    scenarioSelection,
+    scenarioOperations,
+    scenarioAssignments,
+    visiblePlanningScenarios,
+    activePlanningScenarioId,
+    scenarioLabel,
+    buildPlanningScenarioSnapshot
+  ]);
+
+  const renamePlanningScenario = useCallback(async () => {
+    const targetId = String(activePlanningScenarioId || selectedPlanningScenarioId || '').trim();
+    const nextName = String(scenarioLabel || '').trim();
+    if (!targetId) {
+      alert('Load or save a scenario before renaming it.');
+      return false;
+    }
+    if (!nextName) {
+      alert('Enter a scenario label before renaming.');
+      return false;
+    }
+    if (!planningScenariosCollection) {
+      setPlanningScenarioSaveMessage('Rename unavailable.');
+      return false;
+    }
+    try {
+      await setDoc(doc(planningScenariosCollection, targetId), {
+        name: nextName,
+        scenarioLabel: nextName,
+        updatedAt: serverTimestamp(),
+        updatedBy: getAuth().currentUser?.email || 'anonymous'
+      }, { merge: true });
+      setActivePlanningScenarioId(targetId);
+      setSelectedPlanningScenarioId(targetId);
+      setPlanningScenarioSaveMessage(`Renamed to ${nextName}`);
+      return true;
+    } catch {
+      setPlanningScenarioSaveMessage('Rename failed.');
+      return false;
+    }
+  }, [activePlanningScenarioId, selectedPlanningScenarioId, scenarioLabel, planningScenariosCollection]);
+
+  const handleLoadSavedPlanningScenario = useCallback(() => {
+    const targetId = String(selectedPlanningScenarioId || activePlanningScenarioId || '').trim();
+    if (!targetId) {
+      alert('Choose a saved scenario to load.');
+      return;
+    }
+    const savedScenario = visiblePlanningScenarios.find((entry) => entry.id === targetId) || null;
+    if (!savedScenario) {
+      alert('Saved scenario not found.');
+      return;
+    }
+    loadSavedPlanningScenario(savedScenario);
+  }, [selectedPlanningScenarioId, activePlanningScenarioId, visiblePlanningScenarios, loadSavedPlanningScenario]);
 
   const scenarioRoomOverrides = useMemo(() => {
     const byRoomId = new Map();
@@ -18838,6 +19118,42 @@ useEffect(() => {
           >
             Reset Scenario
           </button>
+        </div>
+
+        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Saved Scenarios</div>
+          <select
+            className="mf-input"
+            value={selectedPlanningScenarioId}
+            onChange={(e) => setSelectedPlanningScenarioId(e.target.value)}
+            style={{ width: '100%', marginBottom: 6 }}
+          >
+            <option value="">{savedPlanningScenariosLoading ? 'Loading scenarios...' : 'Choose saved scenario...'}</option>
+            {visiblePlanningScenarios.map((entry) => (
+              <option key={entry.id} value={entry.id}>{entry.optionLabel}</option>
+            ))}
+          </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <button className="btn secondary" onClick={handleLoadSavedPlanningScenario} disabled={!selectedPlanningScenarioId}>
+              Load
+            </button>
+            <button className="btn secondary" onClick={() => { void savePlanningScenario(); }}>
+              Save
+            </button>
+            <button
+              className="btn secondary"
+              onClick={renamePlanningScenario}
+              disabled={!(activePlanningScenarioId || selectedPlanningScenarioId)}
+            >
+              Rename
+            </button>
+            <button className="btn secondary" onClick={() => { void savePlanningScenario({ duplicate: true }); }}>
+              Duplicate
+            </button>
+          </div>
+          {planningScenarioSaveMessage ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>{planningScenarioSaveMessage}</div>
+          ) : null}
         </div>
 
         <div style={{ marginBottom: 8 }}>
