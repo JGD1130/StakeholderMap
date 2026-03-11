@@ -10894,6 +10894,18 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [buildEffectiveScenarioRoomWithGeometry, appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
 
   const scenarioSplitValidation = useMemo(() => {
+    const selectedIds = Array.from(scenarioSelection || [])
+      .map((roomId) => String(roomId || '').trim())
+      .filter(Boolean);
+    const preferredRoomId = selectedIds[selectedIds.length - 1] || '';
+    if (preferredRoomId) {
+      const targetIds = toEffectiveScenarioTargetRoomIds([preferredRoomId]);
+      const targetRoomId = String(targetIds?.[0] || preferredRoomId).trim();
+      const targetRoom = targetRoomId ? buildEffectiveScenarioRoomWithGeometry(targetRoomId) : null;
+      if (targetRoom?.geometry) {
+        return { canSplit: true, reason: '', roomId: targetRoom.roomId };
+      }
+    }
     const activeRooms = scenarioLayoutSelectionAnalysis.activeRooms || [];
     if (activeRooms.length !== 1) {
       return { canSplit: false, reason: 'Select exactly 1 room to split.' };
@@ -10901,7 +10913,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const onlyRoom = activeRooms[0];
     if (!onlyRoom?.geometry) return { canSplit: false, reason: 'Selected room geometry is unavailable.' };
     return { canSplit: true, reason: '', roomId: onlyRoom.roomId };
-  }, [scenarioLayoutSelectionAnalysis]);
+  }, [scenarioSelection, scenarioLayoutSelectionAnalysis, toEffectiveScenarioTargetRoomIds, buildEffectiveScenarioRoomWithGeometry]);
 
   const activateScenarioSplitMode = useCallback(() => {
     if (!scenarioSplitValidation.canSplit) {
