@@ -8931,6 +8931,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const previousScenarioSelectionRef = useRef(new Set());
   const [scenarioPanelTop, setScenarioPanelTop] = useState(20);
   const [scenarioPanelPos, setScenarioPanelPos] = useState(null);
+  const [scenarioImpactCollapsed, setScenarioImpactCollapsed] = useState(true);
   const [planningScenarioSaveMessage, setPlanningScenarioSaveMessage] = useState('');
   const [savedPlanningScenarios, setSavedPlanningScenarios] = useState([]);
   const [savedPlanningScenariosLoading, setSavedPlanningScenariosLoading] = useState(false);
@@ -19402,19 +19403,6 @@ useEffect(() => {
         </div>
 
         <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario Impact</div>
-          <div><b>Instructional Seats Added:</b> {scenarioImpactSummary.instructionalSeatsAdded >= 0 ? '+' : ''}{Math.round(scenarioImpactSummary.instructionalSeatsAdded).toLocaleString()}</div>
-          <div><b>Rooms Converted to Instructional:</b> {scenarioImpactSummary.roomsConvertedToInstructional}</div>
-          <div><b>Rooms Removed:</b> {scenarioImpactSummary.roomsRemoved}</div>
-          <div><b>Net Room Change:</b> {scenarioImpactSummary.netRoomChange >= 0 ? '+' : ''}{scenarioImpactSummary.netRoomChange}</div>
-          <div>
-            <b>Department SF ({scenarioImpactSummary.departmentLabel}):</b>{' '}
-            {scenarioImpactSummary.departmentSfImpact >= 0 ? '+' : ''}
-            {Math.round(scenarioImpactSummary.departmentSfImpact).toLocaleString()} SF
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario Overrides (Selected Rooms)</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
             <div>
@@ -19633,6 +19621,31 @@ useEffect(() => {
             {aiScenarioLoading ? 'Comparing...' : '\u2728 Compare scenario vs current'}
           </button>
           {aiScenarioErr ? <div style={{ color: 'crimson', fontSize: 12 }}>{aiScenarioErr}</div> : null}
+        </div>
+
+        <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+          <button
+            type="button"
+            className="btn secondary"
+            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            onClick={() => setScenarioImpactCollapsed((prev) => !prev)}
+          >
+            <span>Scenario Impact</span>
+            <span style={{ fontSize: 12 }}>{scenarioImpactCollapsed ? 'Show' : 'Hide'}</span>
+          </button>
+          {!scenarioImpactCollapsed ? (
+            <div style={{ marginTop: 8 }}>
+              <div><b>Instructional Seats Added:</b> {scenarioImpactSummary.instructionalSeatsAdded >= 0 ? '+' : ''}{Math.round(scenarioImpactSummary.instructionalSeatsAdded).toLocaleString()}</div>
+              <div><b>Rooms Converted to Instructional:</b> {scenarioImpactSummary.roomsConvertedToInstructional}</div>
+              <div><b>Rooms Removed:</b> {scenarioImpactSummary.roomsRemoved}</div>
+              <div><b>Net Room Change:</b> {scenarioImpactSummary.netRoomChange >= 0 ? '+' : ''}{scenarioImpactSummary.netRoomChange}</div>
+              <div>
+                <b>Department SF ({scenarioImpactSummary.departmentLabel}):</b>{' '}
+                {scenarioImpactSummary.departmentSfImpact >= 0 ? '+' : ''}
+                {Math.round(scenarioImpactSummary.departmentSfImpact).toLocaleString()} SF
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <button
