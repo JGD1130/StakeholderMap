@@ -28,6 +28,7 @@ Last updated: 2026-03-11
 - Updated layout operations so they replace only the rooms affected by the current edit instead of replacing the entire scenario selection.
 - Updated scenario operation logging so layout ops persist the explicit source room ids they acted on.
 - Updated planning and reno PDF exports to highlight only the effective selected scenario rooms, avoiding adjacent/source-room over-highlighting in exported floorplan images.
+- Fixed synthetic scenario room registration so later department commits can apply consistently to split rooms as well as merged rooms.
 
 ## Known follow-up checks
 
