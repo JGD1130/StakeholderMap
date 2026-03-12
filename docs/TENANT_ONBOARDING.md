@@ -5,7 +5,8 @@ This repo now supports tenant scaffolding via `src/tenants/registry.js`.
 ## Current state
 
 - `hastings` is active.
-- `sarpy-county` is scaffolded as `planned` (not live yet).
+- `sarpy-county` has a scaffolded tenant + config shell (`src/Configs/SarpyCounty.json`).
+- Sarpy currently uses empty buildings/boundary GeoJSON placeholders until data is loaded.
 - Engagement technical assessment controls are feature-flagged per tenant:
   - `features.enableEngagementTechnicalAssessment`
 
@@ -44,3 +45,6 @@ This repo now supports tenant scaffolding via `src/tenants/registry.js`.
 - Engagement map view selector remains unchanged for Hastings.
 - Technical assessment in engagement can be turned on later by setting:
   - `enableEngagementTechnicalAssessment: true` for that tenant.
+- Sarpy implementation checklist:
+  - `docs/SARPY_ROLLOUT_CHECKLIST.md`
+  - `docs/templates/SARPY_BUILDING_INVENTORY_TEMPLATE.csv`

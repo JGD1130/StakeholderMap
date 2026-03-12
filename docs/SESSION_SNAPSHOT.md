@@ -1,6 +1,6 @@
 # Session Snapshot
 
-Last updated: 2026-03-11
+Last updated: 2026-03-12
 
 ## Current focus
 
@@ -45,13 +45,18 @@ Last updated: 2026-03-11
 - Disabled the right-side floor summary panel in the stakeholder engagement map so floorplans can still load there without opening the full Floor Panel UI.
 - Disabled the entire right-side building/floor floating space panel in the stakeholder engagement map so clicking buildings or loading floorplans there no longer opens the admin/public analytics panel.
 
+## Fix applied on 2026-03-12
+
+- Updated Remove Divider targeting so when prior synthetic scenario rooms remain selected, the action can still operate on exactly two newly selected non-synthetic adjacent rooms instead of failing on the full active selection.
+- Remove Divider now uses the validated working pair directly when applying the operation, keeping it aligned with merge-room selection handling.
+
 ## Known follow-up checks
 
 - Verify in UI that:
   - Merge one adjacent room set, then merge a second unrelated adjacent room set in the same session.
   - Keep prior merged rooms visible in Planning Scenario totals and Reno Scenario totals after the second merge.
   - Split still works when exactly one active room is targeted.
-  - Remove Divider still works with prior synthetic scenario rooms already present in the session.
+  - Remove Divider still works when prior synthetic scenario rooms remain selected and the new divider-removal pair is adjacent.
 
 ## Working rule for future sessions
 

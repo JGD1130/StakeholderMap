@@ -1,5 +1,6 @@
-﻿import hastingsConfigData from './Configs/Hastings.json';
+import hastingsConfigData from './Configs/Hastings.json';
 import rockhurstConfigData from './Configs/Rockhurst.json';
+import sarpyCountyConfigData from './Configs/SarpyCounty.json';
 
 // Import raw GeoJSONs and parse them
 import hastingsBuildingsRaw from './Configs/geojson/Hastings_College_Buildings.geojson?raw';
@@ -9,7 +10,6 @@ import hastingsOutdoorRaw from './Configs/geojson/HC_Outdoor_map.geojson?raw';
 import rockhurstBuildingsRaw from './Configs/geojson/RockhurstU_Buildings.geojson?raw';
 import rockhurstBoundaryRaw from './Configs/geojson/RockhurstU_Boundary.geojson?raw';
 
-// Parse into JS objects
 function stripBom(text) {
   return (typeof text === 'string') ? text.replace(/^\uFEFF/, '') : text;
 }
@@ -30,6 +30,9 @@ function asConfig(objOrArray) {
 
 const hastingsBase = asConfig(hastingsConfigData);
 const rockhurstBase = asConfig(rockhurstConfigData);
+const sarpyCountyBase = asConfig(sarpyCountyConfigData);
+
+const emptyFeatureCollection = { type: 'FeatureCollection', features: [] };
 
 // Merge with JSON configs
 const finalHastingsConfig = {
@@ -45,11 +48,22 @@ const finalRockhurstConfig = {
   boundary: rockhurstBoundary,
 };
 
-// Export combined set
+// Sarpy shell config intentionally starts with empty feature collections.
+// Building/boundary GeoJSON can be added later without impacting Hastings.
+const finalSarpyCountyConfig = {
+  ...sarpyCountyBase,
+  buildings: emptyFeatureCollection,
+  boundary: emptyFeatureCollection,
+  outdoorSpaces: emptyFeatureCollection,
+};
+
 const universityConfigs = {
   hastings: finalHastingsConfig,
   'hastings-demo': finalHastingsConfig,
   rockhurst: finalRockhurstConfig,
+  'sarpy-county': finalSarpyCountyConfig,
+  sarpy: finalSarpyCountyConfig,
+  'sarpy-ne': finalSarpyCountyConfig,
 };
 
 export function getConfig(universityId) {

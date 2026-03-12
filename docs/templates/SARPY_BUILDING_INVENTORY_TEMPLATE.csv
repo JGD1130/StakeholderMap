@@ -1,0 +1,4 @@
+building_id,building_name,building_folder,floors_expected,status,notes
+SC_ADMIN,Administration Building,Administration,LEVEL_1;LEVEL_2,planned,
+SC_JUSTICE,Justice Center,JusticeCenter,LEVEL_1;LEVEL_2;LEVEL_3,planned,
+SC_SERVICES,Services Building,Services,LEVEL_1,planned,

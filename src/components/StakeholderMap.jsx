@@ -11497,15 +11497,21 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     };
   }, [scenarioLayoutSelectionAnalysis, buildScenarioAdjacencyGroups, buildScenarioUnionGeometry]);
 
+  const scenarioLayoutRemoveDividerRooms = useMemo(() => {
+    const activeRooms = scenarioLayoutSelectionAnalysis.activeRooms || [];
+    const nonSyntheticRooms = activeRooms.filter((room) => !room?.isScenarioSynthetic);
+    return nonSyntheticRooms.length === 2 ? nonSyntheticRooms : activeRooms;
+  }, [scenarioLayoutSelectionAnalysis]);
+
   const scenarioLayoutRemoveDividerValidation = useMemo(() => {
-    const rooms = scenarioLayoutSelectionAnalysis.activeRooms || [];
+    const rooms = scenarioLayoutRemoveDividerRooms;
     if (rooms.length !== 2) return { canRemove: false, reason: 'Select exactly 2 adjacent rooms.' };
     const [a, b] = rooms;
     if (!areScenarioRoomsAdjacent(a, b)) return { canRemove: false, reason: 'Rooms must share a boundary.' };
     const mergedGeometry = buildScenarioUnionGeometry(rooms);
     if (!mergedGeometry) return { canRemove: false, reason: 'Unable to remove divider for selected rooms.' };
-    return { canRemove: true, reason: '', mergedGeometry };
-  }, [scenarioLayoutSelectionAnalysis, areScenarioRoomsAdjacent, buildScenarioUnionGeometry]);
+    return { canRemove: true, reason: '', mergedGeometry, rooms };
+  }, [scenarioLayoutRemoveDividerRooms, areScenarioRoomsAdjacent, buildScenarioUnionGeometry]);
 
   const applyScenarioLayoutMerge = useCallback(() => {
     if (!scenarioLayoutMergeValidation.canMerge) {
@@ -11588,7 +11594,13 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert(scenarioLayoutRemoveDividerValidation.reason || 'Unable to remove divider for selected rooms.');
       return;
     }
-    const rooms = scenarioLayoutSelectionAnalysis.activeRooms || [];
+    const rooms = Array.isArray(scenarioLayoutRemoveDividerValidation.rooms)
+      ? scenarioLayoutRemoveDividerValidation.rooms
+      : [];
+    if (rooms.length !== 2) {
+      alert('Select exactly 2 adjacent rooms.');
+      return;
+    }
     const first = rooms[0];
     const sourceRoomIds = rooms.map((room) => room.roomId);
     const mergedSf = rooms.reduce((sum, room) => sum + (Number(room.area || 0) || 0), 0);
@@ -11634,7 +11646,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     upsertScenarioRoomInfoFromSynthetic(syntheticRoom);
     replaceScenarioSelectionAfterLayoutOp(sourceRoomIds, [syntheticRoomId]);
     console.log('[Planning Scenario Debug] remove divider applied', { sourceRoomIds, syntheticRoomId });
-  }, [scenarioLayoutRemoveDividerValidation, scenarioLayoutSelectionAnalysis, scenarioAssignedDept, appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
+  }, [scenarioLayoutRemoveDividerValidation, scenarioAssignedDept, appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
 
   const applyScenarioRoomSplit = useCallback((targetRoomId, startCoord, endCoord) => {
     const roomId = String(targetRoomId || '').trim();
