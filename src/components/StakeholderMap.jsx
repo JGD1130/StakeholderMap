@@ -9263,55 +9263,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
     });
   }, [floorStats, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
-  const openProgramTestFitForSelectedRooms = useCallback(() => {
-    const includedKeys = roomEditIncluded || new Set();
-    const targets = roomEditTargets.length
-      ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
-      : [];
-    if (!targets.length) {
-      alert('Select one or more rooms first.');
-      return;
-    }
-    const availableSf = targets.reduce((sum, target) => {
-      const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
-      return sum + areaValue;
-    }, 0);
-    const spaceTypeOptions = getSortedProgramTestFitSpaceTypes(
-      targets.map((target) => {
-        const mergedProps = { ...(target?.feature?.properties || {}), ...(target?.properties || {}) };
-        return getTypeFromProps(mergedProps);
-      })
-    );
-    const roomTypes = {};
-    const sfByRoomType = {};
-    targets.forEach((target) => {
-      const mergedProps = { ...(target?.feature?.properties || {}), ...(target?.properties || {}) };
-      const roomType = norm(getTypeFromProps(mergedProps)) || 'Unknown';
-      const areaValue = Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0;
-      roomTypes[roomType] = (roomTypes[roomType] || 0) + 1;
-      sfByRoomType[roomType] = (sfByRoomType[roomType] || 0) + areaValue;
-    });
-    const buildingLabel = String(targets[0]?.buildingName || activeBuildingName || selectedBuildingId || selectedBuilding || 'Selected Rooms').trim() || 'Selected Rooms';
-    const floorLabel = String(targets[0]?.floorName || selectedFloor || '').trim();
-    openProgramTestFit({
-      scope: 'selectedRooms',
-      scopeLabel: 'Selected Rooms',
-      targetLabel: floorLabel ? `${buildingLabel} ${floorLabel} Selected Rooms` : `${buildingLabel} Selected Rooms`,
-      buildingName: buildingLabel,
-      floorLabel,
-      availableSf,
-      roomCount: targets.length,
-      roomTypes,
-      sfByRoomType,
-      spaceTypeOptions,
-      selectedRooms: targets.map((target) => ({
-        roomLabel: target.roomLabel || target.roomNumber || target.feature?.properties?.name || '',
-        roomType: getTypeFromProps({ ...(target?.feature?.properties || {}), ...(target?.properties || {}) }),
-        sf: Number(target?.properties?.area ?? target?.feature?.properties?.area ?? 0) || 0
-      })),
-      defaultProgramName: `${buildingLabel} Selected Rooms Test Fit`
-    });
-  }, [roomEditIncluded, roomEditTargets, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
   const isEngagementFloorScope = engagementMode && engagementScopeMode === 'floor';
   const getAvailableFloors = useCallback((buildingKey) => {
     if (!buildingKey) return [];
@@ -21674,13 +21625,6 @@ useEffect(() => {
 
         <div className="mf-actions">
           <button className="btn" onClick={closeRoomEdit}>Cancel</button>
-          <button
-            className="btn"
-            onClick={openProgramTestFitForSelectedRooms}
-            disabled={!roomEditTargets.length || roomEditIncluded.size === 0}
-          >
-            Program Test Fit
-          </button>
           <button
             className="btn"
             onClick={async () => {
