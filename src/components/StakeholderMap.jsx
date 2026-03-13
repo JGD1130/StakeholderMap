@@ -10702,9 +10702,58 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
 
   const removeScenarioOperation = useCallback((opId) => {
     if (!opId) return;
-    const removed = scenarioOperations.find((op) => op.id === opId);
-    setScenarioOperations((prev) => prev.filter((op) => op.id !== opId));
+    const currentOps = Array.isArray(scenarioOperations) ? scenarioOperations : [];
+    const removed = currentOps.find((op) => op.id === opId);
     if (!removed) return;
+
+    const removedOpIds = new Set([removed.id]);
+    const removedSyntheticRoomIds = new Set();
+    const collectSyntheticRoomIds = (op) => {
+      if (!op || typeof op !== 'object') return;
+      const syntheticIds = [
+        ...(Array.isArray(op?.syntheticRoomIds) ? op.syntheticRoomIds : []),
+        ...(Array.isArray(op?.syntheticRooms) ? op.syntheticRooms.map((room) => room?.roomId) : []),
+        op?.syntheticRoomId,
+        op?.syntheticRoom?.roomId
+      ]
+        .map((id) => String(id || '').trim())
+        .filter(Boolean);
+      syntheticIds.forEach((id) => removedSyntheticRoomIds.add(id));
+    };
+
+    collectSyntheticRoomIds(removed);
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      currentOps.forEach((op) => {
+        const opKey = String(op?.id || '').trim();
+        if (!opKey || removedOpIds.has(opKey)) return;
+        const sourceIds = (Array.isArray(op?.sourceRoomIds) ? op.sourceRoomIds : [])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean);
+        if (!sourceIds.length) return;
+        if (!sourceIds.some((id) => removedSyntheticRoomIds.has(id))) return;
+        removedOpIds.add(opKey);
+        collectSyntheticRoomIds(op);
+        changed = true;
+      });
+    }
+
+    setScenarioOperations((prev) => prev.filter((op) => !removedOpIds.has(String(op?.id || '').trim())));
+    if (removedSyntheticRoomIds.size) {
+      removedSyntheticRoomIds.forEach((roomId) => {
+        scenarioRoomInfoRef.current.delete(roomId);
+      });
+      setScenarioSelection((prev) => {
+        const next = new Set(
+          Array.from(prev || [])
+            .map((id) => String(id || '').trim())
+            .filter((id) => id && !removedSyntheticRoomIds.has(id))
+        );
+        return next;
+      });
+    }
     void persistScenarioOperation({
       id: `undo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       scenarioId: scenarioSessionIdRef.current,
@@ -10713,7 +10762,9 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       timestamp: new Date().toISOString(),
       user: getAuth().currentUser?.email || 'anonymous',
       removedOpId: removed.id,
-      removedOpType: removed.opType
+      removedOpType: removed.opType,
+      removedOpIds: Array.from(removedOpIds),
+      removedSyntheticRoomIds: Array.from(removedSyntheticRoomIds)
     });
   }, [scenarioOperations, persistScenarioOperation]);
 
@@ -11615,22 +11666,39 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       alert('Select two split points inside the selected room.');
       return false;
     }
-    const dx = Number(end[0]) - Number(start[0]);
-    const dy = Number(end[1]) - Number(start[1]);
+    const targetFeature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(effectiveRoom.geometry) };
+    let splitStart = [Number(start[0]), Number(start[1])];
+    let splitEnd = [Number(end[0]), Number(end[1])];
+    try {
+      const boundary = turf.polygonToLine(targetFeature);
+      const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
+      const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
+      const snappedStartCoord = snappedStart?.geometry?.coordinates;
+      const snappedEndCoord = snappedEnd?.geometry?.coordinates;
+      if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
+        splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
+      }
+      if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
+        splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
+      }
+    } catch {}
+
+    const dx = Number(splitEnd[0]) - Number(splitStart[0]);
+    const dy = Number(splitEnd[1]) - Number(splitStart[1]);
     const len = Math.hypot(dx, dy);
     if (!Number.isFinite(len) || len < 1e-9) {
       alert('Split line is too short.');
       return false;
     }
-    const feature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(effectiveRoom.geometry) };
+    const feature = targetFeature;
     const bbox = turf.bbox(feature);
     const span = Math.max(Math.abs((bbox?.[2] || 0) - (bbox?.[0] || 0)), Math.abs((bbox?.[3] || 0) - (bbox?.[1] || 0))) || 0.001;
-    const ext = span * 4;
+    const ext = Math.max(span * 1e-5, 1e-7);
     const ux = dx / len;
     const uy = dy / len;
     const splitLine = turf.lineString([
-      [Number(start[0]) - ux * ext, Number(start[1]) - uy * ext],
-      [Number(end[0]) + ux * ext, Number(end[1]) + uy * ext]
+      [Number(splitStart[0]) - ux * ext, Number(splitStart[1]) - uy * ext],
+      [Number(splitEnd[0]) + ux * ext, Number(splitEnd[1]) + uy * ext]
     ]);
     const clipSplitPieceToTarget = (part) => {
       if (!part?.geometry) return null;
@@ -11721,8 +11789,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         for (let i = 0; i < openRing.length; i += 1) {
           const p1 = openRing[i];
           const p2 = openRing[(i + 1) % openRing.length];
-          const v1 = dx * (Number(p1[1]) - Number(start[1])) - dy * (Number(p1[0]) - Number(start[0]));
-          const v2 = dx * (Number(p2[1]) - Number(start[1])) - dy * (Number(p2[0]) - Number(start[0]));
+          const v1 = dx * (Number(p1[1]) - Number(splitStart[1])) - dy * (Number(p1[0]) - Number(splitStart[0]));
+          const v2 = dx * (Number(p2[1]) - Number(splitStart[1])) - dy * (Number(p2[0]) - Number(splitStart[0]));
           const in1 = keepPositive ? (v1 >= -EPS) : (v1 <= EPS);
           const in2 = keepPositive ? (v2 >= -EPS) : (v2 <= EPS);
           if (in1 && in2) {
@@ -11755,6 +11823,20 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     };
 
     let pieces = [];
+    const mergeSplitPieceGroup = (group = []) => {
+      const validParts = (group || []).filter(Boolean);
+      if (!validParts.length) return null;
+      if (validParts.length === 1) return validParts[0];
+      try {
+        return validParts.slice(1).reduce((acc, part) => {
+          if (!acc?.geometry) return part;
+          const merged = turf.union(turf.featureCollection([acc, part]));
+          return merged?.geometry ? merged : acc;
+        }, validParts[0]);
+      } catch {
+        return validParts[0];
+      }
+    };
     try {
       const boundary = turf.polygonToLine(feature);
       const boundaryLines = (turf.flatten(boundary)?.features || [])
@@ -11789,8 +11871,27 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
           } catch {
             return false;
           }
-        })
-        .sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
+        });
+      if (pieces.length > 2) {
+        const positivePieces = [];
+        const negativePieces = [];
+        pieces.forEach((part) => {
+          try {
+            const centroid = turf.centroid(part)?.geometry?.coordinates || [];
+            const sideValue =
+              dx * (Number(centroid?.[1] || 0) - Number(splitStart[1])) -
+              dy * (Number(centroid?.[0] || 0) - Number(splitStart[0]));
+            if (sideValue >= 0) positivePieces.push(part);
+            else negativePieces.push(part);
+          } catch {}
+        });
+        const mergedBySide = [mergeSplitPieceGroup(positivePieces), mergeSplitPieceGroup(negativePieces)]
+          .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'));
+        if (mergedBySide.length >= 2) {
+          pieces = mergedBySide;
+        }
+      }
+      pieces = pieces.sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
     } catch {
       pieces = [];
     }
@@ -11863,7 +11964,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       sourceRoomIds: [roomId],
       syntheticRoomIds: syntheticRooms.map((room) => room.roomId),
       syntheticRooms,
-      splitLine: [start, end],
+      splitLine: [splitStart, splitEnd],
       scenarioGeometry: syntheticRooms.map((room) => ({
         scenarioId: scenarioSessionIdRef.current,
         roomId: room.roomId,
