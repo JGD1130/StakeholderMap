@@ -1404,6 +1404,7 @@ const FLOORPLAN_ADJUST_FLOOR_PREFIX = 'mfFloorAdjustFloor:';
 const floorAdjustCache = new Map();
 const floorAdjustUrlCache = new Map();
 const floorAdjustFloorCache = new Map();
+const floorAdjustDbCache = new Map();
 
 function buildDrawingAlignKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
@@ -1854,23 +1855,31 @@ function hasFloorAdjust(adjust) {
 
 function pickLatestFloorAdjust({ base, url, label }) {
   const candidates = [
-    { source: 'basePath', adjust: base },
-    { source: 'url', adjust: url },
-    { source: 'label', adjust: label }
+    { source: 'basePath', adjust: base, priority: 3 },
+    { source: 'url', adjust: url, priority: 2 },
+    { source: 'label', adjust: label, priority: 1 }
   ].filter((c) => c.adjust);
   const withAdjust = candidates.filter((c) => hasFloorAdjust(c.adjust));
   if (withAdjust.length) {
     let best = null;
     for (const c of withAdjust) {
       const savedAt = Number(c.adjust?.savedAt) || 0;
-      if (!best || savedAt > best.savedAt) {
-        best = { ...c, savedAt };
+      if (
+        !best ||
+        c.priority > best.priority ||
+        (c.priority === best.priority && savedAt > best.savedAt)
+      ) {
+        best = { ...c, savedAt, priority: c.priority };
       }
     }
     if (best) return best;
   }
-  const labelCandidate = candidates.find((c) => c.source === 'label');
-  return labelCandidate || candidates[0] || { source: 'label', adjust: null, savedAt: 0 };
+  const fallback =
+    candidates.find((c) => c.source === 'basePath') ||
+    candidates.find((c) => c.source === 'url') ||
+    candidates.find((c) => c.source === 'label') ||
+    null;
+  return fallback || { source: 'label', adjust: null, savedAt: 0, priority: 0 };
 }
 
 function getFloorAdjustAnchorLngLat(fc) {
@@ -13873,11 +13882,15 @@ useEffect(() => {
       if (!universityId || !buildingLabel || !floorId) return null;
       const docId = buildFloorAdjustDocId(buildingLabel, floorId);
       if (!docId) return null;
+      if (floorAdjustDbCache.has(docId)) {
+        return floorAdjustDbCache.get(docId);
+      }
       try {
         const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
         const snap = await getDoc(ref);
-        if (!snap.exists()) return null;
-        return snap.data() || null;
+        const data = snap.exists() ? (snap.data() || null) : null;
+        floorAdjustDbCache.set(docId, data);
+        return data;
       } catch {
         return null;
       }
@@ -13892,20 +13905,22 @@ useEffect(() => {
       if (!docId) return;
       try {
         const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
+        const payload = {
+          buildingLabel,
+          floorId,
+          rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
+          scale: Number.isFinite(adjust.scale) ? adjust.scale : 1,
+          translateMeters: Array.isArray(adjust.translateMeters) ? adjust.translateMeters : [0, 0],
+          translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
+          anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
+          pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
+          updatedAt: serverTimestamp(),
+          updatedBy: authUser?.uid || authUser?.email || null
+        };
+        floorAdjustDbCache.set(docId, payload);
         await setDoc(
           ref,
-          {
-            buildingLabel,
-            floorId,
-            rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
-            scale: Number.isFinite(adjust.scale) ? adjust.scale : 1,
-            translateMeters: Array.isArray(adjust.translateMeters) ? adjust.translateMeters : [0, 0],
-            translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
-            anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
-            pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
-            updatedAt: serverTimestamp(),
-            updatedBy: authUser?.uid || authUser?.email || null
-          },
+          payload,
           { merge: true }
         );
       } catch {}
