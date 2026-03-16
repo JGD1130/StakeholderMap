@@ -12168,7 +12168,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     return true;
   }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioSplitPieces, commitScenarioRoomSplit]);
 
-  const applyScenarioRoomHalve = useCallback((targetRoomId) => {
+  const applyScenarioRoomHalve = useCallback((targetRoomId, preferredOrientation = 'auto') => {
     const roomId = String(targetRoomId || '').trim();
     if (!roomId) return false;
     const effectiveRoom = buildEffectiveScenarioRoomWithGeometry(roomId);
@@ -12183,7 +12183,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     const maxX = Number(bbox?.[2]);
     const maxY = Number(bbox?.[3]);
     if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
-      alert('Unable to determine room bounds for auto-halving.');
+      alert('Unable to determine room bounds for halving.');
       return false;
     }
 
@@ -12273,7 +12273,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       return bestResult;
     };
 
-    const bestResult = ['vertical', 'horizontal']
+    const orientationsToTry = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal'
+      ? [preferredOrientation]
+      : ['vertical', 'horizontal'];
+    const bestResult = orientationsToTry
       .map((orientation) => evaluateOrientation(orientation))
       .filter(Boolean)
       .reduce((best, candidate) => {
@@ -12282,7 +12285,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       }, null);
 
     if (!bestResult?.splitResult) {
-      alert('Unable to compute an equal-area split for this room.');
+      const orientationLabel = preferredOrientation === 'vertical'
+        ? 'vertical'
+        : (preferredOrientation === 'horizontal' ? 'horizontal' : 'equal-area');
+      alert(`Unable to compute a ${orientationLabel} split for this room.`);
       return false;
     }
 
@@ -12296,6 +12302,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     }
     console.log('[Planning Scenario Debug] auto halve applied', {
       roomId,
+      preferredOrientation,
+      chosenOrientation: bestResult.orientation,
       absAreaDiff: bestResult.absDiff
     });
     return true;
@@ -20855,6 +20863,22 @@ useEffect(() => {
               title={scenarioSelection.size === 0 ? 'Select one room first.' : (scenarioSplitValidation.canSplit ? 'Automatically cut the selected room into equal-area halves.' : scenarioSplitValidation.reason)}
             >
               Halve Room
+            </button>
+            <button
+              className="btn secondary"
+              onClick={() => applyScenarioRoomHalve(scenarioSplitValidation.roomId, 'vertical')}
+              disabled={scenarioSelection.size === 0 || !scenarioSplitValidation.canSplit}
+              title={scenarioSelection.size === 0 ? 'Select one room first.' : (scenarioSplitValidation.canSplit ? 'Cut the selected room with a vertical divider.' : scenarioSplitValidation.reason)}
+            >
+              Halve Vertical
+            </button>
+            <button
+              className="btn secondary"
+              onClick={() => applyScenarioRoomHalve(scenarioSplitValidation.roomId, 'horizontal')}
+              disabled={scenarioSelection.size === 0 || !scenarioSplitValidation.canSplit}
+              title={scenarioSelection.size === 0 ? 'Select one room first.' : (scenarioSplitValidation.canSplit ? 'Cut the selected room with a horizontal divider.' : scenarioSplitValidation.reason)}
+            >
+              Halve Horizontal
             </button>
           </div>
           <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
