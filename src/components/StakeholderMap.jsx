@@ -1688,6 +1688,29 @@ function findMatchingStoredFloorAdjust({ floorId, labels = [], url = '', basePat
   return best;
 }
 
+function getStoredFloorAdjustEntries() {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    return Object.keys(window.localStorage)
+      .filter((key) =>
+        key.startsWith(FLOORPLAN_ADJUST_STORAGE_PREFIX) ||
+        key.startsWith(FLOORPLAN_ADJUST_URL_PREFIX) ||
+        key.startsWith(FLOORPLAN_ADJUST_FLOOR_PREFIX)
+      )
+      .sort()
+      .map((key) => ({ key, value: parseStoredFloorAdjust(window.localStorage.getItem(key)) }))
+      .filter((entry) => entry.value);
+  } catch {
+    return [];
+  }
+}
+
+function clearFloorAdjustCaches() {
+  floorAdjustCache.clear();
+  floorAdjustUrlCache.clear();
+  floorAdjustFloorCache.clear();
+}
+
 function saveDrawingAlign(buildingLabel, floorId, align) {
   const key = buildDrawingAlignKey(buildingLabel, floorId);
   if (!key || !align) return false;
@@ -8521,6 +8544,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
+  const floorAdjustImportInputRef = useRef(null);
   const previousSelectedBuildingId = useRef(null);
   const floorSelectionRef = useRef({}); // remember last selected room id per floor URL
   const spacePanelRef = useRef(null);
@@ -14122,6 +14146,85 @@ useEffect(() => {
     }
     await handleLoadFloorplan(floorId);
   }, [getFloorAdjustContext, selectedBuilding, buildFloorUrl, handleLoadFloorplan, saveFloorAdjustToDb]);
+
+  const exportFloorAdjustBackup = useCallback(() => {
+    const entries = getStoredFloorAdjustEntries();
+    if (!entries.length) {
+      setFloorAdjustNotice('No saved floor adjustments found to export.');
+      return;
+    }
+    try {
+      const payload = {
+        kind: 'mapfluence-floor-adjustments',
+        version: 1,
+        universityId: universityId || '',
+        exportedAt: new Date().toISOString(),
+        count: entries.length,
+        entries
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeCampus = String(universityId || 'campus').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.href = href;
+      link.download = `${safeCampus}-floor-adjustments-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+      setFloorAdjustNotice(`Exported ${entries.length} floor adjustment records.`);
+    } catch {
+      setFloorAdjustNotice('Failed to export floor adjustments.');
+    }
+  }, [universityId]);
+
+  const triggerFloorAdjustImport = useCallback(() => {
+    floorAdjustImportInputRef.current?.click();
+  }, []);
+
+  const importFloorAdjustBackup = useCallback(async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const entries = Array.isArray(payload?.entries) ? payload.entries : [];
+      const validEntries = entries.filter((entry) => {
+        const key = String(entry?.key || '');
+        return (
+          key.startsWith(FLOORPLAN_ADJUST_STORAGE_PREFIX) ||
+          key.startsWith(FLOORPLAN_ADJUST_URL_PREFIX) ||
+          key.startsWith(FLOORPLAN_ADJUST_FLOOR_PREFIX)
+        );
+      });
+      if (!validEntries.length) {
+        setFloorAdjustNotice('No valid floor adjustment entries found in that file.');
+        return;
+      }
+      validEntries.forEach((entry) => {
+        const parsed = parseStoredFloorAdjust(entry.value);
+        if (!parsed) return;
+        window.localStorage.setItem(entry.key, JSON.stringify(parsed));
+      });
+      clearFloorAdjustCaches();
+      const ctx = getFloorAdjustContext();
+      const activeFloorId = ctx?.floorId || selectedFloor;
+      const activeUrl = ctx?.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, activeFloorId);
+      if (activeUrl) {
+        floorCache.delete(activeUrl);
+        floorTransformCache.delete(activeUrl);
+      }
+      setFloorAdjustNotice(`Imported ${validEntries.length} floor adjustment records.`);
+      if (activeFloorId) {
+        await handleLoadFloorplan(activeFloorId);
+      }
+    } catch {
+      setFloorAdjustNotice('Failed to import floor adjustments from that file.');
+    } finally {
+      if (event?.target) event.target.value = '';
+    }
+  }, [getFloorAdjustContext, selectedFloor, selectedBuilding, buildFloorUrl, handleLoadFloorplan]);
 
   const drawingAlignContext = getDrawingAlignContext();
   const drawingAlignStored = Boolean(
@@ -20275,6 +20378,8 @@ useEffect(() => {
               onStartMove={mode === 'admin' ? startFloorMove : undefined}
               onCancelRotate={mode === 'admin' ? cancelFloorAdjust : undefined}
               onClearRotate={mode === 'admin' ? clearFloorAdjustForFloor : undefined}
+              onExportAdjustBackup={mode === 'admin' ? exportFloorAdjustBackup : undefined}
+              onImportAdjustBackup={mode === 'admin' ? triggerFloorAdjustImport : undefined}
               onSaveAdjust={mode === 'admin' ? async () => {
                 const ctx = getFloorAdjustContext();
                 if (!ctx?.buildingLabel || !ctx?.floorId) return;
@@ -20366,11 +20471,19 @@ useEffect(() => {
                 }
               } : undefined}
               dragHandleProps={spacePanelDragHandleProps}
-            />
-          )}
-        </div>
-      );
-    })()}
+              />
+            )}
+          </div>
+        );
+      })()}
+
+      <input
+        ref={floorAdjustImportInputRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={importFloorAdjustBackup}
+      />
 
     {/* Planning Scenario Summary Panel */}
     {moveScenarioMode && scenarioPanelVisible && (

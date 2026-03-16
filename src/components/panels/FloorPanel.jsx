@@ -38,6 +38,8 @@ export default function FloorPanel({
   onStartMove,
   onCancelRotate,
   onClearRotate,
+  onExportAdjustBackup,
+  onImportAdjustBackup,
   onScaleChange,
   onSaveAdjust,
   saveAdjustDisabled = false,
@@ -248,6 +250,20 @@ export default function FloorPanel({
                 </button>
               ) : null}
             </div>
+            {(onExportAdjustBackup || onImportAdjustBackup) ? (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                {onExportAdjustBackup ? (
+                  <button className="btn" onClick={onExportAdjustBackup}>
+                    Export Adjusts
+                  </button>
+                ) : null}
+                {onImportAdjustBackup ? (
+                  <button className="btn" onClick={onImportAdjustBackup}>
+                    Import Adjusts
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {rotateNotice ? (
               <div style={{ color: "crimson", fontSize: 12, marginTop: 4 }}>
                 {rotateNotice}
