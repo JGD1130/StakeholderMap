@@ -16752,13 +16752,6 @@ useEffect(() => {
     try {
       const authInstance = getAuth();
       const provider = new GoogleAuthProvider();
-      const useRedirectOnly =
-        typeof window !== 'undefined' &&
-        /\.github\.io$/i.test(window.location.hostname || '');
-      if (useRedirectOnly) {
-        await signInWithRedirect(authInstance, provider);
-        return;
-      }
       try {
         await signInWithPopup(authInstance, provider);
       } catch {
