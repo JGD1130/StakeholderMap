@@ -12171,7 +12171,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         const end = isVertical
           ? [offset, centerY + lineExtent]
           : [centerX + lineExtent, offset];
-        const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: false });
+        const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: true });
         if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
         const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
         const firstArea = Math.max(0, Number(sideAreas[0] || 0));
@@ -12194,6 +12194,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         const offset = (minOffset - padding) + ((span + (padding * 2)) * ratio);
         const result = evaluateOffset(offset);
         if (result) sampleResults.push(result);
+      }
+      if (!sampleResults.length) {
+        const midpointResult = evaluateOffset((minOffset + maxOffset) / 2);
+        if (midpointResult) sampleResults.push(midpointResult);
       }
       if (!sampleResults.length) return null;
 
