@@ -1602,6 +1602,92 @@ function loadFloorAdjustByBasePath(basePath, floorId) {
   }
 }
 
+function parseStoredFloorAdjust(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const rotationDeg = Number(parsed?.rotationDeg);
+    const scale = Number(parsed?.scale);
+    const translateMeters = Array.isArray(parsed?.translateMeters) ? parsed.translateMeters : [0, 0];
+    const translateLngLat = Array.isArray(parsed?.translateLngLat) ? parsed.translateLngLat : null;
+    const savedAt = Number(parsed?.savedAt);
+    const pivot = Array.isArray(parsed?.pivot) ? parsed.pivot : null;
+    const anchorLngLat = Array.isArray(parsed?.anchorLngLat) ? parsed.anchorLngLat : null;
+    return {
+      rotationDeg: Number.isFinite(rotationDeg) ? rotationDeg : 0,
+      scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
+      translateMeters: [
+        Number.isFinite(translateMeters[0]) ? translateMeters[0] : 0,
+        Number.isFinite(translateMeters[1]) ? translateMeters[1] : 0
+      ],
+      translateLngLat: Array.isArray(translateLngLat)
+        ? [
+            Number.isFinite(translateLngLat[0]) ? translateLngLat[0] : 0,
+            Number.isFinite(translateLngLat[1]) ? translateLngLat[1] : 0
+          ]
+        : null,
+      anchorLngLat: Array.isArray(anchorLngLat)
+        ? [
+            Number.isFinite(anchorLngLat[0]) ? anchorLngLat[0] : 0,
+            Number.isFinite(anchorLngLat[1]) ? anchorLngLat[1] : 0
+          ]
+        : null,
+      savedAt: Number.isFinite(savedAt) ? savedAt : 0,
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function findMatchingStoredFloorAdjust({ floorId, labels = [], url = '', basePath = '' } = {}) {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  const floorKey = fId(floorId || '');
+  if (!floorKey) return null;
+
+  const tokenSet = new Set();
+  const pushToken = (value) => {
+    const normalized = canon(value || '');
+    if (normalized) tokenSet.add(normalized);
+  };
+
+  (labels || []).forEach((label) => {
+    pushToken(label);
+    pushToken(resolveBuildingNameFromInput(label || ''));
+  });
+  pushToken(url);
+  pushToken(basePath);
+
+  const folderFromBase = getBuildingFolderFromBasePath(basePath || '');
+  const folderFromUrl = getBuildingFolderFromBasePath(url || '');
+  pushToken(folderFromBase);
+  pushToken(folderFromUrl);
+  pushToken(BUILDING_FOLDER_TO_NAME?.[folderFromBase] || '');
+  pushToken(BUILDING_FOLDER_TO_NAME?.[folderFromUrl] || '');
+
+  let best = null;
+  try {
+    Object.keys(window.localStorage).forEach((storageKey) => {
+      const isAdjustKey =
+        storageKey.startsWith(FLOORPLAN_ADJUST_STORAGE_PREFIX) ||
+        storageKey.startsWith(FLOORPLAN_ADJUST_URL_PREFIX) ||
+        storageKey.startsWith(FLOORPLAN_ADJUST_FLOOR_PREFIX);
+      if (!isAdjustKey) return;
+      if (!storageKey.includes(floorKey)) return;
+      if (tokenSet.size && !Array.from(tokenSet).some((token) => token && storageKey.includes(token))) return;
+      const parsed = parseStoredFloorAdjust(window.localStorage.getItem(storageKey));
+      if (!parsed) return;
+      if (!hasFloorAdjust(parsed) && !(parsed.savedAt > 0)) return;
+      if (!best || (Number(parsed.savedAt) || 0) > (Number(best.savedAt) || 0)) {
+        best = parsed;
+      }
+    });
+  } catch {
+    return null;
+  }
+  return best;
+}
+
 function saveDrawingAlign(buildingLabel, floorId, align) {
   const key = buildDrawingAlignKey(buildingLabel, floorId);
   if (!key || !align) return false;
@@ -14161,19 +14247,46 @@ useEffect(() => {
         resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding || '') ||
         selectedBuildingId ||
         selectedBuilding;
+      const adjustLabels = Array.from(new Set([
+        adjustLabel,
+        selectedBuildingId,
+        selectedBuilding,
+        resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding || ''),
+        urlFolder,
+        buildingFolder,
+        BUILDING_FOLDER_TO_NAME?.[buildingFolder] || ''
+      ].filter(Boolean)));
       const localAdjustByBase = basePath ? loadFloorAdjustByBasePath(basePath, floorId) : null;
       const localAdjustByUrl = url ? loadFloorAdjustByUrl(url) : null;
-      const localAdjustByLabel = loadFloorAdjust(adjustLabel, floorId);
+      const localAdjustByLabel = adjustLabels
+        .map((label) => loadFloorAdjust(label, floorId))
+        .find((adjust) => hasFloorAdjust(adjust) || (Number(adjust?.savedAt) || 0) > 0);
       const localPick = pickLatestFloorAdjust({
         base: localAdjustByBase,
         url: localAdjustByUrl,
         label: localAdjustByLabel
       });
-      const localAdjust = localPick.adjust;
+      let localAdjust = localPick.adjust;
+      if (!hasFloorAdjust(localAdjust)) {
+        const recoveredAdjust = findMatchingStoredFloorAdjust({
+          floorId,
+          labels: adjustLabels,
+          url,
+          basePath
+        });
+        if (recoveredAdjust) {
+          localAdjust = recoveredAdjust;
+          adjustLabels.forEach((label) => {
+            saveFloorAdjust(label, floorId, recoveredAdjust);
+          });
+          if (url) saveFloorAdjustByUrl(url, recoveredAdjust);
+          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, recoveredAdjust);
+        }
+      }
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      const dbAdjust = await loadFloorAdjustFromDb(adjustLabel, floorId);
-      if (dbAdjust) {
+      void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
+        if (!dbAdjust) return;
         const dbCandidate = {
           rotationDeg: Number(dbAdjust.rotationDeg) || 0,
           scale: Number(dbAdjust.scale) || 1,
@@ -14182,8 +14295,7 @@ useEffect(() => {
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
           pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
         };
-        const dbHasAdjust =
-          hasFloorAdjust(dbCandidate);
+        const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
           const ts = dbAdjust.updatedAt;
           if (ts?.toMillis) return ts.toMillis();
@@ -14193,16 +14305,17 @@ useEffect(() => {
         const shouldPreferDb = dbUpdatedAtMs
           ? dbUpdatedAtMs >= localSavedAt
           : (!localHasAdjust && dbHasAdjust);
-        if (shouldPreferDb) {
-          saveFloorAdjust(adjustLabel, floorId, dbCandidate);
-          if (url) saveFloorAdjustByUrl(url, dbCandidate);
-          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
-          if (url) {
-            floorCache.delete(url);
-            floorTransformCache.delete(url);
-          }
-        }
-      }
+        if (!shouldPreferDb) return;
+        adjustLabels.forEach((label) => {
+          saveFloorAdjust(label, floorId, dbCandidate);
+        });
+        if (url) saveFloorAdjustByUrl(url, dbCandidate);
+        if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
+        if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) !== url) return;
+        floorCache.delete(url);
+        floorTransformCache.delete(url);
+        void handleLoadFloorplan(floorId);
+      }).catch(() => {});
       let fitBuilding = selectedBuildingFeatureRef.current || null;
       const targetRaw = String(selectedBuildingId || selectedBuilding || '');
       try {
