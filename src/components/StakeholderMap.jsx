@@ -14421,6 +14421,36 @@ useEffect(() => {
           }
         }
       }
+      if (!localHasAdjust && dbRowsPromise) {
+        const hydrationKeyBase = `${url}|${fId(floorId)}`;
+        void dbRowsPromise.then((rows) => {
+          const hydratedAdjust = pickBestFloorAdjustFromDbRows(rows, adjustLabels, floorId);
+          if (!hydratedAdjust) return;
+          const hydratedCandidate = {
+            rotationDeg: Number(hydratedAdjust.rotationDeg) || 0,
+            scale: Number(hydratedAdjust.scale) || 1,
+            translateMeters: Array.isArray(hydratedAdjust.translateMeters) ? hydratedAdjust.translateMeters : [0, 0],
+            translateLngLat: Array.isArray(hydratedAdjust.translateLngLat) ? hydratedAdjust.translateLngLat : null,
+            anchorLngLat: Array.isArray(hydratedAdjust.anchorLngLat) ? hydratedAdjust.anchorLngLat : null,
+            pivot: Array.isArray(hydratedAdjust.pivot) ? hydratedAdjust.pivot : null
+          };
+          if (!hasFloorAdjust(hydratedCandidate)) return;
+          const hydrationSig = getFloorAdjustSignature(hydratedCandidate);
+          const hydrationKey = `${hydrationKeyBase}|${hydrationSig}`;
+          if (floorAdjustHydrationRef.current.has(hydrationKey)) return;
+          floorAdjustHydrationRef.current.add(hydrationKey);
+          adjustLabels.forEach((label) => {
+            saveFloorAdjust(label, floorId, hydratedCandidate);
+          });
+          if (url) saveFloorAdjustByUrl(url, hydratedCandidate);
+          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, hydratedCandidate);
+          if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) === url) {
+            floorCache.delete(url);
+            floorTransformCache.delete(url);
+            void handleLoadFloorplan(floorId);
+          }
+        });
+      }
       let fitBuilding = selectedBuildingFeatureRef.current || null;
       const targetRaw = String(selectedBuildingId || selectedBuilding || '');
       try {
@@ -17384,36 +17414,6 @@ useEffect(() => {
             await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
           }
         }
-      }
-      if (!localHasAdjust && dbRowsPromise) {
-        const hydrationKeyBase = `${url}|${fId(floorId)}`;
-        void dbRowsPromise.then((rows) => {
-          const hydratedAdjust = pickBestFloorAdjustFromDbRows(rows, adjustLabels, floorId);
-          if (!hydratedAdjust) return;
-          const hydratedCandidate = {
-            rotationDeg: Number(hydratedAdjust.rotationDeg) || 0,
-            scale: Number(hydratedAdjust.scale) || 1,
-            translateMeters: Array.isArray(hydratedAdjust.translateMeters) ? hydratedAdjust.translateMeters : [0, 0],
-            translateLngLat: Array.isArray(hydratedAdjust.translateLngLat) ? hydratedAdjust.translateLngLat : null,
-            anchorLngLat: Array.isArray(hydratedAdjust.anchorLngLat) ? hydratedAdjust.anchorLngLat : null,
-            pivot: Array.isArray(hydratedAdjust.pivot) ? hydratedAdjust.pivot : null
-          };
-          if (!hasFloorAdjust(hydratedCandidate)) return;
-          const hydrationSig = getFloorAdjustSignature(hydratedCandidate);
-          const hydrationKey = `${hydrationKeyBase}|${hydrationSig}`;
-          if (floorAdjustHydrationRef.current.has(hydrationKey)) return;
-          floorAdjustHydrationRef.current.add(hydrationKey);
-          adjustLabels.forEach((label) => {
-            saveFloorAdjust(label, floorId, hydratedCandidate);
-          });
-          if (url) saveFloorAdjustByUrl(url, hydratedCandidate);
-          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, hydratedCandidate);
-          if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) === url) {
-            floorCache.delete(url);
-            floorTransformCache.delete(url);
-            void handleLoadFloorplan(floorId);
-          }
-        });
       }
       if (cancelled) return;
       if (Array.isArray(merged) && merged.length) {
