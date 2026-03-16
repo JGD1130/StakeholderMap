@@ -1406,6 +1406,8 @@ const floorAdjustUrlCache = new Map();
 const floorAdjustFloorCache = new Map();
 const floorAdjustDbCache = new Map();
 const floorAdjustDbFloorCache = new Map();
+const floorAdjustDbAllCache = new Map();
+const floorAdjustDbAllPromiseCache = new Map();
 
 function buildDrawingAlignKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
@@ -8589,6 +8591,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const floorAdjustActiveRef = useRef(false);
   const floorAdjustCursorRef = useRef('');
   const floorAdjustDragRef = useRef(null);
+  const floorAdjustHydrationRef = useRef(new Set());
   const [typeOptions, setTypeOptions] = useState(baseTypeOptions);
   const [deptOptions, setDeptOptions] = useState(baseDeptOptions);
   const [roomEditIncluded, setRoomEditIncluded] = useState(new Set());
@@ -13974,6 +13977,78 @@ useEffect(() => {
     [db, universityId, buildFloorAdjustDocId]
   );
 
+  const loadAllFloorAdjustmentsFromDb = useCallback(async () => {
+    const scopeKey = canon(universityId || '');
+    if (!scopeKey) return [];
+    if (floorAdjustDbAllCache.has(scopeKey)) {
+      return floorAdjustDbAllCache.get(scopeKey) || [];
+    }
+    if (floorAdjustDbAllPromiseCache.has(scopeKey)) {
+      return floorAdjustDbAllPromiseCache.get(scopeKey);
+    }
+    const promise = (async () => {
+      try {
+        const colRef = collection(db, 'universities', universityId, 'floorAdjustments');
+        const snap = await getDocs(colRef);
+        const rows = (snap?.docs || []).map((entry) => ({
+          id: entry.id,
+          ...(entry.data() || {})
+        }));
+        floorAdjustDbAllCache.set(scopeKey, rows);
+        rows.forEach((row) => {
+          if (row?.buildingLabel && row?.floorId) {
+            const directDocId = buildFloorAdjustDocId(row.buildingLabel, row.floorId);
+            if (directDocId) floorAdjustDbCache.set(directDocId, row);
+            const floorCacheKey = `${scopeKey}__${fId(row.floorId || '')}`;
+            if (floorCacheKey) {
+              const existing = Array.isArray(floorAdjustDbFloorCache.get(floorCacheKey))
+                ? floorAdjustDbFloorCache.get(floorCacheKey)
+                : [];
+              floorAdjustDbFloorCache.set(floorCacheKey, [...existing, row]);
+            }
+          }
+        });
+        return rows;
+      } catch {
+        return [];
+      } finally {
+        floorAdjustDbAllPromiseCache.delete(scopeKey);
+      }
+    })();
+    floorAdjustDbAllPromiseCache.set(scopeKey, promise);
+    return promise;
+  }, [db, universityId, buildFloorAdjustDocId]);
+
+  const pickBestFloorAdjustFromDbRows = useCallback((rows, adjustLabels = [], floorId = '') => {
+    const floorKey = fId(floorId || '');
+    if (!floorKey) return null;
+    const expectedKeys = new Set(
+      (adjustLabels || [])
+        .map((label) => normalizeFloorAdjustDbKey(label))
+        .filter(Boolean)
+    );
+    const matches = (Array.isArray(rows) ? rows : [])
+      .filter((row) => fId(row?.floorId || '') === floorKey)
+      .map((row) => {
+        const candidateKeys = new Set([
+          normalizeFloorAdjustDbKey(row?.buildingLabel || ''),
+          normalizeFloorAdjustDbKey(row?.id || '')
+        ].filter(Boolean));
+        const matched = expectedKeys.size === 0
+          ? candidateKeys.size > 0
+          : Array.from(candidateKeys).some((key) => expectedKeys.has(key));
+        if (!matched) return null;
+        return row;
+      })
+      .filter(Boolean);
+    if (!matches.length) return null;
+    return matches.sort((a, b) => {
+      const aTs = a?.updatedAt?.toMillis ? a.updatedAt.toMillis() : (Number(a?.updatedAt?.seconds) ? a.updatedAt.seconds * 1000 : 0);
+      const bTs = b?.updatedAt?.toMillis ? b.updatedAt.toMillis() : (Number(b?.updatedAt?.seconds) ? b.updatedAt.seconds * 1000 : 0);
+      return bTs - aTs;
+    })[0] || null;
+  }, []);
+
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
       if (!universityId || !buildingLabel || !floorId || !adjust) return;
@@ -13994,16 +14069,27 @@ useEffect(() => {
           updatedBy: authUser?.uid || authUser?.email || null
         };
         floorAdjustDbCache.set(docId, payload);
-        const floorCacheKey = `${canon(universityId)}__${fId(floorId || '')}`;
+        const scopeKey = canon(universityId);
+        const floorCacheKey = `${scopeKey}__${fId(floorId || '')}`;
         if (floorAdjustDbFloorCache.has(floorCacheKey)) {
           const existing = Array.isArray(floorAdjustDbFloorCache.get(floorCacheKey))
             ? floorAdjustDbFloorCache.get(floorCacheKey)
             : [];
           const next = [
-            payload,
+            { id: docId, ...payload },
             ...existing.filter((entry) => String(entry?.id || '') !== docId)
           ];
           floorAdjustDbFloorCache.set(floorCacheKey, next);
+        }
+        if (floorAdjustDbAllCache.has(scopeKey)) {
+          const existingAll = Array.isArray(floorAdjustDbAllCache.get(scopeKey))
+            ? floorAdjustDbAllCache.get(scopeKey)
+            : [];
+          const nextAll = [
+            { id: docId, ...payload },
+            ...existingAll.filter((entry) => String(entry?.id || '') !== docId)
+          ];
+          floorAdjustDbAllCache.set(scopeKey, nextAll);
         }
         await setDoc(
           ref,
@@ -14014,6 +14100,10 @@ useEffect(() => {
     },
     [db, universityId, buildFloorAdjustDocId, authUser]
   );
+
+  useEffect(() => {
+    void loadAllFloorAdjustmentsFromDb();
+  }, [loadAllFloorAdjustmentsFromDb]);
 
   const computeDrawingAlign = useCallback((roomPts, drawingPts) => {
     if (!Array.isArray(roomPts) || roomPts.length < 2) return null;
@@ -14291,39 +14381,14 @@ useEffect(() => {
       const localAdjust = localPick.adjust;
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      const dbAdjustCandidates = [];
-      for (const label of adjustLabels) {
-        const dbAdjust = await loadFloorAdjustFromDb(label, floorId);
-        if (dbAdjust) dbAdjustCandidates.push({ label, adjust: dbAdjust, matchType: 'direct' });
-      }
-      const dbFloorCandidates = await loadFloorAdjustCandidatesFromDb(floorId);
-      if (dbFloorCandidates.length) {
-        const expectedKeys = new Set(
-          adjustLabels
-            .map((label) => normalizeFloorAdjustDbKey(label))
-            .filter(Boolean)
-        );
-        dbFloorCandidates.forEach((candidate) => {
-          const candidateLabel = String(candidate?.buildingLabel || '').trim();
-          const candidateKeys = new Set([
-            normalizeFloorAdjustDbKey(candidateLabel),
-            normalizeFloorAdjustDbKey(candidate?.id || '')
-          ].filter(Boolean));
-          const matches = Array.from(candidateKeys).some((key) => expectedKeys.has(key));
-          if (!matches) return;
-          dbAdjustCandidates.push({
-            label: candidateLabel || candidate?.id || '',
-            adjust: candidate,
-            matchType: 'floorScan'
-          });
-        });
-      }
-      const dbAdjust = dbAdjustCandidates
-        .sort((a, b) => {
-          const aTs = a.adjust?.updatedAt?.toMillis ? a.adjust.updatedAt.toMillis() : (Number(a.adjust?.updatedAt?.seconds) ? a.adjust.updatedAt.seconds * 1000 : 0);
-          const bTs = b.adjust?.updatedAt?.toMillis ? b.adjust.updatedAt.toMillis() : (Number(b.adjust?.updatedAt?.seconds) ? b.adjust.updatedAt.seconds * 1000 : 0);
-          return bTs - aTs;
-        })[0]?.adjust || null;
+      const dbScopeKey = canon(universityId || '');
+      const cachedDbRows = dbScopeKey && floorAdjustDbAllCache.has(dbScopeKey)
+        ? (floorAdjustDbAllCache.get(dbScopeKey) || [])
+        : [];
+      const dbAdjust = pickBestFloorAdjustFromDbRows(cachedDbRows, adjustLabels, floorId);
+      const dbRowsPromise = (!dbAdjust && dbScopeKey && !floorAdjustDbAllCache.has(dbScopeKey))
+        ? loadAllFloorAdjustmentsFromDb()
+        : null;
       if (dbAdjust) {
         const dbCandidate = {
           rotationDeg: Number(dbAdjust.rotationDeg) || 0,
@@ -17319,6 +17384,36 @@ useEffect(() => {
             await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
           }
         }
+      }
+      if (!localHasAdjust && dbRowsPromise) {
+        const hydrationKeyBase = `${url}|${fId(floorId)}`;
+        void dbRowsPromise.then((rows) => {
+          const hydratedAdjust = pickBestFloorAdjustFromDbRows(rows, adjustLabels, floorId);
+          if (!hydratedAdjust) return;
+          const hydratedCandidate = {
+            rotationDeg: Number(hydratedAdjust.rotationDeg) || 0,
+            scale: Number(hydratedAdjust.scale) || 1,
+            translateMeters: Array.isArray(hydratedAdjust.translateMeters) ? hydratedAdjust.translateMeters : [0, 0],
+            translateLngLat: Array.isArray(hydratedAdjust.translateLngLat) ? hydratedAdjust.translateLngLat : null,
+            anchorLngLat: Array.isArray(hydratedAdjust.anchorLngLat) ? hydratedAdjust.anchorLngLat : null,
+            pivot: Array.isArray(hydratedAdjust.pivot) ? hydratedAdjust.pivot : null
+          };
+          if (!hasFloorAdjust(hydratedCandidate)) return;
+          const hydrationSig = getFloorAdjustSignature(hydratedCandidate);
+          const hydrationKey = `${hydrationKeyBase}|${hydrationSig}`;
+          if (floorAdjustHydrationRef.current.has(hydrationKey)) return;
+          floorAdjustHydrationRef.current.add(hydrationKey);
+          adjustLabels.forEach((label) => {
+            saveFloorAdjust(label, floorId, hydratedCandidate);
+          });
+          if (url) saveFloorAdjustByUrl(url, hydratedCandidate);
+          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, hydratedCandidate);
+          if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) === url) {
+            floorCache.delete(url);
+            floorTransformCache.delete(url);
+            void handleLoadFloorplan(floorId);
+          }
+        });
       }
       if (cancelled) return;
       if (Array.isArray(merged) && merged.length) {
