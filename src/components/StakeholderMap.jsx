@@ -11761,7 +11761,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   }, [scenarioLayoutRemoveDividerValidation, scenarioAssignedDept, appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
 
   const resolveScenarioSplitPieces = useCallback((targetGeometry, startCoord, endCoord, options = {}) => {
-    const { snapEndpoints = true } = options || {};
+    const { snapEndpoints = true, preserveAxis = '' } = options || {};
     const start = Array.isArray(startCoord) ? startCoord : [];
     const end = Array.isArray(endCoord) ? endCoord : [];
     if (!targetGeometry || start.length < 2 || end.length < 2) return null;
@@ -11774,15 +11774,49 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     if (snapEndpoints) {
       try {
         const boundary = turf.polygonToLine(feature);
-        const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
-        const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
-        const snappedStartCoord = snappedStart?.geometry?.coordinates;
-        const snappedEndCoord = snappedEnd?.geometry?.coordinates;
-        if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
-          splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
+        let snappedFromAxis = false;
+        if (preserveAxis === 'vertical' || preserveAxis === 'horizontal') {
+          const bbox = turf.bbox(feature);
+          const span = Math.max(
+            Math.abs((bbox?.[2] || 0) - (bbox?.[0] || 0)),
+            Math.abs((bbox?.[3] || 0) - (bbox?.[1] || 0))
+          ) || 0.001;
+          const axisOffset = preserveAxis === 'vertical'
+            ? ((Number(splitStart[0]) + Number(splitEnd[0])) / 2)
+            : ((Number(splitStart[1]) + Number(splitEnd[1])) / 2);
+          const guideLine = preserveAxis === 'vertical'
+            ? turf.lineString([[axisOffset, Number(splitStart[1]) - (span * 4)], [axisOffset, Number(splitEnd[1]) + (span * 4)]])
+            : turf.lineString([[Number(splitStart[0]) - (span * 4), axisOffset], [Number(splitEnd[0]) + (span * 4), axisOffset]]);
+          const intersections = (turf.lineIntersect(boundary, guideLine)?.features || [])
+            .map((hit) => hit?.geometry?.coordinates || [])
+            .filter((coord) => Array.isArray(coord) && coord.length >= 2)
+            .map((coord) => [Number(coord[0]), Number(coord[1])])
+            .filter((coord) => Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
+          if (intersections.length >= 2) {
+            intersections.sort((a, b) => preserveAxis === 'vertical' ? (a[1] - b[1]) : (a[0] - b[0]));
+            const first = intersections[0];
+            const last = intersections[intersections.length - 1];
+            if (preserveAxis === 'vertical') {
+              splitStart = [axisOffset, Number(first[1])];
+              splitEnd = [axisOffset, Number(last[1])];
+            } else {
+              splitStart = [Number(first[0]), axisOffset];
+              splitEnd = [Number(last[0]), axisOffset];
+            }
+            snappedFromAxis = true;
+          }
         }
-        if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
-          splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
+        if (!snappedFromAxis) {
+          const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
+          const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
+          const snappedStartCoord = snappedStart?.geometry?.coordinates;
+          const snappedEndCoord = snappedEnd?.geometry?.coordinates;
+          if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
+            splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
+          }
+          if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
+            splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
+          }
         }
       } catch {}
     }
@@ -12171,7 +12205,10 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         const end = isVertical
           ? [offset, centerY + lineExtent]
           : [centerX + lineExtent, offset];
-        const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: true });
+        const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, {
+          snapEndpoints: true,
+          preserveAxis: orientation
+        });
         if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
         const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
         const firstArea = Math.max(0, Number(sideAreas[0] || 0));
