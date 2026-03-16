@@ -1822,29 +1822,9 @@ function resolveDrawingAlignLabel({ buildingLabel, buildingId, floorBasePath, fi
 }
 
 function resolveFloorAdjustLabel({ buildingLabel, buildingId, floorBasePath, fitBuilding } = {}) {
-  return resolveFloorAdjustLabels({ buildingLabel, buildingId, floorBasePath, fitBuilding })[0] || '';
-}
-
-function resolveFloorAdjustLabels({ buildingLabel, buildingId, floorBasePath, fitBuilding } = {}) {
-  const labels = [];
   const folder = floorBasePath ? getBuildingFolderFromBasePath(floorBasePath) : null;
-  if (folder) labels.push(folder);
-  const drawingLabel = resolveDrawingAlignLabel({ buildingLabel, buildingId, floorBasePath, fitBuilding });
-  if (drawingLabel) labels.push(drawingLabel);
-  [
-    buildingLabel,
-    buildingId,
-    fitBuilding?.properties?.id,
-    fitBuilding?.properties?.name,
-    fitBuilding?.properties?.Name
-  ].forEach((value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return;
-    labels.push(raw);
-    const resolved = resolveBuildingNameFromInput(raw);
-    if (resolved) labels.push(resolved);
-  });
-  return Array.from(new Set(labels.map((value) => String(value || '').trim()).filter(Boolean)));
+  if (folder) return folder;
+  return resolveDrawingAlignLabel({ buildingLabel, buildingId, floorBasePath, fitBuilding });
 }
 
 function getFloorAdjustSignature(adjust) {
@@ -6420,48 +6400,30 @@ function getSnapNudgeMetersForBuilding(buildingFeature) {
 
 function matchBuildingFeature(features = [], input) {
   if (!Array.isArray(features) || !features.length || !input) return null;
-  const targetKeys = Array.from(new Set([
-    String(input || '').trim(),
-    resolveBuildingNameFromInput(input) || ''
-  ]
-    .filter(Boolean)
-    .map((value) => normalizeSnapKey(value))
-    .filter(Boolean)));
-  if (!targetKeys.length) return null;
+  const targetKey = normalizeSnapKey(input);
+  if (!targetKey) return null;
   let best = null;
   let bestScore = 0;
   for (const feature of features) {
     const props = feature?.properties || {};
-    const keys = Array.from(new Set(
-      [
-        props.id,
-        props.name,
-        props.Name,
-        props.buildingId,
-        props.buildingName,
-        props.Building,
-        props.building
-      ]
-        .flatMap((value) => {
-          const raw = String(value || '').trim();
-          if (!raw) return [];
-          const resolved = resolveBuildingNameFromInput(raw);
-          return resolved && resolved !== raw ? [raw, resolved] : [raw];
-        })
-        .map((value) => normalizeSnapKey(value))
-        .filter(Boolean)
-    ));
+    const keys = [
+      normalizeSnapKey(props.id),
+      normalizeSnapKey(props.name),
+      normalizeSnapKey(props.Name),
+      normalizeSnapKey(props.buildingId),
+      normalizeSnapKey(props.buildingName),
+      normalizeSnapKey(props.Building),
+      normalizeSnapKey(props.building)
+    ].filter(Boolean);
     for (const key of keys) {
       if (!key) continue;
-      for (const targetKey of targetKeys) {
-        const direct = key === targetKey;
-        const contains = key.includes(targetKey) || targetKey.includes(key);
-        if (!direct && !contains) continue;
-        const score = direct ? (1000 + key.length) : key.length;
-        if (score > bestScore) {
-          best = feature;
-          bestScore = score;
-        }
+      const direct = key === targetKey;
+      const contains = key.includes(targetKey) || targetKey.includes(key);
+      if (!direct && !contains) continue;
+      const score = key.length;
+      if (score > bestScore) {
+        best = feature;
+        bestScore = score;
       }
     }
   }
@@ -14214,26 +14176,9 @@ useEffect(() => {
         resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding || '') ||
         selectedBuildingId ||
         selectedBuilding;
-      const adjustLabels = resolveFloorAdjustLabels({
-        buildingLabel: adjustLabel,
-        buildingId: selectedBuildingId || selectedBuilding || '',
-        floorBasePath: basePath,
-        fitBuilding: selectedBuildingFeatureRef.current || activeBuildingFeature || null
-      });
       const localAdjustByBase = basePath ? loadFloorAdjustByBasePath(basePath, floorId) : null;
       const localAdjustByUrl = url ? loadFloorAdjustByUrl(url) : null;
-      const localLabelPick = adjustLabels
-        .map((label) => ({ source: 'label', adjust: loadFloorAdjust(label, floorId), priority: 1 }))
-        .filter((entry) => entry.adjust);
-      const localAdjustByLabel = localLabelPick.length
-        ? pickLatestFloorAdjust({
-            base: null,
-            url: null,
-            label: localLabelPick
-              .sort((a, b) => (Number(b.adjust?.savedAt) || 0) - (Number(a.adjust?.savedAt) || 0))[0]
-              ?.adjust || null
-          }).adjust
-        : null;
+      const localAdjustByLabel = loadFloorAdjust(adjustLabel, floorId);
       const localPick = pickLatestFloorAdjust({
         base: localAdjustByBase,
         url: localAdjustByUrl,
@@ -14242,17 +14187,7 @@ useEffect(() => {
       const localAdjust = localPick.adjust;
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      const dbAdjustCandidates = [];
-      for (const label of adjustLabels) {
-        const dbAdjust = await loadFloorAdjustFromDb(label, floorId);
-        if (dbAdjust) dbAdjustCandidates.push({ label, adjust: dbAdjust });
-      }
-      const dbAdjust = dbAdjustCandidates
-        .sort((a, b) => {
-          const aTs = a.adjust?.updatedAt?.toMillis ? a.adjust.updatedAt.toMillis() : (Number(a.adjust?.updatedAt?.seconds) ? a.adjust.updatedAt.seconds * 1000 : 0);
-          const bTs = b.adjust?.updatedAt?.toMillis ? b.adjust.updatedAt.toMillis() : (Number(b.adjust?.updatedAt?.seconds) ? b.adjust.updatedAt.seconds * 1000 : 0);
-          return bTs - aTs;
-        })[0]?.adjust || null;
+      const dbAdjust = await loadFloorAdjustFromDb(adjustLabel, floorId);
       if (dbAdjust) {
         const dbCandidate = {
           rotationDeg: Number(dbAdjust.rotationDeg) || 0,
@@ -14274,9 +14209,7 @@ useEffect(() => {
           ? dbUpdatedAtMs >= localSavedAt
           : (!localHasAdjust && dbHasAdjust);
         if (shouldPreferDb) {
-          adjustLabels.forEach((label) => {
-            saveFloorAdjust(label, floorId, dbCandidate);
-          });
+          saveFloorAdjust(adjustLabel, floorId, dbCandidate);
           if (url) saveFloorAdjustByUrl(url, dbCandidate);
           if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
           if (url) {
