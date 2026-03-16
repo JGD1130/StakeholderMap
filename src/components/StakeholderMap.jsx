@@ -11760,56 +11760,48 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     console.log('[Planning Scenario Debug] remove divider applied', { sourceRoomIds, syntheticRoomId });
   }, [scenarioLayoutRemoveDividerValidation, scenarioAssignedDept, appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
 
-  const applyScenarioRoomSplit = useCallback((targetRoomId, startCoord, endCoord) => {
-    const roomId = String(targetRoomId || '').trim();
-    if (!roomId) return false;
-    console.log('[Planning Scenario Debug] split requested', { roomId, startCoord, endCoord });
-    const effectiveRoom = buildEffectiveScenarioRoomWithGeometry(roomId);
-    if (!effectiveRoom?.geometry) {
-      console.log('[Planning Scenario Debug] split failed: geometry missing', { roomId });
-      alert('Unable to resolve room geometry for split.');
-      return false;
-    }
+  const resolveScenarioSplitPieces = useCallback((targetGeometry, startCoord, endCoord, options = {}) => {
+    const { snapEndpoints = true } = options || {};
     const start = Array.isArray(startCoord) ? startCoord : [];
     const end = Array.isArray(endCoord) ? endCoord : [];
-    if (start.length < 2 || end.length < 2) {
-      alert('Select two split points inside the selected room.');
-      return false;
-    }
-    const targetFeature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(effectiveRoom.geometry) };
+    if (!targetGeometry || start.length < 2 || end.length < 2) return null;
+    const feature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(targetGeometry) };
     let splitStart = [Number(start[0]), Number(start[1])];
     let splitEnd = [Number(end[0]), Number(end[1])];
-    try {
-      const boundary = turf.polygonToLine(targetFeature);
-      const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
-      const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
-      const snappedStartCoord = snappedStart?.geometry?.coordinates;
-      const snappedEndCoord = snappedEnd?.geometry?.coordinates;
-      if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
-        splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
-      }
-      if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
-        splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
-      }
-    } catch {}
+    if (!Number.isFinite(splitStart[0]) || !Number.isFinite(splitStart[1]) || !Number.isFinite(splitEnd[0]) || !Number.isFinite(splitEnd[1])) {
+      return null;
+    }
+    if (snapEndpoints) {
+      try {
+        const boundary = turf.polygonToLine(feature);
+        const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
+        const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
+        const snappedStartCoord = snappedStart?.geometry?.coordinates;
+        const snappedEndCoord = snappedEnd?.geometry?.coordinates;
+        if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
+          splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
+        }
+        if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
+          splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
+        }
+      } catch {}
+    }
 
     const dx = Number(splitEnd[0]) - Number(splitStart[0]);
     const dy = Number(splitEnd[1]) - Number(splitStart[1]);
     const len = Math.hypot(dx, dy);
-    if (!Number.isFinite(len) || len < 1e-9) {
-      alert('Split line is too short.');
-      return false;
-    }
-    const feature = targetFeature;
+    if (!Number.isFinite(len) || len < 1e-9) return null;
+
     const bbox = turf.bbox(feature);
     const span = Math.max(Math.abs((bbox?.[2] || 0) - (bbox?.[0] || 0)), Math.abs((bbox?.[3] || 0) - (bbox?.[1] || 0))) || 0.001;
-    const ext = Math.max(span * 1e-5, 1e-7);
+    const ext = snapEndpoints ? Math.max(span * 1e-5, 1e-7) : Math.max(span * 4, 0.001);
     const ux = dx / len;
     const uy = dy / len;
     const splitLine = turf.lineString([
       [Number(splitStart[0]) - ux * ext, Number(splitStart[1]) - uy * ext],
       [Number(splitEnd[0]) + ux * ext, Number(splitEnd[1]) + uy * ext]
     ]);
+
     const clipSplitPieceToTarget = (part) => {
       if (!part?.geometry) return null;
       let clipped = part;
@@ -11825,6 +11817,22 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
         return null;
       }
     };
+
+    const mergeSplitPieceGroup = (group = []) => {
+      const validParts = (group || []).filter(Boolean);
+      if (!validParts.length) return null;
+      if (validParts.length === 1) return validParts[0];
+      try {
+        return validParts.slice(1).reduce((acc, part) => {
+          if (!acc?.geometry) return part;
+          const merged = turf.union(turf.featureCollection([acc, part]));
+          return merged?.geometry ? merged : acc;
+        }, validParts[0]);
+      } catch {
+        return validParts[0];
+      }
+    };
+
     const splitByHalfPlaneFallback = () => {
       const EPS = 1e-12;
       const geometry = feature?.geometry || null;
@@ -11925,28 +11933,43 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       if (!outerRing) return [];
       const posRing = clipRingBySide(outerRing, true);
       const negRing = clipRingBySide(outerRing, false);
-      const candidates = [posRing, negRing]
+      return [posRing, negRing]
         .filter(Boolean)
         .map((ring) => clipSplitPieceToTarget(buildFeatureFromRing(ring)))
         .filter(Boolean);
-      return candidates;
+    };
+
+    const classifySplitPieces = (rawPieces = []) => {
+      const positivePieces = [];
+      const negativePieces = [];
+      (rawPieces || []).forEach((part) => {
+        try {
+          const centroid = turf.centroid(part)?.geometry?.coordinates || [];
+          const sideValue =
+            dx * (Number(centroid?.[1] || 0) - Number(splitStart[1])) -
+            dy * (Number(centroid?.[0] || 0) - Number(splitStart[0]));
+          if (sideValue >= 0) positivePieces.push(part);
+          else negativePieces.push(part);
+        } catch {}
+      });
+      const positiveMerged = mergeSplitPieceGroup(positivePieces);
+      const negativeMerged = mergeSplitPieceGroup(negativePieces);
+      const groupedPieces = [positiveMerged, negativeMerged]
+        .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'));
+      const sideAreas = [
+        positivePieces.reduce((sum, part) => sum + Math.max(0, Number(turf.area(part) || 0)), 0),
+        negativePieces.reduce((sum, part) => sum + Math.max(0, Number(turf.area(part) || 0)), 0)
+      ];
+      if (groupedPieces.length >= 2) {
+        return { pieces: groupedPieces, sideAreas };
+      }
+      return {
+        pieces: (rawPieces || []).slice().sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0)).slice(0, 2),
+        sideAreas
+      };
     };
 
     let pieces = [];
-    const mergeSplitPieceGroup = (group = []) => {
-      const validParts = (group || []).filter(Boolean);
-      if (!validParts.length) return null;
-      if (validParts.length === 1) return validParts[0];
-      try {
-        return validParts.slice(1).reduce((acc, part) => {
-          if (!acc?.geometry) return part;
-          const merged = turf.union(turf.featureCollection([acc, part]));
-          return merged?.geometry ? merged : acc;
-        }, validParts[0]);
-      } catch {
-        return validParts[0];
-      }
-    };
     try {
       const boundary = turf.polygonToLine(feature);
       const boundaryLines = (turf.flatten(boundary)?.features || [])
@@ -11982,42 +12005,35 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
             return false;
           }
         });
-      if (pieces.length > 2) {
-        const positivePieces = [];
-        const negativePieces = [];
-        pieces.forEach((part) => {
-          try {
-            const centroid = turf.centroid(part)?.geometry?.coordinates || [];
-            const sideValue =
-              dx * (Number(centroid?.[1] || 0) - Number(splitStart[1])) -
-              dy * (Number(centroid?.[0] || 0) - Number(splitStart[0]));
-            if (sideValue >= 0) positivePieces.push(part);
-            else negativePieces.push(part);
-          } catch {}
-        });
-        const mergedBySide = [mergeSplitPieceGroup(positivePieces), mergeSplitPieceGroup(negativePieces)]
-          .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'));
-        if (mergedBySide.length >= 2) {
-          pieces = mergedBySide;
-        }
-      }
-      pieces = pieces.sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
     } catch {
       pieces = [];
     }
+
     if (pieces.length < 2) {
       const fallbackPieces = splitByHalfPlaneFallback();
-      if (fallbackPieces.length >= 2) {
-        pieces = fallbackPieces.sort((a, b) => (turf.area(b) || 0) - (turf.area(a) || 0));
-        console.log('[Planning Scenario Debug] split fallback applied', { roomId, piecesCount: pieces.length });
-      }
+      if (fallbackPieces.length >= 2) pieces = fallbackPieces;
     }
-    if (pieces.length < 2) {
-      console.log('[Planning Scenario Debug] split failed: no polygonized pieces', { roomId, piecesCount: pieces.length });
-      alert('Split line must cross the selected room.');
-      return false;
-    }
-    const keptPieces = pieces.slice(0, 2);
+    if (pieces.length < 2) return null;
+
+    const classified = classifySplitPieces(pieces);
+    const keptPieces = (classified?.pieces || [])
+      .filter((part) => part?.geometry && (part.geometry.type === 'Polygon' || part.geometry.type === 'MultiPolygon'))
+      .slice(0, 2);
+    if (keptPieces.length < 2) return null;
+    return {
+      pieces: keptPieces,
+      splitStart,
+      splitEnd,
+      sideAreas: Array.isArray(classified?.sideAreas) ? classified.sideAreas : keptPieces.map((part) => Math.max(0, Number(turf.area(part) || 0)))
+    };
+  }, []);
+
+  const commitScenarioRoomSplit = useCallback((effectiveRoom, splitResult, options = {}) => {
+    const roomId = String(effectiveRoom?.roomId || '').trim();
+    const keptPieces = Array.isArray(splitResult?.pieces) ? splitResult.pieces.slice(0, 2) : [];
+    if (!roomId || !keptPieces.length) return false;
+    const { roomTypeLabel = 'Split Scenario Room', operationType = 'split' } = options || {};
+    const splitId = `layout-split-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const sourceAreaSf = Number(effectiveRoom.area || 0) || 0;
     const sourceSeatCount = normalizeScenarioCapacityValue(effectiveRoom.seatCount) ?? 0;
     const sourceBaseSeatCount = normalizeScenarioCapacityValue(effectiveRoom.baseSeatCount) ?? sourceSeatCount;
@@ -12049,7 +12065,6 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       remainingBaseSeats -= next;
       return next;
     });
-    const splitId = `layout-split-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const baseRoomNumber = String(effectiveRoom.roomNumber || effectiveRoom.roomId || 'SCN').trim();
     const syntheticRooms = keptPieces.map((part, idx) => ({
       roomId: `synthetic-${splitId}-${idx + 1}`,
@@ -12057,7 +12072,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       buildingName: effectiveRoom.buildingName || effectiveRoom.buildingId || '',
       floorName: effectiveRoom.floorName || '',
       roomNumber: `${baseRoomNumber}${idx === 0 ? 'A' : 'B'}`,
-      roomType: 'Split Scenario Room',
+      roomType: roomTypeLabel,
       department: norm(effectiveRoom.department || ''),
       baseDepartment: norm(effectiveRoom.baseDepartment || effectiveRoom.department || ''),
       area: splitSf[idx] || 0,
@@ -12074,20 +12089,216 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       sourceRoomIds: [roomId],
       syntheticRoomIds: syntheticRooms.map((room) => room.roomId),
       syntheticRooms,
-      splitLine: [splitStart, splitEnd],
+      splitLine: [splitResult.splitStart, splitResult.splitEnd],
       scenarioGeometry: syntheticRooms.map((room) => ({
         scenarioId: scenarioSessionIdRef.current,
         roomId: room.roomId,
         geometry: cloneGeoJsonValue(room.geometry),
         sourceRoomIds: [roomId],
-        operationType: 'split'
+        operationType
       }))
     });
     syntheticRooms.forEach((room) => upsertScenarioRoomInfoFromSynthetic(room));
     replaceScenarioSelectionAfterLayoutOp([roomId], syntheticRooms.map((room) => room.roomId));
-    console.log('[Planning Scenario Debug] split applied', { roomId, syntheticCount: syntheticRooms.length });
     return true;
-  }, [buildEffectiveScenarioRoomWithGeometry, appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
+  }, [appendScenarioOperation, replaceScenarioSelectionAfterLayoutOp, upsertScenarioRoomInfoFromSynthetic]);
+
+  const applyScenarioRoomSplit = useCallback((targetRoomId, startCoord, endCoord) => {
+    const roomId = String(targetRoomId || '').trim();
+    if (!roomId) return false;
+    console.log('[Planning Scenario Debug] split requested', { roomId, startCoord, endCoord });
+    const effectiveRoom = buildEffectiveScenarioRoomWithGeometry(roomId);
+    if (!effectiveRoom?.geometry) {
+      console.log('[Planning Scenario Debug] split failed: geometry missing', { roomId });
+      alert('Unable to resolve room geometry for split.');
+      return false;
+    }
+    const start = Array.isArray(startCoord) ? startCoord : [];
+    const end = Array.isArray(endCoord) ? endCoord : [];
+    if (start.length < 2 || end.length < 2) {
+      alert('Select two split points inside the selected room.');
+      return false;
+    }
+    const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: true });
+    if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) {
+      console.log('[Planning Scenario Debug] split failed: no polygonized pieces', { roomId });
+      alert('Split line must cross the selected room.');
+      return false;
+    }
+    const applied = commitScenarioRoomSplit(effectiveRoom, splitResult, {
+      roomTypeLabel: 'Split Scenario Room',
+      operationType: 'split'
+    });
+    if (!applied) return false;
+    console.log('[Planning Scenario Debug] split applied', { roomId, syntheticCount: splitResult.pieces.length });
+    return true;
+  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioSplitPieces, commitScenarioRoomSplit]);
+
+  const applyScenarioRoomHalve = useCallback((targetRoomId) => {
+    const roomId = String(targetRoomId || '').trim();
+    if (!roomId) return false;
+    const effectiveRoom = buildEffectiveScenarioRoomWithGeometry(roomId);
+    if (!effectiveRoom?.geometry) {
+      alert('Unable to resolve room geometry to halve.');
+      return false;
+    }
+    const feature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(effectiveRoom.geometry) };
+    const getOuterRing = () => {
+      const geometry = feature?.geometry || null;
+      if (!geometry) return null;
+      try {
+        if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates?.[0])) return geometry.coordinates[0];
+        if (geometry.type === 'MultiPolygon' && Array.isArray(geometry.coordinates)) {
+          let bestRing = null;
+          let bestArea = -1;
+          geometry.coordinates.forEach((polyCoords) => {
+            const ring = Array.isArray(polyCoords?.[0]) ? polyCoords[0] : null;
+            if (!ring) return;
+            try {
+              const area = turf.area({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } }) || 0;
+              if (area > bestArea) {
+                bestArea = area;
+                bestRing = ring;
+              }
+            } catch {}
+          });
+          return bestRing;
+        }
+      } catch {}
+      return null;
+    };
+    const ring = (getOuterRing() || [])
+      .filter((pt) => Array.isArray(pt) && pt.length >= 2)
+      .map((pt) => [Number(pt[0]), Number(pt[1])])
+      .filter((pt) => Number.isFinite(pt[0]) && Number.isFinite(pt[1]));
+    const openRing = ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+      ? ring.slice(0, -1)
+      : ring.slice();
+    if (openRing.length < 3) {
+      alert('Room geometry is too simple to auto-halve.');
+      return false;
+    }
+
+    const centroidCoords = turf.centroid(feature)?.geometry?.coordinates || [];
+    const center = [
+      Number(centroidCoords?.[0]),
+      Number(centroidCoords?.[1])
+    ];
+    if (!Number.isFinite(center[0]) || !Number.isFinite(center[1])) {
+      alert('Unable to determine room center for auto-halving.');
+      return false;
+    }
+
+    const mean = openRing.reduce((acc, pt) => [acc[0] + pt[0], acc[1] + pt[1]], [0, 0]).map((sum) => sum / openRing.length);
+    let covXX = 0;
+    let covYY = 0;
+    let covXY = 0;
+    openRing.forEach((pt) => {
+      const dx = pt[0] - mean[0];
+      const dy = pt[1] - mean[1];
+      covXX += dx * dx;
+      covYY += dy * dy;
+      covXY += dx * dy;
+    });
+    const theta = 0.5 * Math.atan2(2 * covXY, covXX - covYY);
+    let axis = [Math.cos(theta), Math.sin(theta)];
+    let normal = [-axis[1], axis[0]];
+    const project = (pt, vector) => ((pt[0] - center[0]) * vector[0]) + ((pt[1] - center[1]) * vector[1]);
+    const axisValues = openRing.map((pt) => project(pt, axis));
+    const normalValues = openRing.map((pt) => project(pt, normal));
+    const axisSpan = (Math.max(...axisValues) - Math.min(...axisValues)) || 0;
+    const normalSpan = (Math.max(...normalValues) - Math.min(...normalValues)) || 0;
+    if (normalSpan > axisSpan) {
+      axis = normal;
+      normal = [-axis[1], axis[0]];
+    }
+    const axisOffsets = openRing.map((pt) => project(pt, axis));
+    const minOffset = Math.min(...axisOffsets);
+    const maxOffset = Math.max(...axisOffsets);
+    const searchSpan = Math.max(maxOffset - minOffset, 0.001);
+    const lineExtent = Math.max(searchSpan * 4, normalSpan * 4, 0.01);
+    const evaluateOffset = (offset) => {
+      const anchor = [
+        center[0] + axis[0] * offset,
+        center[1] + axis[1] * offset
+      ];
+      const start = [anchor[0] - normal[0] * lineExtent, anchor[1] - normal[1] * lineExtent];
+      const end = [anchor[0] + normal[0] * lineExtent, anchor[1] + normal[1] * lineExtent];
+      const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: false });
+      if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
+      const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
+      const positiveArea = Math.max(0, Number(sideAreas[0] || 0));
+      const negativeArea = Math.max(0, Number(sideAreas[1] || 0));
+      const diff = positiveArea - negativeArea;
+      return {
+        offset,
+        diff,
+        absDiff: Math.abs(diff),
+        splitResult
+      };
+    };
+
+    const sampleCount = 24;
+    const padding = Math.max(searchSpan * 0.1, 0.001);
+    const sampleResults = [];
+    for (let i = 0; i <= sampleCount; i += 1) {
+      const ratio = sampleCount === 0 ? 0.5 : (i / sampleCount);
+      const offset = (minOffset - padding) + ((maxOffset - minOffset + (padding * 2)) * ratio);
+      const result = evaluateOffset(offset);
+      if (result) sampleResults.push(result);
+    }
+    if (!sampleResults.length) {
+      alert('Unable to compute an equal-area split for this room.');
+      return false;
+    }
+
+    let bestResult = sampleResults.reduce((best, candidate) => (candidate.absDiff < best.absDiff ? candidate : best), sampleResults[0]);
+    for (let i = 1; i < sampleResults.length; i += 1) {
+      const prev = sampleResults[i - 1];
+      const next = sampleResults[i];
+      if (!prev || !next) continue;
+      if (prev.diff === 0) {
+        bestResult = prev;
+        break;
+      }
+      if (next.diff === 0) {
+        bestResult = next;
+        break;
+      }
+      if ((prev.diff < 0 && next.diff > 0) || (prev.diff > 0 && next.diff < 0)) {
+        let lo = prev.offset;
+        let hi = next.offset;
+        let loResult = prev;
+        for (let iter = 0; iter < 18; iter += 1) {
+          const mid = (lo + hi) / 2;
+          const midResult = evaluateOffset(mid);
+          if (!midResult) break;
+          if (midResult.absDiff < bestResult.absDiff) bestResult = midResult;
+          if ((loResult.diff < 0 && midResult.diff > 0) || (loResult.diff > 0 && midResult.diff < 0)) {
+            hi = mid;
+          } else {
+            lo = mid;
+            loResult = midResult;
+          }
+        }
+        break;
+      }
+    }
+
+    const applied = commitScenarioRoomSplit(effectiveRoom, bestResult.splitResult, {
+      roomTypeLabel: 'Halved Scenario Room',
+      operationType: 'halve'
+    });
+    if (!applied) {
+      alert('Unable to apply equal-area split.');
+      return false;
+    }
+    console.log('[Planning Scenario Debug] auto halve applied', {
+      roomId,
+      absAreaDiff: bestResult.absDiff
+    });
+    return true;
+  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioSplitPieces, commitScenarioRoomSplit]);
 
   const scenarioSplitValidation = useMemo(() => {
     const selectedIds = Array.from(scenarioSelection || [])
@@ -20636,6 +20847,14 @@ useEffect(() => {
             >
               {scenarioLayoutMode === 'split' ? 'Cancel Split Mode' : 'Split Room'}
             </button>
+            <button
+              className="btn secondary"
+              onClick={() => applyScenarioRoomHalve(scenarioSplitValidation.roomId)}
+              disabled={scenarioSelection.size === 0 || !scenarioSplitValidation.canSplit}
+              title={scenarioSelection.size === 0 ? 'Select one room first.' : (scenarioSplitValidation.canSplit ? 'Automatically cut the selected room into equal-area halves.' : scenarioSplitValidation.reason)}
+            >
+              Halve Room
+            </button>
           </div>
           <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
             Geometry edits are scenario-only and stored in Firestore. Airtable is not modified.
@@ -22763,9 +22982,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
 
 
 
