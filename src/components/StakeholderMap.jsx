@@ -1405,7 +1405,6 @@ const floorAdjustCache = new Map();
 const floorAdjustUrlCache = new Map();
 const floorAdjustFloorCache = new Map();
 const floorAdjustDbCache = new Map();
-const floorAdjustDbFloorCache = new Map();
 
 function buildDrawingAlignKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
@@ -1846,13 +1845,6 @@ function resolveFloorAdjustLabels({ buildingLabel, buildingId, floorBasePath, fi
     if (resolved) labels.push(resolved);
   });
   return Array.from(new Set(labels.map((value) => String(value || '').trim()).filter(Boolean)));
-}
-
-function normalizeFloorAdjustDbKey(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const resolved = resolveBuildingNameFromInput(raw) || raw;
-  return canon(resolved);
 }
 
 function getFloorAdjustSignature(adjust) {
@@ -13944,36 +13936,6 @@ useEffect(() => {
     [db, universityId, buildFloorAdjustDocId]
   );
 
-  const loadFloorAdjustCandidatesFromDb = useCallback(
-    async (floorId) => {
-      const floorKey = fId(floorId || '');
-      if (!universityId || !floorKey) return [];
-      const cacheKey = `${canon(universityId)}__${floorKey}`;
-      if (floorAdjustDbFloorCache.has(cacheKey)) {
-        return floorAdjustDbFloorCache.get(cacheKey) || [];
-      }
-      try {
-        const colRef = collection(db, 'universities', universityId, 'floorAdjustments');
-        const snap = await getDocs(query(colRef, where('floorId', '==', floorId)));
-        const rows = (snap?.docs || []).map((entry) => ({
-          id: entry.id,
-          ...(entry.data() || {})
-        }));
-        floorAdjustDbFloorCache.set(cacheKey, rows);
-        rows.forEach((row) => {
-          if (row?.buildingLabel && row?.floorId) {
-            const directDocId = buildFloorAdjustDocId(row.buildingLabel, row.floorId);
-            if (directDocId) floorAdjustDbCache.set(directDocId, row);
-          }
-        });
-        return rows;
-      } catch {
-        return [];
-      }
-    },
-    [db, universityId, buildFloorAdjustDocId]
-  );
-
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
       if (!universityId || !buildingLabel || !floorId || !adjust) return;
@@ -13994,17 +13956,6 @@ useEffect(() => {
           updatedBy: authUser?.uid || authUser?.email || null
         };
         floorAdjustDbCache.set(docId, payload);
-        const floorCacheKey = `${canon(universityId)}__${fId(floorId || '')}`;
-        if (floorAdjustDbFloorCache.has(floorCacheKey)) {
-          const existing = Array.isArray(floorAdjustDbFloorCache.get(floorCacheKey))
-            ? floorAdjustDbFloorCache.get(floorCacheKey)
-            : [];
-          const next = [
-            payload,
-            ...existing.filter((entry) => String(entry?.id || '') !== docId)
-          ];
-          floorAdjustDbFloorCache.set(floorCacheKey, next);
-        }
         await setDoc(
           ref,
           payload,
@@ -14294,29 +14245,7 @@ useEffect(() => {
       const dbAdjustCandidates = [];
       for (const label of adjustLabels) {
         const dbAdjust = await loadFloorAdjustFromDb(label, floorId);
-        if (dbAdjust) dbAdjustCandidates.push({ label, adjust: dbAdjust, matchType: 'direct' });
-      }
-      const dbFloorCandidates = await loadFloorAdjustCandidatesFromDb(floorId);
-      if (dbFloorCandidates.length) {
-        const expectedKeys = new Set(
-          adjustLabels
-            .map((label) => normalizeFloorAdjustDbKey(label))
-            .filter(Boolean)
-        );
-        dbFloorCandidates.forEach((candidate) => {
-          const candidateLabel = String(candidate?.buildingLabel || '').trim();
-          const candidateKeys = new Set([
-            normalizeFloorAdjustDbKey(candidateLabel),
-            normalizeFloorAdjustDbKey(candidate?.id || '')
-          ].filter(Boolean));
-          const matches = Array.from(candidateKeys).some((key) => expectedKeys.has(key));
-          if (!matches) return;
-          dbAdjustCandidates.push({
-            label: candidateLabel || candidate?.id || '',
-            adjust: candidate,
-            matchType: 'floorScan'
-          });
-        });
+        if (dbAdjust) dbAdjustCandidates.push({ label, adjust: dbAdjust });
       }
       const dbAdjust = dbAdjustCandidates
         .sort((a, b) => {
