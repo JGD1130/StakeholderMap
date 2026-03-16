@@ -12143,146 +12143,106 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
       return false;
     }
     const feature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(effectiveRoom.geometry) };
-    const getOuterRing = () => {
-      const geometry = feature?.geometry || null;
-      if (!geometry) return null;
-      try {
-        if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates?.[0])) return geometry.coordinates[0];
-        if (geometry.type === 'MultiPolygon' && Array.isArray(geometry.coordinates)) {
-          let bestRing = null;
-          let bestArea = -1;
-          geometry.coordinates.forEach((polyCoords) => {
-            const ring = Array.isArray(polyCoords?.[0]) ? polyCoords[0] : null;
-            if (!ring) return;
-            try {
-              const area = turf.area({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } }) || 0;
-              if (area > bestArea) {
-                bestArea = area;
-                bestRing = ring;
-              }
-            } catch {}
-          });
-          return bestRing;
-        }
-      } catch {}
-      return null;
-    };
-    const ring = (getOuterRing() || [])
-      .filter((pt) => Array.isArray(pt) && pt.length >= 2)
-      .map((pt) => [Number(pt[0]), Number(pt[1])])
-      .filter((pt) => Number.isFinite(pt[0]) && Number.isFinite(pt[1]));
-    const openRing = ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
-      ? ring.slice(0, -1)
-      : ring.slice();
-    if (openRing.length < 3) {
-      alert('Room geometry is too simple to auto-halve.');
+    const bbox = turf.bbox(feature);
+    const minX = Number(bbox?.[0]);
+    const minY = Number(bbox?.[1]);
+    const maxX = Number(bbox?.[2]);
+    const maxY = Number(bbox?.[3]);
+    if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
+      alert('Unable to determine room bounds for auto-halving.');
       return false;
     }
 
-    const centroidCoords = turf.centroid(feature)?.geometry?.coordinates || [];
-    const center = [
-      Number(centroidCoords?.[0]),
-      Number(centroidCoords?.[1])
-    ];
-    if (!Number.isFinite(center[0]) || !Number.isFinite(center[1])) {
-      alert('Unable to determine room center for auto-halving.');
-      return false;
-    }
+    const width = Math.max(0.001, maxX - minX);
+    const height = Math.max(0.001, maxY - minY);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
 
-    const mean = openRing.reduce((acc, pt) => [acc[0] + pt[0], acc[1] + pt[1]], [0, 0]).map((sum) => sum / openRing.length);
-    let covXX = 0;
-    let covYY = 0;
-    let covXY = 0;
-    openRing.forEach((pt) => {
-      const dx = pt[0] - mean[0];
-      const dy = pt[1] - mean[1];
-      covXX += dx * dx;
-      covYY += dy * dy;
-      covXY += dx * dy;
-    });
-    const theta = 0.5 * Math.atan2(2 * covXY, covXX - covYY);
-    let axis = [Math.cos(theta), Math.sin(theta)];
-    let normal = [-axis[1], axis[0]];
-    const project = (pt, vector) => ((pt[0] - center[0]) * vector[0]) + ((pt[1] - center[1]) * vector[1]);
-    const axisValues = openRing.map((pt) => project(pt, axis));
-    const normalValues = openRing.map((pt) => project(pt, normal));
-    const axisSpan = (Math.max(...axisValues) - Math.min(...axisValues)) || 0;
-    const normalSpan = (Math.max(...normalValues) - Math.min(...normalValues)) || 0;
-    if (normalSpan > axisSpan) {
-      axis = normal;
-      normal = [-axis[1], axis[0]];
-    }
-    const axisOffsets = openRing.map((pt) => project(pt, axis));
-    const minOffset = Math.min(...axisOffsets);
-    const maxOffset = Math.max(...axisOffsets);
-    const searchSpan = Math.max(maxOffset - minOffset, 0.001);
-    const lineExtent = Math.max(searchSpan * 4, normalSpan * 4, 0.01);
-    const evaluateOffset = (offset) => {
-      const anchor = [
-        center[0] + axis[0] * offset,
-        center[1] + axis[1] * offset
-      ];
-      const start = [anchor[0] - normal[0] * lineExtent, anchor[1] - normal[1] * lineExtent];
-      const end = [anchor[0] + normal[0] * lineExtent, anchor[1] + normal[1] * lineExtent];
-      const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: false });
-      if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
-      const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
-      const positiveArea = Math.max(0, Number(sideAreas[0] || 0));
-      const negativeArea = Math.max(0, Number(sideAreas[1] || 0));
-      const diff = positiveArea - negativeArea;
-      return {
-        offset,
-        diff,
-        absDiff: Math.abs(diff),
-        splitResult
+    const evaluateOrientation = (orientation) => {
+      const isVertical = orientation === 'vertical';
+      const minOffset = isVertical ? minX : minY;
+      const maxOffset = isVertical ? maxX : maxY;
+      const span = Math.max(0.001, maxOffset - minOffset);
+      const lineExtent = Math.max(width, height) * 4;
+      const evaluateOffset = (offset) => {
+        const start = isVertical
+          ? [offset, centerY - lineExtent]
+          : [centerX - lineExtent, offset];
+        const end = isVertical
+          ? [offset, centerY + lineExtent]
+          : [centerX + lineExtent, offset];
+        const splitResult = resolveScenarioSplitPieces(effectiveRoom.geometry, start, end, { snapEndpoints: false });
+        if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
+        const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
+        const firstArea = Math.max(0, Number(sideAreas[0] || 0));
+        const secondArea = Math.max(0, Number(sideAreas[1] || 0));
+        const diff = firstArea - secondArea;
+        return {
+          orientation,
+          offset,
+          diff,
+          absDiff: Math.abs(diff),
+          splitResult
+        };
       };
+
+      const sampleCount = 24;
+      const padding = Math.max(span * 0.05, 0.001);
+      const sampleResults = [];
+      for (let i = 0; i <= sampleCount; i += 1) {
+        const ratio = sampleCount === 0 ? 0.5 : (i / sampleCount);
+        const offset = (minOffset - padding) + ((span + (padding * 2)) * ratio);
+        const result = evaluateOffset(offset);
+        if (result) sampleResults.push(result);
+      }
+      if (!sampleResults.length) return null;
+
+      let bestResult = sampleResults.reduce((best, candidate) => (candidate.absDiff < best.absDiff ? candidate : best), sampleResults[0]);
+      for (let i = 1; i < sampleResults.length; i += 1) {
+        const prev = sampleResults[i - 1];
+        const next = sampleResults[i];
+        if (!prev || !next) continue;
+        if (prev.diff === 0) {
+          bestResult = prev;
+          break;
+        }
+        if (next.diff === 0) {
+          bestResult = next;
+          break;
+        }
+        if ((prev.diff < 0 && next.diff > 0) || (prev.diff > 0 && next.diff < 0)) {
+          let lo = prev.offset;
+          let hi = next.offset;
+          let loResult = prev;
+          for (let iter = 0; iter < 18; iter += 1) {
+            const mid = (lo + hi) / 2;
+            const midResult = evaluateOffset(mid);
+            if (!midResult) break;
+            if (midResult.absDiff < bestResult.absDiff) bestResult = midResult;
+            if ((loResult.diff < 0 && midResult.diff > 0) || (loResult.diff > 0 && midResult.diff < 0)) {
+              hi = mid;
+            } else {
+              lo = mid;
+              loResult = midResult;
+            }
+          }
+          break;
+        }
+      }
+      return bestResult;
     };
 
-    const sampleCount = 24;
-    const padding = Math.max(searchSpan * 0.1, 0.001);
-    const sampleResults = [];
-    for (let i = 0; i <= sampleCount; i += 1) {
-      const ratio = sampleCount === 0 ? 0.5 : (i / sampleCount);
-      const offset = (minOffset - padding) + ((maxOffset - minOffset + (padding * 2)) * ratio);
-      const result = evaluateOffset(offset);
-      if (result) sampleResults.push(result);
-    }
-    if (!sampleResults.length) {
+    const bestResult = ['vertical', 'horizontal']
+      .map((orientation) => evaluateOrientation(orientation))
+      .filter(Boolean)
+      .reduce((best, candidate) => {
+        if (!best) return candidate;
+        return candidate.absDiff < best.absDiff ? candidate : best;
+      }, null);
+
+    if (!bestResult?.splitResult) {
       alert('Unable to compute an equal-area split for this room.');
       return false;
-    }
-
-    let bestResult = sampleResults.reduce((best, candidate) => (candidate.absDiff < best.absDiff ? candidate : best), sampleResults[0]);
-    for (let i = 1; i < sampleResults.length; i += 1) {
-      const prev = sampleResults[i - 1];
-      const next = sampleResults[i];
-      if (!prev || !next) continue;
-      if (prev.diff === 0) {
-        bestResult = prev;
-        break;
-      }
-      if (next.diff === 0) {
-        bestResult = next;
-        break;
-      }
-      if ((prev.diff < 0 && next.diff > 0) || (prev.diff > 0 && next.diff < 0)) {
-        let lo = prev.offset;
-        let hi = next.offset;
-        let loResult = prev;
-        for (let iter = 0; iter < 18; iter += 1) {
-          const mid = (lo + hi) / 2;
-          const midResult = evaluateOffset(mid);
-          if (!midResult) break;
-          if (midResult.absDiff < bestResult.absDiff) bestResult = midResult;
-          if ((loResult.diff < 0 && midResult.diff > 0) || (loResult.diff > 0 && midResult.diff < 0)) {
-            hi = mid;
-          } else {
-            lo = mid;
-            loResult = midResult;
-          }
-        }
-        break;
-      }
     }
 
     const applied = commitScenarioRoomSplit(effectiveRoom, bestResult.splitResult, {
