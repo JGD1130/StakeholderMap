@@ -8248,8 +8248,8 @@ const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
   hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,142,44', haloRgb: '255,234,204' },
   improve: { color: '#fde047', heatValue: 0.9, rgb: '255,230,88', haloRgb: '255,247,214' },
   outdated: { color: '#67e8f9', heatValue: 0.8, rgb: '78,228,250', haloRgb: '190,246,255' },
-  // Rarely/Never heat should match marker hue exactly at center and fade to lighter greens.
-  rarely: { color: '#7AFEB1', heatValue: 1.0, rgb: '122,254,177', haloRgb: '230,255,242' },
+  // Rarely/Never heat should keep the exact marker hue at center with lighter green falloff.
+  rarely: { color: '#7AFEB1', heatValue: 1.1, rgb: '122,254,177', haloRgb: '220,255,238' },
   unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
   comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '125,250,255' }
 };
@@ -8278,8 +8278,8 @@ const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
 const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
-// Keep thermal blended warm/cool halo overlays enabled.
-const ENGAGEMENT_USE_THERMAL_HALO = true;
+// Use category-specific heat layers so each sentiment matches its marker color family.
+const ENGAGEMENT_USE_THERMAL_HALO = false;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
@@ -8381,27 +8381,12 @@ const buildEngagementCategoryHeatColorExpr = (category) => {
       ['linear'],
       ['heatmap-density'],
       0, 'rgba(0,0,0,0)',
-      0.03, `rgba(${haloRgb},0.12)`,
-      0.10, 'rgba(214,255,233,0.30)',
-      0.24, 'rgba(188,252,216,0.50)',
-      0.42, 'rgba(160,248,198,0.68)',
-      0.64, 'rgba(140,244,186,0.84)',
-      0.84, `rgba(${coreRgb},0.94)`,
+      0.02, `rgba(${haloRgb},0.22)`,
+      0.08, `rgba(${haloRgb},0.40)`,
+      0.20, `rgba(${coreRgb},0.70)`,
+      0.38, `rgba(${coreRgb},0.88)`,
+      0.62, `rgba(${coreRgb},0.97)`,
       1, `rgba(${coreRgb},1.0)`
-    ];
-  }
-  if (isCoolEngagementCategory(category)) {
-    return [
-      'interpolate',
-      ['linear'],
-      ['heatmap-density'],
-      0, 'rgba(0,0,0,0)',
-      0.03, `rgba(${haloRgb},0.12)`,
-      0.10, `rgba(${haloRgb},0.24)`,
-      0.20, `rgba(${coreRgb},0.58)`,
-      0.36, `rgba(${coreRgb},0.82)`,
-      0.62, `rgba(${coreRgb},0.93)`,
-      1, `rgba(${coreRgb},0.995)`
     ];
   }
   return [
@@ -8409,12 +8394,11 @@ const buildEngagementCategoryHeatColorExpr = (category) => {
     ['linear'],
     ['heatmap-density'],
     0, 'rgba(0,0,0,0)',
-    0.03, 'rgba(255,255,255,0.05)',
-    0.10, 'rgba(255,255,255,0.14)',
-    0.22, `rgba(${haloRgb},0.26)`,
-    0.36, `rgba(${haloRgb},0.42)`,
-    0.54, `rgba(${coreRgb},0.74)`,
-    0.76, `rgba(${coreRgb},0.93)`,
+    0.03, `rgba(${haloRgb},0.12)`,
+    0.10, `rgba(${haloRgb},0.28)`,
+    0.24, `rgba(${coreRgb},0.56)`,
+    0.44, `rgba(${coreRgb},0.80)`,
+    0.70, `rgba(${coreRgb},0.93)`,
     1, `rgba(${coreRgb},1.0)`
   ];
 };
@@ -8443,7 +8427,7 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
 const buildEngagementCategoryWeightExpr = (category) => {
   const base = ['coalesce', ['get', 'weight'], 0];
   if (category === 'unsafe') return ['*', base, 1.08];
-  if (category === 'rarely') return ['*', base, 1.18];
+  if (category === 'rarely') return ['*', base, 1.55];
   if (category === 'outdated') return ['*', base, 0.88];
   if (category === 'improve') return ['*', base, 0.88];
   if (category === 'hangout') return ['*', base, 1.02];
@@ -8498,7 +8482,7 @@ const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
       return ['interpolate', ['linear'], ['zoom'], 16, 7, 18, 11, 20, 16, 22, 22];
     }
     if (category === 'rarely') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 17, 20, 24, 22, 32];
+      return ['interpolate', ['linear'], ['zoom'], 16, 14, 18, 21, 20, 29, 22, 38];
     }
     if (category === 'rarely' || category === 'outdated') {
       return ['interpolate', ['linear'], ['zoom'], 16, 8, 18, 12, 20, 18, 22, 24];
@@ -8512,7 +8496,7 @@ const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
     return ['interpolate', ['linear'], ['zoom'], 10, 13, 12, 18, 14, 26, 16, 36, 18, 46, 20, 56];
   }
   if (category === 'rarely') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 20, 12, 30, 14, 42, 16, 56, 18, 72, 20, 88];
+    return ['interpolate', ['linear'], ['zoom'], 10, 24, 12, 36, 14, 50, 16, 66, 18, 84, 20, 102];
   }
   if (category === 'rarely' || category === 'outdated') {
     return ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 22, 14, 30, 16, 40, 18, 52, 20, 64];
@@ -8528,7 +8512,7 @@ const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => 
       return ['interpolate', ['linear'], ['zoom'], 16, 1.24, 18, 1.34, 20, 1.44, 22, 1.56];
     }
     if (category === 'rarely') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 1.18, 18, 1.28, 20, 1.40, 22, 1.52];
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.52, 18, 1.66, 20, 1.82, 22, 1.98];
     }
     if (category === 'rarely' || category === 'outdated') {
       return ['interpolate', ['linear'], ['zoom'], 16, 1.16, 18, 1.26, 20, 1.36, 22, 1.48];
@@ -8539,7 +8523,7 @@ const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => 
     return ['interpolate', ['linear'], ['zoom'], 10, 1.12, 13, 1.22, 15, 1.32, 17, 1.44, 19, 1.54];
   }
   if (category === 'rarely') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 1.05, 13, 1.16, 15, 1.28, 17, 1.40, 19, 1.52];
+    return ['interpolate', ['linear'], ['zoom'], 10, 1.38, 13, 1.54, 15, 1.70, 17, 1.86, 19, 2.00];
   }
   if (category === 'rarely' || category === 'outdated') {
     return ['interpolate', ['linear'], ['zoom'], 10, 1.00, 13, 1.10, 15, 1.20, 17, 1.30, 19, 1.38];
@@ -8552,7 +8536,7 @@ const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
       return ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 1.0, 20, 1.0, 22, 1.0];
     }
     if (category === 'rarely') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 0.92, 18, 0.95, 20, 0.97, 22, 0.99];
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 1.0, 20, 1.0, 22, 1.0];
     }
     if (category === 'rarely' || category === 'outdated') {
       return ['interpolate', ['linear'], ['zoom'], 16, 0.94, 18, 0.97, 20, 0.99, 22, 1.0];
@@ -8563,7 +8547,7 @@ const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
     return ['interpolate', ['linear'], ['zoom'], 10, 0.88, 13, 0.92, 16, 0.95, 19, 0.97];
   }
   if (category === 'rarely') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 0.82, 13, 0.87, 16, 0.92, 19, 0.96];
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.95, 13, 0.98, 16, 1.0, 19, 1.0];
   }
   if (category === 'rarely' || category === 'outdated') {
     return ['interpolate', ['linear'], ['zoom'], 10, 0.78, 13, 0.83, 16, 0.89, 19, 0.93];
