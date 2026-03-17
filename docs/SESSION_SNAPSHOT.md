@@ -9,12 +9,13 @@ Last updated: 2026-03-17
   - what changed
   - what still needs testing
   - any blockers, regressions, or next recommended step
-- Workflow preference: when requested, Codex should commit and push completed fixes to git.
+- Workflow preference: Codex should commit and push completed fixes to git after changes until the user says otherwise.
 
 ## Latest session note
 
 - 2026-03-17: Reconfirmed `docs/SESSION_SNAPSHOT.md` as the restart-safe handoff file for this repo. No product code changed in this step. Next time a substantial feature, bug fix, or review is completed, append a short snapshot here summarizing the change, validation status, and any follow-up risk.
 - 2026-03-17: Patched scenario halving axis lock so `Halve Vertical` / `Halve Horizontal` no longer fall back to nearest-point endpoint snapping when axis intersections are insufficient. This prevents diagonal cuts from being accepted during directional halving. `npm.cmd run build` passed. Still needs UI retest on the previously failing room from the admin floorplan screenshot.
+- 2026-03-17: Reworked directional halving to use axis-aligned half-plane clipping (instead of the generic split solver) so `Halve Vertical` and `Halve Horizontal` can only produce axis-aligned divider edges. Also tightened validation to require exactly one selected room for split/halve and removed the `Halve Room` button from Layout Edit Mode. `npm.cmd run build` passed.
 
 ## Current focus
 
