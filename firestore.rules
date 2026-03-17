@@ -15,6 +15,12 @@ service cloud.firestore {
         && get(roleDoc(universityId)).data.role == 'admin';
     }
 
+    function canCreateEngagementMarker(universityId) {
+      return isUniversityAdmin(universityId)
+        || universityId == 'hastings'
+        || universityId == 'hastings-demo';
+    }
+
     match /moves/{docId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -32,7 +38,8 @@ service cloud.firestore {
 
       match /markers/{docId} {
         allow read: if true;
-        allow write: if isUniversityAdmin(universityId);
+        allow create: if canCreateEngagementMarker(universityId);
+        allow update, delete: if isUniversityAdmin(universityId);
       }
 
       match /buildingConditions/{docId} {

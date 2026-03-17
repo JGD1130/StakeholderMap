@@ -9307,6 +9307,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const floorRoomsRef = useRef(new Map());
   const floorStatsByBuildingRef = useRef({});
   const engagementAutoLoadKeyRef = useRef('');
+  const markerWriteWarningShownRef = useRef(false);
   const panelBuildingKeyRef = useRef(null);
   const roomSubRef = useRef(null);
 
@@ -18807,7 +18808,76 @@ useEffect(() => {
   }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapView, utilizationHeatmapOn, utilizationByBuildingId]);
 
   // ---------- Map click handlers ----------
-  const showMarkerPopup = useCallback((lngLat) => {
+  const resolveEngagementRoomFromClick = useCallback((event) => {
+    if (!isEngagementFloorScope || !loadedSingleFloor || !mapRef.current || !event?.point) return null;
+    const map = mapRef.current;
+    let floorHits = [];
+    try {
+      if (map.getLayer(FLOOR_FILL_ID)) {
+        floorHits = map.queryRenderedFeatures(event.point, { layers: [FLOOR_FILL_ID] }) || [];
+      }
+    } catch {}
+    const roomFeature = floorHits.find((hit) => detectFeatureKind(hit?.properties || {}) === 'room') || floorHits[0] || null;
+    if (!roomFeature) return null;
+    const props = roomFeature.properties || {};
+    const floorCtx = currentFloorContextRef.current || {};
+    const rawBuilding =
+      floorCtx.buildingId ||
+      selectedBuildingId ||
+      selectedBuilding ||
+      props.Building ||
+      props.buildingId ||
+      '';
+    const buildingId = bId(rawBuilding || '');
+    const floorValue =
+      floorCtx.floorId ||
+      floorCtx.floor ||
+      floorCtx.floorLabel ||
+      selectedFloor ||
+      props.Floor ||
+      '';
+    const floorId = fId(floorValue || '');
+    const revitIdRaw = roomFeature.id ?? props.RevitId ?? props.revitId ?? props.id ?? null;
+    const explicitRoomId = String(
+      props.__scenarioRoomId ??
+      props.scenarioRoomId ??
+      props.roomId ??
+      props.RoomId ??
+      ''
+    ).trim();
+    let roomId = explicitRoomId;
+    if (!roomId && buildingId && floorId && revitIdRaw != null) {
+      roomId = rId(buildingId, floorId, revitIdRaw);
+    }
+    if (!roomId && revitIdRaw != null) {
+      roomId = String(revitIdRaw).trim();
+    }
+    const roomNumber = String(
+      props.Number ??
+      props.RoomNumber ??
+      props.number ??
+      props.Room ??
+      ''
+    ).trim();
+    const roomLabel = String((props.name ?? props.Name ?? roomNumber ?? '') || '').trim();
+    const roomGuid = String(
+      props.roomGuid ??
+      props['Room GUID'] ??
+      props.Revit_UniqueId ??
+      props.RevitUniqueId ??
+      ''
+    ).trim();
+    const revitId = revitIdRaw != null ? String(revitIdRaw).trim() : '';
+    return {
+      roomId,
+      roomNumber,
+      roomLabel,
+      roomGuid,
+      revitId
+    };
+  }, [isEngagementFloorScope, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor]);
+
+  const showMarkerPopup = useCallback((lngLat, clickedRoomContext = null) => {
     if (!mapRef.current) return;
     const popupNode = document.createElement('div');
     popupNode.className = 'marker-prompt-popup';
@@ -18841,6 +18911,7 @@ useEffect(() => {
       const floorId = useFloorContext ? fId(floorCtx.floorId || selectedFloor || '') : '';
       const floorLabel = useFloorContext ? String(floorCtx.floorLabel || selectedFloor || '').trim() : '';
       const floorUrlVal = useFloorContext ? String(floorCtx.url || floorUrl || '').trim() : '';
+      const roomContext = useFloorContext && clickedRoomContext ? clickedRoomContext : null;
       const markerData = {
         coordinates: new GeoPoint(lngLat.lat, lngLat.lng),
         type,
@@ -18850,13 +18921,35 @@ useEffect(() => {
         floorId,
         floorLabel,
         floorUrl: floorUrlVal,
+        roomId: String(roomContext?.roomId || '').trim(),
+        roomNumber: String(roomContext?.roomNumber || '').trim(),
+        roomLabel: String(roomContext?.roomLabel || '').trim(),
+        roomGuid: String(roomContext?.roomGuid || '').trim(),
+        revitId: String(roomContext?.revitId || '').trim(),
         persona: persona || (engagementMode ? 'student' : 'admin'),
         createdAt: serverTimestamp()
       };
-      const docRef = await addDoc(markersCollection, markerData);
-      const newMarker = { ...markerData, id: docRef.id, coordinates: [lngLat.lng, lngLat.lat] };
+      let markerId = `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      let persisted = false;
+      try {
+        const docRef = await addDoc(markersCollection, markerData);
+        markerId = docRef.id;
+        persisted = true;
+      } catch (err) {
+        console.warn('[Engagement] marker save failed; keeping local-only marker', err);
+      }
+      const newMarker = {
+        ...markerData,
+        id: markerId,
+        coordinates: [lngLat.lng, lngLat.lat],
+        localOnly: !persisted
+      };
       setMarkers((prev) => [...prev, newMarker]);
       setSessionMarkers((prev) => [...prev, newMarker]);
+      if (!persisted && !markerWriteWarningShownRef.current) {
+        markerWriteWarningShownRef.current = true;
+        alert('Marker was added locally for this session. Firestore write is currently blocked by permissions.');
+      }
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
@@ -18877,13 +18970,14 @@ useEffect(() => {
           if (clickedBuildingId && activeBuildingId && clickedBuildingId !== activeBuildingId) return;
         }
       } catch {}
-      showMarkerPopup(e.lngLat);
+      const clickedRoomContext = resolveEngagementRoomFromClick(e);
+      showMarkerPopup(e.lngLat, clickedRoomContext);
     };
     map.on('click', onEngagementClick);
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [engagementMode, mode, mapLoaded, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope]);
+  }, [engagementMode, mode, mapLoaded, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
