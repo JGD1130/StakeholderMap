@@ -8275,8 +8275,8 @@ const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
-// Keep category-specific heat layers only so heat colors match marker/sentiment colors.
-const ENGAGEMENT_USE_THERMAL_HALO = false;
+// Keep thermal blended warm/cool halo overlays enabled.
+const ENGAGEMENT_USE_THERMAL_HALO = true;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
@@ -8416,8 +8416,8 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
   ['linear'],
   ['heatmap-density'],
   0, 'rgba(0,0,0,0)',
-  0.05, 'rgba(207,250,254,0.24)',
-  0.18, 'rgba(125,250,255,0.44)',
+  0.05, 'rgba(224,255,238,0.24)',
+  0.18, 'rgba(122,254,177,0.46)',
   0.42, 'rgba(56,189,248,0.62)',
   0.70, 'rgba(59,130,246,0.78)',
   1, 'rgba(30,64,175,0.90)'
@@ -8593,6 +8593,14 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
+  const closeEngagementHelp = useCallback((e) => {
+    try {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      if (e?.nativeEvent) e.nativeEvent.stopImmediatePropagation?.();
+    } catch {}
+    setShowEngagementHelp(false);
+  }, []);
   const [mapboxTokenRequired, setMapboxTokenRequired] = useState(false);
   const [mapboxTokenDraft, setMapboxTokenDraft] = useState('');
   const [mapboxTokenErr, setMapboxTokenErr] = useState('');
@@ -22142,11 +22150,16 @@ useEffect(() => {
     )}
 
     {engagementMode && showEngagementHelp && !presentationMode && (
-      <div className="help-panel" style={{ right: 20, bottom: 20 }}>
+      <div
+        className="help-panel"
+        style={{ right: 20, bottom: 20, zIndex: 1200, pointerEvents: 'auto' }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           className="close-button"
           aria-label="Close help"
-          onClick={() => setShowEngagementHelp(false)}
+          onClick={closeEngagementHelp}
         >
           ×
         </button>
@@ -22156,7 +22169,7 @@ useEffect(() => {
           <li>Select a marker type and add an optional comment.</li>
           <li>Markers are saved to the engagement demo dataset.</li>
         </ul>
-        <button className="close-button-main" onClick={() => setShowEngagementHelp(false)}>
+        <button className="close-button-main" onClick={closeEngagementHelp}>
           Close
         </button>
       </div>
