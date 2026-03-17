@@ -13,6 +13,7 @@ Last updated: 2026-03-17
 
 ## Latest session note
 
+- 2026-03-17: Applied isolated `rarely/never` visibility improvements without changing other heat categories: added a dedicated `engagement-heat-rarely-glow` circle layer (`#7AFEB1`) for a stronger local glow and added a category-only minimum weight floor for `rarely` (`max(weight, 0.92)` before multiplier). Non-green heatmap ramps/behavior remain unchanged. `npm.cmd run build` passed.
 - 2026-03-17: Rolled engagement heatmap behavior back to the pre-tuning baseline for non-green categories by restoring `src/components/StakeholderMap.jsx` from commit `1bfe83d`. Kept the updated marker/sentiment palette (`rarely` = `#7AFEB1`, `outdated` = `#67e8f9`) and applied one green-only guard: excluded `rarely` from the shared cool thermal halo so green points no longer pick up a blue core. `npm.cmd run build` passed.
 - 2026-03-17: Reconfirmed `docs/SESSION_SNAPSHOT.md` as the restart-safe handoff file for this repo. No product code changed in this step. Next time a substantial feature, bug fix, or review is completed, append a short snapshot here summarizing the change, validation status, and any follow-up risk.
 - 2026-03-17: Patched scenario halving axis lock so `Halve Vertical` / `Halve Horizontal` no longer fall back to nearest-point endpoint snapping when axis intersections are insufficient. This prevents diagonal cuts from being accepted during directional halving. `npm.cmd run build` passed. Still needs UI retest on the previously failing room from the admin floorplan screenshot.

@@ -8276,6 +8276,7 @@ const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
 const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
+const ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID = 'engagement-heat-rarely-glow';
 // Keep thermal blended warm/cool halo overlays enabled.
 const ENGAGEMENT_USE_THERMAL_HALO = true;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
@@ -8426,13 +8427,28 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
 const buildEngagementCategoryWeightExpr = (category) => {
   const base = ['coalesce', ['get', 'weight'], 0];
   if (category === 'unsafe') return ['*', base, 1.08];
-  if (category === 'rarely') return ['*', base, 0.95];
+  if (category === 'rarely') return ['*', ['max', base, 0.92], 1.08];
   if (category === 'outdated') return ['*', base, 0.88];
   if (category === 'improve') return ['*', base, 0.88];
   if (category === 'hangout') return ['*', base, 1.02];
   if (category === 'study') return ['*', base, 1.12];
   return ['*', base, 1.0];
 };
+const buildEngagementRarelyGlowRadiusExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 9, 18, 13, 20, 18, 22, 24]
+    : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 64]
+);
+const buildEngagementRarelyGlowOpacityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.36, 18, 0.44, 20, 0.52, 22, 0.58]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.26, 13, 0.34, 16, 0.42, 19, 0.50]
+);
+const buildEngagementRarelyGlowBlurExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.58, 18, 0.60, 20, 0.63, 22, 0.66]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.54, 13, 0.58, 16, 0.62, 19, 0.66]
+);
 const buildEngagementWarmHaloWeightExpr = () => ([
   '*',
   ENGAGEMENT_HEAT_WEIGHT_EXPR,
@@ -18573,6 +18589,7 @@ useEffect(() => {
       const sources = style?.sources || {};
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID); } catch {}
       layers
         .map((l) => l?.id)
         .filter((id) => typeof id === 'string' && id.startsWith('engagement-heat-layer-'))
@@ -18585,6 +18602,7 @@ useEffect(() => {
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ layerId }) => {
         try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch {}
       });
+      try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
       try { if (map.getSource(ENGAGEMENT_HEAT_SOURCE_ID)) map.removeSource(ENGAGEMENT_HEAT_SOURCE_ID); } catch {}
@@ -18700,6 +18718,33 @@ useEffect(() => {
         map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
         setMapLayerVisibility(map, layerId, engagementHeatmapOn);
       });
+
+      if (!map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) {
+        map.addLayer(
+          {
+            id: ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID,
+            type: 'circle',
+            source: ENGAGEMENT_HEAT_SOURCE_ID,
+            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+            filter: [
+              'all',
+              ['==', ['coalesce', ['get', 'heatCategory'], ''], 'rarely'],
+              ENGAGEMENT_HAS_WEIGHT_FILTER
+            ],
+            paint: {
+              'circle-color': '#7AFEB1',
+              'circle-radius': buildEngagementRarelyGlowRadiusExpr(floorSpreadProfile),
+              'circle-opacity': buildEngagementRarelyGlowOpacityExpr(floorStyleProfile),
+              'circle-blur': buildEngagementRarelyGlowBlurExpr(floorStyleProfile)
+            }
+          },
+          beforeId
+        );
+      }
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, 'circle-radius', buildEngagementRarelyGlowRadiusExpr(floorSpreadProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, 'circle-opacity', buildEngagementRarelyGlowOpacityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, 'circle-blur', buildEngagementRarelyGlowBlurExpr(floorStyleProfile));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, engagementHeatmapOn);
     } catch (err) {
       console.warn('Engagement heatmap update failed', err);
     }
