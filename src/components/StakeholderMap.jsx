@@ -8276,7 +8276,8 @@ const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
 const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
-const ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID = 'engagement-heat-rarely-glow';
+const ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID = 'engagement-heat-rarely-glow'; // legacy cleanup
+const ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID = 'engagement-heat-rarely-halo-layer';
 // Keep thermal blended warm/cool halo overlays enabled.
 const ENGAGEMENT_USE_THERMAL_HALO = true;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
@@ -8434,20 +8435,36 @@ const buildEngagementCategoryWeightExpr = (category) => {
   if (category === 'study') return ['*', base, 1.12];
   return ['*', base, 1.0];
 };
-const buildEngagementRarelyGlowRadiusExpr = (floorScoped = false) => (
+const buildEngagementRarelyHaloWeightExpr = () => ([
+  '*',
+  ['max', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0.92],
+  0.94
+]);
+const buildEngagementRarelyHaloColorExpr = () => ([
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0,0,0,0)',
+  0.05, 'rgba(204,255,229,0.24)',
+  0.18, 'rgba(122,254,177,0.42)',
+  0.40, 'rgba(122,254,177,0.58)',
+  0.70, 'rgba(89,224,150,0.74)',
+  1, 'rgba(70,200,132,0.86)'
+]);
+const buildEngagementRarelyHaloRadiusExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 9, 18, 13, 20, 18, 22, 24]
-    : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 64]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 16, 18, 25, 20, 36, 22, 48]
+    : ['interpolate', ['linear'], ['zoom'], 10, 26, 12, 40, 14, 56, 16, 74, 18, 94, 20, 116]
 );
-const buildEngagementRarelyGlowOpacityExpr = (floorScoped = false) => (
+const buildEngagementRarelyHaloIntensityExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 0.36, 18, 0.44, 20, 0.52, 22, 0.58]
-    : ['interpolate', ['linear'], ['zoom'], 10, 0.26, 13, 0.34, 16, 0.42, 19, 0.50]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 1.02, 18, 1.12, 20, 1.22, 22, 1.30]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.90, 13, 1.00, 15, 1.10, 17, 1.18, 19, 1.24]
 );
-const buildEngagementRarelyGlowBlurExpr = (floorScoped = false) => (
+const buildEngagementRarelyHaloOpacityExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 0.58, 18, 0.60, 20, 0.63, 22, 0.66]
-    : ['interpolate', ['linear'], ['zoom'], 10, 0.54, 13, 0.58, 16, 0.62, 19, 0.66]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.74, 18, 0.80, 20, 0.86, 22, 0.90]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.58, 13, 0.64, 16, 0.70, 19, 0.76]
 );
 const buildEngagementWarmHaloWeightExpr = () => ([
   '*',
@@ -18589,6 +18606,7 @@ useEffect(() => {
       const sources = style?.sources || {};
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID); } catch {}
       layers
         .map((l) => l?.id)
@@ -18602,6 +18620,7 @@ useEffect(() => {
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ layerId }) => {
         try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch {}
       });
+      try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
@@ -18688,6 +18707,35 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementCoolHaloOpacityExpr(floorStyleProfile));
       setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
 
+      if (!map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) {
+        map.addLayer(
+          {
+            id: ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID,
+            type: 'heatmap',
+            source: ENGAGEMENT_HEAT_SOURCE_ID,
+            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+            filter: [
+              'all',
+              ['==', ['coalesce', ['get', 'heatCategory'], ''], 'rarely'],
+              ENGAGEMENT_HAS_WEIGHT_FILTER
+            ],
+            paint: {
+              'heatmap-weight': buildEngagementRarelyHaloWeightExpr(),
+              'heatmap-intensity': buildEngagementRarelyHaloIntensityExpr(floorStyleProfile),
+              'heatmap-radius': buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile),
+              'heatmap-opacity': buildEngagementRarelyHaloOpacityExpr(floorStyleProfile),
+              'heatmap-color': buildEngagementRarelyHaloColorExpr()
+            }
+          },
+          beforeId
+        );
+      }
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-weight', buildEngagementRarelyHaloWeightExpr());
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementRarelyHaloIntensityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-radius', buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementRarelyHaloOpacityExpr(floorStyleProfile));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ category, layerId }) => {
         if (!map.getLayer(layerId)) {
           map.addLayer(
@@ -18718,33 +18766,6 @@ useEffect(() => {
         map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
         setMapLayerVisibility(map, layerId, engagementHeatmapOn);
       });
-
-      if (!map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) {
-        map.addLayer(
-          {
-            id: ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID,
-            type: 'circle',
-            source: ENGAGEMENT_HEAT_SOURCE_ID,
-            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
-            filter: [
-              'all',
-              ['==', ['coalesce', ['get', 'heatCategory'], ''], 'rarely'],
-              ENGAGEMENT_HAS_WEIGHT_FILTER
-            ],
-            paint: {
-              'circle-color': '#7AFEB1',
-              'circle-radius': buildEngagementRarelyGlowRadiusExpr(floorSpreadProfile),
-              'circle-opacity': buildEngagementRarelyGlowOpacityExpr(floorStyleProfile),
-              'circle-blur': buildEngagementRarelyGlowBlurExpr(floorStyleProfile)
-            }
-          },
-          beforeId
-        );
-      }
-      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, 'circle-radius', buildEngagementRarelyGlowRadiusExpr(floorSpreadProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, 'circle-opacity', buildEngagementRarelyGlowOpacityExpr(floorStyleProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, 'circle-blur', buildEngagementRarelyGlowBlurExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID, engagementHeatmapOn);
     } catch (err) {
       console.warn('Engagement heatmap update failed', err);
     }
