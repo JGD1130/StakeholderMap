@@ -8248,7 +8248,8 @@ const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
   hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,142,44', haloRgb: '255,234,204' },
   improve: { color: '#fde047', heatValue: 0.9, rgb: '255,230,88', haloRgb: '255,247,214' },
   outdated: { color: '#67e8f9', heatValue: 0.8, rgb: '78,228,250', haloRgb: '190,246,255' },
-  rarely: { color: '#7AFEB1', heatValue: 0.9, rgb: '122,254,177', haloRgb: '204,255,229' },
+  // Keep marker dot color at #7AFEB1 while using a slightly deeper green heat core.
+  rarely: { color: '#7AFEB1', heatValue: 0.9, rgb: '86,222,150', haloRgb: '207,252,228' },
   unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
   comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '125,250,255' }
 };
@@ -8273,6 +8274,8 @@ const ENGAGEMENT_MARKER_TYPES = {
 const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
 const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
+// Exclude "rarely" from the shared cool thermal blend so its own green category layer stays true.
+const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
 // Keep thermal blended warm/cool halo overlays enabled.
@@ -8416,8 +8419,8 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
   ['linear'],
   ['heatmap-density'],
   0, 'rgba(0,0,0,0)',
-  0.05, 'rgba(224,255,238,0.24)',
-  0.18, 'rgba(122,254,177,0.46)',
+  0.05, 'rgba(207,250,254,0.24)',
+  0.18, 'rgba(125,250,255,0.44)',
   0.42, 'rgba(56,189,248,0.62)',
   0.70, 'rgba(59,130,246,0.78)',
   1, 'rgba(30,64,175,0.90)'
@@ -18649,7 +18652,7 @@ useEffect(() => {
             maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
             filter: [
               'all',
-              ['in', ['coalesce', ['get', 'heatCategory'], ''], ['literal', ENGAGEMENT_COOL_CATEGORIES]],
+              ['in', ['coalesce', ['get', 'heatCategory'], ''], ['literal', ENGAGEMENT_COOL_HALO_CATEGORIES]],
               ENGAGEMENT_HAS_WEIGHT_FILTER
             ],
             paint: {
