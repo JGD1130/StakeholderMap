@@ -23,6 +23,7 @@ Last updated: 2026-03-17
 - 2026-03-17: Refined the `I rarely or never use this space` heat rendering: kept thermal behavior, but excluded `rarely` from the shared cool halo blend and gave `rarely` a slightly darker green heat core with lighter green bleed (`rgb 86,222,150` -> `halo 207,252,228`) while keeping marker dot color at `#7AFEB1`. `npm.cmd run build` passed.
 - 2026-03-17: Increased `rarely/never` heat visibility without reintroducing blue by boosting that category layer only (higher weight, intensity, radius, and opacity in both floor and campus profiles). `npm.cmd run build` passed.
 - 2026-03-17: Further increased `rarely/never` visibility per feedback: darker green core (`rgb 58,188,118`), stronger green-only category heat color ramp at lower densities, plus higher weight/intensity/radius/opacity so center appears bolder and rooms do not fade out. Marker dot color remains `#7AFEB1`. `npm.cmd run build` passed.
+- 2026-03-17: Adjusted `rarely/never` heatmap to be true gradient by setting center color to exact marker hue (`#7AFEB1` / `rgb 122,254,177`) and fading to lighter green shades outward. Also reduced over-saturation so points render as a heat scale instead of flat solid dots. `npm.cmd run build` passed.
 
 ## Current focus
 
