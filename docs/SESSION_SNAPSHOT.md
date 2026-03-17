@@ -9,7 +9,7 @@ Last updated: 2026-03-17
   - what changed
   - what still needs testing
   - any blockers, regressions, or next recommended step
-- Workflow preference: Codex should commit and push completed fixes to git after changes until the user says otherwise.
+- Workflow preference: Codex should commit and push completed fixes to `main` after changes until the user says otherwise.
 
 ## Latest session note
 
