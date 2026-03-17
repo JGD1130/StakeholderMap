@@ -8276,7 +8276,6 @@ const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
 const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
-const ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID = 'engagement-heat-rarely-glow'; // legacy cleanup
 const ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID = 'engagement-heat-rarely-halo-layer';
 // Keep thermal blended warm/cool halo overlays enabled.
 const ENGAGEMENT_USE_THERMAL_HALO = true;
@@ -18607,7 +18606,7 @@ useEffect(() => {
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
-      try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID); } catch {}
+      try { if (map.getLayer('engagement-heat-rarely-glow')) map.removeLayer('engagement-heat-rarely-glow'); } catch {}
       layers
         .map((l) => l?.id)
         .filter((id) => typeof id === 'string' && id.startsWith('engagement-heat-layer-'))
@@ -18621,7 +18620,7 @@ useEffect(() => {
         try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch {}
       });
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
-      try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_GLOW_LAYER_ID); } catch {}
+      try { if (map.getLayer('engagement-heat-rarely-glow')) map.removeLayer('engagement-heat-rarely-glow'); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
       try { if (map.getSource(ENGAGEMENT_HEAT_SOURCE_ID)) map.removeSource(ENGAGEMENT_HEAT_SOURCE_ID); } catch {}
