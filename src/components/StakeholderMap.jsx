@@ -8247,8 +8247,8 @@ const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
   study: { color: '#ef4444', heatValue: 1.0, rgb: '255,56,56', haloRgb: '255,230,210' },
   hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,142,44', haloRgb: '255,234,204' },
   improve: { color: '#fde047', heatValue: 0.9, rgb: '255,230,88', haloRgb: '255,247,214' },
-  outdated: { color: '#60a5fa', heatValue: 0.8, rgb: '82,148,255', haloRgb: '180,220,255' },
-  rarely: { color: '#67e8f9', heatValue: 0.9, rgb: '78,228,250', haloRgb: '190,246,255' },
+  outdated: { color: '#67e8f9', heatValue: 0.8, rgb: '78,228,250', haloRgb: '190,246,255' },
+  rarely: { color: '#7AFEB1', heatValue: 0.9, rgb: '122,254,177', haloRgb: '204,255,229' },
   unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
   comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '125,250,255' }
 };
@@ -8265,8 +8265,8 @@ const ENGAGEMENT_MARKER_TYPES = {
   'This is a go to study spot': '#ef4444',
   'This is a go to hang out spot': '#fb923c',
   'I would like to use this space more, but it needs improvement': '#fde047',
-  'I rarely or never use this space': '#67e8f9',
-  'This space feels outdated or run down': '#60a5fa',
+  'I rarely or never use this space': '#7AFEB1',
+  'This space feels outdated or run down': '#67e8f9',
   'I do not feel safe in this space': '#1d4ed8',
   'Just leave a comment': '#9ca3af'
 };
