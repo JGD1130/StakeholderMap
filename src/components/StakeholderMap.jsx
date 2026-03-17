@@ -8428,7 +8428,7 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
 const buildEngagementCategoryWeightExpr = (category) => {
   const base = ['coalesce', ['get', 'weight'], 0];
   if (category === 'unsafe') return ['*', base, 1.08];
-  if (category === 'rarely') return ['*', base, 0.95];
+  if (category === 'rarely') return ['*', base, 1.22];
   if (category === 'outdated') return ['*', base, 0.88];
   if (category === 'improve') return ['*', base, 0.88];
   if (category === 'hangout') return ['*', base, 1.02];
@@ -8482,6 +8482,9 @@ const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
     if (category === 'unsafe') {
       return ['interpolate', ['linear'], ['zoom'], 16, 7, 18, 11, 20, 16, 22, 22];
     }
+    if (category === 'rarely') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 11, 18, 16, 20, 23, 22, 31];
+    }
     if (category === 'rarely' || category === 'outdated') {
       return ['interpolate', ['linear'], ['zoom'], 16, 8, 18, 12, 20, 18, 22, 24];
     }
@@ -8492,6 +8495,9 @@ const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
   }
   if (category === 'unsafe') {
     return ['interpolate', ['linear'], ['zoom'], 10, 13, 12, 18, 14, 26, 16, 36, 18, 46, 20, 56];
+  }
+  if (category === 'rarely') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 18, 12, 27, 14, 37, 16, 49, 18, 62, 20, 76];
   }
   if (category === 'rarely' || category === 'outdated') {
     return ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 22, 14, 30, 16, 40, 18, 52, 20, 64];
@@ -8506,6 +8512,9 @@ const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => 
     if (category === 'unsafe') {
       return ['interpolate', ['linear'], ['zoom'], 16, 1.24, 18, 1.34, 20, 1.44, 22, 1.56];
     }
+    if (category === 'rarely') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.30, 18, 1.40, 20, 1.50, 22, 1.60];
+    }
     if (category === 'rarely' || category === 'outdated') {
       return ['interpolate', ['linear'], ['zoom'], 16, 1.16, 18, 1.26, 20, 1.36, 22, 1.48];
     }
@@ -8513,6 +8522,9 @@ const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => 
   }
   if (category === 'unsafe') {
     return ['interpolate', ['linear'], ['zoom'], 10, 1.12, 13, 1.22, 15, 1.32, 17, 1.44, 19, 1.54];
+  }
+  if (category === 'rarely') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 1.20, 13, 1.30, 15, 1.42, 17, 1.54, 19, 1.64];
   }
   if (category === 'rarely' || category === 'outdated') {
     return ['interpolate', ['linear'], ['zoom'], 10, 1.00, 13, 1.10, 15, 1.20, 17, 1.30, 19, 1.38];
@@ -8524,6 +8536,9 @@ const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
     if (category === 'unsafe') {
       return ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 1.0, 20, 1.0, 22, 1.0];
     }
+    if (category === 'rarely') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.98, 18, 1.0, 20, 1.0, 22, 1.0];
+    }
     if (category === 'rarely' || category === 'outdated') {
       return ['interpolate', ['linear'], ['zoom'], 16, 0.94, 18, 0.97, 20, 0.99, 22, 1.0];
     }
@@ -8531,6 +8546,9 @@ const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
   }
   if (category === 'unsafe') {
     return ['interpolate', ['linear'], ['zoom'], 10, 0.88, 13, 0.92, 16, 0.95, 19, 0.97];
+  }
+  if (category === 'rarely') {
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.90, 13, 0.94, 16, 0.97, 19, 0.99];
   }
   if (category === 'rarely' || category === 'outdated') {
     return ['interpolate', ['linear'], ['zoom'], 10, 0.78, 13, 0.83, 16, 0.89, 19, 0.93];

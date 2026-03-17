@@ -21,6 +21,7 @@ Last updated: 2026-03-17
 - 2026-03-17: Disabled thermal blended engagement heat overlay so the heatmap now uses category-specific colors only, matching marker dots and room sentiment colors exactly (including the new `#7AFEB1` rarely-used color). `npm.cmd run build` passed.
 - 2026-03-17: Restored thermal engagement heat overlay behavior and tuned cool ramp early stops toward the new `#7AFEB1` so rarely-used heat better tracks marker/sentiment color without changing overall heatmap behavior. Also hardened `How to Use This Map` panel dismiss handling by adding an explicit close handler and click-propagation guards so `X` and `Close` can dismiss reliably. `npm.cmd run build` passed.
 - 2026-03-17: Refined the `I rarely or never use this space` heat rendering: kept thermal behavior, but excluded `rarely` from the shared cool halo blend and gave `rarely` a slightly darker green heat core with lighter green bleed (`rgb 86,222,150` -> `halo 207,252,228`) while keeping marker dot color at `#7AFEB1`. `npm.cmd run build` passed.
+- 2026-03-17: Increased `rarely/never` heat visibility without reintroducing blue by boosting that category layer only (higher weight, intensity, radius, and opacity in both floor and campus profiles). `npm.cmd run build` passed.
 
 ## Current focus
 
