@@ -11774,8 +11774,8 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     if (snapEndpoints) {
       try {
         const boundary = turf.polygonToLine(feature);
-        let snappedFromAxis = false;
-        if (preserveAxis === 'vertical' || preserveAxis === 'horizontal') {
+        const isAxisLocked = preserveAxis === 'vertical' || preserveAxis === 'horizontal';
+        if (isAxisLocked) {
           const bbox = turf.bbox(feature);
           const span = Math.max(
             Math.abs((bbox?.[2] || 0) - (bbox?.[0] || 0)),
@@ -11792,21 +11792,28 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
             .filter((coord) => Array.isArray(coord) && coord.length >= 2)
             .map((coord) => [Number(coord[0]), Number(coord[1])])
             .filter((coord) => Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
-          if (intersections.length >= 2) {
-            intersections.sort((a, b) => preserveAxis === 'vertical' ? (a[1] - b[1]) : (a[0] - b[0]));
-            const first = intersections[0];
-            const last = intersections[intersections.length - 1];
-            if (preserveAxis === 'vertical') {
-              splitStart = [axisOffset, Number(first[1])];
-              splitEnd = [axisOffset, Number(last[1])];
-            } else {
-              splitStart = [Number(first[0]), axisOffset];
-              splitEnd = [Number(last[0]), axisOffset];
-            }
-            snappedFromAxis = true;
+          const axisEps = Math.max(span * 1e-8, 1e-7);
+          const uniqueIntersections = intersections.reduce((acc, coord) => {
+            const exists = acc.some((existing) => Math.hypot(existing[0] - coord[0], existing[1] - coord[1]) <= axisEps);
+            if (!exists) acc.push(coord);
+            return acc;
+          }, []);
+          if (uniqueIntersections.length < 2) return null;
+          uniqueIntersections.sort((a, b) => preserveAxis === 'vertical' ? (a[1] - b[1]) : (a[0] - b[0]));
+          const first = uniqueIntersections[0];
+          const last = uniqueIntersections[uniqueIntersections.length - 1];
+          const axisSpan = preserveAxis === 'vertical'
+            ? Math.abs(Number(last[1]) - Number(first[1]))
+            : Math.abs(Number(last[0]) - Number(first[0]));
+          if (!Number.isFinite(axisSpan) || axisSpan <= axisEps) return null;
+          if (preserveAxis === 'vertical') {
+            splitStart = [axisOffset, Number(first[1])];
+            splitEnd = [axisOffset, Number(last[1])];
+          } else {
+            splitStart = [Number(first[0]), axisOffset];
+            splitEnd = [Number(last[0]), axisOffset];
           }
-        }
-        if (!snappedFromAxis) {
+        } else {
           const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
           const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
           const snappedStartCoord = snappedStart?.geometry?.coordinates;

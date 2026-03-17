@@ -1,6 +1,20 @@
 # Session Snapshot
 
-Last updated: 2026-03-12
+Last updated: 2026-03-17
+
+## Session continuity note
+
+- Re-enabled this file as the durable handoff for future sessions and crash/restart recovery.
+- After meaningful code changes, capture:
+  - what changed
+  - what still needs testing
+  - any blockers, regressions, or next recommended step
+- Workflow preference: when requested, Codex should commit and push completed fixes to git.
+
+## Latest session note
+
+- 2026-03-17: Reconfirmed `docs/SESSION_SNAPSHOT.md` as the restart-safe handoff file for this repo. No product code changed in this step. Next time a substantial feature, bug fix, or review is completed, append a short snapshot here summarizing the change, validation status, and any follow-up risk.
+- 2026-03-17: Patched scenario halving axis lock so `Halve Vertical` / `Halve Horizontal` no longer fall back to nearest-point endpoint snapping when axis intersections are insufficient. This prevents diagonal cuts from being accepted during directional halving. `npm.cmd run build` passed. Still needs UI retest on the previously failing room from the admin floorplan screenshot.
 
 ## Current focus
 
