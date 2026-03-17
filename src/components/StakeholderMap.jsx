@@ -8275,8 +8275,8 @@ const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
-// Set true to restore the thermal blended warm/cool halo overlays.
-const ENGAGEMENT_USE_THERMAL_HALO = true;
+// Keep category-specific heat layers only so heat colors match marker/sentiment colors.
+const ENGAGEMENT_USE_THERMAL_HALO = false;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
