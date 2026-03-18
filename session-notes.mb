@@ -1,0 +1,19 @@
+Mapfluence Session Notes
+Date: 2026-03-18
+
+User workflow preferences
+- Commit and push to `main` after completed code changes until the user says otherwise.
+- Keep practical, restart-safe notes in this `.mb` file.
+
+Current Hastings map architecture target
+- Admin full map: `/:universityId/admin` (Mapfluence edit + AI + planning tools).
+- Admin combined stakeholder + technical: `/:universityId/admin/engagement`.
+- Public stakeholder engagement: `/:universityId/engagement`.
+- Public technical assessment: `/:universityId/technical`.
+
+Latest completed work
+- Removed `/:universityId/admin/technical` route.
+- Kept technical routes in public shell and restored technical assessment loading there.
+- Allowed marker placement in admin engagement map (assessment view), while preventing placement during technical panel view.
+- Hid full Mapfluence/space-export/planning/AI blocks from technical-only mode.
+- Enabled admin sign-in controls on technical pages for authorized saves.

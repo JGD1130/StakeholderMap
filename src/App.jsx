@@ -23,7 +23,7 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
 
   const pathname = String(location?.pathname || '').toLowerCase();
   const isAdminPath = pathname.includes('/admin');
-  const isAdmin = isAdminPath || technicalMode;
+  const isAdmin = isAdminPath;
   const mode = isAdmin ? 'admin' : 'public';
 
   if (isAdmin) {
@@ -57,11 +57,9 @@ function App() {
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
         <Route path="/:universityId/admin/engagement" element={<UniversityMapLoader engagementMode />} />
-        <Route path="/:universityId/admin/technical" element={<UniversityMapLoader technicalMode />} />
         <Route path="/:universityId/engagement" element={<UniversityMapLoader engagementMode />} />
         <Route path="/:universityId/technical" element={<UniversityMapLoader technicalMode />} />
-        {/* THIS IS THE LINE TO FIX */}
-        <Route path="/:universityId/:persona" element={<UniversityMapLoader />} /> 
+        <Route path="/:universityId/:persona" element={<UniversityMapLoader />} />
         <Route path="/:universityId/survey" element={<UniversityMapLoader />} />
         <Route path="/:universityId" element={<UniversityMapLoader />} />
         <Route path="/" element={<div>Please select a university by navigating to its URL (e.g., /hastings)</div>} />

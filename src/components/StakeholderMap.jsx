@@ -8610,7 +8610,13 @@ const StakeholderMap = ({
     ASSESSMENT: 'assessment',
     TECHNICAL: 'technical'
   };
-  const defaultMapView = technicalMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA;
+  const isAdminMode = mode === 'admin';
+  const isAdminCombinedMode = isAdminMode && engagementMode;
+  const isTechnicalOnlyMode = Boolean(technicalMode && !isAdminMode);
+  const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
+  const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const showAuthAccessControls = isAdminMode || technicalMode;
+  const defaultMapView = isStakeholderTechnicalMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA;
   const [mapView, setMapView] = useState(defaultMapView);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -8625,27 +8631,31 @@ const StakeholderMap = ({
   });
   const [presentationExporting, setPresentationExporting] = useState(false);
   const MAP_VIEW_OPTIONS = useMemo(() => {
-    const options = [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-    if (mode === 'admin') {
-      options.push(
+    if (showFullMapfluenceControls) {
+      return [
+        { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
         { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment' },
         { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
-      );
+      ];
     }
-    return options;
-  }, [mode]);
-  const visibleMapViewOptions = mode === 'admin'
-    ? MAP_VIEW_OPTIONS
-    : MAP_VIEW_OPTIONS.filter((opt) => opt.value === MAP_VIEWS.SPACE_DATA);
+    if (isStakeholderTechnicalMode) {
+      return [
+        { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment' },
+        { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
+      ];
+    }
+    return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
+  }, [showFullMapfluenceControls, isStakeholderTechnicalMode]);
+  const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1;
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
-    if (!technicalMode) return;
+    if (!isStakeholderTechnicalMode) return;
     if (mapView === MAP_VIEWS.SPACE_DATA) {
       setMapView(MAP_VIEWS.ASSESSMENT);
     }
-  }, [technicalMode, mapView]);
+  }, [isStakeholderTechnicalMode, mapView]);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   const closeEngagementHelp = useCallback((e) => {
     try {
@@ -18122,54 +18132,66 @@ useEffect(() => {
       try {
         // Markers
         let markersQuery;
-        if (mode === 'admin' || engagementMode) {
+        if (mode === 'admin' || engagementMode || technicalMode) {
           markersQuery = query(markersCollection);
         } else {
           if (!persona) {
             setMarkers([]);
-            return;
+            markersQuery = null;
           }
-          markersQuery = query(markersCollection, where('persona', '==', persona));
+          if (persona) {
+            markersQuery = query(markersCollection, where('persona', '==', persona));
+          }
         }
-        const markerSnap = await getDocs(markersQuery);
-        setMarkers(
-          markerSnap.docs.map((d) => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] }))
-        );
+        if (markersQuery) {
+          const markerSnap = await getDocs(markersQuery);
+          setMarkers(
+            markerSnap.docs.map((d) => ({ id: d.id, ...d.data(), coordinates: [d.data().coordinates.longitude, d.data().coordinates.latitude] }))
+          );
+        }
 
-        if (mode !== 'admin') {
+        const shouldLoadConditions = mode === 'admin';
+        const shouldLoadAssessments = mode === 'admin' || technicalMode;
+        if (!shouldLoadConditions && !shouldLoadAssessments) {
           setBuildingConditions({});
           setBuildingAssessments({});
           return;
         }
 
-        // Admin loads conditions and assessments
+        // Load condition + assessment docs by mode.
         const [condSnap, assessmentSnap] = await Promise.all([
-          getDocs(conditionsCollection),
-          getDocs(assessmentsCollection)
+          shouldLoadConditions ? getDocs(conditionsCollection) : Promise.resolve(null),
+          shouldLoadAssessments ? getDocs(assessmentsCollection) : Promise.resolve(null)
         ]);
 
-        const condData = {};
-        condSnap.forEach((d) => {
-          const id = d.data().originalId || d.id.replace(/__/g, '/');
-          condData[id] = d.data().condition;
-        });
-        setBuildingConditions(condData);
-
-        const assessmentData = {};
-        assessmentSnap.forEach((docx) => {
-          const key = docx.data().originalId || docx.id.replace(/__/g, '/');
-          assessmentData[key] = docx.data();
-        });
-        setBuildingAssessments(assessmentData);
-      } catch (err) {
-        console.error('Failed to fetch data:', err);
-        if (mode === 'admin') {
+        if (shouldLoadConditions && condSnap) {
+          const condData = {};
+          condSnap.forEach((d) => {
+            const id = d.data().originalId || d.id.replace(/__/g, '/');
+            condData[id] = d.data().condition;
+          });
+          setBuildingConditions(condData);
+        } else {
           setBuildingConditions({});
+        }
+
+        if (shouldLoadAssessments && assessmentSnap) {
+          const assessmentData = {};
+          assessmentSnap.forEach((docx) => {
+            const key = docx.data().originalId || docx.id.replace(/__/g, '/');
+            assessmentData[key] = docx.data();
+          });
+          setBuildingAssessments(assessmentData);
+        } else {
           setBuildingAssessments({});
         }
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+        setBuildingConditions({});
+        setBuildingAssessments({});
       }
     })();
-  }, [mode, engagementMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection]);
+  }, [mode, engagementMode, technicalMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection]);
 
 // Keep floorplan building input in sync with map selection (convenience)
 useEffect(() => {
@@ -18486,6 +18508,10 @@ useEffect(() => {
     setFloorStats(null);
     setBuildingStats(null);
     setPanelStats({ loading: true, mode: 'building' });
+    if (technicalMode) {
+      setMapView(MAP_VIEWS.TECHNICAL);
+      setIsTechnicalPanelOpen(true);
+    }
     prefetchFloorSummaries(id);
     try {
       const sum = await computeBuildingTotals(id);
@@ -18494,7 +18520,7 @@ useEffect(() => {
         setBuildingStats(sum);
         setPanelStats(formatSummaryForPanel(sum, 'building'));
       }
-      if (mapView !== MAP_VIEWS.SPACE_DATA) {
+      if (mapView !== MAP_VIEWS.SPACE_DATA && !technicalMode) {
         const statsRaw = (await fetchBuildingSummary?.(id)) || sum || {};
         const fmtArea = (val) => (Number.isFinite(val) ? Math.round(val).toLocaleString() : '-');
         const fmtCount = (val) => (Number.isFinite(val) ? Number(val).toLocaleString() : '-');
@@ -18540,7 +18566,7 @@ useEffect(() => {
       }
     } catch {}
   };
-}, [engagementMode, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary]);
+}, [engagementMode, technicalMode, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -18801,9 +18827,9 @@ useEffect(() => {
       .querySelectorAll('.custom-mapbox-marker')
       .forEach((el) => el.remove());
 
-    const markersToDraw = mode === 'admin'
-      ? (showMarkers ? filteredMarkers : [])
-      : (engagementMode ? scopedEngagementMarkers : sessionMarkers);
+    const markersToDraw = engagementMode
+      ? scopedEngagementMarkers
+      : (mode === 'admin' ? (showMarkers ? filteredMarkers : []) : sessionMarkers);
     const shouldDrawMarkers = !(engagementMode && (engagementHeatmapOn || engagementRoomSentimentOnly));
     if (!shouldDrawMarkers) return;
     markersToDraw.forEach((m) => {
@@ -18868,7 +18894,7 @@ useEffect(() => {
     const matchExpr = ['match', ['get', 'id']];
     let hasEntries = false;
 
-    if (mode === 'admin' && mapView === MAP_VIEWS.ASSESSMENT && Object.keys(buildingAssessments).length > 0) {
+    if ((mode === 'admin' || technicalMode) && mapView === MAP_VIEWS.ASSESSMENT && Object.keys(buildingAssessments).length > 0) {
       Object.entries(buildingAssessments).forEach((tuple) => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
@@ -18900,7 +18926,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, mapLoaded, mode, mapView, utilizationHeatmapOn, utilizationByBuildingId]);
+  }, [buildingConditions, buildingAssessments, mapLoaded, mode, technicalMode, mapView, utilizationHeatmapOn, utilizationByBuildingId]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -19051,11 +19077,15 @@ useEffect(() => {
   }, [markerTypes, markersCollection, persona, engagementMode, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
 
   useEffect(() => {
-    if (!engagementMode || mode === 'admin') return;
+    if (!engagementMode) return;
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const onEngagementClick = (e) => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
+      const canDropMarker = mode === 'admin'
+        ? (mapView === MAP_VIEWS.ASSESSMENT && !isTechnicalPanelOpen)
+        : mapView === MAP_VIEWS.SPACE_DATA;
+      if (!canDropMarker) return;
       if (isEngagementFloorScope && !loadedSingleFloor) return;
       try {
         if (isEngagementFloorScope) {
@@ -19072,7 +19102,7 @@ useEffect(() => {
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [engagementMode, mode, mapLoaded, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
+  }, [engagementMode, mode, mapLoaded, mapView, isTechnicalPanelOpen, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -20670,7 +20700,7 @@ useEffect(() => {
             />
           </div>
         </div>
-        {!engagementMode && (
+        {!engagementMode && !technicalMode && (
           <div className="dashboard-box">
             <SpaceDashboardPanel
               title={dashboardTitle}
@@ -20704,9 +20734,9 @@ useEffect(() => {
       </div>
       )}
 
-    {mode === 'admin' && (
+    {(mode === 'admin' || technicalMode) && (
       <>
-        {mapView === MAP_VIEWS.ASSESSMENT && selectedBuildingId && !isTechnicalPanelOpen && panelAnchor && (
+        {mode === 'admin' && mapView === MAP_VIEWS.ASSESSMENT && selectedBuildingId && !isTechnicalPanelOpen && panelAnchor && (
           <div
             className="floating-panel"
             style={{
@@ -20752,7 +20782,7 @@ useEffect(() => {
       </>
     )}
 
-    {mapView === MAP_VIEWS.SPACE_DATA && !engagementMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+    {mapView === MAP_VIEWS.SPACE_DATA && !engagementMode && !technicalMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
       const containerWidth = mapContainerRef.current?.clientWidth || 1000;
       const containerHeight = mapContainerRef.current?.clientHeight || 800;
       const PANEL_WIDTH = 360;
@@ -21706,7 +21736,7 @@ useEffect(() => {
         <div className="map-controls">
 
           {/* Admin access - compact header layout */}
-          {mode === 'admin' && (
+          {showAuthAccessControls && (
             <div className="control-section" style={{ background: '#fff', padding: 6, border: '1px solid #ddd', borderRadius: 6, marginBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
                 <h5 style={{ margin: 0, fontSize: 13 }}>Admin access</h5>
@@ -21979,7 +22009,7 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {!engagementMode && (
+                {!engagementMode && !technicalMode && (
                   <div style={{ marginTop: 8 }}>
                     <button
                       className="mf-btn"
@@ -21997,7 +22027,7 @@ useEffect(() => {
                 )}
               </div>
 
-              {!engagementMode && (
+              {!engagementMode && !technicalMode && (
               <div
                 className="floorplans-section"
                 style={{
@@ -22091,7 +22121,7 @@ useEffect(() => {
           */}
 
 
-            {!engagementMode && (
+            {!engagementMode && !technicalMode && (
             <div
               style={{
                 marginTop: 4,
@@ -22260,7 +22290,7 @@ useEffect(() => {
       </div>
     )}
 
-    {mode === 'admin' && isControlsVisible && !presentationMode && (
+    {showFullMapfluenceControls && isControlsVisible && !presentationMode && (
       <div
         style={{
           position: 'absolute',
