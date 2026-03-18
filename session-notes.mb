@@ -108,3 +108,13 @@ Latest completed work (admin marker hard-delete safety)
 - Added archive metadata to filtered CSV export:
   - `IsArchived`, `ArchivedAt`, `ArchivedBy`
 - Added active/archived counts in admin tools for quick hygiene checks.
+
+Latest completed work (archived purge + marker attribution correctness)
+- Added permanent cleanup action in `Admin Data Tools`:
+  - `Permanently Delete Archived` (selected archived markers only)
+  - Two-step safety confirmation (`confirm` + type `DELETE`)
+  - Deletes from Firestore for cloud markers and removes local-only archived markers from session state.
+- Fixed marker attribution in engagement mode so building/floor context is only attached when valid:
+  - Campus scope: marker gets `buildingId/buildingName` only when click lands on a building footprint.
+  - Floor scope: marker gets `building/floor/room` context only when click lands inside the loaded floorplan geometry.
+  - Outside-building clicks no longer inherit the Floorplans panel selection, preventing false `buildingId/buildingName` assignment.

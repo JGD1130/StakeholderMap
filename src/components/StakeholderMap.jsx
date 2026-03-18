@@ -17183,6 +17183,10 @@ const markerToolSelectedRows = useMemo(() => {
   if (!markerToolSelectedIds.size) return [];
   return adminEngagementMarkerRows.filter((row) => markerToolSelectedIds.has(row.id));
 }, [adminEngagementMarkerRows, markerToolSelectedIds]);
+const markerToolSelectedArchivedRows = useMemo(
+  () => markerToolSelectedRows.filter((row) => row.isArchived),
+  [markerToolSelectedRows]
+);
 const markerToolArchivedCount = useMemo(
   () => adminEngagementMarkerRows.filter((row) => row.isArchived).length,
   [adminEngagementMarkerRows]
@@ -17452,6 +17456,61 @@ const undoLastArchiveMarkers = useCallback(async () => {
     setMarkerToolUndoBusy(false);
   }
 }, [markerToolUndoBusy, markerToolLastArchivedIds, adminEngagementMarkerRows, markersCollection]);
+const permanentlyDeleteArchivedSelectedMarkers = useCallback(async () => {
+  if (markerToolBusy || markerToolUndoBusy) return;
+  const rowsToDelete = markerToolSelectedArchivedRows;
+  if (!rowsToDelete.length) {
+    setMarkerToolMessage('Select archived markers to permanently delete.');
+    return;
+  }
+  const persistedRows = rowsToDelete.filter((row) => !row.localOnly);
+  const localRows = rowsToDelete.filter((row) => row.localOnly);
+  const countText = rowsToDelete.length.toLocaleString();
+  const confirmed = window.confirm(
+    `Permanently delete ${countText} archived markers? This cannot be undone.`
+  );
+  if (!confirmed) return;
+  const typed = window.prompt(`Type DELETE to permanently remove ${countText} archived markers.`);
+  if (typed !== 'DELETE') {
+    setMarkerToolMessage('Permanent delete canceled. Confirmation text did not match.');
+    return;
+  }
+  setMarkerToolBusy(true);
+  setMarkerToolMessage('Permanently deleting archived markers...');
+  try {
+    const chunkSize = 400;
+    for (let i = 0; i < persistedRows.length; i += chunkSize) {
+      const chunk = persistedRows.slice(i, i + chunkSize);
+      if (!chunk.length) continue;
+      const batch = writeBatch(db);
+      chunk.forEach((row) => {
+        const markerId = String(row.id || '').trim();
+        if (!markerId) return;
+        batch.delete(doc(markersCollection, markerId));
+      });
+      await batch.commit();
+    }
+    const deletedIds = new Set(rowsToDelete.map((row) => row.id));
+    setMarkers((prev) => (prev || []).filter((m) => !deletedIds.has(String(m?.id || '').trim())));
+    setSessionMarkers((prev) => (prev || []).filter((m) => !deletedIds.has(String(m?.id || '').trim())));
+    setMarkerToolSelectedIds((prev) => {
+      if (!prev.size) return prev;
+      const next = new Set(prev);
+      deletedIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    setMarkerToolLastArchivedIds((prev) => prev.filter((id) => !deletedIds.has(id)));
+    const parts = [];
+    if (persistedRows.length) parts.push(`${persistedRows.length.toLocaleString()} cloud`);
+    if (localRows.length) parts.push(`${localRows.length.toLocaleString()} local`);
+    setMarkerToolMessage(`Permanently deleted ${parts.join(' + ')} archived markers.`);
+  } catch (err) {
+    console.warn('Marker permanent delete failed', err);
+    setMarkerToolMessage('Permanent delete failed. See console for details.');
+  } finally {
+    setMarkerToolBusy(false);
+  }
+}, [markerToolBusy, markerToolUndoBusy, markerToolSelectedArchivedRows, markersCollection]);
 const technicalProgressRows = useMemo(() => {
   const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
   const rows = [];
@@ -19826,7 +19885,8 @@ useEffect(() => {
       props.Building ||
       props.buildingId ||
       '';
-    const buildingId = bId(rawBuilding || '');
+    const buildingIdRaw = String(rawBuilding || '').trim();
+    const buildingId = buildingIdRaw ? bId(buildingIdRaw) : '';
     const floorValue =
       floorCtx.floorId ||
       floorCtx.floor ||
@@ -19834,7 +19894,8 @@ useEffect(() => {
       selectedFloor ||
       props.Floor ||
       '';
-    const floorId = fId(floorValue || '');
+    const floorValueRaw = String(floorValue || '').trim();
+    const floorId = floorValueRaw ? fId(floorValueRaw) : '';
     const revitIdRaw = roomFeature.id ?? props.RevitId ?? props.revitId ?? props.id ?? null;
     const explicitRoomId = String(
       props.__scenarioRoomId ??
@@ -19875,7 +19936,7 @@ useEffect(() => {
     };
   }, [isEngagementFloorScope, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor]);
 
-  const showMarkerPopup = useCallback((lngLat, clickedRoomContext = null) => {
+  const showMarkerPopup = useCallback((lngLat, clickedRoomContext = null, clickedBuildingContext = null) => {
     if (!mapRef.current) return;
     const popupNode = document.createElement('div');
     popupNode.className = 'marker-prompt-popup';
@@ -19897,16 +19958,31 @@ useEffect(() => {
       const type = popupNode.querySelector('#marker-type').value;
       const comment = popupNode.querySelector('#marker-comment').value.trim();
       const floorCtx = currentFloorContextRef.current || {};
-      const useFloorContext = isEngagementFloorScope && loadedSingleFloor;
-      const rawBuilding = useFloorContext ? (floorCtx.buildingId || selectedBuildingId || selectedBuilding || '') : '';
-      const buildingId = bId(rawBuilding || '');
-      const buildingName = String(
-        resolveBuildingNameFromInput(rawBuilding) ||
-        activeBuildingName ||
-        rawBuilding ||
+      const useFloorContext = Boolean(
+        isEngagementFloorScope &&
+        loadedSingleFloor &&
+        clickedBuildingContext?.inFloorplan
+      );
+      const clickedBuildingIdRaw = String(
+        clickedBuildingContext?.buildingId ||
+        clickedBuildingContext?.id ||
         ''
       ).trim();
-      const floorId = useFloorContext ? fId(floorCtx.floorId || selectedFloor || '') : '';
+      const clickedBuildingNameRaw = String(
+        clickedBuildingContext?.buildingName ||
+        clickedBuildingContext?.name ||
+        ''
+      ).trim();
+      const rawBuilding = useFloorContext
+        ? (floorCtx.buildingId || selectedBuildingId || selectedBuilding || clickedBuildingIdRaw || '')
+        : clickedBuildingIdRaw;
+      const rawBuildingLabel = useFloorContext
+        ? (resolveBuildingNameFromInput(rawBuilding) || activeBuildingName || clickedBuildingNameRaw || rawBuilding || '')
+        : (clickedBuildingNameRaw || resolveBuildingNameFromInput(rawBuilding) || '');
+      const buildingId = rawBuilding ? bId(rawBuilding) : '';
+      const buildingName = String(rawBuildingLabel || '').trim();
+      const floorRaw = useFloorContext ? (floorCtx.floorId || selectedFloor || '') : '';
+      const floorId = floorRaw ? fId(floorRaw) : '';
       const floorLabel = useFloorContext ? String(floorCtx.floorLabel || selectedFloor || '').trim() : '';
       const floorUrlVal = useFloorContext ? String(floorCtx.url || floorUrl || '').trim() : '';
       const roomContext = useFloorContext && clickedRoomContext ? clickedRoomContext : null;
@@ -19964,6 +20040,24 @@ useEffect(() => {
         : mapView === MAP_VIEWS.SPACE_DATA;
       if (!canDropMarker) return;
       const isFloorplanStakeholderScope = isEngagementFloorScope && loadedSingleFloor;
+      let clickedBuildingContext = { buildingId: '', buildingName: '', inFloorplan: false };
+      try {
+        const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] }) || [];
+        const buildingProps = buildingHits[0]?.properties || {};
+        clickedBuildingContext = {
+          buildingId: String(buildingProps.id || '').trim(),
+          buildingName: String(buildingProps.name || buildingProps.Name || '').trim(),
+          inFloorplan: false
+        };
+      } catch {}
+      if (isFloorplanStakeholderScope) {
+        try {
+          const floorHits = map.getLayer(FLOOR_FILL_ID)
+            ? (map.queryRenderedFeatures(e.point, { layers: [FLOOR_FILL_ID] }) || [])
+            : [];
+          clickedBuildingContext.inFloorplan = floorHits.length > 0;
+        } catch {}
+      }
       if (isAdminCombinedMode && stakeholderConditionModeOn && !isFloorplanStakeholderScope) {
         try {
           const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] }) || [];
@@ -19974,13 +20068,15 @@ useEffect(() => {
       try {
         if (isEngagementFloorScope) {
           const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] }) || [];
-          const clickedBuildingId = String(buildingHits[0]?.properties?.id || '');
-          const activeBuildingId = String(selectedBuildingIdRef.current || selectedBuildingId || selectedBuilding || '');
+          const clickedBuildingIdRaw = String(buildingHits[0]?.properties?.id || '').trim();
+          const activeBuildingRaw = String(selectedBuildingIdRef.current || selectedBuildingId || selectedBuilding || '').trim();
+          const clickedBuildingId = clickedBuildingIdRaw ? bId(clickedBuildingIdRaw) : '';
+          const activeBuildingId = activeBuildingRaw ? bId(activeBuildingRaw) : '';
           if (clickedBuildingId && activeBuildingId && clickedBuildingId !== activeBuildingId) return;
         }
       } catch {}
       const clickedRoomContext = resolveEngagementRoomFromClick(e);
-      showMarkerPopup(e.lngLat, clickedRoomContext);
+      showMarkerPopup(e.lngLat, clickedRoomContext, clickedBuildingContext);
     };
     map.on('click', onEngagementClick);
     return () => {
@@ -23085,6 +23181,23 @@ useEffect(() => {
                   {markerToolUndoBusy
                     ? 'Undoing Archive...'
                     : `Undo Last Archive (${markerToolLastArchivedIds.length.toLocaleString()})`}
+                </button>
+                <button
+                  className="btn"
+                  onClick={permanentlyDeleteArchivedSelectedMarkers}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolSelectedArchivedRows.length}
+                  style={{
+                    gridColumn: '1 / -1',
+                    background: markerToolSelectedArchivedRows.length ? '#7f1d1d' : undefined,
+                    borderColor: markerToolSelectedArchivedRows.length ? '#991b1b' : undefined,
+                    color: markerToolSelectedArchivedRows.length ? '#fff' : undefined,
+                    fontWeight: markerToolSelectedArchivedRows.length ? 700 : undefined
+                  }}
+                  title="Permanently remove selected archived markers from Firestore"
+                >
+                  {markerToolBusy
+                    ? 'Deleting Permanently...'
+                    : `Permanently Delete Archived (${markerToolSelectedArchivedRows.length.toLocaleString()})`}
                 </button>
               </div>
 
