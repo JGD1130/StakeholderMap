@@ -58,3 +58,14 @@ Latest completed work (admin engagement floorplan + panel usability)
 - In `/admin/engagement`, switching workflow to `Technical` now unloads any currently loaded floorplan so technical mode starts on campus view.
 - Fixed stakeholder marker placement inside loaded floorplans while keeping building-click blocking for whole-building condition edits in campus scope.
 - Made the left controls panel scrollable (`max-height` + vertical overflow) so lower sections (including Floorplans) remain reachable when Room Sentiment content is expanded.
+
+Latest completed work (admin marker data tools)
+- Added `Admin Data Tools` in `/admin/engagement` Stakeholder workflow.
+- Added marker filtering by:
+  - building
+  - floor
+  - room text (number/id/label)
+  - marker type
+- Added selection workflow for filtered markers (`Select Filtered`, checkbox list, `Clear Selection`).
+- Added `Export Filtered CSV` with marker + room-context fields (roomNumber, roomId, roomGuid, revitId, roomLabel).
+- Added `Delete Selected` with confirmation and batched cloud deletes, while also handling local-only markers safely.

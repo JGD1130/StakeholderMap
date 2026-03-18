@@ -8573,6 +8573,27 @@ const setMapLayerVisibility = (map, layerId, visible) => {
     map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
   } catch {}
 };
+const parseFirestoreTimestampMs = (value) => {
+  if (!value) return 0;
+  if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+  if (value instanceof Date) return Number(value.getTime()) || 0;
+  if (Number.isFinite(value?.seconds)) {
+    const seconds = Number(value.seconds) || 0;
+    const nanos = Number(value.nanoseconds) || 0;
+    return Math.round(seconds * 1000 + nanos / 1e6);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const toTimestampIso = (value) => {
+  const ms = parseFirestoreTimestampMs(value);
+  if (!ms) return '';
+  try {
+    return new Date(ms).toISOString();
+  } catch {
+    return '';
+  }
+};
 const StakeholderMap = ({
   config,
   universityId,
@@ -13654,6 +13675,13 @@ const StakeholderMap = ({
 
   // Session-only markers (for public users adding points this session)
   const [sessionMarkers, setSessionMarkers] = useState([]);
+  const [markerToolBuildingFilter, setMarkerToolBuildingFilter] = useState('__all__');
+  const [markerToolFloorFilter, setMarkerToolFloorFilter] = useState('__all__');
+  const [markerToolTypeFilter, setMarkerToolTypeFilter] = useState('__all__');
+  const [markerToolRoomFilter, setMarkerToolRoomFilter] = useState('');
+  const [markerToolSelectedIds, setMarkerToolSelectedIds] = useState(new Set());
+  const [markerToolBusy, setMarkerToolBusy] = useState(false);
+  const [markerToolMessage, setMarkerToolMessage] = useState('');
 
 
   const resolveBuildingPlanKey = useCallback((idOrName) => {
@@ -16952,6 +16980,272 @@ const scopedEngagementHeatmapData = useMemo(() => ({
       };
     })
 }), [scopedEngagementMarkers]);
+const adminEngagementMarkerRows = useMemo(() => {
+  if (!(isAdminCombinedMode && engagementMode)) return [];
+  return (markers || [])
+    .map((marker) => {
+      const id = String(marker?.id || '').trim();
+      if (!id) return null;
+      const buildingIdRaw = String(marker?.buildingId || '').trim();
+      const buildingNameRaw = String(marker?.buildingName || marker?.building || '').trim();
+      const floorIdRaw = String(marker?.floorId || '').trim();
+      const floorLabelRaw = String(marker?.floorLabel || marker?.floor || '').trim();
+      const roomNumber = String(marker?.roomNumber || '').trim();
+      const roomId = String(marker?.roomId || '').trim();
+      const roomGuid = String(marker?.roomGuid || '').trim();
+      const revitId = String(marker?.revitId || '').trim();
+      const roomLabel = String(marker?.roomLabel || '').trim();
+      const type = String(marker?.type || '').trim();
+      const comment = String(marker?.comment || '').trim();
+      const personaLabel = String(marker?.persona || '').trim();
+      const lng = Number(marker?.coordinates?.[0]);
+      const lat = Number(marker?.coordinates?.[1]);
+      const createdAtMs = parseFirestoreTimestampMs(marker?.createdAt);
+      const createdAtIso = toTimestampIso(marker?.createdAt);
+      const buildingDisplay = buildingNameRaw || buildingIdRaw || 'Unknown Building';
+      const floorDisplay = floorLabelRaw || floorIdRaw || '';
+      const roomDisplay = roomNumber || roomLabel || roomId || revitId || '';
+      const buildingFilterKey = bId(buildingIdRaw || buildingNameRaw || '') || norm(buildingDisplay).toLowerCase();
+      const floorFilterKey = fId(floorIdRaw || floorLabelRaw || '') || norm(floorDisplay).toLowerCase();
+      const typeFilterKey = norm(type).toLowerCase();
+      const roomSearchText = `${roomNumber} ${roomId} ${roomGuid} ${revitId} ${roomLabel}`.toLowerCase();
+      return {
+        id,
+        buildingIdRaw,
+        buildingNameRaw,
+        floorIdRaw,
+        floorLabelRaw,
+        roomNumber,
+        roomId,
+        roomGuid,
+        revitId,
+        roomLabel,
+        type,
+        comment,
+        personaLabel,
+        lng: Number.isFinite(lng) ? lng : null,
+        lat: Number.isFinite(lat) ? lat : null,
+        createdAtMs,
+        createdAtIso,
+        createdAtRaw: marker?.createdAt || null,
+        buildingDisplay,
+        floorDisplay,
+        roomDisplay,
+        buildingFilterKey,
+        floorFilterKey,
+        typeFilterKey,
+        roomSearchText,
+        localOnly: Boolean(marker?.localOnly) || id.startsWith('local-')
+      };
+    })
+    .filter(Boolean);
+}, [isAdminCombinedMode, engagementMode, markers]);
+const markerToolBuildingOptions = useMemo(() => {
+  const byKey = new Map();
+  adminEngagementMarkerRows.forEach((row) => {
+    const key = row.buildingFilterKey || norm(row.buildingDisplay).toLowerCase();
+    if (!key) return;
+    if (!byKey.has(key)) byKey.set(key, row.buildingDisplay);
+  });
+  return Array.from(byKey.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}, [adminEngagementMarkerRows]);
+const markerToolRowsByBuilding = useMemo(() => (
+  markerToolBuildingFilter === '__all__'
+    ? adminEngagementMarkerRows
+    : adminEngagementMarkerRows.filter((row) => row.buildingFilterKey === markerToolBuildingFilter)
+), [adminEngagementMarkerRows, markerToolBuildingFilter]);
+const markerToolFloorOptions = useMemo(() => {
+  const byKey = new Map();
+  markerToolRowsByBuilding.forEach((row) => {
+    const floorLabel = row.floorDisplay || '(No floor)';
+    const floorKey = row.floorFilterKey || norm(floorLabel).toLowerCase() || '__none__';
+    if (!byKey.has(floorKey)) byKey.set(floorKey, floorLabel);
+  });
+  return Array.from(byKey.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}, [markerToolRowsByBuilding]);
+const markerToolRowsByBuildingFloor = useMemo(() => (
+  markerToolFloorFilter === '__all__'
+    ? markerToolRowsByBuilding
+    : markerToolRowsByBuilding.filter((row) => row.floorFilterKey === markerToolFloorFilter)
+), [markerToolRowsByBuilding, markerToolFloorFilter]);
+const markerToolTypeOptions = useMemo(() => {
+  const byKey = new Map();
+  markerToolRowsByBuildingFloor.forEach((row) => {
+    const typeLabel = row.type || '(No type)';
+    const typeKey = row.typeFilterKey || '__none__';
+    if (!byKey.has(typeKey)) byKey.set(typeKey, typeLabel);
+  });
+  return Array.from(byKey.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}, [markerToolRowsByBuildingFloor]);
+const markerToolFilteredRows = useMemo(() => {
+  const roomNeedle = norm(markerToolRoomFilter).toLowerCase();
+  const rows = (markerToolTypeFilter === '__all__'
+    ? markerToolRowsByBuildingFloor
+    : markerToolRowsByBuildingFloor.filter((row) => row.typeFilterKey === markerToolTypeFilter)
+  ).filter((row) => {
+    if (!roomNeedle) return true;
+    return row.roomSearchText.includes(roomNeedle);
+  });
+  return [...rows].sort((a, b) => {
+    if ((b.createdAtMs || 0) !== (a.createdAtMs || 0)) return (b.createdAtMs || 0) - (a.createdAtMs || 0);
+    return String(a.id).localeCompare(String(b.id));
+  });
+}, [markerToolRowsByBuildingFloor, markerToolTypeFilter, markerToolRoomFilter]);
+const markerToolSelectedRows = useMemo(() => {
+  if (!markerToolSelectedIds.size) return [];
+  return adminEngagementMarkerRows.filter((row) => markerToolSelectedIds.has(row.id));
+}, [adminEngagementMarkerRows, markerToolSelectedIds]);
+useEffect(() => {
+  if (markerToolFloorFilter === '__all__') return;
+  const floorStillValid = markerToolFloorOptions.some((opt) => opt.value === markerToolFloorFilter);
+  if (!floorStillValid) setMarkerToolFloorFilter('__all__');
+}, [markerToolFloorFilter, markerToolFloorOptions]);
+useEffect(() => {
+  if (markerToolTypeFilter === '__all__') return;
+  const typeStillValid = markerToolTypeOptions.some((opt) => opt.value === markerToolTypeFilter);
+  if (!typeStillValid) setMarkerToolTypeFilter('__all__');
+}, [markerToolTypeFilter, markerToolTypeOptions]);
+useEffect(() => {
+  if (!markerToolSelectedIds.size) return;
+  const validIds = new Set(adminEngagementMarkerRows.map((row) => row.id));
+  setMarkerToolSelectedIds((prev) => {
+    let changed = false;
+    const next = new Set();
+    prev.forEach((id) => {
+      if (validIds.has(id)) next.add(id);
+      else changed = true;
+    });
+    return changed ? next : prev;
+  });
+}, [adminEngagementMarkerRows, markerToolSelectedIds.size]);
+const toggleMarkerToolSelection = useCallback((markerId) => {
+  const key = String(markerId || '').trim();
+  if (!key) return;
+  setMarkerToolSelectedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+}, []);
+const selectAllFilteredMarkers = useCallback(() => {
+  setMarkerToolSelectedIds(new Set(markerToolFilteredRows.map((row) => row.id)));
+  setMarkerToolMessage(`Selected ${markerToolFilteredRows.length.toLocaleString()} markers.`);
+}, [markerToolFilteredRows]);
+const clearMarkerSelection = useCallback(() => {
+  setMarkerToolSelectedIds(new Set());
+  setMarkerToolMessage('Selection cleared.');
+}, []);
+const exportFilteredMarkersCsv = useCallback(() => {
+  if (!markerToolFilteredRows.length) {
+    setMarkerToolMessage('No filtered markers to export.');
+    return;
+  }
+  const esc = (value) => {
+    if (value === null || value === undefined) return '';
+    const text = String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const headers = [
+    'MarkerId',
+    'Type',
+    'Comment',
+    'Persona',
+    'BuildingId',
+    'BuildingName',
+    'FloorId',
+    'FloorLabel',
+    'RoomNumber',
+    'RoomId',
+    'RoomGuid',
+    'RevitId',
+    'RoomLabel',
+    'Longitude',
+    'Latitude',
+    'CreatedAt',
+    'LocalOnly'
+  ];
+  const lines = [headers.join(',')];
+  markerToolFilteredRows.forEach((row) => {
+    lines.push([
+      esc(row.id),
+      esc(row.type),
+      esc(row.comment),
+      esc(row.personaLabel),
+      esc(row.buildingIdRaw),
+      esc(row.buildingNameRaw || row.buildingDisplay),
+      esc(row.floorIdRaw),
+      esc(row.floorLabelRaw || row.floorDisplay),
+      esc(row.roomNumber),
+      esc(row.roomId),
+      esc(row.roomGuid),
+      esc(row.revitId),
+      esc(row.roomLabel),
+      esc(row.lng),
+      esc(row.lat),
+      esc(row.createdAtIso),
+      esc(row.localOnly ? 'true' : 'false')
+    ].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  a.download = `${base}-stakeholder-markers-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setMarkerToolMessage(`Exported ${markerToolFilteredRows.length.toLocaleString()} markers to CSV.`);
+}, [markerToolFilteredRows, universityId]);
+const deleteSelectedMarkers = useCallback(async () => {
+  if (markerToolBusy) return;
+  if (!markerToolSelectedRows.length) {
+    setMarkerToolMessage('No selected markers to delete.');
+    return;
+  }
+  const persistedRows = markerToolSelectedRows.filter((row) => !row.localOnly);
+  const localRows = markerToolSelectedRows.filter((row) => row.localOnly);
+  const confirmMessage = persistedRows.length
+    ? `Delete ${markerToolSelectedRows.length.toLocaleString()} selected markers from cloud? This cannot be undone.`
+    : `Remove ${localRows.length.toLocaleString()} local-only markers from this session?`;
+  if (!window.confirm(confirmMessage)) return;
+  setMarkerToolBusy(true);
+  setMarkerToolMessage(persistedRows.length ? 'Deleting selected markers from cloud...' : 'Removing local markers...');
+  try {
+    const chunkSize = 400;
+    for (let i = 0; i < persistedRows.length; i += chunkSize) {
+      const chunk = persistedRows.slice(i, i + chunkSize);
+      if (!chunk.length) continue;
+      const batch = writeBatch(db);
+      chunk.forEach((row) => {
+        const markerId = String(row.id || '').trim();
+        if (!markerId) return;
+        batch.delete(doc(markersCollection, markerId));
+      });
+      await batch.commit();
+    }
+    const deletedIds = new Set(markerToolSelectedRows.map((row) => row.id));
+    setMarkers((prev) => (prev || []).filter((m) => !deletedIds.has(String(m?.id || '').trim())));
+    setSessionMarkers((prev) => (prev || []).filter((m) => !deletedIds.has(String(m?.id || '').trim())));
+    setMarkerToolSelectedIds(new Set());
+    const resultParts = [];
+    if (persistedRows.length) resultParts.push(`${persistedRows.length.toLocaleString()} cloud`);
+    if (localRows.length) resultParts.push(`${localRows.length.toLocaleString()} local`);
+    setMarkerToolMessage(`Deleted ${resultParts.join(' + ')} markers.`);
+  } catch (err) {
+    console.warn('Marker bulk delete failed', err);
+    setMarkerToolMessage('Delete failed. See console for details.');
+  } finally {
+    setMarkerToolBusy(false);
+  }
+}, [markerToolBusy, markerToolSelectedRows, markersCollection]);
 
 const engagementRoomSentimentSummary = useMemo(() => {
   const empty = {
@@ -22037,6 +22331,166 @@ useEffect(() => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {isAdminCombinedMode && stakeholderWorkflowActive && (
+            <div
+              className="control-section"
+              style={{
+                marginTop: 8,
+                padding: 8,
+                borderRadius: 8,
+                border: '1px solid #d8e0ea',
+                background: '#fbfdff'
+              }}
+            >
+              <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Admin Data Tools</h5>
+              <div style={{ fontSize: 11, color: '#5b6677' }}>
+                Total: {adminEngagementMarkerRows.length.toLocaleString()} markers
+                {'  '}|{'  '}Filtered: {markerToolFilteredRows.length.toLocaleString()}
+                {'  '}|{'  '}Selected: {markerToolSelectedRows.length.toLocaleString()}
+              </div>
+
+              <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                <select
+                  value={markerToolBuildingFilter}
+                  onChange={(e) => setMarkerToolBuildingFilter(e.target.value)}
+                  disabled={markerToolBusy}
+                >
+                  <option value="__all__">All buildings</option>
+                  {markerToolBuildingOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={markerToolFloorFilter}
+                  onChange={(e) => setMarkerToolFloorFilter(e.target.value)}
+                  disabled={markerToolBusy}
+                >
+                  <option value="__all__">All floors</option>
+                  {markerToolFloorOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Room filter (number / id / label)"
+                  value={markerToolRoomFilter}
+                  onChange={(e) => setMarkerToolRoomFilter(e.target.value)}
+                  disabled={markerToolBusy}
+                  style={{ width: '100%' }}
+                />
+                <select
+                  value={markerToolTypeFilter}
+                  onChange={(e) => setMarkerToolTypeFilter(e.target.value)}
+                  disabled={markerToolBusy}
+                >
+                  <option value="__all__">All marker types</option>
+                  {markerToolTypeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
+                <button
+                  className="btn"
+                  onClick={selectAllFilteredMarkers}
+                  disabled={markerToolBusy || !markerToolFilteredRows.length}
+                >
+                  Select Filtered
+                </button>
+                <button
+                  className="btn"
+                  onClick={clearMarkerSelection}
+                  disabled={markerToolBusy || !markerToolSelectedRows.length}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  className="btn"
+                  onClick={exportFilteredMarkersCsv}
+                  disabled={markerToolBusy || !markerToolFilteredRows.length}
+                >
+                  Export Filtered CSV
+                </button>
+                <button
+                  className="btn"
+                  onClick={deleteSelectedMarkers}
+                  disabled={markerToolBusy || !markerToolSelectedRows.length}
+                  style={{
+                    background: markerToolSelectedRows.length ? '#fee2e2' : undefined,
+                    borderColor: markerToolSelectedRows.length ? '#fca5a5' : undefined,
+                    color: markerToolSelectedRows.length ? '#991b1b' : undefined,
+                    fontWeight: markerToolSelectedRows.length ? 700 : undefined
+                  }}
+                >
+                  {markerToolBusy
+                    ? 'Deleting...'
+                    : `Delete Selected (${markerToolSelectedRows.length.toLocaleString()})`}
+                </button>
+              </div>
+
+              {!!markerToolMessage && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
+                  {markerToolMessage}
+                </div>
+              )}
+
+              {markerToolFilteredRows.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    border: '1px solid #dde5f0',
+                    borderRadius: 6,
+                    background: '#fff',
+                    maxHeight: 180,
+                    overflowY: 'auto',
+                    padding: 6,
+                    display: 'grid',
+                    gap: 4
+                  }}
+                >
+                  {markerToolFilteredRows.slice(0, 80).map((row) => {
+                    const checked = markerToolSelectedIds.has(row.id);
+                    const locationLabel = [row.buildingDisplay, row.floorDisplay, row.roomDisplay]
+                      .filter(Boolean)
+                      .join(' / ');
+                    const typeLabel = row.type || '(No type)';
+                    return (
+                      <label
+                        key={`marker-tool-${row.id}`}
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          alignItems: 'flex-start',
+                          fontSize: 11.2,
+                          lineHeight: 1.25
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleMarkerToolSelection(row.id)}
+                          disabled={markerToolBusy}
+                          style={{ marginTop: 1 }}
+                        />
+                        <span style={{ color: '#334155' }}>
+                          <b>{typeLabel}</b>
+                          {locationLabel ? ` - ${locationLabel}` : ''}
+                          {row.comment ? ` - ${row.comment}` : ''}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {markerToolFilteredRows.length > 80 && (
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                      Showing first 80 filtered markers. Refine filters to narrow selection.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
