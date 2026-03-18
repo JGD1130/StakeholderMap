@@ -121,7 +121,7 @@ Latest completed work (archived purge + marker attribution correctness)
 
 Latest completed work (admin marker unassigned cleanup tools)
 - Added quick assignment filters in `Admin Data Tools`:
-  - `All Assigned`
+  - `All Markers`
   - `No Building`
   - `No Floor`
   - `Unassigned`
@@ -130,3 +130,12 @@ Latest completed work (admin marker unassigned cleanup tools)
 - Added explicit marker list labels for missing assignment:
   - `(No building)`
   - `(No floor)`
+
+Latest completed work (one-click unassigned archive)
+- Added `Archive Unassigned` button in `Admin Data Tools`.
+- Button archives all currently filtered unassigned markers in one action (no manual checkbox selection required).
+- Keeps archive safety behavior:
+  - cloud markers are soft-archived (not deleted)
+  - local-only markers are archived in session state
+  - `Undo Last Archive` restores the archived batch
+- Updated quick-filter first chip label to `All Markers` for clarity.

@@ -17197,6 +17197,14 @@ const markerToolFilteredRows = useMemo(() => {
     return String(a.id).localeCompare(String(b.id));
   });
 }, [markerToolRowsByBuildingFloor, markerToolTypeFilter, markerToolRoomFilter, markerToolShowArchived, markerToolAssignmentFilter]);
+const markerToolFilteredUnassignedRows = useMemo(
+  () => markerToolFilteredRows.filter((row) => !row.hasBuilding || !row.hasFloor),
+  [markerToolFilteredRows]
+);
+const markerToolFilteredUnassignedArchivableRows = useMemo(
+  () => markerToolFilteredUnassignedRows.filter((row) => !row.isArchived),
+  [markerToolFilteredUnassignedRows]
+);
 const markerToolSelectedRows = useMemo(() => {
   if (!markerToolSelectedIds.size) return [];
   return adminEngagementMarkerRows.filter((row) => markerToolSelectedIds.has(row.id));
@@ -17421,6 +17429,85 @@ const archiveSelectedMarkers = useCallback(async () => {
     setMarkerToolBusy(false);
   }
 }, [markerToolBusy, markerToolSelectedRows, markersCollection, authUser?.email, authUser?.uid]);
+const archiveFilteredUnassignedMarkers = useCallback(async () => {
+  if (markerToolBusy || markerToolUndoBusy) return;
+  const rowsToArchive = markerToolFilteredUnassignedArchivableRows;
+  if (!rowsToArchive.length) {
+    setMarkerToolMessage('No unassigned markers in current filters to archive.');
+    return;
+  }
+  const persistedRows = rowsToArchive.filter((row) => !row.localOnly);
+  const localRows = rowsToArchive.filter((row) => row.localOnly);
+  const confirmMessage = persistedRows.length
+    ? `Archive ${rowsToArchive.length.toLocaleString()} unassigned markers in cloud? You can undo the last archive.`
+    : `Archive ${localRows.length.toLocaleString()} unassigned local-only markers for this session?`;
+  if (!window.confirm(confirmMessage)) return;
+  setMarkerToolBusy(true);
+  setMarkerToolMessage(persistedRows.length ? 'Archiving unassigned markers in cloud...' : 'Archiving unassigned local markers...');
+  try {
+    const archivedByValue = String(authUser?.email || authUser?.uid || 'admin').trim() || 'admin';
+    const archivedAtDate = new Date();
+    const chunkSize = 400;
+    for (let i = 0; i < persistedRows.length; i += chunkSize) {
+      const chunk = persistedRows.slice(i, i + chunkSize);
+      if (!chunk.length) continue;
+      const batch = writeBatch(db);
+      chunk.forEach((row) => {
+        const markerId = String(row.id || '').trim();
+        if (!markerId) return;
+        batch.set(doc(markersCollection, markerId), {
+          isArchived: true,
+          archived: true,
+          archivedAt: serverTimestamp(),
+          archivedBy: archivedByValue,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      });
+      await batch.commit();
+    }
+    const archivedIds = new Set(rowsToArchive.map((row) => row.id));
+    setMarkers((prev) => (prev || []).map((m) => {
+      const markerId = String(m?.id || '').trim();
+      if (!archivedIds.has(markerId)) return m;
+      return {
+        ...m,
+        isArchived: true,
+        archived: true,
+        archivedAt: m?.archivedAt || archivedAtDate,
+        archivedBy: m?.archivedBy || archivedByValue,
+        updatedAt: m?.updatedAt || archivedAtDate
+      };
+    }));
+    setSessionMarkers((prev) => (prev || []).map((m) => {
+      const markerId = String(m?.id || '').trim();
+      if (!archivedIds.has(markerId)) return m;
+      return {
+        ...m,
+        isArchived: true,
+        archived: true,
+        archivedAt: m?.archivedAt || archivedAtDate,
+        archivedBy: m?.archivedBy || archivedByValue,
+        updatedAt: m?.updatedAt || archivedAtDate
+      };
+    }));
+    setMarkerToolLastArchivedIds(Array.from(archivedIds));
+    setMarkerToolSelectedIds((prev) => {
+      if (!prev.size) return prev;
+      const next = new Set(prev);
+      archivedIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    const resultParts = [];
+    if (persistedRows.length) resultParts.push(`${persistedRows.length.toLocaleString()} cloud`);
+    if (localRows.length) resultParts.push(`${localRows.length.toLocaleString()} local`);
+    setMarkerToolMessage(`Archived ${resultParts.join(' + ')} unassigned markers. Use Undo Last Archive to restore.`);
+  } catch (err) {
+    console.warn('Marker unassigned archive failed', err);
+    setMarkerToolMessage('Archive unassigned failed. See console for details.');
+  } finally {
+    setMarkerToolBusy(false);
+  }
+}, [markerToolBusy, markerToolUndoBusy, markerToolFilteredUnassignedArchivableRows, markersCollection, authUser?.email, authUser?.uid]);
 const undoLastArchiveMarkers = useCallback(async () => {
   if (markerToolUndoBusy) return;
   if (!markerToolLastArchivedIds.length) {
@@ -23142,7 +23229,7 @@ useEffect(() => {
                     borderColor: markerToolAssignmentFilter === '__all__' ? '#1f2937' : undefined
                   }}
                 >
-                  All Assigned
+                  All Markers
                 </button>
                 <button
                   className="btn"
@@ -23263,6 +23350,21 @@ useEffect(() => {
                   {markerToolBusy
                     ? 'Archiving...'
                     : `Archive Selected (${markerToolSelectedRows.length.toLocaleString()})`}
+                </button>
+                <button
+                  className="btn"
+                  onClick={archiveFilteredUnassignedMarkers}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolFilteredUnassignedArchivableRows.length}
+                  style={{
+                    background: markerToolFilteredUnassignedArchivableRows.length ? '#ffedd5' : undefined,
+                    borderColor: markerToolFilteredUnassignedArchivableRows.length ? '#fdba74' : undefined,
+                    color: markerToolFilteredUnassignedArchivableRows.length ? '#9a3412' : undefined,
+                    fontWeight: markerToolFilteredUnassignedArchivableRows.length ? 700 : undefined
+                  }}
+                >
+                  {markerToolBusy
+                    ? 'Archiving...'
+                    : `Archive Unassigned (${markerToolFilteredUnassignedArchivableRows.length.toLocaleString()})`}
                 </button>
                 <button
                   className="btn"
