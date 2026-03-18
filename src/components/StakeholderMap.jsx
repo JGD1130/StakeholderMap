@@ -13743,6 +13743,7 @@ const StakeholderMap = ({
   const [markerToolBuildingFilter, setMarkerToolBuildingFilter] = useState('__all__');
   const [markerToolFloorFilter, setMarkerToolFloorFilter] = useState('__all__');
   const [markerToolTypeFilter, setMarkerToolTypeFilter] = useState('__all__');
+  const [markerToolAssignmentFilter, setMarkerToolAssignmentFilter] = useState('__all__');
   const [markerToolRoomFilter, setMarkerToolRoomFilter] = useState('');
   const [markerToolShowArchived, setMarkerToolShowArchived] = useState(false);
   const [markerToolSelectedIds, setMarkerToolSelectedIds] = useState(new Set());
@@ -17079,11 +17080,23 @@ const adminEngagementMarkerRows = useMemo(() => {
       const archivedAtIso = toTimestampIso(marker?.archivedAt);
       const archivedBy = String(marker?.archivedBy || '').trim();
       const isArchived = isMarkerArchived(marker);
-      const buildingDisplay = buildingNameRaw || buildingIdRaw || 'Unknown Building';
-      const floorDisplay = floorLabelRaw || floorIdRaw || '';
+      const hasBuilding = (
+        (buildingIdRaw && bId(buildingIdRaw) !== 'na') ||
+        (buildingNameRaw && bId(buildingNameRaw) !== 'na')
+      );
+      const hasFloor = (
+        (floorIdRaw && fId(floorIdRaw) !== 'na') ||
+        (floorLabelRaw && fId(floorLabelRaw) !== 'na')
+      );
+      const buildingDisplay = hasBuilding ? (buildingNameRaw || buildingIdRaw) : '(No building)';
+      const floorDisplay = hasFloor ? (floorLabelRaw || floorIdRaw) : '(No floor)';
       const roomDisplay = roomNumber || roomLabel || roomId || revitId || '';
-      const buildingFilterKey = bId(buildingIdRaw || buildingNameRaw || '') || norm(buildingDisplay).toLowerCase();
-      const floorFilterKey = fId(floorIdRaw || floorLabelRaw || '') || norm(floorDisplay).toLowerCase();
+      const buildingFilterKey = hasBuilding
+        ? (bId(buildingIdRaw || buildingNameRaw || '') || norm(buildingDisplay).toLowerCase())
+        : '__none_building__';
+      const floorFilterKey = hasFloor
+        ? (fId(floorIdRaw || floorLabelRaw || '') || norm(floorDisplay).toLowerCase())
+        : '__none_floor__';
       const typeFilterKey = norm(type).toLowerCase();
       const roomSearchText = `${roomNumber} ${roomId} ${roomGuid} ${revitId} ${roomLabel}`.toLowerCase();
       return {
@@ -17109,6 +17122,8 @@ const adminEngagementMarkerRows = useMemo(() => {
         archivedAtIso,
         archivedBy,
         isArchived,
+        hasBuilding,
+        hasFloor,
         buildingDisplay,
         floorDisplay,
         roomDisplay,
@@ -17171,6 +17186,9 @@ const markerToolFilteredRows = useMemo(() => {
     : markerToolRowsByBuildingFloor.filter((row) => row.typeFilterKey === markerToolTypeFilter)
   ).filter((row) => {
     if (!markerToolShowArchived && row.isArchived) return false;
+    if (markerToolAssignmentFilter === 'no_building' && row.hasBuilding) return false;
+    if (markerToolAssignmentFilter === 'no_floor' && row.hasFloor) return false;
+    if (markerToolAssignmentFilter === 'unassigned' && row.hasBuilding && row.hasFloor) return false;
     if (!roomNeedle) return true;
     return row.roomSearchText.includes(roomNeedle);
   });
@@ -17178,7 +17196,7 @@ const markerToolFilteredRows = useMemo(() => {
     if ((b.createdAtMs || 0) !== (a.createdAtMs || 0)) return (b.createdAtMs || 0) - (a.createdAtMs || 0);
     return String(a.id).localeCompare(String(b.id));
   });
-}, [markerToolRowsByBuildingFloor, markerToolTypeFilter, markerToolRoomFilter, markerToolShowArchived]);
+}, [markerToolRowsByBuildingFloor, markerToolTypeFilter, markerToolRoomFilter, markerToolShowArchived, markerToolAssignmentFilter]);
 const markerToolSelectedRows = useMemo(() => {
   if (!markerToolSelectedIds.size) return [];
   return adminEngagementMarkerRows.filter((row) => markerToolSelectedIds.has(row.id));
@@ -17193,6 +17211,18 @@ const markerToolArchivedCount = useMemo(
 );
 const markerToolActiveCount = Math.max(0, adminEngagementMarkerRows.length - markerToolArchivedCount);
 const markerToolCanUndoArchive = markerToolLastArchivedIds.length > 0;
+const markerToolNoBuildingCount = useMemo(
+  () => adminEngagementMarkerRows.filter((row) => !row.hasBuilding).length,
+  [adminEngagementMarkerRows]
+);
+const markerToolNoFloorCount = useMemo(
+  () => adminEngagementMarkerRows.filter((row) => !row.hasFloor).length,
+  [adminEngagementMarkerRows]
+);
+const markerToolUnassignedCount = useMemo(
+  () => adminEngagementMarkerRows.filter((row) => !row.hasBuilding || !row.hasFloor).length,
+  [adminEngagementMarkerRows]
+);
 useEffect(() => {
   if (markerToolFloorFilter === '__all__') return;
   const floorStillValid = markerToolFloorOptions.some((opt) => opt.value === markerToolFloorFilter);
@@ -17229,6 +17259,16 @@ const toggleMarkerToolSelection = useCallback((markerId) => {
 const selectAllFilteredMarkers = useCallback(() => {
   setMarkerToolSelectedIds(new Set(markerToolFilteredRows.map((row) => row.id)));
   setMarkerToolMessage(`Selected ${markerToolFilteredRows.length.toLocaleString()} markers.`);
+}, [markerToolFilteredRows]);
+const selectUnassignedFilteredMarkers = useCallback(() => {
+  const rows = markerToolFilteredRows.filter((row) => !row.hasBuilding || !row.hasFloor);
+  if (!rows.length) {
+    setMarkerToolSelectedIds(new Set());
+    setMarkerToolMessage('No unassigned markers in current filter.');
+    return;
+  }
+  setMarkerToolSelectedIds(new Set(rows.map((row) => row.id)));
+  setMarkerToolMessage(`Selected ${rows.length.toLocaleString()} unassigned markers.`);
 }, [markerToolFilteredRows]);
 const clearMarkerSelection = useCallback(() => {
   setMarkerToolSelectedIds(new Set());
@@ -23069,6 +23109,11 @@ useEffect(() => {
                 {'  '}|{'  '}Filtered: {markerToolFilteredRows.length.toLocaleString()}
                 {'  '}|{'  '}Selected: {markerToolSelectedRows.length.toLocaleString()}
               </div>
+              <div style={{ marginTop: 4, fontSize: 10.8, color: '#64748b' }}>
+                No Building: {markerToolNoBuildingCount.toLocaleString()}
+                {'  '}|{'  '}No Floor: {markerToolNoFloorCount.toLocaleString()}
+                {'  '}|{'  '}Unassigned: {markerToolUnassignedCount.toLocaleString()}
+              </div>
               <label
                 style={{
                   marginTop: 6,
@@ -23087,6 +23132,52 @@ useEffect(() => {
                 />
                 Show archived markers in filters/list
               </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+                <button
+                  className="btn"
+                  onClick={() => setMarkerToolAssignmentFilter('__all__')}
+                  disabled={markerToolBusy || markerToolUndoBusy}
+                  style={{
+                    fontWeight: markerToolAssignmentFilter === '__all__' ? 700 : 500,
+                    borderColor: markerToolAssignmentFilter === '__all__' ? '#1f2937' : undefined
+                  }}
+                >
+                  All Assigned
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setMarkerToolAssignmentFilter('no_building')}
+                  disabled={markerToolBusy || markerToolUndoBusy}
+                  style={{
+                    fontWeight: markerToolAssignmentFilter === 'no_building' ? 700 : 500,
+                    borderColor: markerToolAssignmentFilter === 'no_building' ? '#1f2937' : undefined
+                  }}
+                >
+                  No Building
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setMarkerToolAssignmentFilter('no_floor')}
+                  disabled={markerToolBusy || markerToolUndoBusy}
+                  style={{
+                    fontWeight: markerToolAssignmentFilter === 'no_floor' ? 700 : 500,
+                    borderColor: markerToolAssignmentFilter === 'no_floor' ? '#1f2937' : undefined
+                  }}
+                >
+                  No Floor
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setMarkerToolAssignmentFilter('unassigned')}
+                  disabled={markerToolBusy || markerToolUndoBusy}
+                  style={{
+                    fontWeight: markerToolAssignmentFilter === 'unassigned' ? 700 : 500,
+                    borderColor: markerToolAssignmentFilter === 'unassigned' ? '#1f2937' : undefined
+                  }}
+                >
+                  Unassigned
+                </button>
+              </div>
 
               <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
                 <select
@@ -23136,6 +23227,13 @@ useEffect(() => {
                   disabled={markerToolBusy || markerToolUndoBusy || !markerToolFilteredRows.length}
                 >
                   Select Filtered
+                </button>
+                <button
+                  className="btn"
+                  onClick={selectUnassignedFilteredMarkers}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolFilteredRows.length}
+                >
+                  Select Unassigned
                 </button>
                 <button
                   className="btn"

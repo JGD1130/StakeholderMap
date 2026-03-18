@@ -118,3 +118,15 @@ Latest completed work (archived purge + marker attribution correctness)
   - Campus scope: marker gets `buildingId/buildingName` only when click lands on a building footprint.
   - Floor scope: marker gets `building/floor/room` context only when click lands inside the loaded floorplan geometry.
   - Outside-building clicks no longer inherit the Floorplans panel selection, preventing false `buildingId/buildingName` assignment.
+
+Latest completed work (admin marker unassigned cleanup tools)
+- Added quick assignment filters in `Admin Data Tools`:
+  - `All Assigned`
+  - `No Building`
+  - `No Floor`
+  - `Unassigned`
+- Added one-click `Select Unassigned` action (within current filtered set).
+- Added summary counters for `No Building`, `No Floor`, and `Unassigned`.
+- Added explicit marker list labels for missing assignment:
+  - `(No building)`
+  - `(No floor)`
