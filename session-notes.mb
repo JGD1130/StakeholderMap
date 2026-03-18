@@ -37,3 +37,11 @@ Latest completed work (admin combined workflow)
   - Technical Focus
 - Stakeholder Focus sets assessment view and emphasizes marker/heatmap workflow.
 - Technical Focus jumps to technical view and quiets engagement heat/sentiment overlays for cleaner assessment work.
+
+Latest completed work (workflow separation refinement)
+- In `/admin/engagement`, workflow options are now `Stakeholder` and `Technical` (renamed from `Assessment`).
+- Stakeholder workflow now shows only stakeholder tools (markers/heatmap/sentiment controls).
+- Technical workflow now hides stakeholder tools and surfaces only technical assessment behavior.
+- Added a stakeholder building-condition toggle in combined mode to enable/disable whole-building stakeholder condition editing panel.
+- Prevented stakeholder marker popup from opening on building clicks when building-condition editing is enabled.
+- In `/technical`, workflow dropdown now contains only `Technical` (no `Assessment` option).
