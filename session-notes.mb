@@ -158,3 +158,13 @@ Latest completed work (technical assessment QA hardening - phase 2)
 - Completion tracking now treats common legacy aliases as equivalent to canonical fields (for example: `telecom` -> `telecomm`, `hvac` -> `mechanical`, `codesAccessibility` -> `codesAndAccessibility`).
 - Unified technical progress and building-shading logic to use the same normalized scoring computation, preventing mismatches between checklist percentages and blue progress shading.
 - Technical assessment panel now normalizes legacy score keys when loading/editing records, so older data opens with correct field values instead of appearing as missing.
+
+Latest completed work (technical assessment QA hardening - phase 3 UI polish)
+- Improved Technical Assessment panel clarity:
+  - Added in-panel completion summary (`answered/total`, `% complete`, `sections started`).
+  - Added inline warning text when one or more section starts are still missing.
+  - Aligned section labels with workflow language (`Codes`, `Engineering`, `Functionality`).
+  - Improved field label readability for common technical terms (for example: `Fire Alarm`, `Conveying Systems`, `Codes and Accessibility`).
+- Improved Technical Progress list readability:
+  - Added `Complete` status chip on fully complete buildings.
+  - Added missing field count in each row summary (`x fields missing`).

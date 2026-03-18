@@ -111,6 +111,23 @@
   color: #64748b;
 }
 
+.assessment-progress {
+  margin: 0 0 10px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  color: #1e293b;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.assessment-progress-missing {
+  margin-top: 4px;
+  color: #9a3412;
+  font-weight: 600;
+}
+
 .score-item label {
   text-transform: capitalize;
   font-weight: 500;

@@ -58,6 +58,22 @@ const normalizeScoreSection = (sectionScores, templateSection) => {
 };
 
 const DRAFT_AUTOSAVE_MS = 900;
+const CATEGORY_LABELS = {
+  architecture: 'Codes',
+  engineering: 'Engineering',
+  functionality: 'Functionality'
+};
+const FIELD_LABELS = {
+  telecomm: 'Telecomm',
+  fireAlarm: 'Fire Alarm',
+  spaceSize: 'Space Size',
+  codesAndAccessibility: 'Codes and Accessibility',
+  lifeSafety: 'Life Safety',
+  interiorFinishes: 'Interior Finishes',
+  conveyingSystems: 'Conveying Systems'
+};
+const formatCategoryLabel = (key) => CATEGORY_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '');
+const formatFieldLabel = (key) => FIELD_LABELS[key] || key.replace(/([A-Z])/g, ' $1').trim();
 
 const cloneAssessment = (source, buildingNameFallback = '') => {
   const base = source && typeof source === 'object' ? source : {};
@@ -261,6 +277,38 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
         return { tone: 'muted', text: isAdminRole ? 'No unsaved changes' : 'Local draft autosave enabled' };
     }
   }, [saveState, isAdminRole]);
+  const assessmentProgress = useMemo(() => {
+    const scores = localAssessment?.scores && typeof localAssessment.scores === 'object'
+      ? localAssessment.scores
+      : {};
+    const sections = [
+      { key: 'architecture', fields: Object.keys(assessmentTemplate.scores.architecture || {}) },
+      { key: 'engineering', fields: Object.keys(assessmentTemplate.scores.engineering || {}) },
+      { key: 'functionality', fields: Object.keys(assessmentTemplate.scores.functionality || {}) }
+    ];
+    let total = 0;
+    let answered = 0;
+    let started = 0;
+    const missingSections = [];
+    sections.forEach((section) => {
+      const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
+        ? scores[section.key]
+        : {};
+      let sectionAnswered = 0;
+      section.fields.forEach((fieldKey) => {
+        total += 1;
+        const value = Number(sectionScores?.[fieldKey] ?? 0);
+        if (Number.isFinite(value) && value > 0) {
+          answered += 1;
+          sectionAnswered += 1;
+        }
+      });
+      if (sectionAnswered > 0) started += 1;
+      else missingSections.push(formatCategoryLabel(section.key));
+    });
+    const pct = total ? Math.round((answered / total) * 100) : 0;
+    return { total, answered, started, missingSections, pct };
+  }, [localAssessment]);
 
   if (!buildingId) return null;
 
@@ -279,6 +327,20 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
         <div className={`save-status save-status--${saveStatus.tone}`}>
           <span>{saveStatus.text}</span>
         </div>
+        <div className="assessment-progress">
+          <div>
+            <b>{assessmentProgress.answered}</b> / {assessmentProgress.total} scored
+            {' '}({assessmentProgress.pct}%)
+          </div>
+          <div>
+            <b>{assessmentProgress.started}</b> / 3 sections started
+          </div>
+          {assessmentProgress.missingSections.length > 0 && (
+            <div className="assessment-progress-missing">
+              Missing section starts: {assessmentProgress.missingSections.join(', ')}
+            </div>
+          )}
+        </div>
         {!isAdminRole && (
           <div className="save-hint">
             Cloud save requires admin sign-in. Drafts autosave locally in this browser.
@@ -287,10 +349,10 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
 
         {localAssessment.scores && Object.entries(localAssessment.scores).map(([category, subScores]) => (
           <div key={category} className="category-section">
-            <h5>{category.charAt(0).toUpperCase() + category.slice(1)}</h5>
+            <h5>{formatCategoryLabel(category)}</h5>
             {Object.entries(subScores).map(([subCategory, score]) => (
               <div key={subCategory} className="score-item">
-                <label>{subCategory.replace(/([A-Z])/g, ' $1').trim()}</label>
+                <label>{formatFieldLabel(subCategory)}</label>
                 <select value={score} onChange={(e) => handleScoreChange(category, subCategory, e.target.value)}>
                   {scoreOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                 </select>

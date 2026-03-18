@@ -23027,7 +23027,24 @@ useEffect(() => {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                         <span style={{ fontWeight: 600, color: '#1f2937' }}>{row.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{row.completionPct}%</span>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          {row.isComplete && (
+                            <span
+                              style={{
+                                fontSize: 9.8,
+                                padding: '1px 6px',
+                                borderRadius: 999,
+                                background: '#dcfce7',
+                                border: '1px solid #86efac',
+                                color: '#166534',
+                                fontWeight: 700
+                              }}
+                            >
+                              Complete
+                            </span>
+                          )}
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{row.completionPct}%</span>
+                        </div>
                       </div>
                       <div style={{ marginTop: 5, height: 6, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
                         <div
@@ -23040,6 +23057,7 @@ useEffect(() => {
                       </div>
                       <div style={{ marginTop: 5, fontSize: 10.5, color: '#475569' }}>
                         {row.answeredFields}/{row.totalFields} scored, {row.startedSections}/3 sections started
+                        {row.missingFieldCount > 0 ? `, ${row.missingFieldCount} fields missing` : ''}
                       </div>
                       <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {row.missingSections.length ? row.missingSections.map((missing) => (
