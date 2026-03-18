@@ -63,8 +63,36 @@ const RENO_SPECIALIZED_TYPE_KEYWORDS = [
 const SCENARIO_LAYOUT_OP_TYPES = new Set(['layoutMerge', 'layoutRemoveDivider', 'layoutSplit']);
 const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
 const LOCAL_RENO_SCENARIO_STORAGE_PREFIX = 'mf-reno-scenarios';
+const ADMIN_COMBINED_PREFS_STORAGE_PREFIX = 'mf-admin-engagement-prefs';
 const PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT = 20;
 const PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY = 1.0;
+
+const buildAdminCombinedPrefsStorageKey = (universityId, userKey = 'session') => {
+  const uni = String(universityId || '').trim();
+  const user = String(userKey || 'session').trim().toLowerCase();
+  if (!uni) return '';
+  return `${ADMIN_COMBINED_PREFS_STORAGE_PREFIX}:${uni}:${user}`;
+};
+const loadAdminCombinedPrefs = (storageKey) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+const saveAdminCombinedPrefs = (storageKey, payload) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return false;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(payload || {}));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 function createProgramTestFitRow() {
   return {
@@ -9472,6 +9500,8 @@ const StakeholderMap = ({
   const markerWriteWarningShownRef = useRef(false);
   const panelBuildingKeyRef = useRef(null);
   const roomSubRef = useRef(null);
+  const adminCombinedPrefsHydratedKeyRef = useRef('');
+  const adminCombinedPrefsRestoringRef = useRef(false);
 
   // Floorplans
   const roomAttrsRef = useRef({});
@@ -13685,6 +13715,11 @@ const StakeholderMap = ({
   // Auth / role
   const [authUser, setAuthUser] = useState(null);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const adminCombinedPrefsStorageKey = useMemo(() => {
+    if (!isAdminCombinedMode || !universityId) return '';
+    const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
+    return buildAdminCombinedPrefsStorageKey(universityId, userKey);
+  }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
 
   // Marker filters (admin)
   const [showStudentMarkers, setShowStudentMarkers] = useState(false);
@@ -17674,6 +17709,85 @@ useEffect(() => {
   function handleAdminSignOut() {
     try { signOut(getAuth()); } catch {}
   }
+
+  useEffect(() => {
+    if (!isAdminCombinedMode || !adminCombinedPrefsStorageKey) return;
+    if (adminCombinedPrefsHydratedKeyRef.current === adminCombinedPrefsStorageKey) return;
+    adminCombinedPrefsHydratedKeyRef.current = adminCombinedPrefsStorageKey;
+
+    const stored = loadAdminCombinedPrefs(adminCombinedPrefsStorageKey);
+    if (!stored) return;
+
+    adminCombinedPrefsRestoringRef.current = true;
+    try {
+      const storedMapView = String(stored?.mapView || '').trim();
+      if (storedMapView === MAP_VIEWS.TECHNICAL || storedMapView === MAP_VIEWS.ASSESSMENT) {
+        setMapView(storedMapView);
+      }
+
+      const storedScope = String(stored?.engagementScopeMode || '').trim().toLowerCase();
+      if (storedScope === 'campus' || storedScope === 'floor') {
+        setEngagementScopeMode(storedScope);
+      }
+
+      const storedBuildingId = String(stored?.selectedBuildingId || '').trim();
+      if (storedBuildingId) {
+        setSelectedBuildingId(storedBuildingId);
+        selectedBuildingIdRef.current = storedBuildingId;
+      }
+
+      const storedBuildingName = String(stored?.selectedBuilding || '').trim();
+      const resolvedBuilding =
+        resolveBuildingNameFromInput(storedBuildingName || storedBuildingId) ||
+        storedBuildingName ||
+        '';
+      if (resolvedBuilding) {
+        setSelectedBuilding(resolvedBuilding);
+      }
+
+      const storedFloor = normalizeFloorIdValue(stored?.selectedFloor || '');
+      if (storedFloor) {
+        setSelectedFloor(storedFloor);
+      }
+    } finally {
+      requestAnimationFrame(() => {
+        adminCombinedPrefsRestoringRef.current = false;
+      });
+    }
+  }, [
+    isAdminCombinedMode,
+    adminCombinedPrefsStorageKey,
+    resolveBuildingNameFromInput,
+    MAP_VIEWS.TECHNICAL,
+    MAP_VIEWS.ASSESSMENT
+  ]);
+
+  useEffect(() => {
+    if (!isAdminCombinedMode || !adminCombinedPrefsStorageKey) return;
+    if (adminCombinedPrefsRestoringRef.current) return;
+    const workflow =
+      mapView === MAP_VIEWS.TECHNICAL
+        ? MAP_VIEWS.TECHNICAL
+        : MAP_VIEWS.ASSESSMENT;
+    saveAdminCombinedPrefs(adminCombinedPrefsStorageKey, {
+      mapView: workflow,
+      engagementScopeMode: engagementScopeMode === 'floor' ? 'floor' : 'campus',
+      selectedBuilding: String(selectedBuilding || '').trim(),
+      selectedBuildingId: String(selectedBuildingId || '').trim(),
+      selectedFloor: normalizeFloorIdValue(selectedFloor || ''),
+      savedAt: Date.now()
+    });
+  }, [
+    isAdminCombinedMode,
+    adminCombinedPrefsStorageKey,
+    mapView,
+    engagementScopeMode,
+    selectedBuilding,
+    selectedBuildingId,
+    selectedFloor,
+    MAP_VIEWS.TECHNICAL,
+    MAP_VIEWS.ASSESSMENT
+  ]);
 
   // ---------- Load building options ----------
   useEffect(() => {

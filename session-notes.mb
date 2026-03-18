@@ -78,3 +78,13 @@ Latest completed work (technical completion tracking)
   - missing section badges (`Codes`, `Engineering`, `Functionality`) when a section has no scores set.
 - Added `Jump To Next Incomplete` action to move directly to the next building needing technical input.
 - Added click-to-focus rows that select the building, open technical assessment, and zoom to the building footprint.
+
+Latest completed work (admin mode memory)
+- Added persisted admin combined preferences (`/admin/engagement`) in local storage keyed by university + user.
+- Restores on reload:
+  - workflow (`Stakeholder` vs `Technical`)
+  - stakeholder scope (`campus` vs `floor`)
+  - selected building
+  - selected building id
+  - selected floor
+- Persist/restore is isolated to admin combined mode so public and technical-only routes are unaffected.
