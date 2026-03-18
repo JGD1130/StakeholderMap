@@ -8649,6 +8649,9 @@ const StakeholderMap = ({
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
+  const combinedWorkflowFocus = isAdminCombinedMode && mapView === MAP_VIEWS.TECHNICAL
+    ? 'technical'
+    : 'stakeholder';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
     if (showFullMapfluenceControls) {
@@ -8697,6 +8700,19 @@ const StakeholderMap = ({
       setIsTechnicalPanelOpen(true);
     }
   }, [mapView, selectedBuildingId]);
+  const setStakeholderFocus = useCallback(() => {
+    setMapView(MAP_VIEWS.ASSESSMENT);
+    setIsTechnicalPanelOpen(false);
+    setEngagementHeatmapOn(true);
+    setEngagementRoomSentimentOnly(false);
+  }, [MAP_VIEWS.ASSESSMENT]);
+  const setTechnicalFocus = useCallback(() => {
+    setMapView(MAP_VIEWS.TECHNICAL);
+    setEngagementHeatmapOn(false);
+    setEngagementRoomSentimentOn(false);
+    setEngagementRoomSentimentOnly(false);
+    if (selectedBuildingId) setIsTechnicalPanelOpen(true);
+  }, [MAP_VIEWS.TECHNICAL, selectedBuildingId]);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   const closeEngagementHelp = useCallback((e) => {
     try {
@@ -21850,6 +21866,39 @@ useEffect(() => {
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {isAdminCombinedMode && (
+            <div className="control-section" style={{ marginTop: 6, border: '1px solid #d8e0ea', borderRadius: 6, padding: 6, background: '#f8fbff' }}>
+              <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Workflow Focus</h5>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <button
+                  className="btn"
+                  style={{
+                    width: '100%',
+                    fontWeight: combinedWorkflowFocus === 'stakeholder' ? 700 : 500,
+                    borderColor: combinedWorkflowFocus === 'stakeholder' ? '#1f2937' : undefined
+                  }}
+                  onClick={setStakeholderFocus}
+                >
+                  Stakeholder Focus
+                </button>
+                <button
+                  className="btn"
+                  style={{
+                    width: '100%',
+                    fontWeight: combinedWorkflowFocus === 'technical' ? 700 : 500,
+                    borderColor: combinedWorkflowFocus === 'technical' ? '#1f2937' : undefined
+                  }}
+                  onClick={setTechnicalFocus}
+                >
+                  Technical Focus
+                </button>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
+                Stakeholder focus emphasizes marker workflows. Technical focus prioritizes assessment editing.
+              </div>
             </div>
           )}
 

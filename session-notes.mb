@@ -30,3 +30,10 @@ Latest completed work (technical autosave)
 - Drafts are keyed by university + building and restore automatically when reopening that building.
 - Added in-panel save state messaging: Unsaved, Saving draft, Draft restored/saved, Saving to cloud, Saved to cloud, and Error.
 - Kept cloud save as explicit admin-only action and added non-admin hint that local drafts are still being preserved.
+
+Latest completed work (admin combined workflow)
+- Added `Workflow Focus` quick chips in `/admin/engagement`:
+  - Stakeholder Focus
+  - Technical Focus
+- Stakeholder Focus sets assessment view and emphasizes marker/heatmap workflow.
+- Technical Focus jumps to technical view and quiets engagement heat/sentiment overlays for cleaner assessment work.
