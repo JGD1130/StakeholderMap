@@ -179,3 +179,15 @@ Latest completed work (role/permissions polish - phase 2)
     - `Permanently Delete Archived`
 - Added clear read-only messaging in admin engagement controls when signed out/non-admin.
 - Building stakeholder condition toggle in combined admin mode is now disabled for non-admin users, with explicit admin-required hint text.
+
+Latest completed work (release checklist / smoke pass - phase 3)
+- Ran smoke test script and fixed one stale check:
+  - Smoke script was still expecting legacy route `/:universityId/admin/technical`.
+  - Updated smoke checks to current architecture (`/:universityId/admin/engagement` + `/:universityId/technical`) and current admin-write guardrails.
+- Added smoke assertions for current role gates:
+  - admin-only marker placement in admin engagement
+  - admin-required archive/permanent-delete messaging
+  - admin-required building-condition toggle behavior
+- Validation:
+  - `npm.cmd run smoke` passed (`24/24 checks`)
+  - `npm.cmd run build` passed

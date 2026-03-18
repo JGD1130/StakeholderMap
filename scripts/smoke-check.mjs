@@ -41,8 +41,18 @@ mustContain('Assessment save handler is implemented', 'const handleAssessmentSav
 mustContain('Technical panel open sets map view', 'setMapView(MAP_VIEWS.TECHNICAL);')
 
 appMustContain('Technical standalone route exists', 'path="/:universityId/technical"')
-appMustContain('Admin technical route exists', 'path="/:universityId/admin/technical"')
 appMustContain('Admin engagement route exists', 'path="/:universityId/admin/engagement"')
+
+mustContain('Admin engagement marker placement gated by admin role', '? (isAdminUser && stakeholderWorkflowActive && !isTechnicalPanelOpen)')
+mustContain('Archive selected requires admin role', "Admin sign-in required for marker archive actions.")
+mustContain('Permanent delete requires admin role', "Admin sign-in required for permanent delete.")
+mustContain('Building condition toggle disabled for non-admin', 'disabled={!isAdminUser}')
+mustContain('Admin engagement read-only marker message shown', 'Signed out read-only: sign in as campus admin to add markers in this admin route.')
+checks.push({
+  label: 'No legacy admin technical route',
+  ok: !appSource.includes('path="/:universityId/admin/technical"'),
+  detail: 'path="/:universityId/admin/technical"'
+})
 
 const failed = checks.filter((c) => !c.ok)
 const passed = checks.length - failed.length
@@ -56,4 +66,4 @@ if (failed.length) {
   process.exit(1)
 }
 
-console.log('[smoke] All critical engagement/scenario guardrails look good.')
+console.log('[smoke] All critical engagement/technical guardrails look good.')
