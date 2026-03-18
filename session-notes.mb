@@ -139,3 +139,16 @@ Latest completed work (one-click unassigned archive)
   - local-only markers are archived in session state
   - `Undo Last Archive` restores the archived batch
 - Updated quick-filter first chip label to `All Markers` for clarity.
+
+Latest completed work (technical assessment QA hardening - phase 1)
+- Fixed technical assessment save race between local draft autosave and cloud save:
+  - Cloud save now clears any pending autosave timer before writing.
+  - Prevents stale draft writes from reappearing immediately after successful cloud save.
+- Hardened technical cloud save payload:
+  - Uses Firestore merge writes (`setDoc(..., { merge: true })`) to avoid clobbering unrelated future metadata.
+  - Adds `updatedAt` server timestamp on cloud saves.
+- Hardened technical save failure behavior:
+  - On cloud save failure, the current assessment is immediately persisted to local draft storage.
+  - Keeps draft recovery reliable even when cloud save fails mid-session.
+- Minor export hygiene:
+  - Technical missing-items CSV now revokes blob URLs after download.

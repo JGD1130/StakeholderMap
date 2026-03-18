@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './AssessmentPanel.css';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 const scoreOptions = [
@@ -169,15 +169,17 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
     if (!buildingId || !universityId) return;
     const sanitizedId = buildingId.replace(/\//g, '__');
     const ref = doc(db, 'universities', universityId, 'buildingAssessments', sanitizedId);
+    clearAutosaveTimer();
     const dataToSave = {
       ...localAssessment,
       originalId: buildingId,
-      buildingName: localAssessment.buildingName || buildingId
+      buildingName: localAssessment.buildingName || buildingId,
+      updatedAt: serverTimestamp()
     };
     setSaveState({ kind: 'saving-cloud', timestamp: 0, message: '' });
     try {
-      await setDoc(ref, dataToSave);
-      onSave(dataToSave);
+      await setDoc(ref, dataToSave, { merge: true });
+      if (typeof onSave === 'function') onSave(dataToSave);
       if (draftStorageKey) {
         try { window.localStorage?.removeItem(draftStorageKey); } catch {}
       }
@@ -185,6 +187,19 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
       setSaveState({ kind: 'cloud-saved', timestamp: Date.now(), message: '' });
     } catch (err) {
       console.error('Error saving assessment:', err);
+      if (draftStorageKey) {
+        try {
+          const savedAt = Date.now();
+          window.localStorage?.setItem(
+            draftStorageKey,
+            JSON.stringify({
+              savedAt,
+              assessment: localAssessment
+            })
+          );
+        } catch {}
+      }
+      setIsDraftDirty(true);
       setSaveState({ kind: 'error', timestamp: Date.now(), message: 'Cloud save failed. Draft kept locally.' });
       alert('Failed to save assessment to cloud. Local draft is still stored in this browser.');
     }

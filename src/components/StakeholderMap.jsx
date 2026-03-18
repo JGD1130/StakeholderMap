@@ -17787,6 +17787,7 @@ const exportTechnicalMissingItemsCsv = useCallback(() => {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
   setTechnicalProgressMessage(`Exported ${rows.length.toLocaleString()} buildings with missing items.`);
 }, [technicalProgressRows, universityId]);
 const focusTechnicalBuilding = useCallback((buildingId) => {
