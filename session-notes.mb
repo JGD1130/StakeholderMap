@@ -97,3 +97,14 @@ Latest completed work (technical progress utilities)
   - missing section list
   - missing field count + field list
 - Technical checklist panel now reports `Visible` count and supports filtered review workflows.
+
+Latest completed work (admin marker hard-delete safety)
+- Replaced hard delete behavior in `Admin Data Tools` with soft archive behavior:
+  - `Archive Selected` now sets marker archive fields instead of deleting records.
+  - Archived markers are hidden from normal map marker/heatmap/sentiment workflows by default.
+- Added archive visibility + recovery controls:
+  - `Show archived markers in filters/list` toggle
+  - `Undo Last Archive` one-click restore
+- Added archive metadata to filtered CSV export:
+  - `IsArchived`, `ArchivedAt`, `ArchivedBy`
+- Added active/archived counts in admin tools for quick hygiene checks.

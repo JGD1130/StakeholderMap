@@ -8645,6 +8645,13 @@ const toTimestampIso = (value) => {
     return '';
   }
 };
+const isMarkerArchived = (marker) => {
+  if (!marker || typeof marker !== 'object') return false;
+  if (marker.isArchived === true) return true;
+  if (marker.archived === true) return true;
+  if (marker.archivedAt) return true;
+  return false;
+};
 const StakeholderMap = ({
   config,
   universityId,
@@ -13737,8 +13744,11 @@ const StakeholderMap = ({
   const [markerToolFloorFilter, setMarkerToolFloorFilter] = useState('__all__');
   const [markerToolTypeFilter, setMarkerToolTypeFilter] = useState('__all__');
   const [markerToolRoomFilter, setMarkerToolRoomFilter] = useState('');
+  const [markerToolShowArchived, setMarkerToolShowArchived] = useState(false);
   const [markerToolSelectedIds, setMarkerToolSelectedIds] = useState(new Set());
   const [markerToolBusy, setMarkerToolBusy] = useState(false);
+  const [markerToolUndoBusy, setMarkerToolUndoBusy] = useState(false);
+  const [markerToolLastArchivedIds, setMarkerToolLastArchivedIds] = useState([]);
   const [markerToolMessage, setMarkerToolMessage] = useState('');
   const [technicalProgressShowIncompleteOnly, setTechnicalProgressShowIncompleteOnly] = useState(false);
   const [technicalProgressMessage, setTechnicalProgressMessage] = useState('');
@@ -16993,24 +17003,27 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   };
 
   // Marker sets
+const activeMarkers = useMemo(() => (
+  (markers || []).filter((m) => !isMarkerArchived(m))
+), [markers]);
 const filteredMarkers = useMemo(() => {
-  if (mode !== 'admin') return markers;
-  return markers.filter((m) => {
+  if (mode !== 'admin') return activeMarkers;
+  return activeMarkers.filter((m) => {
     const p = (m.persona || '').toLowerCase(); // ? fixed: closed empty string
     if (p.includes('student')) return showStudentMarkers;
     if (p.includes('staff') || p.includes('faculty')) return showStaffMarkers;
     return true; // keep admin/legacy visible
   });
-}, [markers, showStudentMarkers, showStaffMarkers, mode]);
+}, [activeMarkers, showStudentMarkers, showStaffMarkers, mode]);
 const scopedEngagementMarkers = useMemo(() => {
-  if (!engagementMode) return markers;
-  if (!loadedSingleFloor) return markers;
+  if (!engagementMode) return activeMarkers;
+  if (!loadedSingleFloor) return activeMarkers;
   const ctx = currentFloorContextRef.current || {};
   const targetBuildingId = bId(ctx?.buildingId || selectedBuildingId || selectedBuilding || '');
   const targetFloorId = fId(ctx?.floorId || selectedFloor || '');
   const targetFloorLabel = String(ctx?.floorLabel || selectedFloor || '').trim();
   const floorTokens = normalizeFloorTokens(targetFloorLabel || targetFloorId);
-  return (markers || []).filter((m) => {
+  return (activeMarkers || []).filter((m) => {
     const markerBuildingId = bId(m?.buildingId || m?.buildingName || m?.building || '');
     if (!markerBuildingId || (targetBuildingId && markerBuildingId !== targetBuildingId)) return false;
     const markerFloorRaw = String(m?.floorId || m?.floorLabel || m?.floor || '').trim();
@@ -17019,7 +17032,7 @@ const scopedEngagementMarkers = useMemo(() => {
     if (floorTokens.length) return floorMatchesTokens(markerFloorRaw, floorTokens);
     return false;
   });
-}, [markers, engagementMode, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
+}, [activeMarkers, engagementMode, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
 const scopedEngagementHeatmapData = useMemo(() => ({
   type: 'FeatureCollection',
   features: (scopedEngagementMarkers || [])
@@ -17062,6 +17075,10 @@ const adminEngagementMarkerRows = useMemo(() => {
       const lat = Number(marker?.coordinates?.[1]);
       const createdAtMs = parseFirestoreTimestampMs(marker?.createdAt);
       const createdAtIso = toTimestampIso(marker?.createdAt);
+      const archivedAtMs = parseFirestoreTimestampMs(marker?.archivedAt);
+      const archivedAtIso = toTimestampIso(marker?.archivedAt);
+      const archivedBy = String(marker?.archivedBy || '').trim();
+      const isArchived = isMarkerArchived(marker);
       const buildingDisplay = buildingNameRaw || buildingIdRaw || 'Unknown Building';
       const floorDisplay = floorLabelRaw || floorIdRaw || '';
       const roomDisplay = roomNumber || roomLabel || roomId || revitId || '';
@@ -17088,6 +17105,10 @@ const adminEngagementMarkerRows = useMemo(() => {
         createdAtMs,
         createdAtIso,
         createdAtRaw: marker?.createdAt || null,
+        archivedAtMs,
+        archivedAtIso,
+        archivedBy,
+        isArchived,
         buildingDisplay,
         floorDisplay,
         roomDisplay,
@@ -17149,6 +17170,7 @@ const markerToolFilteredRows = useMemo(() => {
     ? markerToolRowsByBuildingFloor
     : markerToolRowsByBuildingFloor.filter((row) => row.typeFilterKey === markerToolTypeFilter)
   ).filter((row) => {
+    if (!markerToolShowArchived && row.isArchived) return false;
     if (!roomNeedle) return true;
     return row.roomSearchText.includes(roomNeedle);
   });
@@ -17156,11 +17178,17 @@ const markerToolFilteredRows = useMemo(() => {
     if ((b.createdAtMs || 0) !== (a.createdAtMs || 0)) return (b.createdAtMs || 0) - (a.createdAtMs || 0);
     return String(a.id).localeCompare(String(b.id));
   });
-}, [markerToolRowsByBuildingFloor, markerToolTypeFilter, markerToolRoomFilter]);
+}, [markerToolRowsByBuildingFloor, markerToolTypeFilter, markerToolRoomFilter, markerToolShowArchived]);
 const markerToolSelectedRows = useMemo(() => {
   if (!markerToolSelectedIds.size) return [];
   return adminEngagementMarkerRows.filter((row) => markerToolSelectedIds.has(row.id));
 }, [adminEngagementMarkerRows, markerToolSelectedIds]);
+const markerToolArchivedCount = useMemo(
+  () => adminEngagementMarkerRows.filter((row) => row.isArchived).length,
+  [adminEngagementMarkerRows]
+);
+const markerToolActiveCount = Math.max(0, adminEngagementMarkerRows.length - markerToolArchivedCount);
+const markerToolCanUndoArchive = markerToolLastArchivedIds.length > 0;
 useEffect(() => {
   if (markerToolFloorFilter === '__all__') return;
   const floorStillValid = markerToolFloorOptions.some((opt) => opt.value === markerToolFloorFilter);
@@ -17229,7 +17257,10 @@ const exportFilteredMarkersCsv = useCallback(() => {
     'Longitude',
     'Latitude',
     'CreatedAt',
-    'LocalOnly'
+    'LocalOnly',
+    'IsArchived',
+    'ArchivedAt',
+    'ArchivedBy'
   ];
   const lines = [headers.join(',')];
   markerToolFilteredRows.forEach((row) => {
@@ -17250,7 +17281,10 @@ const exportFilteredMarkersCsv = useCallback(() => {
       esc(row.lng),
       esc(row.lat),
       esc(row.createdAtIso),
-      esc(row.localOnly ? 'true' : 'false')
+      esc(row.localOnly ? 'true' : 'false'),
+      esc(row.isArchived ? 'true' : 'false'),
+      esc(row.archivedAtIso),
+      esc(row.archivedBy)
     ].join(','));
   });
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -17262,22 +17296,107 @@ const exportFilteredMarkersCsv = useCallback(() => {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
   setMarkerToolMessage(`Exported ${markerToolFilteredRows.length.toLocaleString()} markers to CSV.`);
 }, [markerToolFilteredRows, universityId]);
-const deleteSelectedMarkers = useCallback(async () => {
+const archiveSelectedMarkers = useCallback(async () => {
   if (markerToolBusy) return;
   if (!markerToolSelectedRows.length) {
-    setMarkerToolMessage('No selected markers to delete.');
+    setMarkerToolMessage('No selected markers to archive.');
     return;
   }
-  const persistedRows = markerToolSelectedRows.filter((row) => !row.localOnly);
-  const localRows = markerToolSelectedRows.filter((row) => row.localOnly);
+  const rowsToArchive = markerToolSelectedRows.filter((row) => !row.isArchived);
+  if (!rowsToArchive.length) {
+    setMarkerToolMessage('Selected markers are already archived.');
+    return;
+  }
+  const persistedRows = rowsToArchive.filter((row) => !row.localOnly);
+  const localRows = rowsToArchive.filter((row) => row.localOnly);
   const confirmMessage = persistedRows.length
-    ? `Delete ${markerToolSelectedRows.length.toLocaleString()} selected markers from cloud? This cannot be undone.`
-    : `Remove ${localRows.length.toLocaleString()} local-only markers from this session?`;
+    ? `Archive ${rowsToArchive.length.toLocaleString()} selected markers in cloud? You can undo the last archive.`
+    : `Archive ${localRows.length.toLocaleString()} local-only markers for this session?`;
   if (!window.confirm(confirmMessage)) return;
   setMarkerToolBusy(true);
-  setMarkerToolMessage(persistedRows.length ? 'Deleting selected markers from cloud...' : 'Removing local markers...');
+  setMarkerToolMessage(persistedRows.length ? 'Archiving selected markers in cloud...' : 'Archiving local markers...');
+  try {
+    const archivedByValue = String(authUser?.email || authUser?.uid || 'admin').trim() || 'admin';
+    const archivedAtDate = new Date();
+    const chunkSize = 400;
+    for (let i = 0; i < persistedRows.length; i += chunkSize) {
+      const chunk = persistedRows.slice(i, i + chunkSize);
+      if (!chunk.length) continue;
+      const batch = writeBatch(db);
+      chunk.forEach((row) => {
+        const markerId = String(row.id || '').trim();
+        if (!markerId) return;
+        batch.set(doc(markersCollection, markerId), {
+          isArchived: true,
+          archived: true,
+          archivedAt: serverTimestamp(),
+          archivedBy: archivedByValue,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      });
+      await batch.commit();
+    }
+    const archivedIds = new Set(rowsToArchive.map((row) => row.id));
+    setMarkers((prev) => (prev || []).map((m) => {
+      const markerId = String(m?.id || '').trim();
+      if (!archivedIds.has(markerId)) return m;
+      return {
+        ...m,
+        isArchived: true,
+        archived: true,
+        archivedAt: m?.archivedAt || archivedAtDate,
+        archivedBy: m?.archivedBy || archivedByValue,
+        updatedAt: m?.updatedAt || archivedAtDate
+      };
+    }));
+    setSessionMarkers((prev) => (prev || []).map((m) => {
+      const markerId = String(m?.id || '').trim();
+      if (!archivedIds.has(markerId)) return m;
+      return {
+        ...m,
+        isArchived: true,
+        archived: true,
+        archivedAt: m?.archivedAt || archivedAtDate,
+        archivedBy: m?.archivedBy || archivedByValue,
+        updatedAt: m?.updatedAt || archivedAtDate
+      };
+    }));
+    setMarkerToolLastArchivedIds(Array.from(archivedIds));
+    setMarkerToolSelectedIds(new Set());
+    const resultParts = [];
+    if (persistedRows.length) resultParts.push(`${persistedRows.length.toLocaleString()} cloud`);
+    if (localRows.length) resultParts.push(`${localRows.length.toLocaleString()} local`);
+    setMarkerToolMessage(`Archived ${resultParts.join(' + ')} markers. Use Undo Last Archive to restore.`);
+  } catch (err) {
+    console.warn('Marker bulk archive failed', err);
+    setMarkerToolMessage('Archive failed. See console for details.');
+  } finally {
+    setMarkerToolBusy(false);
+  }
+}, [markerToolBusy, markerToolSelectedRows, markersCollection, authUser?.email, authUser?.uid]);
+const undoLastArchiveMarkers = useCallback(async () => {
+  if (markerToolUndoBusy) return;
+  if (!markerToolLastArchivedIds.length) {
+    setMarkerToolMessage('No recent archive action to undo.');
+    return;
+  }
+  const rowById = new Map(adminEngagementMarkerRows.map((row) => [row.id, row]));
+  const rowsToRestore = markerToolLastArchivedIds
+    .map((id) => rowById.get(id))
+    .filter(Boolean)
+    .filter((row) => row.isArchived);
+  if (!rowsToRestore.length) {
+    setMarkerToolLastArchivedIds([]);
+    setMarkerToolMessage('Nothing left to restore.');
+    return;
+  }
+  const persistedRows = rowsToRestore.filter((row) => !row.localOnly);
+  const restoredIds = new Set(rowsToRestore.map((row) => row.id));
+  setMarkerToolUndoBusy(true);
+  setMarkerToolMessage('Restoring archived markers...');
   try {
     const chunkSize = 400;
     for (let i = 0; i < persistedRows.length; i += chunkSize) {
@@ -17287,25 +17406,52 @@ const deleteSelectedMarkers = useCallback(async () => {
       chunk.forEach((row) => {
         const markerId = String(row.id || '').trim();
         if (!markerId) return;
-        batch.delete(doc(markersCollection, markerId));
+        batch.set(doc(markersCollection, markerId), {
+          isArchived: false,
+          archived: false,
+          archivedAt: null,
+          archivedBy: null,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       });
       await batch.commit();
     }
-    const deletedIds = new Set(markerToolSelectedRows.map((row) => row.id));
-    setMarkers((prev) => (prev || []).filter((m) => !deletedIds.has(String(m?.id || '').trim())));
-    setSessionMarkers((prev) => (prev || []).filter((m) => !deletedIds.has(String(m?.id || '').trim())));
+    setMarkers((prev) => (prev || []).map((m) => {
+      const markerId = String(m?.id || '').trim();
+      if (!restoredIds.has(markerId)) return m;
+      return {
+        ...m,
+        isArchived: false,
+        archived: false,
+        archivedAt: null,
+        archivedBy: null
+      };
+    }));
+    setSessionMarkers((prev) => (prev || []).map((m) => {
+      const markerId = String(m?.id || '').trim();
+      if (!restoredIds.has(markerId)) return m;
+      return {
+        ...m,
+        isArchived: false,
+        archived: false,
+        archivedAt: null,
+        archivedBy: null
+      };
+    }));
+    setMarkerToolLastArchivedIds([]);
     setMarkerToolSelectedIds(new Set());
-    const resultParts = [];
-    if (persistedRows.length) resultParts.push(`${persistedRows.length.toLocaleString()} cloud`);
-    if (localRows.length) resultParts.push(`${localRows.length.toLocaleString()} local`);
-    setMarkerToolMessage(`Deleted ${resultParts.join(' + ')} markers.`);
+    const localCount = rowsToRestore.length - persistedRows.length;
+    const restoredParts = [];
+    if (persistedRows.length) restoredParts.push(`${persistedRows.length.toLocaleString()} cloud`);
+    if (localCount > 0) restoredParts.push(`${localCount.toLocaleString()} local`);
+    setMarkerToolMessage(`Restored ${restoredParts.join(' + ')} archived markers.`);
   } catch (err) {
-    console.warn('Marker bulk delete failed', err);
-    setMarkerToolMessage('Delete failed. See console for details.');
+    console.warn('Marker archive undo failed', err);
+    setMarkerToolMessage('Undo failed. See console for details.');
   } finally {
-    setMarkerToolBusy(false);
+    setMarkerToolUndoBusy(false);
   }
-}, [markerToolBusy, markerToolSelectedRows, markersCollection]);
+}, [markerToolUndoBusy, markerToolLastArchivedIds, adminEngagementMarkerRows, markersCollection]);
 const technicalProgressRows = useMemo(() => {
   const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
   const rows = [];
@@ -22822,16 +22968,35 @@ useEffect(() => {
             >
               <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Admin Data Tools</h5>
               <div style={{ fontSize: 11, color: '#5b6677' }}>
-                Total: {adminEngagementMarkerRows.length.toLocaleString()} markers
+                Active: {markerToolActiveCount.toLocaleString()}
+                {'  '}|{'  '}Archived: {markerToolArchivedCount.toLocaleString()}
                 {'  '}|{'  '}Filtered: {markerToolFilteredRows.length.toLocaleString()}
                 {'  '}|{'  '}Selected: {markerToolSelectedRows.length.toLocaleString()}
               </div>
+              <label
+                style={{
+                  marginTop: 6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 11.5,
+                  color: '#334155'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={markerToolShowArchived}
+                  onChange={(e) => setMarkerToolShowArchived(Boolean(e.target.checked))}
+                  disabled={markerToolBusy || markerToolUndoBusy}
+                />
+                Show archived markers in filters/list
+              </label>
 
               <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
                 <select
                   value={markerToolBuildingFilter}
                   onChange={(e) => setMarkerToolBuildingFilter(e.target.value)}
-                  disabled={markerToolBusy}
+                  disabled={markerToolBusy || markerToolUndoBusy}
                 >
                   <option value="__all__">All buildings</option>
                   {markerToolBuildingOptions.map((opt) => (
@@ -22841,7 +23006,7 @@ useEffect(() => {
                 <select
                   value={markerToolFloorFilter}
                   onChange={(e) => setMarkerToolFloorFilter(e.target.value)}
-                  disabled={markerToolBusy}
+                  disabled={markerToolBusy || markerToolUndoBusy}
                 >
                   <option value="__all__">All floors</option>
                   {markerToolFloorOptions.map((opt) => (
@@ -22853,13 +23018,13 @@ useEffect(() => {
                   placeholder="Room filter (number / id / label)"
                   value={markerToolRoomFilter}
                   onChange={(e) => setMarkerToolRoomFilter(e.target.value)}
-                  disabled={markerToolBusy}
+                  disabled={markerToolBusy || markerToolUndoBusy}
                   style={{ width: '100%' }}
                 />
                 <select
                   value={markerToolTypeFilter}
                   onChange={(e) => setMarkerToolTypeFilter(e.target.value)}
-                  disabled={markerToolBusy}
+                  disabled={markerToolBusy || markerToolUndoBusy}
                 >
                   <option value="__all__">All marker types</option>
                   {markerToolTypeOptions.map((opt) => (
@@ -22872,28 +23037,28 @@ useEffect(() => {
                 <button
                   className="btn"
                   onClick={selectAllFilteredMarkers}
-                  disabled={markerToolBusy || !markerToolFilteredRows.length}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolFilteredRows.length}
                 >
                   Select Filtered
                 </button>
                 <button
                   className="btn"
                   onClick={clearMarkerSelection}
-                  disabled={markerToolBusy || !markerToolSelectedRows.length}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolSelectedRows.length}
                 >
                   Clear Selection
                 </button>
                 <button
                   className="btn"
                   onClick={exportFilteredMarkersCsv}
-                  disabled={markerToolBusy || !markerToolFilteredRows.length}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolFilteredRows.length}
                 >
                   Export Filtered CSV
                 </button>
                 <button
                   className="btn"
-                  onClick={deleteSelectedMarkers}
-                  disabled={markerToolBusy || !markerToolSelectedRows.length}
+                  onClick={archiveSelectedMarkers}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolSelectedRows.length}
                   style={{
                     background: markerToolSelectedRows.length ? '#fee2e2' : undefined,
                     borderColor: markerToolSelectedRows.length ? '#fca5a5' : undefined,
@@ -22902,8 +23067,24 @@ useEffect(() => {
                   }}
                 >
                   {markerToolBusy
-                    ? 'Deleting...'
-                    : `Delete Selected (${markerToolSelectedRows.length.toLocaleString()})`}
+                    ? 'Archiving...'
+                    : `Archive Selected (${markerToolSelectedRows.length.toLocaleString()})`}
+                </button>
+                <button
+                  className="btn"
+                  onClick={undoLastArchiveMarkers}
+                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolCanUndoArchive}
+                  style={{
+                    gridColumn: '1 / -1',
+                    background: markerToolCanUndoArchive ? '#eef2ff' : undefined,
+                    borderColor: markerToolCanUndoArchive ? '#c7d2fe' : undefined,
+                    color: markerToolCanUndoArchive ? '#3730a3' : undefined,
+                    fontWeight: markerToolCanUndoArchive ? 700 : undefined
+                  }}
+                >
+                  {markerToolUndoBusy
+                    ? 'Undoing Archive...'
+                    : `Undo Last Archive (${markerToolLastArchivedIds.length.toLocaleString()})`}
                 </button>
               </div>
 
@@ -22948,13 +23129,14 @@ useEffect(() => {
                           type="checkbox"
                           checked={checked}
                           onChange={() => toggleMarkerToolSelection(row.id)}
-                          disabled={markerToolBusy}
+                          disabled={markerToolBusy || markerToolUndoBusy}
                           style={{ marginTop: 1 }}
                         />
-                        <span style={{ color: '#334155' }}>
+                        <span style={{ color: row.isArchived ? '#64748b' : '#334155' }}>
                           <b>{typeLabel}</b>
                           {locationLabel ? ` - ${locationLabel}` : ''}
                           {row.comment ? ` - ${row.comment}` : ''}
+                          {row.isArchived ? ' (Archived)' : ''}
                         </span>
                       </label>
                     );
