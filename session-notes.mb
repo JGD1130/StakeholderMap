@@ -53,3 +53,8 @@ Latest completed work (panel/visibility cleanup)
   - Technical workflow: blue technical-assessment progress shading after saves.
 - Removed stakeholder panel buttons: `Export PNG`, `Presentation Mode`, `Export Clean PNG` (and removed `Export Clean PNG` from presentation quick controls).
 - Updated floorplan plain fill to a solid off-white (no transparency bleed-through).
+
+Latest completed work (admin engagement floorplan + panel usability)
+- In `/admin/engagement`, switching workflow to `Technical` now unloads any currently loaded floorplan so technical mode starts on campus view.
+- Fixed stakeholder marker placement inside loaded floorplans while keeping building-click blocking for whole-building condition edits in campus scope.
+- Made the left controls panel scrollable (`max-height` + vertical overflow) so lower sections (including Floorplans) remain reachable when Room Sentiment content is expanded.

@@ -18327,6 +18327,13 @@ useEffect(() => {
 }, [engagementMode, isEngagementFloorScope, loadedSingleFloor, handleUnloadFloorplan]);
 
 useEffect(() => {
+  if (!engagementMode || !isAdminCombinedMode) return;
+  if (!technicalWorkflowActive) return;
+  if (!loadedSingleFloor) return;
+  handleUnloadFloorplan();
+}, [engagementMode, isAdminCombinedMode, technicalWorkflowActive, loadedSingleFloor, handleUnloadFloorplan]);
+
+useEffect(() => {
   if (!engagementMode) return;
   if (!isEngagementFloorScope) {
     setEngagementHeatmapOn(true);
@@ -19178,7 +19185,8 @@ useEffect(() => {
         ? (stakeholderWorkflowActive && !isTechnicalPanelOpen)
         : mapView === MAP_VIEWS.SPACE_DATA;
       if (!canDropMarker) return;
-      if (isAdminCombinedMode && stakeholderConditionModeOn) {
+      const isFloorplanStakeholderScope = isEngagementFloorScope && loadedSingleFloor;
+      if (isAdminCombinedMode && stakeholderConditionModeOn && !isFloorplanStakeholderScope) {
         try {
           const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] }) || [];
           if (buildingHits.length > 0) return;
@@ -21832,7 +21840,17 @@ useEffect(() => {
     )}
 
     {isControlsVisible && !presentationMode && (
-      <div className="map-controls-panel" style={{ width: 270, fontSize: 12.5, lineHeight: 1.25 }}>
+      <div
+        className="map-controls-panel"
+        style={{
+          width: 270,
+          fontSize: 12.5,
+          lineHeight: 1.25,
+          maxHeight: 'calc(100vh - 40px)',
+          overflowY: 'auto',
+          overflowX: 'hidden'
+        }}
+      >
         <div className="map-controls">
           <div
             className="control-section"
