@@ -3,7 +3,9 @@ import path from 'node:path'
 
 const repoRoot = process.cwd()
 const stakeMapPath = path.join(repoRoot, 'src', 'components', 'StakeholderMap.jsx')
+const appPath = path.join(repoRoot, 'src', 'App.jsx')
 const source = fs.readFileSync(stakeMapPath, 'utf8')
+const appSource = fs.readFileSync(appPath, 'utf8')
 
 const checks = []
 
@@ -13,6 +15,9 @@ function mustContain(label, fragment) {
 
 function mustNotContain(label, fragment) {
   checks.push({ label, ok: !source.includes(fragment), detail: fragment })
+}
+function appMustContain(label, fragment) {
+  checks.push({ label, ok: appSource.includes(fragment), detail: fragment })
 }
 
 mustContain('Directional halve button exists: vertical', 'Halve Vertical')
@@ -31,6 +36,13 @@ mustContain('Engagement help close wired to Close button', 'className="close-but
 mustContain('Green heat halo layer id defined', "ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID = 'engagement-heat-rarely-halo-layer'")
 mustContain('Green heat halo layer added as heatmap', "id: ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID")
 mustContain('Green heat halo uses heatmap type', "type: 'heatmap'")
+mustContain('Condition save handler is implemented', 'const handleConditionSave = useCallback(async (buildingIdRaw, nextConditionRaw)')
+mustContain('Assessment save handler is implemented', 'const handleAssessmentSave = useCallback((savedAssessment)')
+mustContain('Technical panel open sets map view', 'setMapView(MAP_VIEWS.TECHNICAL);')
+
+appMustContain('Technical standalone route exists', 'path="/:universityId/technical"')
+appMustContain('Admin technical route exists', 'path="/:universityId/admin/technical"')
+appMustContain('Admin engagement route exists', 'path="/:universityId/admin/engagement"')
 
 const failed = checks.filter((c) => !c.ok)
 const passed = checks.length - failed.length

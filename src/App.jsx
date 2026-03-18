@@ -1,14 +1,15 @@
 // src/App.jsx --- FINAL CORRECT VERSION ---
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useParams, useLocation } from 'react-router-dom';
 import PublicMapPage from './pages/PublicMapPage.jsx';
 import AdminMapPage from './pages/AdminMapPage.jsx';
 import { getConfig } from './configLoader';
 import { getTenantConfigId, resolveTenant } from './tenants/registry';
 import './App.css';
 
-function UniversityMapLoader({ engagementMode = false }) {
+function UniversityMapLoader({ engagementMode = false, technicalMode = false }) {
   const { universityId, persona } = useParams();
+  const location = useLocation();
   const tenant = resolveTenant(universityId);
   const configId = getTenantConfigId(universityId);
   const config = getConfig(configId);
@@ -20,11 +21,21 @@ function UniversityMapLoader({ engagementMode = false }) {
     return <div>Error: Configuration not found for "{universityId}".</div>;
   }
 
-  const isAdmin = window.location.pathname.includes('/admin');
+  const pathname = String(location?.pathname || '').toLowerCase();
+  const isAdminPath = pathname.includes('/admin');
+  const isAdmin = isAdminPath || technicalMode;
   const mode = isAdmin ? 'admin' : 'public';
 
   if (isAdmin) {
-    return <AdminMapPage config={config} universityId={universityId} tenant={tenant} />;
+    return (
+      <AdminMapPage
+        config={config}
+        universityId={universityId}
+        tenant={tenant}
+        engagementMode={engagementMode}
+        technicalMode={technicalMode}
+      />
+    );
   } else {
     return (
       <PublicMapPage
@@ -32,6 +43,7 @@ function UniversityMapLoader({ engagementMode = false }) {
         universityId={universityId}
         persona={persona}
         engagementMode={engagementMode}
+        technicalMode={technicalMode}
         tenant={tenant}
       />
     );
@@ -44,7 +56,10 @@ function App() {
     <Router basename="/StakeholderMap">
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
+        <Route path="/:universityId/admin/engagement" element={<UniversityMapLoader engagementMode />} />
+        <Route path="/:universityId/admin/technical" element={<UniversityMapLoader technicalMode />} />
         <Route path="/:universityId/engagement" element={<UniversityMapLoader engagementMode />} />
+        <Route path="/:universityId/technical" element={<UniversityMapLoader technicalMode />} />
         {/* THIS IS THE LINE TO FIX */}
         <Route path="/:universityId/:persona" element={<UniversityMapLoader />} /> 
         <Route path="/:universityId/survey" element={<UniversityMapLoader />} />

@@ -8573,7 +8573,15 @@ const setMapLayerVisibility = (map, layerId, visible) => {
     map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
   } catch {}
 };
-const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', persona, engagementMode = false }) => {
+const StakeholderMap = ({
+  config,
+  universityId,
+  tenant = null,
+  mode = 'public',
+  persona,
+  engagementMode = false,
+  technicalMode = false
+}) => {
   const mapPageRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -8602,7 +8610,7 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     ASSESSMENT: 'assessment',
     TECHNICAL: 'technical'
   };
-  const defaultMapView = MAP_VIEWS.SPACE_DATA;
+  const defaultMapView = technicalMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA;
   const [mapView, setMapView] = useState(defaultMapView);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -8616,15 +8624,28 @@ const StakeholderMap = ({ config, universityId, tenant = null, mode = 'public', 
     }
   });
   const [presentationExporting, setPresentationExporting] = useState(false);
-  const MAP_VIEW_OPTIONS = [
-    { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }
-  ];
+  const MAP_VIEW_OPTIONS = useMemo(() => {
+    const options = [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
+    if (mode === 'admin') {
+      options.push(
+        { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment' },
+        { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
+      );
+    }
+    return options;
+  }, [mode]);
   const visibleMapViewOptions = mode === 'admin'
     ? MAP_VIEW_OPTIONS
     : MAP_VIEW_OPTIONS.filter((opt) => opt.value === MAP_VIEWS.SPACE_DATA);
   const showMapViewSelector = visibleMapViewOptions.length > 1;
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  useEffect(() => {
+    if (!technicalMode) return;
+    if (mapView === MAP_VIEWS.SPACE_DATA) {
+      setMapView(MAP_VIEWS.ASSESSMENT);
+    }
+  }, [technicalMode, mapView]);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   const closeEngagementHelp = useCallback((e) => {
     try {
@@ -20056,10 +20077,50 @@ useEffect(() => {
   };
 }, [mapLoaded, showBuildingStats]);
 
-  // TEMP: prevent crash until we wire real persistence
-  const handleConditionSave = useCallback(() => {
-    // no-op for now
-  }, []);
+  const handleAssessmentSave = useCallback((savedAssessment) => {
+    const buildingKey = String(
+      savedAssessment?.originalId ||
+      savedAssessment?.buildingName ||
+      selectedBuildingId ||
+      ''
+    ).trim();
+    if (!buildingKey) return;
+    setBuildingAssessments((prev) => ({
+      ...(prev || {}),
+      [buildingKey]: {
+        ...(prev?.[buildingKey] || {}),
+        ...(savedAssessment || {}),
+        originalId: buildingKey
+      }
+    }));
+  }, [selectedBuildingId]);
+
+  const handleConditionSave = useCallback(async (buildingIdRaw, nextConditionRaw) => {
+    if (!isAdminUser) {
+      alert('Save failed: you are not signed in as an admin.');
+      return;
+    }
+    const buildingKey = String(buildingIdRaw || selectedBuildingId || '').trim();
+    const nextCondition = String(nextConditionRaw || '').trim();
+    if (!buildingKey || !nextCondition || !universityId) return;
+
+    const sanitizedId = buildingKey.replace(/\//g, '__');
+    const conditionRef = doc(db, 'universities', universityId, 'buildingConditions', sanitizedId);
+    try {
+      await setDoc(conditionRef, {
+        condition: nextCondition,
+        originalId: buildingKey,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setBuildingConditions((prev) => ({
+        ...(prev || {}),
+        [buildingKey]: nextCondition
+      }));
+    } catch (err) {
+      console.error('Error saving stakeholder condition:', err);
+      alert('Failed to save condition. See console for details.');
+    }
+  }, [isAdminUser, selectedBuildingId, universityId]);
 
   const handleExportBuilding = useCallback(async () => {
     const buildingKey = panelBuildingKeyRef.current || selectedBuildingId || selectedBuilding;
@@ -20660,7 +20721,10 @@ useEffect(() => {
               buildingName={config?.buildings?.features?.find(f => f.properties.id === selectedBuildingId)?.properties?.name}
               currentCondition={buildingConditions[selectedBuildingId]}
               onSave={handleConditionSave}
-              onOpenTechnical={() => setIsTechnicalPanelOpen(true)}
+              onOpenTechnical={() => {
+                setMapView(MAP_VIEWS.TECHNICAL);
+                setIsTechnicalPanelOpen(true);
+              }}
               onClose={() => {
                 setSelectedBuildingId(null);
                 setIsTechnicalPanelOpen(false);
@@ -20678,7 +20742,10 @@ useEffect(() => {
             universityId={universityId}
             panelPos={panelAnchor}
             isAdminRole={isAdminUser}
-            onClose={() => setIsTechnicalPanelOpen(false)}
+            onClose={() => {
+              setIsTechnicalPanelOpen(false);
+              setMapView(MAP_VIEWS.ASSESSMENT);
+            }}
             onSave={handleAssessmentSave}
           />
         )}
