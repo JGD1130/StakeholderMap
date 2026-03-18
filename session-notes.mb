@@ -168,3 +168,14 @@ Latest completed work (technical assessment QA hardening - phase 3 UI polish)
 - Improved Technical Progress list readability:
   - Added `Complete` status chip on fully complete buildings.
   - Added missing field count in each row summary (`x fields missing`).
+
+Latest completed work (role/permissions polish - phase 2)
+- Tightened admin engagement write permissions so admin-only actions require campus admin role:
+  - Marker placement on `/admin/engagement` now requires admin sign-in.
+  - Marker archive actions now require admin sign-in:
+    - `Archive Selected`
+    - `Archive Unassigned`
+    - `Undo Last Archive`
+    - `Permanently Delete Archived`
+- Added clear read-only messaging in admin engagement controls when signed out/non-admin.
+- Building stakeholder condition toggle in combined admin mode is now disabled for non-admin users, with explicit admin-required hint text.

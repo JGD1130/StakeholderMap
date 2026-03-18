@@ -17416,6 +17416,10 @@ const exportFilteredMarkersCsv = useCallback(() => {
   setMarkerToolMessage(`Exported ${markerToolFilteredRows.length.toLocaleString()} markers to CSV.`);
 }, [markerToolFilteredRows, universityId]);
 const archiveSelectedMarkers = useCallback(async () => {
+  if (!isAdminUser) {
+    setMarkerToolMessage('Admin sign-in required for marker archive actions.');
+    return;
+  }
   if (markerToolBusy) return;
   if (!markerToolSelectedRows.length) {
     setMarkerToolMessage('No selected markers to archive.');
@@ -17492,8 +17496,12 @@ const archiveSelectedMarkers = useCallback(async () => {
   } finally {
     setMarkerToolBusy(false);
   }
-}, [markerToolBusy, markerToolSelectedRows, markersCollection, authUser?.email, authUser?.uid]);
+}, [isAdminUser, markerToolBusy, markerToolSelectedRows, markersCollection, authUser?.email, authUser?.uid]);
 const archiveFilteredUnassignedMarkers = useCallback(async () => {
+  if (!isAdminUser) {
+    setMarkerToolMessage('Admin sign-in required for marker archive actions.');
+    return;
+  }
   if (markerToolBusy || markerToolUndoBusy) return;
   const rowsToArchive = markerToolFilteredUnassignedArchivableRows;
   if (!rowsToArchive.length) {
@@ -17571,8 +17579,12 @@ const archiveFilteredUnassignedMarkers = useCallback(async () => {
   } finally {
     setMarkerToolBusy(false);
   }
-}, [markerToolBusy, markerToolUndoBusy, markerToolFilteredUnassignedArchivableRows, markersCollection, authUser?.email, authUser?.uid]);
+}, [isAdminUser, markerToolBusy, markerToolUndoBusy, markerToolFilteredUnassignedArchivableRows, markersCollection, authUser?.email, authUser?.uid]);
 const undoLastArchiveMarkers = useCallback(async () => {
+  if (!isAdminUser) {
+    setMarkerToolMessage('Admin sign-in required for marker archive actions.');
+    return;
+  }
   if (markerToolUndoBusy) return;
   if (!markerToolLastArchivedIds.length) {
     setMarkerToolMessage('No recent archive action to undo.');
@@ -17646,8 +17658,12 @@ const undoLastArchiveMarkers = useCallback(async () => {
   } finally {
     setMarkerToolUndoBusy(false);
   }
-}, [markerToolUndoBusy, markerToolLastArchivedIds, adminEngagementMarkerRows, markersCollection]);
+}, [isAdminUser, markerToolUndoBusy, markerToolLastArchivedIds, adminEngagementMarkerRows, markersCollection]);
 const permanentlyDeleteArchivedSelectedMarkers = useCallback(async () => {
+  if (!isAdminUser) {
+    setMarkerToolMessage('Admin sign-in required for permanent delete.');
+    return;
+  }
   if (markerToolBusy || markerToolUndoBusy) return;
   const rowsToDelete = markerToolSelectedArchivedRows;
   if (!rowsToDelete.length) {
@@ -17701,7 +17717,7 @@ const permanentlyDeleteArchivedSelectedMarkers = useCallback(async () => {
   } finally {
     setMarkerToolBusy(false);
   }
-}, [markerToolBusy, markerToolUndoBusy, markerToolSelectedArchivedRows, markersCollection]);
+}, [isAdminUser, markerToolBusy, markerToolUndoBusy, markerToolSelectedArchivedRows, markersCollection]);
 const technicalProgressRows = useMemo(() => {
   const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
   const rows = [];
@@ -20207,7 +20223,7 @@ useEffect(() => {
     const onEngagementClick = (e) => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
       const canDropMarker = mode === 'admin'
-        ? (stakeholderWorkflowActive && !isTechnicalPanelOpen)
+        ? (isAdminUser && stakeholderWorkflowActive && !isTechnicalPanelOpen)
         : mapView === MAP_VIEWS.SPACE_DATA;
       if (!canDropMarker) return;
       const isFloorplanStakeholderScope = isEngagementFloorScope && loadedSingleFloor;
@@ -20253,7 +20269,7 @@ useEffect(() => {
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [engagementMode, mode, mapLoaded, mapView, stakeholderWorkflowActive, isAdminCombinedMode, stakeholderConditionModeOn, isTechnicalPanelOpen, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
+  }, [engagementMode, mode, mapLoaded, mapView, stakeholderWorkflowActive, isAdminCombinedMode, stakeholderConditionModeOn, isTechnicalPanelOpen, isAdminUser, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -23109,11 +23125,14 @@ useEffect(() => {
                 className="btn"
                 style={{ width: '100%', fontWeight: 600 }}
                 onClick={() => setStakeholderConditionModeOn((prev) => !prev)}
+                disabled={!isAdminUser}
               >
                 {stakeholderConditionModeOn ? 'Disable Building Condition Panel' : 'Enable Building Condition Panel'}
               </button>
               <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
-                When enabled, clicking a building opens the stakeholder condition editor for that whole building.
+                {isAdminUser
+                  ? 'When enabled, clicking a building opens the stakeholder condition editor for that whole building.'
+                  : 'Admin sign-in required to edit whole-building stakeholder condition.'}
               </div>
             </div>
           )}
@@ -23122,6 +23141,11 @@ useEffect(() => {
             <div className="legend" style={{ marginTop: 6 }}>
               <h4>Legend</h4>
               <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
+                {isAdminCombinedMode && !isAdminUser && (
+                  <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 8px' }}>
+                    Signed out read-only: sign in as campus admin to add markers in this admin route.
+                  </div>
+                )}
                 <button className="btn" onClick={() => setEngagementHeatmapOn((prev) => !prev)}>
                   {engagementHeatmapOn ? 'Show Marker Dots' : 'Show Engagement Heatmap'}
                 </button>
@@ -23263,6 +23287,22 @@ useEffect(() => {
                 {'  '}|{'  '}No Floor: {markerToolNoFloorCount.toLocaleString()}
                 {'  '}|{'  '}Unassigned: {markerToolUnassignedCount.toLocaleString()}
               </div>
+              {!isAdminUser && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #fde68a',
+                    background: '#fffbeb',
+                    color: '#92400e',
+                    fontSize: 11.2,
+                    fontWeight: 600
+                  }}
+                >
+                  Read-only mode: sign in as campus admin to add, archive, undo, or permanently delete markers.
+                </div>
+              )}
               <label
                 style={{
                   marginTop: 6,
@@ -23401,7 +23441,7 @@ useEffect(() => {
                 <button
                   className="btn"
                   onClick={archiveSelectedMarkers}
-                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolSelectedRows.length}
+                  disabled={!isAdminUser || markerToolBusy || markerToolUndoBusy || !markerToolSelectedRows.length}
                   style={{
                     background: markerToolSelectedRows.length ? '#fee2e2' : undefined,
                     borderColor: markerToolSelectedRows.length ? '#fca5a5' : undefined,
@@ -23416,7 +23456,7 @@ useEffect(() => {
                 <button
                   className="btn"
                   onClick={archiveFilteredUnassignedMarkers}
-                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolFilteredUnassignedArchivableRows.length}
+                  disabled={!isAdminUser || markerToolBusy || markerToolUndoBusy || !markerToolFilteredUnassignedArchivableRows.length}
                   style={{
                     background: markerToolFilteredUnassignedArchivableRows.length ? '#ffedd5' : undefined,
                     borderColor: markerToolFilteredUnassignedArchivableRows.length ? '#fdba74' : undefined,
@@ -23431,7 +23471,7 @@ useEffect(() => {
                 <button
                   className="btn"
                   onClick={undoLastArchiveMarkers}
-                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolCanUndoArchive}
+                  disabled={!isAdminUser || markerToolBusy || markerToolUndoBusy || !markerToolCanUndoArchive}
                   style={{
                     gridColumn: '1 / -1',
                     background: markerToolCanUndoArchive ? '#eef2ff' : undefined,
@@ -23447,7 +23487,7 @@ useEffect(() => {
                 <button
                   className="btn"
                   onClick={permanentlyDeleteArchivedSelectedMarkers}
-                  disabled={markerToolBusy || markerToolUndoBusy || !markerToolSelectedArchivedRows.length}
+                  disabled={!isAdminUser || markerToolBusy || markerToolUndoBusy || !markerToolSelectedArchivedRows.length}
                   style={{
                     gridColumn: '1 / -1',
                     background: markerToolSelectedArchivedRows.length ? '#7f1d1d' : undefined,
