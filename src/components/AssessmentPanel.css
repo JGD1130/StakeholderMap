@@ -64,6 +64,53 @@
   padding-bottom: 10px;
 }
 
+.save-status {
+  margin: 0 0 10px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #d6dbe1;
+  background: #f3f4f6;
+  color: #334155;
+}
+
+.save-status--muted {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+.save-status--info {
+  background: #e8f1ff;
+  border-color: #cfe1ff;
+  color: #1d4ed8;
+}
+
+.save-status--warning {
+  background: #fff7e6;
+  border-color: #fde4b4;
+  color: #b45309;
+}
+
+.save-status--success {
+  background: #e9f9ef;
+  border-color: #bce8cb;
+  color: #166534;
+}
+
+.save-status--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.save-hint {
+  margin: 0 0 10px 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
 .score-item label {
   text-transform: capitalize;
   font-weight: 500;

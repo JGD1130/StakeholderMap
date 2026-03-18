@@ -24,3 +24,9 @@ Latest completed work (follow-up hardening)
 - Added map-view/panel sync: technical panel now auto-opens when entering Technical view with a selected building and closes when leaving Technical view.
 - Added route guard cleanup so non-full-admin routes auto-close Mapfluence-only AI/room-edit overlays.
 - Added route guard cleanup so planning scenario mode is forced off outside the full admin map.
+
+Latest completed work (technical autosave)
+- Added debounced local draft autosave for Technical Assessment edits.
+- Drafts are keyed by university + building and restore automatically when reopening that building.
+- Added in-panel save state messaging: Unsaved, Saving draft, Draft restored/saved, Saving to cloud, Saved to cloud, and Error.
+- Kept cloud save as explicit admin-only action and added non-admin hint that local drafts are still being preserved.
