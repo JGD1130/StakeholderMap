@@ -69,3 +69,12 @@ Latest completed work (admin marker data tools)
 - Added selection workflow for filtered markers (`Select Filtered`, checkbox list, `Clear Selection`).
 - Added `Export Filtered CSV` with marker + room-context fields (roomNumber, roomId, roomGuid, revitId, roomLabel).
 - Added `Delete Selected` with confirmation and batched cloud deletes, while also handling local-only markers safely.
+
+Latest completed work (technical completion tracking)
+- Added `Technical Progress` panel when Technical workflow is active.
+- Added per-building completion tracking with:
+  - completion percent (`answered fields / total technical fields`)
+  - section start count (`x / 3 sections started`)
+  - missing section badges (`Codes`, `Engineering`, `Functionality`) when a section has no scores set.
+- Added `Jump To Next Incomplete` action to move directly to the next building needing technical input.
+- Added click-to-focus rows that select the building, open technical assessment, and zoom to the building footprint.

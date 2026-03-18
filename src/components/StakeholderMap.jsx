@@ -8193,6 +8193,23 @@ const progressColors = {
   2: '#5dade2',
   3: '#2e86c1'
 };
+const TECHNICAL_SECTION_CONFIG = [
+  {
+    key: 'architecture',
+    label: 'Codes',
+    fields: ['exterior', 'entrances', 'interiorFinishes', 'lifeSafety', 'codesAndAccessibility']
+  },
+  {
+    key: 'engineering',
+    label: 'Engineering',
+    fields: ['superstructure', 'conveyingSystems', 'fireProtection', 'plumbing', 'mechanical', 'power', 'lighting']
+  },
+  {
+    key: 'functionality',
+    label: 'Functionality',
+    fields: ['telecomm', 'fireAlarm', 'spaceSize', 'technology']
+  }
+];
 
 const defaultBuildingColor = '#85474b';
 const NO_FLOORPLAN_BUILDINGS = [
@@ -17246,6 +17263,143 @@ const deleteSelectedMarkers = useCallback(async () => {
     setMarkerToolBusy(false);
   }
 }, [markerToolBusy, markerToolSelectedRows, markersCollection]);
+const technicalProgressRows = useMemo(() => {
+  const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+  const rows = [];
+  const seen = new Set();
+  const assessmentByCanonical = new Map();
+  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+    const canonical = bId(rawId || assessment?.originalId || '');
+    if (canonical) assessmentByCanonical.set(canonical, assessment);
+  });
+
+  features.forEach((feature) => {
+    const props = feature?.properties || {};
+    const id = String(props.id || '').trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    rows.push({
+      id,
+      name: String(props.name || id).trim() || id,
+      feature
+    });
+  });
+
+  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+    const id = String(assessment?.originalId || rawId || '').trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    rows.push({
+      id,
+      name: String(assessment?.buildingName || id).trim() || id,
+      feature: null
+    });
+  });
+
+  const withStats = rows.map((row) => {
+    const directAssessment = buildingAssessments?.[row.id];
+    const canonicalAssessment = assessmentByCanonical.get(bId(row.id || ''));
+    const assessment = directAssessment || canonicalAssessment || null;
+    const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
+    let totalFields = 0;
+    let answeredFields = 0;
+    const missingSections = [];
+    let startedSections = 0;
+
+    TECHNICAL_SECTION_CONFIG.forEach((section) => {
+      const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
+        ? scores[section.key]
+        : {};
+      const fieldCount = section.fields.length;
+      const sectionAnswered = section.fields.reduce((sum, fieldKey) => {
+        const val = Number(sectionScores?.[fieldKey] || 0);
+        return sum + (val > 0 ? 1 : 0);
+      }, 0);
+      totalFields += fieldCount;
+      answeredFields += sectionAnswered;
+      if (sectionAnswered > 0) startedSections += 1;
+      else missingSections.push(section.label);
+    });
+
+    const completionPct = totalFields > 0
+      ? Math.max(0, Math.min(100, Math.round((answeredFields / totalFields) * 100)))
+      : 0;
+    const isComplete = answeredFields >= totalFields && totalFields > 0;
+    return {
+      ...row,
+      completionPct,
+      totalFields,
+      answeredFields,
+      startedSections,
+      missingSections,
+      isComplete,
+      color: progressColors[startedSections] || progressColors[0]
+    };
+  });
+
+  return withStats.sort((a, b) => {
+    if (a.isComplete !== b.isComplete) return a.isComplete ? 1 : -1;
+    if (a.completionPct !== b.completionPct) return a.completionPct - b.completionPct;
+    return a.name.localeCompare(b.name);
+  });
+}, [config, buildingAssessments]);
+const technicalProgressSummary = useMemo(() => {
+  const total = technicalProgressRows.length;
+  const complete = technicalProgressRows.filter((row) => row.isComplete).length;
+  const started = technicalProgressRows.filter((row) => row.startedSections > 0).length;
+  const avgPct = total
+    ? Math.round(technicalProgressRows.reduce((sum, row) => sum + (row.completionPct || 0), 0) / total)
+    : 0;
+  return { total, complete, started, avgPct };
+}, [technicalProgressRows]);
+const focusTechnicalBuilding = useCallback((buildingId) => {
+  const id = String(buildingId || '').trim();
+  if (!id) return;
+  setMapView(MAP_VIEWS.TECHNICAL);
+  setSelectedBuildingId(id);
+  selectedBuildingIdRef.current = id;
+  setIsTechnicalPanelOpen(true);
+  setPopupMode('building');
+  setFloorStats(null);
+
+  const resolvedName = resolveBuildingNameFromInput(id);
+  if (resolvedName) setSelectedBuilding(resolvedName);
+
+  const map = mapRef.current;
+  const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+  const feature =
+    matchBuildingFeature(features, id) ||
+    features.find((candidate) => String(candidate?.properties?.id || '').trim() === id) ||
+    null;
+  if (feature) selectedBuildingFeatureRef.current = feature;
+
+  if (map && feature) {
+    const featureId = String(feature?.properties?.id || id).trim() || id;
+    try {
+      if (previousSelectedBuildingId.current) {
+        map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
+      }
+      map.setFeatureState({ source: 'buildings', id: featureId }, { selected: true });
+      previousSelectedBuildingId.current = featureId;
+    } catch {}
+    try {
+      const bbox = turf.bbox(feature);
+      if (Array.isArray(bbox) && bbox.length === 4 && bbox.every((value) => Number.isFinite(value))) {
+        map.fitBounds(
+          [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+          { padding: 70, duration: 550, maxZoom: 18.5 }
+        );
+      }
+    } catch {}
+  }
+
+  showBuildingStats(id);
+}, [config, showBuildingStats, resolveBuildingNameFromInput]);
+const jumpToNextIncompleteTechnicalBuilding = useCallback(() => {
+  const next = technicalProgressRows.find((row) => !row.isComplete) || technicalProgressRows[0] || null;
+  if (!next) return;
+  focusTechnicalBuilding(next.id);
+}, [technicalProgressRows, focusTechnicalBuilding]);
 
 const engagementRoomSentimentSummary = useMemo(() => {
   const empty = {
@@ -22193,6 +22347,117 @@ useEffect(() => {
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {(mode === 'admin' || technicalMode) && technicalWorkflowActive && (
+            <div
+              className="control-section"
+              style={{
+                marginTop: 6,
+                border: '1px solid #d8e0ea',
+                borderRadius: 6,
+                padding: 6,
+                background: '#f8fbff'
+              }}
+            >
+              <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Technical Progress</h5>
+              <div style={{ fontSize: 11, color: '#5b6677' }}>
+                Complete: {technicalProgressSummary.complete.toLocaleString()} / {technicalProgressSummary.total.toLocaleString()}
+                {'  '}|{'  '}Started: {technicalProgressSummary.started.toLocaleString()}
+                {'  '}|{'  '}Avg: {technicalProgressSummary.avgPct}%
+              </div>
+              <button
+                className="btn"
+                style={{ width: '100%', marginTop: 6, fontWeight: 600 }}
+                onClick={jumpToNextIncompleteTechnicalBuilding}
+                disabled={!technicalProgressRows.length}
+              >
+                Jump To Next Incomplete
+              </button>
+
+              <div
+                style={{
+                  marginTop: 8,
+                  border: '1px solid #dde5f0',
+                  borderRadius: 6,
+                  background: '#fff',
+                  maxHeight: 210,
+                  overflowY: 'auto',
+                  padding: 6,
+                  display: 'grid',
+                  gap: 6
+                }}
+              >
+                {technicalProgressRows.length ? technicalProgressRows.map((row) => {
+                  const isSelected = String(selectedBuildingId || '') === String(row.id || '');
+                  return (
+                    <button
+                      key={`tech-progress-${row.id}`}
+                      className="btn"
+                      onClick={() => focusTechnicalBuilding(row.id)}
+                      style={{
+                        textAlign: 'left',
+                        width: '100%',
+                        borderColor: isSelected ? '#2563eb' : '#d1d5db',
+                        boxShadow: isSelected ? '0 0 0 1px rgba(37,99,235,0.28)' : 'none',
+                        background: isSelected ? '#eff6ff' : '#fff'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600, color: '#1f2937' }}>{row.name}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{row.completionPct}%</span>
+                      </div>
+                      <div style={{ marginTop: 5, height: 6, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            width: `${Math.max(0, Math.min(100, row.completionPct || 0))}%`,
+                            height: '100%',
+                            background: row.color || '#5dade2'
+                          }}
+                        />
+                      </div>
+                      <div style={{ marginTop: 5, fontSize: 10.5, color: '#475569' }}>
+                        {row.answeredFields}/{row.totalFields} scored, {row.startedSections}/3 sections started
+                      </div>
+                      <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {row.missingSections.length ? row.missingSections.map((missing) => (
+                          <span
+                            key={`${row.id}-${missing}`}
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              borderRadius: 999,
+                              background: '#fef2f2',
+                              border: '1px solid #fecaca',
+                              color: '#991b1b'
+                            }}
+                          >
+                            Missing: {missing}
+                          </span>
+                        )) : (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              borderRadius: 999,
+                              background: '#ecfdf5',
+                              border: '1px solid #bbf7d0',
+                              color: '#166534'
+                            }}
+                          >
+                            All Sections Started
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                }) : (
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    No technical buildings available.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
