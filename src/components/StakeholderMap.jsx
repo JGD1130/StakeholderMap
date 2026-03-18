@@ -93,6 +93,12 @@ const saveAdminCombinedPrefs = (storageKey, payload) => {
     return false;
   }
 };
+const formatTechnicalFieldLabel = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const spaced = text.replace(/([A-Z])/g, ' $1').trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+};
 
 function createProgramTestFitRow() {
   return {
@@ -13734,6 +13740,8 @@ const StakeholderMap = ({
   const [markerToolSelectedIds, setMarkerToolSelectedIds] = useState(new Set());
   const [markerToolBusy, setMarkerToolBusy] = useState(false);
   const [markerToolMessage, setMarkerToolMessage] = useState('');
+  const [technicalProgressShowIncompleteOnly, setTechnicalProgressShowIncompleteOnly] = useState(false);
+  const [technicalProgressMessage, setTechnicalProgressMessage] = useState('');
 
 
   const resolveBuildingPlanKey = useCallback((idOrName) => {
@@ -17339,6 +17347,7 @@ const technicalProgressRows = useMemo(() => {
     let totalFields = 0;
     let answeredFields = 0;
     const missingSections = [];
+    const missingFieldLabels = [];
     let startedSections = 0;
 
     TECHNICAL_SECTION_CONFIG.forEach((section) => {
@@ -17350,6 +17359,13 @@ const technicalProgressRows = useMemo(() => {
         const val = Number(sectionScores?.[fieldKey] || 0);
         return sum + (val > 0 ? 1 : 0);
       }, 0);
+      section.fields.forEach((fieldKey) => {
+        const val = Number(sectionScores?.[fieldKey] || 0);
+        if (val > 0) return;
+        const label = formatTechnicalFieldLabel(fieldKey);
+        if (!label) return;
+        missingFieldLabels.push(`${section.label}: ${label}`);
+      });
       totalFields += fieldCount;
       answeredFields += sectionAnswered;
       if (sectionAnswered > 0) startedSections += 1;
@@ -17367,6 +17383,8 @@ const technicalProgressRows = useMemo(() => {
       answeredFields,
       startedSections,
       missingSections,
+      missingFieldCount: missingFieldLabels.length,
+      missingFieldLabels,
       isComplete,
       color: progressColors[startedSections] || progressColors[0]
     };
@@ -17387,6 +17405,58 @@ const technicalProgressSummary = useMemo(() => {
     : 0;
   return { total, complete, started, avgPct };
 }, [technicalProgressRows]);
+const technicalProgressVisibleRows = useMemo(() => (
+  technicalProgressShowIncompleteOnly
+    ? technicalProgressRows.filter((row) => !row.isComplete)
+    : technicalProgressRows
+), [technicalProgressRows, technicalProgressShowIncompleteOnly]);
+const exportTechnicalMissingItemsCsv = useCallback(() => {
+  const rows = technicalProgressRows.filter((row) => Number(row?.missingFieldCount || 0) > 0);
+  if (!rows.length) {
+    setTechnicalProgressMessage('No missing technical items to export.');
+    return;
+  }
+  const esc = (value) => {
+    if (value === null || value === undefined) return '';
+    const text = String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const headers = [
+    'BuildingId',
+    'BuildingName',
+    'CompletionPct',
+    'AnsweredFields',
+    'TotalFields',
+    'StartedSections',
+    'MissingSections',
+    'MissingFieldCount',
+    'MissingFields'
+  ];
+  const lines = [headers.join(',')];
+  rows.forEach((row) => {
+    lines.push([
+      esc(row.id),
+      esc(row.name),
+      esc(row.completionPct),
+      esc(row.answeredFields),
+      esc(row.totalFields),
+      esc(row.startedSections),
+      esc((row.missingSections || []).join('; ')),
+      esc(row.missingFieldCount),
+      esc((row.missingFieldLabels || []).join('; '))
+    ].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  a.download = `${base}-technical-missing-items-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTechnicalProgressMessage(`Exported ${rows.length.toLocaleString()} buildings with missing items.`);
+}, [technicalProgressRows, universityId]);
 const focusTechnicalBuilding = useCallback((buildingId) => {
   const id = String(buildingId || '').trim();
   if (!id) return;
@@ -22480,15 +22550,39 @@ useEffect(() => {
                 Complete: {technicalProgressSummary.complete.toLocaleString()} / {technicalProgressSummary.total.toLocaleString()}
                 {'  '}|{'  '}Started: {technicalProgressSummary.started.toLocaleString()}
                 {'  '}|{'  '}Avg: {technicalProgressSummary.avgPct}%
+                {'  '}|{'  '}Visible: {technicalProgressVisibleRows.length.toLocaleString()}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+                <button
+                  className="btn"
+                  style={{ width: '100%', fontWeight: 600 }}
+                  onClick={jumpToNextIncompleteTechnicalBuilding}
+                  disabled={!technicalProgressRows.length}
+                >
+                  Jump Incomplete
+                </button>
+                <button
+                  className="btn"
+                  style={{ width: '100%', fontWeight: technicalProgressShowIncompleteOnly ? 700 : 500 }}
+                  onClick={() => setTechnicalProgressShowIncompleteOnly((prev) => !prev)}
+                  disabled={!technicalProgressRows.length}
+                >
+                  {technicalProgressShowIncompleteOnly ? 'Show All' : 'Incomplete Only'}
+                </button>
               </div>
               <button
                 className="btn"
-                style={{ width: '100%', marginTop: 6, fontWeight: 600 }}
-                onClick={jumpToNextIncompleteTechnicalBuilding}
+                style={{ width: '100%', marginTop: 6 }}
+                onClick={exportTechnicalMissingItemsCsv}
                 disabled={!technicalProgressRows.length}
               >
-                Jump To Next Incomplete
+                Export Missing Items CSV
               </button>
+              {!!technicalProgressMessage && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
+                  {technicalProgressMessage}
+                </div>
+              )}
 
               <div
                 style={{
@@ -22503,7 +22597,7 @@ useEffect(() => {
                   gap: 6
                 }}
               >
-                {technicalProgressRows.length ? technicalProgressRows.map((row) => {
+                {technicalProgressVisibleRows.length ? technicalProgressVisibleRows.map((row) => {
                   const isSelected = String(selectedBuildingId || '') === String(row.id || '');
                   return (
                     <button
@@ -22568,7 +22662,9 @@ useEffect(() => {
                   );
                 }) : (
                   <div style={{ fontSize: 11, color: '#64748b' }}>
-                    No technical buildings available.
+                    {technicalProgressRows.length
+                      ? 'No buildings match the current technical filter.'
+                      : 'No technical buildings available.'}
                   </div>
                 )}
               </div>

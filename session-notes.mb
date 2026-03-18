@@ -88,3 +88,12 @@ Latest completed work (admin mode memory)
   - selected building id
   - selected floor
 - Persist/restore is isolated to admin combined mode so public and technical-only routes are unaffected.
+
+Latest completed work (technical progress utilities)
+- Added `Incomplete Only` toggle in the Technical Progress panel.
+- Added `Export Missing Items CSV` for technical follow-up:
+  - building id/name
+  - completion percent and answered/total fields
+  - missing section list
+  - missing field count + field list
+- Technical checklist panel now reports `Visible` count and supports filtered review workflows.
