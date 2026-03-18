@@ -8657,9 +8657,6 @@ const StakeholderMap = ({
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
-  const combinedWorkflowFocus = isAdminCombinedMode && mapView === MAP_VIEWS.TECHNICAL
-    ? 'technical'
-    : 'stakeholder';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
     if (showFullMapfluenceControls) {
@@ -8711,20 +8708,6 @@ const StakeholderMap = ({
       setIsTechnicalPanelOpen(true);
     }
   }, [mapView, selectedBuildingId]);
-  const setStakeholderFocus = useCallback(() => {
-    setMapView(MAP_VIEWS.ASSESSMENT);
-    setIsTechnicalPanelOpen(false);
-    setEngagementHeatmapOn(true);
-    setEngagementRoomSentimentOnly(false);
-    setStakeholderConditionModeOn(true);
-  }, [MAP_VIEWS.ASSESSMENT]);
-  const setTechnicalFocus = useCallback(() => {
-    setMapView(MAP_VIEWS.TECHNICAL);
-    setEngagementHeatmapOn(false);
-    setEngagementRoomSentimentOn(false);
-    setEngagementRoomSentimentOnly(false);
-    if (selectedBuildingId) setIsTechnicalPanelOpen(true);
-  }, [MAP_VIEWS.TECHNICAL, selectedBuildingId]);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   const closeEngagementHelp = useCallback((e) => {
     try {
@@ -9066,9 +9049,9 @@ const StakeholderMap = ({
 
     if (effectiveMode === FLOOR_COLOR_MODES.PLAIN) {
       try {
-        map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#f3f4f6');
-        map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.86);
-        syncScenarioBaselineFillColor(map, '#f3f4f6');
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#f8f7f2');
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        syncScenarioBaselineFillColor(map, '#f8f7f2');
         setFloorLegendItems([]);
         setFloorLegendLookup(new Map());
         setFloorLegendSelection(null);
@@ -13564,7 +13547,7 @@ const StakeholderMap = ({
 
     const scenarioOpacity = Math.max(0, Math.min(1, Number(scenarioBaselineBlend) || 0));
     const baselineOpacity = 1 - scenarioOpacity;
-    const fillBaseOpacity = floorColorMode === FLOOR_COLOR_MODES.PLAIN ? 0.86 : 1;
+    const fillBaseOpacity = 1;
 
     const setPaint = (layerId, prop, value) => {
       if (!map.getLayer(layerId)) return;
@@ -17100,18 +17083,18 @@ useEffect(() => {
             'match',
             ['to-string', ['coalesce', ['id'], ['get', 'RevitId'], ['get', 'id']]],
             ...engagementRoomSentimentSummary.matchPairs,
-            '#f3f4f6'
+            '#f8f7f2'
           ]
-        : '#f3f4f6';
+        : '#f8f7f2';
       map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', fillExpr);
-      map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.9);
+      map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
     } catch {}
     return;
   }
 
   try {
-    map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#ffffff');
-    map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.96);
+    map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', '#f8f7f2');
+    map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
   } catch {}
 
   try {
@@ -19003,7 +18986,7 @@ useEffect(() => {
           hasEntries = true;
         }
       });
-    } else if ((mode === 'admin' || technicalMode) && mapView === MAP_VIEWS.ASSESSMENT && Object.keys(buildingAssessments).length > 0) {
+    } else if ((mode === 'admin' || technicalMode) && (mapView === MAP_VIEWS.TECHNICAL || (showFullMapfluenceControls && mapView === MAP_VIEWS.ASSESSMENT)) && Object.keys(buildingAssessments).length > 0) {
       Object.entries(buildingAssessments).forEach((tuple) => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
@@ -19035,7 +19018,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, mapLoaded, mode, technicalMode, mapView, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId]);
+  }, [buildingConditions, buildingAssessments, mapLoaded, mode, technicalMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -20636,7 +20619,6 @@ useEffect(() => {
         }}
       >
         <button className="btn" onClick={togglePresentationMode}>Exit Presentation</button>
-        <button className="btn" onClick={exportCleanMapPng}>Export Clean PNG</button>
       </div>
     )}
     {askOpen && (
@@ -21902,39 +21884,6 @@ useEffect(() => {
             </div>
           )}
 
-          {isAdminCombinedMode && (
-            <div className="control-section" style={{ marginTop: 6, border: '1px solid #d8e0ea', borderRadius: 6, padding: 6, background: '#f8fbff' }}>
-              <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Workflow Focus</h5>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                <button
-                  className="btn"
-                  style={{
-                    width: '100%',
-                    fontWeight: combinedWorkflowFocus === 'stakeholder' ? 700 : 500,
-                    borderColor: combinedWorkflowFocus === 'stakeholder' ? '#1f2937' : undefined
-                  }}
-                  onClick={setStakeholderFocus}
-                >
-                  Stakeholder Focus
-                </button>
-                <button
-                  className="btn"
-                  style={{
-                    width: '100%',
-                    fontWeight: combinedWorkflowFocus === 'technical' ? 700 : 500,
-                    borderColor: combinedWorkflowFocus === 'technical' ? '#1f2937' : undefined
-                  }}
-                  onClick={setTechnicalFocus}
-                >
-                  Technical Focus
-                </button>
-              </div>
-              <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
-                Stakeholder focus emphasizes marker workflows. Technical focus prioritizes assessment editing.
-              </div>
-            </div>
-          )}
-
           {isAdminCombinedMode && stakeholderWorkflowActive && (
             <div className="control-section" style={{ marginTop: 6, border: '1px solid #d8e0ea', borderRadius: 6, padding: 6, background: '#f8fbff' }}>
               <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Building Stakeholder Condition</h5>
@@ -21978,18 +21927,6 @@ useEffect(() => {
                 >
                   {engagementRoomSentimentOnly ? 'Exit Room Sentiment Only' : 'Room Sentiment Only'}
                 </button>
-                <button className="btn" onClick={exportCurrentMapPng}>
-                  Export PNG
-                </button>
-                <button className="btn" onClick={togglePresentationMode}>
-                  {presentationMode ? 'Exit Presentation' : 'Presentation Mode'}
-                </button>
-                <button className="btn" onClick={exportCleanMapPng}>
-                  Export Clean PNG
-                </button>
-                <div style={{ fontSize: 11, color: '#555' }}>
-                  Tip: add `?presentation=1` to the URL for clean preview mode.
-                </div>
                 {(!loadedSingleFloor || !isEngagementFloorScope) && (
                   <div style={{ fontSize: 11, color: '#666' }}>
                     Room sentiment coloring is available in Floorplan mode with a loaded floor.

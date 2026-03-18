@@ -45,3 +45,11 @@ Latest completed work (workflow separation refinement)
 - Added a stakeholder building-condition toggle in combined mode to enable/disable whole-building stakeholder condition editing panel.
 - Prevented stakeholder marker popup from opening on building clicks when building-condition editing is enabled.
 - In `/technical`, workflow dropdown now contains only `Technical` (no `Assessment` option).
+
+Latest completed work (panel/visibility cleanup)
+- Removed duplicate `Workflow Focus` block and retained workflow switching via the dropdown only.
+- In combined mode, building recolor now follows workflow:
+  - Stakeholder workflow: multicolor stakeholder condition shading.
+  - Technical workflow: blue technical-assessment progress shading after saves.
+- Removed stakeholder panel buttons: `Export PNG`, `Presentation Mode`, `Export Clean PNG` (and removed `Export Clean PNG` from presentation quick controls).
+- Updated floorplan plain fill to a solid off-white (no transparency bleed-through).
