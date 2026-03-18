@@ -152,3 +152,9 @@ Latest completed work (technical assessment QA hardening - phase 1)
   - Keeps draft recovery reliable even when cloud save fails mid-session.
 - Minor export hygiene:
   - Technical missing-items CSV now revokes blob URLs after download.
+
+Latest completed work (technical assessment QA hardening - phase 2)
+- Added legacy-field normalization for technical score data to improve completion tracking accuracy across older saved records.
+- Completion tracking now treats common legacy aliases as equivalent to canonical fields (for example: `telecom` -> `telecomm`, `hvac` -> `mechanical`, `codesAccessibility` -> `codesAndAccessibility`).
+- Unified technical progress and building-shading logic to use the same normalized scoring computation, preventing mismatches between checklist percentages and blue progress shading.
+- Technical assessment panel now normalizes legacy score keys when loading/editing records, so older data opens with correct field values instead of appearing as missing.

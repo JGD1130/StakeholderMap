@@ -21,6 +21,41 @@ const assessmentTemplate = {
     functionality: { telecomm: 0, fireAlarm: 0, spaceSize: 0, technology: 0 },
   },
 };
+const TECHNICAL_FIELD_ALIASES = {
+  exterior: ['buildingExterior'],
+  entrances: ['entry', 'entrys', 'entries'],
+  interiorFinishes: ['interior', 'interiorFinish', 'interior_finish'],
+  lifeSafety: ['lifesafety', 'life_safety'],
+  codesAndAccessibility: ['codesAccessibility', 'codes_accessibility', 'accessibility'],
+  superstructure: ['structure', 'structural'],
+  conveyingSystems: ['conveying', 'conveyance', 'verticalTransportation'],
+  fireProtection: ['fireProtectionSystems', 'fireSuppression'],
+  plumbing: [],
+  mechanical: ['hvac'],
+  power: ['electricalPower', 'electrical'],
+  lighting: ['lights'],
+  telecomm: ['telecom', 'telecommunications'],
+  fireAlarm: ['fireAlarms'],
+  spaceSize: ['space', 'size'],
+  technology: ['it', 'av']
+};
+const readTechnicalScoreValue = (sectionScores, fieldKey) => {
+  const source = sectionScores && typeof sectionScores === 'object' ? sectionScores : {};
+  const candidates = [fieldKey, ...(TECHNICAL_FIELD_ALIASES[fieldKey] || [])];
+  for (const key of candidates) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = Number(source[key] ?? 0);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+};
+const normalizeScoreSection = (sectionScores, templateSection) => {
+  const normalized = {};
+  Object.keys(templateSection || {}).forEach((fieldKey) => {
+    normalized[fieldKey] = readTechnicalScoreValue(sectionScores, fieldKey);
+  });
+  return normalized;
+};
 
 const DRAFT_AUTOSAVE_MS = 900;
 
@@ -36,9 +71,9 @@ const cloneAssessment = (source, buildingNameFallback = '') => {
     buildingName: String(base.buildingName || buildingNameFallback || '').trim(),
     notes: String(base.notes || ''),
     scores: {
-      architecture: { ...assessmentTemplate.scores.architecture, ...architecture },
-      engineering: { ...assessmentTemplate.scores.engineering, ...engineering },
-      functionality: { ...assessmentTemplate.scores.functionality, ...functionality }
+      architecture: normalizeScoreSection(architecture, assessmentTemplate.scores.architecture),
+      engineering: normalizeScoreSection(engineering, assessmentTemplate.scores.engineering),
+      functionality: normalizeScoreSection(functionality, assessmentTemplate.scores.functionality)
     }
   };
 };

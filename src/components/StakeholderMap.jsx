@@ -8244,6 +8244,70 @@ const TECHNICAL_SECTION_CONFIG = [
     fields: ['telecomm', 'fireAlarm', 'spaceSize', 'technology']
   }
 ];
+const TECHNICAL_FIELD_ALIASES = {
+  exterior: ['buildingExterior'],
+  entrances: ['entry', 'entrys', 'entries'],
+  interiorFinishes: ['interior', 'interiorFinish', 'interior_finish'],
+  lifeSafety: ['lifesafety', 'life_safety'],
+  codesAndAccessibility: ['codesAccessibility', 'codes_accessibility', 'accessibility'],
+  superstructure: ['structure', 'structural'],
+  conveyingSystems: ['conveying', 'conveyance', 'verticalTransportation'],
+  fireProtection: ['fireProtectionSystems', 'fireSuppression'],
+  plumbing: [],
+  mechanical: ['hvac'],
+  power: ['electricalPower', 'electrical'],
+  lighting: ['lights'],
+  telecomm: ['telecom', 'telecommunications'],
+  fireAlarm: ['fireAlarms'],
+  spaceSize: ['space', 'size'],
+  technology: ['it', 'av']
+};
+const readTechnicalScoreValue = (sectionScores, fieldKey) => {
+  const source = sectionScores && typeof sectionScores === 'object' ? sectionScores : {};
+  const candidates = [fieldKey, ...(TECHNICAL_FIELD_ALIASES[fieldKey] || [])];
+  for (const key of candidates) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = Number(source[key] ?? 0);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+};
+const computeTechnicalProgressFromScores = (scores = {}) => {
+  const scoreMap = scores && typeof scores === 'object' ? scores : {};
+  let totalFields = 0;
+  let answeredFields = 0;
+  let startedSections = 0;
+  const missingSections = [];
+  const missingFieldLabels = [];
+  TECHNICAL_SECTION_CONFIG.forEach((section) => {
+    const sectionScores = scoreMap?.[section.key] && typeof scoreMap[section.key] === 'object'
+      ? scoreMap[section.key]
+      : {};
+    let sectionAnswered = 0;
+    section.fields.forEach((fieldKey) => {
+      const value = readTechnicalScoreValue(sectionScores, fieldKey);
+      if (value > 0) {
+        sectionAnswered += 1;
+        return;
+      }
+      const label = formatTechnicalFieldLabel(fieldKey);
+      if (!label) return;
+      missingFieldLabels.push(`${section.label}: ${label}`);
+    });
+    totalFields += section.fields.length;
+    answeredFields += sectionAnswered;
+    if (sectionAnswered > 0) startedSections += 1;
+    else missingSections.push(section.label);
+  });
+  return {
+    totalFields,
+    answeredFields,
+    startedSections,
+    missingSections,
+    missingFieldLabels,
+    missingFieldCount: missingFieldLabels.length
+  };
+};
 
 const defaultBuildingColor = '#85474b';
 const NO_FLOORPLAN_BUILDINGS = [
@@ -17676,33 +17740,15 @@ const technicalProgressRows = useMemo(() => {
     const canonicalAssessment = assessmentByCanonical.get(bId(row.id || ''));
     const assessment = directAssessment || canonicalAssessment || null;
     const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
-    let totalFields = 0;
-    let answeredFields = 0;
-    const missingSections = [];
-    const missingFieldLabels = [];
-    let startedSections = 0;
-
-    TECHNICAL_SECTION_CONFIG.forEach((section) => {
-      const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
-        ? scores[section.key]
-        : {};
-      const fieldCount = section.fields.length;
-      const sectionAnswered = section.fields.reduce((sum, fieldKey) => {
-        const val = Number(sectionScores?.[fieldKey] || 0);
-        return sum + (val > 0 ? 1 : 0);
-      }, 0);
-      section.fields.forEach((fieldKey) => {
-        const val = Number(sectionScores?.[fieldKey] || 0);
-        if (val > 0) return;
-        const label = formatTechnicalFieldLabel(fieldKey);
-        if (!label) return;
-        missingFieldLabels.push(`${section.label}: ${label}`);
-      });
-      totalFields += fieldCount;
-      answeredFields += sectionAnswered;
-      if (sectionAnswered > 0) startedSections += 1;
-      else missingSections.push(section.label);
-    });
+    const progress = computeTechnicalProgressFromScores(scores);
+    const {
+      totalFields,
+      answeredFields,
+      startedSections,
+      missingSections,
+      missingFieldLabels,
+      missingFieldCount
+    } = progress;
 
     const completionPct = totalFields > 0
       ? Math.max(0, Math.min(100, Math.round((answeredFields / totalFields) * 100)))
@@ -17715,7 +17761,7 @@ const technicalProgressRows = useMemo(() => {
       answeredFields,
       startedSections,
       missingSections,
-      missingFieldCount: missingFieldLabels.length,
+      missingFieldCount,
       missingFieldLabels,
       isComplete,
       color: progressColors[startedSections] || progressColors[0]
@@ -19962,11 +20008,8 @@ useEffect(() => {
       Object.entries(buildingAssessments).forEach((tuple) => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
-        let completedSections = 0;
         const sc = assessment && assessment.scores ? assessment.scores : {};
-        if (sc.architecture && Object.values(sc.architecture).some((s) => s > 0)) completedSections++;
-        if (sc.engineering && Object.values(sc.engineering).some((s) => s > 0)) completedSections++;
-        if (sc.functionality && Object.values(sc.functionality).some((s) => s > 0)) completedSections++;
+        const completedSections = computeTechnicalProgressFromScores(sc).startedSections;
         matchExpr.push((assessment && assessment.originalId) || buildingId, progressColors[completedSections]);
         hasEntries = true;
       });
