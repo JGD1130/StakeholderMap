@@ -8648,6 +8648,38 @@ const StakeholderMap = ({
   }, [showFullMapfluenceControls, isStakeholderTechnicalMode]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1;
+  const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
+  const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
+  const routeModeMeta = useMemo(() => {
+    if (showFullMapfluenceControls) {
+      return {
+        title: 'Admin Workspace',
+        subtitle: 'Full Mapfluence editing, planning, and AI tools.'
+      };
+    }
+    if (isAdminCombinedMode) {
+      return {
+        title: 'Admin Stakeholder + Technical',
+        subtitle: 'Engagement markers/heatmaps with technical assessment in one map.'
+      };
+    }
+    if (isTechnicalOnlyMode) {
+      return {
+        title: 'Technical Assessment',
+        subtitle: 'Technical-only view for architecture and engineering review.'
+      };
+    }
+    if (engagementMode) {
+      return {
+        title: 'Stakeholder Engagement',
+        subtitle: 'Public engagement map for marker collection and sentiment.'
+      };
+    }
+    return {
+      title: 'Public Map',
+      subtitle: 'Campus space visualization view.'
+    };
+  }, [showFullMapfluenceControls, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode]);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
@@ -8656,6 +8688,15 @@ const StakeholderMap = ({
       setMapView(MAP_VIEWS.ASSESSMENT);
     }
   }, [isStakeholderTechnicalMode, mapView]);
+  useEffect(() => {
+    if (mapView !== MAP_VIEWS.TECHNICAL) {
+      setIsTechnicalPanelOpen(false);
+      return;
+    }
+    if (selectedBuildingId) {
+      setIsTechnicalPanelOpen(true);
+    }
+  }, [mapView, selectedBuildingId]);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   const closeEngagementHelp = useCallback((e) => {
     try {
@@ -9575,6 +9616,28 @@ const StakeholderMap = ({
     setAiCreateScenarioErr('');
   }, [selectedBuildingId, selectedBuilding, selectedFloor]);
   useEffect(() => {
+    if (showFullMapfluenceControls) return;
+    setAskOpen(false);
+    setAiInfoOpen(false);
+    setAiOpen(false);
+    setAiBuildingOpen(false);
+    setAiCreateScenarioOpen(false);
+    setAiCreateScenarioLoading(false);
+    setAiCreateScenarioResult(null);
+    setAiCreateScenarioErr('');
+    if (roomEditOpen || roomEditData || roomEditSelection.length) {
+      setRoomEditOpen(false);
+      setRoomEditData(null);
+      clearRoomEditSelection();
+    }
+  }, [
+    showFullMapfluenceControls,
+    roomEditOpen,
+    roomEditData,
+    roomEditSelection.length,
+    clearRoomEditSelection
+  ]);
+  useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
     setDrawingAlignNotice('');
@@ -9779,6 +9842,12 @@ const StakeholderMap = ({
   const clearScenario = useCallback(() => {
     resetScenarioModeState();
   }, [resetScenarioModeState]);
+  useEffect(() => {
+    if (showFullMapfluenceControls) return;
+    if (!moveScenarioMode) return;
+    setMoveScenarioMode(false);
+    clearScenario();
+  }, [showFullMapfluenceControls, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
@@ -20504,7 +20573,7 @@ useEffect(() => {
       </div>
     )}
 
-    {mode === 'admin' && !presentationMode && (
+    {showAuthAccessControls && !presentationMode && (
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
       </button>
@@ -21734,12 +21803,25 @@ useEffect(() => {
     {isControlsVisible && !presentationMode && (
       <div className="map-controls-panel" style={{ width: 270, fontSize: 12.5, lineHeight: 1.25 }}>
         <div className="map-controls">
+          <div
+            className="control-section"
+            style={{
+              background: '#f7fbff',
+              padding: 6,
+              border: '1px solid #d5e4f5',
+              borderRadius: 6,
+              marginBottom: 4
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{routeModeMeta.title}</div>
+            <div style={{ fontSize: 11, color: '#465569' }}>{routeModeMeta.subtitle}</div>
+          </div>
 
           {/* Admin access - compact header layout */}
           {showAuthAccessControls && (
             <div className="control-section" style={{ background: '#fff', padding: 6, border: '1px solid #ddd', borderRadius: 6, marginBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
-                <h5 style={{ margin: 0, fontSize: 13 }}>Admin access</h5>
+                <h5 style={{ margin: 0, fontSize: 13 }}>{accessControlLabel}</h5>
                 {!authUser ? (
                   <button onClick={handleAdminSignIn}>Sign in with Google</button>
                 ) : (
@@ -21757,7 +21839,7 @@ useEffect(() => {
           {/* Map View */}
           {showMapViewSelector && (
             <div className="control-section theme-selector" style={{ marginTop: 6 }}>
-              <label htmlFor="theme-select" style={{ marginRight: 8 }}>Map View:</label>
+              <label htmlFor="theme-select" style={{ marginRight: 8 }}>{mapViewLabel}</label>
               <select
                 id="theme-select"
                 value={mapView}

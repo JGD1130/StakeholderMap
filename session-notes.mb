@@ -17,3 +17,10 @@ Latest completed work
 - Allowed marker placement in admin engagement map (assessment view), while preventing placement during technical panel view.
 - Hid full Mapfluence/space-export/planning/AI blocks from technical-only mode.
 - Enabled admin sign-in controls on technical pages for authorized saves.
+
+Latest completed work (follow-up hardening)
+- Added explicit route-mode header text in controls so each URL clearly labels its purpose.
+- Kept controls toggle available on technical routes (not just admin) for cleaner presentation.
+- Added map-view/panel sync: technical panel now auto-opens when entering Technical view with a selected building and closes when leaving Technical view.
+- Added route guard cleanup so non-full-admin routes auto-close Mapfluence-only AI/room-edit overlays.
+- Added route guard cleanup so planning scenario mode is forced off outside the full admin map.
