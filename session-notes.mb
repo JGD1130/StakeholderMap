@@ -191,3 +191,12 @@ Latest completed work (release checklist / smoke pass - phase 3)
 - Validation:
   - `npm.cmd run smoke` passed (`24/24 checks`)
   - `npm.cmd run build` passed
+
+Latest completed work (pre-release handoff checklist)
+- Added dedicated release checklist doc:
+  - `docs/HASTINGS_PRE_RELEASE_CHECKLIST.md`
+- Includes:
+  - current automated validation snapshot
+  - URL/auth go-no-go matrix for the four Hastings routes
+  - fast manual release-smoke sequence for final operator verification
+  - explicit go/no-go criteria for stakeholder handoff
