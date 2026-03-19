@@ -4,6 +4,7 @@ Date: 2026-03-18
 User workflow preferences
 - Commit and push to `main` after completed code changes until the user says otherwise.
 - Keep practical, restart-safe notes in this `.mb` file.
+- Prefer concise Ask Mapfluence AI responses by default (short summary + non-redundant short bullets).
 
 Current Hastings map architecture target
 - Admin full map: `/:universityId/admin` (Mapfluence edit + AI + planning tools).
