@@ -5264,17 +5264,135 @@ function sanitizeVacancyLanguage(text) {
     .replace(/\bvacant\b/ig, 'available');
 }
 
+const isScenarioClassroom = (value) => /(classroom|lecture|seminar|training|teaching)/i.test(String(value ?? ''));
+const isScenarioOfficeType = (value) => /(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(String(value ?? ''));
+const isScenarioLab = (value) => /(lab|laboratory|research)/i.test(String(value ?? ''));
+const isScenarioSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|arena|gym|athletic|fieldhouse|maker|kiln|greenhouse|special)/i.test(String(value ?? ''));
+const isScenarioMaintenanceType = (value) => /(custod|janitor|maintenance|mechanical|electrical|utility|boiler|loading dock|warehouse|storage room|storage|service)/i.test(String(value ?? ''));
+const isScenarioCrossBuildingExceptionType = (value) =>
+  isScenarioClassroom(value) || isScenarioSpecializedType(value);
+
 const getScenarioTypeRank = (value) => {
-  const label = String(value ?? '').toLowerCase();
-  if (!label) return 1;
-  if (/(office|workstation|admin|faculty|staff|suite|open office)/i.test(label)) return 0;
-  if (/(lab|laboratory|studio|shop|clinic|research)/i.test(label)) return 2;
-  if (/(classroom|lecture|seminar|training|teaching)/i.test(label)) return 3;
+  if (isScenarioOfficeType(value)) return 0;
+  if (isScenarioLab(value) || isScenarioSpecializedType(value)) return 2;
+  if (isScenarioClassroom(value)) return 3;
+  if (isScenarioMaintenanceType(value)) return 5;
   return 1;
 };
 
-const isScenarioLab = (value) => /(lab|laboratory|studio|shop|clinic|research)/i.test(String(value ?? ''));
-const isScenarioClassroom = (value) => /(classroom|lecture|seminar|training|teaching)/i.test(String(value ?? ''));
+const isLikelyOperationsDept = (value) =>
+  /(facilit|maintenance|custod|grounds|operations|physical plant|service|warehouse|utility|dining|food service|security|safety)/i
+    .test(String(value ?? ''));
+
+const shouldPreferAcademicFitForScenario = (deptName, baselineTotals) => {
+  if (isLikelyOperationsDept(deptName)) return false;
+  const sfByType = baselineTotals?.sfByRoomType || {};
+  const total = Object.values(sfByType).reduce((sum, value) => sum + (Number(value || 0) || 0), 0);
+  if (total <= 0) return true;
+  let maintenanceSf = 0;
+  let academicLikeSf = 0;
+  Object.entries(sfByType).forEach(([type, sfValue]) => {
+    const sf = Number(sfValue || 0) || 0;
+    if (!sf) return;
+    if (isScenarioMaintenanceType(type)) maintenanceSf += sf;
+    if (
+      isScenarioOfficeType(type) ||
+      isScenarioLab(type) ||
+      isScenarioClassroom(type) ||
+      isScenarioSpecializedType(type)
+    ) {
+      academicLikeSf += sf;
+    }
+  });
+  const maintenanceShare = maintenanceSf / total;
+  const academicShare = academicLikeSf / total;
+  return maintenanceShare < 0.45 || academicShare >= maintenanceShare;
+};
+
+const isScenarioLowFitBuildingName = (value) =>
+  /(general services|facility maintenance|facilities maintenance|physical plant|plant operations|central services|warehouse|service center)/i
+    .test(String(value ?? ''));
+
+const summarizeScenarioBuildingProfiles = (inventory = []) => {
+  const byBuilding = new Map();
+  (Array.isArray(inventory) ? inventory : []).forEach((room) => {
+    const label = String(room?.buildingLabel ?? room?.buildingName ?? room?.building ?? '').trim();
+    if (!label) return;
+    const key = normalizeDashboardKey(label);
+    if (!key) return;
+    if (!byBuilding.has(key)) {
+      byBuilding.set(key, {
+        key,
+        buildingLabel: label,
+        totalSF: 0,
+        rooms: 0,
+        academicSF: 0,
+        specializedSF: 0,
+        maintenanceSF: 0
+      });
+    }
+    const profile = byBuilding.get(key);
+    const sf = Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0) || 0;
+    const type = room?.type ?? room?.roomType ?? '';
+    profile.totalSF += sf;
+    profile.rooms += 1;
+    if (isScenarioMaintenanceType(type)) profile.maintenanceSF += sf;
+    if (isScenarioSpecializedType(type)) profile.specializedSF += sf;
+    if (isScenarioOfficeType(type) || isScenarioClassroom(type) || isScenarioLab(type)) {
+      profile.academicSF += sf;
+    }
+  });
+  return Object.fromEntries(Array.from(byBuilding.entries()));
+};
+
+const getScenarioLowFitBuildingKeys = (buildingProfiles, options = {}) => {
+  const preferAcademicFit = Boolean(options?.preferAcademicFit);
+  if (!preferAcademicFit) return new Set();
+  const set = new Set();
+  Object.values(buildingProfiles || {}).forEach((profile) => {
+    const total = Number(profile?.totalSF || 0) || 0;
+    if (!total) return;
+    const maintenanceShare = (Number(profile?.maintenanceSF || 0) || 0) / total;
+    const academicShare = (Number(profile?.academicSF || 0) || 0) / total;
+    const lowByName = isScenarioLowFitBuildingName(profile?.buildingLabel || '');
+    const lowByMix = maintenanceShare >= 0.45 && academicShare <= 0.35;
+    if (lowByName || lowByMix) set.add(String(profile?.key || '').trim());
+  });
+  return set;
+};
+
+const pickPreferredScenarioBuilding = (candidates = [], options = {}) => {
+  if (!Array.isArray(candidates) || !candidates.length) return '';
+  const preferAcademicFit = Boolean(options?.preferAcademicFit);
+  const lowFitBuildingKeys = options?.lowFitBuildingKeys instanceof Set
+    ? options.lowFitBuildingKeys
+    : new Set(Array.isArray(options?.lowFitBuildingKeys) ? options.lowFitBuildingKeys : []);
+  const totals = new Map();
+  candidates.forEach((candidate) => {
+    const label = norm(candidate?.buildingLabel || '');
+    if (!label) return;
+    const key = normalizeDashboardKey(label);
+    if (!key) return;
+    const sf = Number(candidate?.sf ?? candidate?.area ?? candidate?.areaSF ?? 0) || 0;
+    const prev = totals.get(key) || { key, label, sf: 0, rooms: 0 };
+    prev.sf += sf;
+    prev.rooms += 1;
+    if (!prev.label) prev.label = label;
+    totals.set(key, prev);
+  });
+  const entries = Array.from(totals.values());
+  if (!entries.length) return '';
+  const hasNonLowFit = entries.some((entry) => !lowFitBuildingKeys.has(entry.key));
+  const scoreEntry = (entry) => {
+    let score = (entry.sf * 10) + entry.rooms;
+    if (preferAcademicFit && hasNonLowFit && lowFitBuildingKeys.has(entry.key)) {
+      score -= Math.max(5000, entry.sf * 12);
+    }
+    return score;
+  };
+  entries.sort((a, b) => scoreEntry(b) - scoreEntry(a) || b.sf - a.sf || b.rooms - a.rooms);
+  return entries[0]?.label || '';
+};
 
 const getScenarioRoomBuildingKey = (room) =>
   normalizeDashboardKey(
@@ -15914,6 +16032,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
       let baselineTotals = null;
       let baselineBuildingLabel = '';
+      let sourceHomeBuildingCount = 0;
       if (inferredDept) {
         try {
           const { perBuilding, campusTotals } = await computeDeptTotalsByBuildingAcrossCampus(inferredDept, {
@@ -15922,6 +16041,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             floorCache,
             fetchGeoJSON
           });
+          sourceHomeBuildingCount = Object.keys(perBuilding || {}).length;
           const baselineEntry = Object.entries(perBuilding || {}).sort(
             (a, b) => (b[1]?.totalSF || 0) - (a[1]?.totalSF || 0) || (b[1]?.rooms || 0) - (a[1]?.rooms || 0)
           )[0] || null;
@@ -16000,6 +16120,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         return best;
       };
 
+      const preferAcademicFit = shouldPreferAcademicFitForScenario(inferredDept, baselineTotals);
+      const preferSingleTargetBuilding = Boolean(inferredBuilding || (sourceHomeBuildingCount > 0 && sourceHomeBuildingCount <= 1));
+      const inventoryBuildingProfiles = summarizeScenarioBuildingProfiles(inventory);
+      const lowFitBuildingKeys = getScenarioLowFitBuildingKeys(inventoryBuildingProfiles, { preferAcademicFit });
+      const lowFitBuildingLabels = Object.values(inventoryBuildingProfiles || {})
+        .filter((profile) => lowFitBuildingKeys.has(String(profile?.key || '').trim()))
+        .map((profile) => String(profile?.buildingLabel || '').trim())
+        .filter(Boolean);
+
       const context = {
         universityId,
         campusLabel: activeUniversityName || universityId || 'Campus',
@@ -16009,6 +16138,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         scenarioDepartment: scenarioAssignedDept || inferredDept || '',
         targetDepartment: inferredDept || scenarioAssignedDept || '',
         excludeBuildings: excludeBuildings || [],
+        sourceHomeBuildingCount,
+        preferSingleBuilding: preferSingleTargetBuilding,
+        preferAcademicFit,
+        lowFitBuildings: lowFitBuildingLabels,
         scenarioLabel: (scenarioLabel || '').trim(),
         scope: inferredBuilding ? 'building' : 'campus'
       };
@@ -16027,9 +16160,17 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             }))
           }
         : null;
-      const scenarioConstraints = baselineTotalsForConstraints
-        ? { baselineTotals: baselineTotalsForConstraints, targetSfTolerance: aiCreateScenarioStrict ? 0.05 : 0.1 }
-        : null;
+      const scenarioConstraints = {
+        targetSfTolerance: aiCreateScenarioStrict ? 0.05 : 0.1,
+        preferSingleBuilding: preferSingleTargetBuilding,
+        sourceHomeBuildingCount,
+        preferAcademicFit,
+        lowFitBuildings: lowFitBuildingLabels,
+        crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic, etc.)']
+      };
+      if (baselineTotalsForConstraints) {
+        scenarioConstraints.baselineTotals = baselineTotalsForConstraints;
+      }
 
       const out = await createMoveScenario({ request, context, inventory, constraints: scenarioConstraints });
       const recommended = Array.isArray(out?.recommendedCandidates)
@@ -16067,7 +16208,12 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           };
         })
         : [];
-      const preferredBuilding = norm(inferredBuilding || getPrimaryScenarioBuilding(recommended) || '');
+      const preferredBuilding = norm(
+        inferredBuilding ||
+        pickPreferredScenarioBuilding(recommended, { preferAcademicFit, lowFitBuildingKeys }) ||
+        getPrimaryScenarioBuilding(recommended) ||
+        ''
+      );
       let adjustedCandidates = recommended;
       let autoFillNote = '';
       if (baselineTotals) {
@@ -16086,25 +16232,30 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           autoFillNote = `Auto-filled ${added} rooms to better match baseline SF and room-type mix.`;
         }
       }
-      const isLowPriorityCandidate = (c) =>
-        isScenarioClassroom(c?.type) || isScenarioLab(c?.type);
-      const primaryBuilding = preferredBuilding || getPrimaryScenarioBuilding(adjustedCandidates) || '';
-      if (primaryBuilding) {
+      const isCrossBuildingExceptionCandidate = (c) =>
+        isScenarioCrossBuildingExceptionType(c?.type);
+      const primaryBuilding = norm(
+        preferredBuilding ||
+        pickPreferredScenarioBuilding(adjustedCandidates, { preferAcademicFit, lowFitBuildingKeys }) ||
+        getPrimaryScenarioBuilding(adjustedCandidates) ||
+        ''
+      );
+      if (preferSingleTargetBuilding && primaryBuilding) {
         const constrained = adjustedCandidates.filter((c) => {
           const b = norm(c?.buildingLabel || '');
           if (b === primaryBuilding) return true;
-          return isLowPriorityCandidate(c);
+          return isCrossBuildingExceptionCandidate(c);
         });
         if (constrained.length) {
           adjustedCandidates = constrained;
-          autoFillNote = `${autoFillNote ? autoFillNote + ' ' : ''}Constrained scenario to a single building (${primaryBuilding}), allowing labs/classrooms to remain outside if needed.`;
+          autoFillNote = `${autoFillNote ? autoFillNote + ' ' : ''}Constrained scenario to a single building (${primaryBuilding}), allowing only classroom/specialized exceptions outside if needed.`;
         }
         if (baselineTotals) {
           const allowedInventory = inventory.filter((room) => {
             const b = norm(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
             if (b === primaryBuilding) return true;
             const t = room?.type ?? room?.roomType ?? '';
-            return isScenarioClassroom(t) || isScenarioLab(t);
+            return isScenarioCrossBuildingExceptionType(t);
           });
           const { candidates: refilled, added } = fillScenarioCandidatesToBaseline(
             adjustedCandidates,
@@ -16128,13 +16279,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const baselineCriteria = baselineTotalSF
         ? [`Aim for total SF within +/-${tolerancePct}% of baseline department total SF (${Math.round(baselineTotalSF).toLocaleString()} SF).`]
         : [];
+      const fitCriteria = (preferAcademicFit && lowFitBuildingLabels.length)
+        ? ['Prefer academically compatible buildings; avoid service/maintenance-heavy buildings when viable.']
+        : [];
       const cleanedCriteria = Array.isArray(out?.selectionCriteria)
         ? out.selectionCriteria.filter((c) => !/baseline|total\s*sf|sf within/i.test(c || ''))
         : [];
       setAiCreateScenarioResult({
         ...out,
         baselineTotals: baselineTotals || out?.baselineTotals,
-        selectionCriteria: [...baselineCriteria, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
+        selectionCriteria: [...baselineCriteria, ...fitCriteria, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
         recommendedCandidates: adjustedCandidates
       });
       setAiCreateScenarioOpen(false);
@@ -16146,6 +16300,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   }, [
     activeBuildingName,
     activeUniversityName,
+    aiCreateScenarioStrict,
     aiCreateScenarioText,
     aiStatus,
     campusRoomsLoaded,

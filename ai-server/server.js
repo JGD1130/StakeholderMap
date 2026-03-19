@@ -1757,11 +1757,53 @@ app.post("/create-move-scenario", async (req, res) => {
     const resp = await client.responses.create({
       model: AI_MODEL,
       input: [
-          {
-            role: "system",
-            content:
-              "You are helping create a move scenario by selecting candidate rooms from the provided campus-wide inventory and attached reference documents. Consider all buildings and floors unless the user explicitly restricts scope. Use only provided inventory/context/reference docs. Echo back roomId/revitId exactly as provided so the client can map results. Return each recommendation with revitId and floorName. If inventory is limited, return fewer candidates and explain assumptions. Do not fabricate rooms.\n\nIMPORTANT:\n- Do NOT filter candidates by vacancy/occupancy. Consider ALL rooms in the target building.\n- Do NOT treat current department/occupant assignments as constraints unless the user explicitly asks for it.\n- If context.excludeBuildings is provided, do NOT recommend rooms in those buildings (current home).\n- Primary objective: replicate the source department's footprint as closely as possible:\n  - total SF (+/-10-15% if possible)\n  - room type mix using NCES_Type (match SF by type)\n  - count of key functional types (labs, classrooms, offices if present)\n- If an occupied room is a better functional match, recommend it and clearly note the displacement.\n- Do NOT assume vacant-only unless explicitly stated by the user.\n\nVacancy/occupancy:\n- DO NOT require rooms to be vacant.\n- DO NOT use vacancy as a primary filter.\n- Only mention vacancy if the user explicitly asks for \"vacant only\" or \"avoid displacing\".\n- If you don't have reliable vacancy data, ignore it completely.\n\nBaseline/targets:\n- If constraints.baselineTotals is provided, use it as the target footprint.\n- Aim for total SF within +/- (constraints.targetSfTolerance or 0.10) of baselineTotals.totalSF.\n- Match sfByType / roomTypes mix as closely as possible.\n- Keep adding best-fit rooms until you reach the target range or exhaust the inventory.\n- If no single building can reach the target, select across multiple buildings.\n- If you cannot reach the target range or type mix, say so explicitly in assumptions and selectionCriteria.\n\nReturn:\n- scenarioDept (string)\n- baselineTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for the source department\n- scenarioTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for selected candidates\n\nScore rooms using:\n1. NCES room type similarity (highest weight)\n2. Area match (+/- 20%)\n3. Minimal displacement penalty"
-          },
+        {
+          role: "system",
+          content: `You are helping create a move scenario by selecting candidate rooms from the provided campus-wide inventory and attached reference documents. Consider all buildings and floors unless the user explicitly restricts scope. Use only provided inventory/context/reference docs. Echo back roomId/revitId exactly as provided so the client can map results. Return each recommendation with revitId and floorName. If inventory is limited, return fewer candidates and explain assumptions. Do not fabricate rooms.
+
+IMPORTANT:
+- Do NOT filter candidates by vacancy/occupancy. Consider ALL rooms in the target building.
+- Do NOT treat current department/occupant assignments as constraints unless the user explicitly asks for it.
+- If context.excludeBuildings is provided, do NOT recommend rooms in those buildings (current home).
+- Primary objective: replicate the source department's footprint as closely as possible:
+  - total SF (+/-10-15% if possible)
+  - room type mix using NCES_Type (match SF by type)
+  - count of key functional types (labs, classrooms, offices if present)
+- If an occupied room is a better functional match, recommend it and clearly note the displacement.
+- Do NOT assume vacant-only unless explicitly stated by the user.
+
+Building fit + consolidation:
+- Prefer building-function compatibility. For academic departments, avoid facilities/maintenance/service-heavy buildings unless no viable alternatives exist.
+- If constraints.preferAcademicFit is true, treat constraints.lowFitBuildings as avoid-by-default.
+- If constraints.preferSingleBuilding is true (especially when constraints.sourceHomeBuildingCount <= 1), concentrate recommendations in one primary destination building.
+- Only split into additional buildings when needed to meet footprint/type targets, and prefer split exceptions for classroom/specialized space needs (see constraints.crossBuildingExceptionTypes if provided).
+- If you must use low-fit or multi-building recommendations, explain the reason explicitly in assumptions.
+
+Vacancy/occupancy:
+- DO NOT require rooms to be vacant.
+- DO NOT use vacancy as a primary filter.
+- Only mention vacancy if the user explicitly asks for "vacant only" or "avoid displacing".
+- If you don't have reliable vacancy data, ignore it completely.
+
+Baseline/targets:
+- If constraints.baselineTotals is provided, use it as the target footprint.
+- Aim for total SF within +/- (constraints.targetSfTolerance or 0.10) of baselineTotals.totalSF.
+- Match sfByType / roomTypes mix as closely as possible.
+- Keep adding best-fit rooms until you reach the target range or exhaust the inventory.
+- If no single suitable building can reach the target, select across multiple buildings.
+- If you cannot reach the target range or type mix, say so explicitly in assumptions and selectionCriteria.
+
+Return:
+- scenarioDept (string)
+- baselineTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for the source department
+- scenarioTotals: totalSF, rooms, sfByType[] (array of {type, sf}) for selected candidates
+
+Score rooms/buildings using:
+1. NCES room type similarity (highest weight)
+2. Building fit for department function and consolidation preference
+3. Area match (+/- 20%)
+4. Minimal displacement penalty`
+        },
         {
           role: "user",
           content: userContent

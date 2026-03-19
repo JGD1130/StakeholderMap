@@ -226,3 +226,23 @@ Latest completed work (blank-map runtime hotfix)
 - Fixed `ReferenceError: Cannot access '<minified var>' before initialization` causing blank maps after deploy.
 - Root cause was a technical-route cloud-write flag referencing `isAdminUser` before that state variable was initialized in component scope.
 - Fixed by removing the early top-level reference and evaluating the cloud-write expression at render usage.
+
+Latest completed work (AI planning scenario fit tightening)
+- Tightened AI move-scenario behavior to better respect building fit and consolidation:
+  - Added department-fit heuristics to avoid service/maintenance-heavy destination buildings for academic departments when viable alternatives exist.
+  - Added single-building preference when the source department currently lives in one building (or when an explicit target building is requested).
+  - Limited cross-building exceptions to classroom/specialized space types (for example shops/auditoria/performance/clinic/studio), instead of broad cross-building lab spillover.
+- Added scenario constraints/context signals sent to AI:
+  - `preferSingleBuilding`
+  - `sourceHomeBuildingCount`
+  - `preferAcademicFit`
+  - `lowFitBuildings`
+  - `crossBuildingExceptionTypes`
+- Updated server-side move-scenario system prompt to explicitly enforce:
+  - building-function compatibility
+  - low-fit building avoidance when requested
+  - single-building consolidation preference with limited exception types
+- Validation:
+  - `node --check ai-server/server.js` passed
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
