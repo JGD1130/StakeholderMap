@@ -12816,8 +12816,16 @@ const StakeholderMap = ({
       return bestResult;
     };
 
-    const orientationsToTry = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal'
-      ? [preferredOrientation]
+    // In room-local axes, button semantics are opposite of splitter axis:
+    // - "Halve Vertical" expects an up/down divider line (parallel to room vertical direction),
+    //   which corresponds to the local "horizontal" split axis search.
+    // - "Halve Horizontal" expects a left/right divider line, which corresponds to local "vertical".
+    const mappedPreferredOrientation =
+      preferredOrientation === 'vertical'
+        ? 'horizontal'
+        : (preferredOrientation === 'horizontal' ? 'vertical' : 'auto');
+    const orientationsToTry = mappedPreferredOrientation === 'vertical' || mappedPreferredOrientation === 'horizontal'
+      ? [mappedPreferredOrientation]
       : ['vertical', 'horizontal'];
     const bestResult = orientationsToTry
       .map((orientation) => evaluateOrientation(orientation))
@@ -12877,6 +12885,7 @@ const StakeholderMap = ({
     console.log('[Planning Scenario Debug] auto halve applied', {
       roomId,
       preferredOrientation,
+      mappedPreferredOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: dominantOrientationDeg,
       imbalanceRatio: bestImbalanceRatio,

@@ -312,3 +312,16 @@ Latest completed work (scenario halving orientation/forced-mode refinement)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (scenario halve button semantic fix)
+- Fixed `Halve Vertical` / `Halve Horizontal` direction naming mismatch in room-local halving.
+- Root cause:
+  - Room-local splitter axis interpretation was correct geometrically, but mapped opposite to user-facing button names.
+- Fix:
+  - Added explicit orientation mapping so:
+    - `Halve Vertical` produces the expected vertical divider direction in room context.
+    - `Halve Horizontal` produces the expected horizontal divider direction in room context.
+  - Geometry engine and equal-area search remain unchanged.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
