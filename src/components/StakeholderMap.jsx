@@ -5267,7 +5267,7 @@ function sanitizeVacancyLanguage(text) {
 const isScenarioClassroom = (value) => /(classroom|lecture|seminar|training|teaching)/i.test(String(value ?? ''));
 const isScenarioOfficeType = (value) => /(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(String(value ?? ''));
 const isScenarioLab = (value) => /(lab|laboratory|research)/i.test(String(value ?? ''));
-const isScenarioSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|arena|gym|athletic|fieldhouse|maker|kiln|greenhouse|special)/i.test(String(value ?? ''));
+const isScenarioSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|arena|gym|athletic|fieldhouse|maker|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(String(value ?? ''));
 const isScenarioMaintenanceType = (value) => /(custod|janitor|maintenance|mechanical|electrical|utility|boiler|loading dock|warehouse|storage room|storage|service)/i.test(String(value ?? ''));
 const isScenarioCrossBuildingExceptionType = (value) =>
   isScenarioClassroom(value) || isScenarioSpecializedType(value);
@@ -5310,8 +5310,18 @@ const shouldPreferAcademicFitForScenario = (deptName, baselineTotals) => {
 };
 
 const isScenarioLowFitBuildingName = (value) =>
-  /(general services|facility maintenance|facilities maintenance|physical plant|plant operations|central services|warehouse|service center)/i
+  /(general services|facility maintenance|facilities maintenance|physical plant|plant operations|central services|warehouse|service center|student union|residence|residency|apartment|stadium|fitness facility|chapel|health center)/i
     .test(String(value ?? ''));
+
+const SCENARIO_OFFLINE_BUILDINGS = [
+  'Hayes M. Fuhr Hall of Music',
+  'Hayes M Fuhr Hall of Music'
+];
+const SCENARIO_OFFLINE_BUILDING_KEYS = new Set(
+  SCENARIO_OFFLINE_BUILDINGS.map((name) => normalizeDashboardKey(name)).filter(Boolean)
+);
+const isScenarioOfflineBuilding = (value) =>
+  SCENARIO_OFFLINE_BUILDING_KEYS.has(normalizeDashboardKey(String(value || '')));
 
 const summarizeScenarioBuildingProfiles = (inventory = []) => {
   const byBuilding = new Map();
@@ -5355,8 +5365,9 @@ const getScenarioLowFitBuildingKeys = (buildingProfiles, options = {}) => {
     const maintenanceShare = (Number(profile?.maintenanceSF || 0) || 0) / total;
     const academicShare = (Number(profile?.academicSF || 0) || 0) / total;
     const lowByName = isScenarioLowFitBuildingName(profile?.buildingLabel || '');
+    const lowByOffline = isScenarioOfflineBuilding(profile?.buildingLabel || '');
     const lowByMix = maintenanceShare >= 0.45 && academicShare <= 0.35;
-    if (lowByName || lowByMix) set.add(String(profile?.key || '').trim());
+    if (lowByName || lowByOffline || lowByMix) set.add(String(profile?.key || '').trim());
   });
   return set;
 };
@@ -16066,6 +16077,24 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         inventory = shrinkMoveScenarioInventory(inventory, inventoryTrimOptions);
       }
 
+      const scenarioPolicyNotes = [];
+      const preferAcademicFit = shouldPreferAcademicFitForScenario(inferredDept, baselineTotals);
+      const preferSingleTargetBuilding = Boolean(inferredBuilding || (sourceHomeBuildingCount > 0 && sourceHomeBuildingCount <= 1));
+      let inventoryBuildingProfiles = summarizeScenarioBuildingProfiles(inventory);
+      let lowFitBuildingKeys = getScenarioLowFitBuildingKeys(inventoryBuildingProfiles, { preferAcademicFit });
+      if (preferAcademicFit && !inferredBuilding && lowFitBuildingKeys.size) {
+        const strictFilteredInventory = inventory.filter((room) => {
+          const b = normalizeDashboardKey(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
+          return b ? !lowFitBuildingKeys.has(b) : true;
+        });
+        if (strictFilteredInventory.length >= Math.min(40, Math.ceil(inventory.length * 0.2))) {
+          inventory = strictFilteredInventory;
+          scenarioPolicyNotes.push('Filtered out low-fit/offline buildings based on master-plan-style suitability guidance before AI candidate selection.');
+          inventoryBuildingProfiles = summarizeScenarioBuildingProfiles(inventory);
+          lowFitBuildingKeys = getScenarioLowFitBuildingKeys(inventoryBuildingProfiles, { preferAcademicFit });
+        }
+      }
+
       const inventoryLookup = new Map();
       inventory.forEach((room) => {
         if (!room) return;
@@ -16119,13 +16148,12 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
         return best;
       };
-
-      const preferAcademicFit = shouldPreferAcademicFitForScenario(inferredDept, baselineTotals);
-      const preferSingleTargetBuilding = Boolean(inferredBuilding || (sourceHomeBuildingCount > 0 && sourceHomeBuildingCount <= 1));
-      const inventoryBuildingProfiles = summarizeScenarioBuildingProfiles(inventory);
-      const lowFitBuildingKeys = getScenarioLowFitBuildingKeys(inventoryBuildingProfiles, { preferAcademicFit });
       const lowFitBuildingLabels = Object.values(inventoryBuildingProfiles || {})
         .filter((profile) => lowFitBuildingKeys.has(String(profile?.key || '').trim()))
+        .map((profile) => String(profile?.buildingLabel || '').trim())
+        .filter(Boolean);
+      const offlineBuildingLabels = Object.values(inventoryBuildingProfiles || {})
+        .filter((profile) => isScenarioOfflineBuilding(profile?.buildingLabel || ''))
         .map((profile) => String(profile?.buildingLabel || '').trim())
         .filter(Boolean);
 
@@ -16142,6 +16170,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         preferSingleBuilding: preferSingleTargetBuilding,
         preferAcademicFit,
         lowFitBuildings: lowFitBuildingLabels,
+        offlineBuildings: offlineBuildingLabels,
         scenarioLabel: (scenarioLabel || '').trim(),
         scope: inferredBuilding ? 'building' : 'campus'
       };
@@ -16166,6 +16195,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         sourceHomeBuildingCount,
         preferAcademicFit,
         lowFitBuildings: lowFitBuildingLabels,
+        offlineBuildings: offlineBuildingLabels,
         crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic, etc.)']
       };
       if (baselineTotalsForConstraints) {
@@ -16288,7 +16318,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setAiCreateScenarioResult({
         ...out,
         baselineTotals: baselineTotals || out?.baselineTotals,
-        selectionCriteria: [...baselineCriteria, ...fitCriteria, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
+        selectionCriteria: [...baselineCriteria, ...fitCriteria, ...scenarioPolicyNotes, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
         recommendedCandidates: adjustedCandidates
       });
       setAiCreateScenarioOpen(false);

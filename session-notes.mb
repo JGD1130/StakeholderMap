@@ -246,3 +246,11 @@ Latest completed work (AI planning scenario fit tightening)
   - `node --check ai-server/server.js` passed
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (AI planning scenario fit tightening - phase 2)
+- Added stricter pre-AI inventory screening for academic move scenarios:
+  - Excludes low-fit/offline buildings before AI candidate generation when viable inventory remains.
+  - Offline building handling currently includes Fuhr (`Hayes M. Fuhr Hall of Music`) as exclude-by-default.
+- Expanded low-fit building-name heuristics for academic moves (service/maintenance, student union, residence/apartments, stadium/fitness/chapel/health-center style buildings).
+- Narrowed specialized cross-building exceptions to true specialty uses (removed broad generic `special` match that was allowing too many spillover lab-like spaces).
+- Added `offlineBuildings` into scenario context/constraints and reinforced server prompt instruction to treat them as exclude-by-default unless user explicitly requests them.

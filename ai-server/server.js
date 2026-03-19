@@ -1775,6 +1775,7 @@ IMPORTANT:
 Building fit + consolidation:
 - Prefer building-function compatibility. For academic departments, avoid facilities/maintenance/service-heavy buildings unless no viable alternatives exist.
 - If constraints.preferAcademicFit is true, treat constraints.lowFitBuildings as avoid-by-default.
+- Treat constraints.offlineBuildings as exclude-by-default unless the user explicitly asks to include them.
 - If constraints.preferSingleBuilding is true (especially when constraints.sourceHomeBuildingCount <= 1), concentrate recommendations in one primary destination building.
 - Only split into additional buildings when needed to meet footprint/type targets, and prefer split exceptions for classroom/specialized space needs (see constraints.crossBuildingExceptionTypes if provided).
 - If you must use low-fit or multi-building recommendations, explain the reason explicitly in assumptions.
