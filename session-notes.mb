@@ -221,3 +221,8 @@ Release stamp (2026-03-19)
 - Hastings pre-release checklist: GO.
 - Manual URL/auth matrix: all rows verified GO by operator.
 - Current release posture: ready for stakeholder handoff.
+
+Latest completed work (blank-map runtime hotfix)
+- Fixed `ReferenceError: Cannot access '<minified var>' before initialization` causing blank maps after deploy.
+- Root cause was a technical-route cloud-write flag referencing `isAdminUser` before that state variable was initialized in component scope.
+- Fixed by removing the early top-level reference and evaluating the cloud-write expression at render usage.

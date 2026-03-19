@@ -8759,7 +8759,6 @@ const StakeholderMap = ({
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const showAuthAccessControls = isAdminMode;
-  const technicalCloudWriteEnabled = isTechnicalOnlyMode ? true : isAdminUser;
   const defaultMapView = isTechnicalOnlyMode
     ? MAP_VIEWS.TECHNICAL
     : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
@@ -21940,7 +21939,7 @@ useEffect(() => {
             universityId={universityId}
             panelPos={panelAnchor}
             isAdminRole={isAdminUser}
-            canWriteCloud={technicalCloudWriteEnabled}
+            canWriteCloud={isTechnicalOnlyMode ? true : isAdminUser}
             onClose={() => {
               setIsTechnicalPanelOpen(false);
               if (showFullMapfluenceControls) {
