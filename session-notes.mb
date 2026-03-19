@@ -254,3 +254,10 @@ Latest completed work (AI planning scenario fit tightening - phase 2)
 - Expanded low-fit building-name heuristics for academic moves (service/maintenance, student union, residence/apartments, stadium/fitness/chapel/health-center style buildings).
 - Narrowed specialized cross-building exceptions to true specialty uses (removed broad generic `special` match that was allowing too many spillover lab-like spaces).
 - Added `offlineBuildings` into scenario context/constraints and reinforced server prompt instruction to treat them as exclude-by-default unless user explicitly requests them.
+
+Latest completed work (runtime hotfix after planning-fit updates)
+- Fixed frontend crash `ReferenceError: Cannot access '<minified var>' before initialization` introduced by a top-level offline-building key set using `normalizeDashboardKey` before that function was initialized.
+- Resolved by switching offline-building key normalization to a local helper independent of later module symbols.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

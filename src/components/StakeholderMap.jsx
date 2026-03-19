@@ -5317,11 +5317,15 @@ const SCENARIO_OFFLINE_BUILDINGS = [
   'Hayes M. Fuhr Hall of Music',
   'Hayes M Fuhr Hall of Music'
 ];
+const normalizeScenarioOfflineBuildingKey = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 const SCENARIO_OFFLINE_BUILDING_KEYS = new Set(
-  SCENARIO_OFFLINE_BUILDINGS.map((name) => normalizeDashboardKey(name)).filter(Boolean)
+  SCENARIO_OFFLINE_BUILDINGS.map((name) => normalizeScenarioOfflineBuildingKey(name)).filter(Boolean)
 );
 const isScenarioOfflineBuilding = (value) =>
-  SCENARIO_OFFLINE_BUILDING_KEYS.has(normalizeDashboardKey(String(value || '')));
+  SCENARIO_OFFLINE_BUILDING_KEYS.has(normalizeScenarioOfflineBuildingKey(String(value || '')));
 
 const summarizeScenarioBuildingProfiles = (inventory = []) => {
   const byBuilding = new Map();
