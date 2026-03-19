@@ -261,3 +261,19 @@ Latest completed work (runtime hotfix after planning-fit updates)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (AI planning strict-fit guardrails)
+- Tightened strict-fit candidate auto-fill so large outlier rooms no longer blow past target SF:
+  - Added strict upper-bound guard (`targetMax`) in baseline auto-fill; strict mode now refuses additions that exceed the upper fit range.
+  - Added strict gap-aware room selection so fill prefers rooms closest to remaining target need instead of blindly taking largest rooms.
+- Added academic-fit protection against athletics outliers for non-athletics baselines:
+  - Auto-fill now excludes athletics/gym/arena/fieldhouse room types when `preferAcademicFit` is active and baseline does not include athletics types.
+- Narrowed cross-building exceptions:
+  - Cross-building exception matcher now allows classroom + true specialized academic spaces (shop/auditorium/performance/clinic/studio/etc.) and excludes athletics/gym/arena spillover.
+  - Updated move-scenario exception label text accordingly.
+- Reinforced server-side move-scenario prompt:
+  - In non-athletics moves, avoid athletics/gym/arena/fieldhouse unless explicitly needed/requested.
+  - In strict mode (`targetSfTolerance <= 0.05`), do not intentionally exceed upper SF bound; prefer slight under-target with explanation.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

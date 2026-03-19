@@ -5176,8 +5176,21 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
 
   const targetTolerance = Number.isFinite(options.targetTolerance) ? options.targetTolerance : 0.1;
   const targetMin = baseTotal * (1 - targetTolerance);
+  const targetMax = baseTotal * (1 + targetTolerance);
   const maxCandidates = Number.isFinite(options.maxCandidates) ? options.maxCandidates : 25;
   const primaryBuilding = options.primaryBuilding || '';
+  const strictFit = Boolean(
+    typeof options.strictFit === 'boolean'
+      ? options.strictFit
+      : targetTolerance <= 0.051
+  );
+  const preferAcademicFit = Boolean(options.preferAcademicFit);
+  const scenarioDepartment = String(options.scenarioDepartment || '').trim();
+  const baselineAllowsAthletics = Object.entries(baselineTotals.sfByRoomType || {}).some(([type, sf]) => {
+    if ((Number(sf || 0) || 0) <= 0) return false;
+    return isScenarioAthleticsType(type);
+  });
+  const disallowAthleticsFallback = preferAcademicFit && !baselineAllowsAthletics && !isLikelyOperationsDept(scenarioDepartment);
 
   const next = Array.isArray(candidates) ? [...candidates] : [];
   const totals = computeScenarioTotalsFromCandidates(next);
@@ -5190,6 +5203,8 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
   inventory.forEach((room) => {
     const key = String(room?.roomId ?? room?.id ?? room?.revitId ?? '');
     if (!key || usedKeys.has(key)) return;
+    const roomType = room?.type ?? room?.roomType ?? '';
+    if (disallowAthleticsFallback && isScenarioAthleticsType(roomType)) return;
     const typeKey = normalizeTypeMatch(room?.type ?? room?.roomType ?? '') || 'other';
     if (!roomsByType.has(typeKey)) roomsByType.set(typeKey, []);
     roomsByType.get(typeKey).push(room);
@@ -5216,6 +5231,9 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
   let added = 0;
   const addRoom = (room, reason) => {
     if (!room || next.length >= maxCandidates) return false;
+    const roomSf = Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0) || 0;
+    if (!roomSf) return false;
+    if (strictFit && totals.totalSF + roomSf > targetMax) return false;
     next.push({
       roomId: room?.roomId ?? room?.id ?? '',
       id: room?.id ?? room?.roomId ?? '',
@@ -5225,19 +5243,44 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
       floorName: room?.floorName ?? room?.floorId ?? '',
       roomLabel: room?.roomLabel ?? '',
       type: room?.type ?? '',
-      sf: Number(room?.sf ?? 0) || 0,
+      sf: roomSf,
       rationale: reason || 'Added to reach baseline target.'
     });
-    totals.totalSF += Number(room?.sf ?? 0) || 0;
+    totals.totalSF += roomSf;
     added += 1;
     return true;
+  };
+
+  const pickBestRoomIndexForGap = (rooms) => {
+    if (!Array.isArray(rooms) || !rooms.length) return -1;
+    if (!strictFit) return 0;
+    const remainingToMin = Math.max(0, targetMin - totals.totalSF);
+    const remainingToMax = Math.max(0, targetMax - totals.totalSF);
+    let bestIndex = -1;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < rooms.length; i += 1) {
+      const room = rooms[i];
+      const roomSf = Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0) || 0;
+      if (!roomSf) continue;
+      const exceedsMax = roomSf > remainingToMax;
+      let score = Math.abs(remainingToMin - roomSf);
+      if (exceedsMax) score += 1000000 + ((roomSf - remainingToMax) * 100);
+      if (!exceedsMax && roomSf >= remainingToMin) score -= 50;
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+    return bestIndex >= 0 ? bestIndex : 0;
   };
 
   for (const typeKey of baselineTypeOrder) {
     if (totals.totalSF >= targetMin || next.length >= maxCandidates) break;
     const rooms = roomsByType.get(typeKey) || [];
     while (rooms.length && totals.totalSF < targetMin && next.length < maxCandidates) {
-      const room = rooms.shift();
+      const idx = pickBestRoomIndexForGap(rooms);
+      if (idx < 0) break;
+      const [room] = rooms.splice(idx, 1);
       addRoom(room, 'Added to better match baseline room-type mix.');
     }
   }
@@ -5267,10 +5310,12 @@ function sanitizeVacancyLanguage(text) {
 const isScenarioClassroom = (value) => /(classroom|lecture|seminar|training|teaching)/i.test(String(value ?? ''));
 const isScenarioOfficeType = (value) => /(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(String(value ?? ''));
 const isScenarioLab = (value) => /(lab|laboratory|research)/i.test(String(value ?? ''));
+const isScenarioAthleticsType = (value) => /(athletic|gym|arena|fieldhouse|locker room|sports)/i.test(String(value ?? ''));
 const isScenarioSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|arena|gym|athletic|fieldhouse|maker|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(String(value ?? ''));
 const isScenarioMaintenanceType = (value) => /(custod|janitor|maintenance|mechanical|electrical|utility|boiler|loading dock|warehouse|storage room|storage|service)/i.test(String(value ?? ''));
+const isScenarioCrossBuildingSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|maker|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(String(value ?? ''));
 const isScenarioCrossBuildingExceptionType = (value) =>
-  isScenarioClassroom(value) || isScenarioSpecializedType(value);
+  isScenarioClassroom(value) || isScenarioCrossBuildingSpecializedType(value);
 
 const getScenarioTypeRank = (value) => {
   if (isScenarioOfficeType(value)) return 0;
@@ -16200,7 +16245,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         preferAcademicFit,
         lowFitBuildings: lowFitBuildingLabels,
         offlineBuildings: offlineBuildingLabels,
-        crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic, etc.)']
+        crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic; excludes athletics/gym/arena)']
       };
       if (baselineTotalsForConstraints) {
         scenarioConstraints.baselineTotals = baselineTotalsForConstraints;
@@ -16258,7 +16303,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           {
             targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
             maxCandidates: aiCreateScenarioStrict ? 40 : 30,
-            primaryBuilding: preferredBuilding
+            primaryBuilding: preferredBuilding,
+            strictFit: aiCreateScenarioStrict,
+            preferAcademicFit,
+            scenarioDepartment: inferredDept || scenarioAssignedDept || ''
           }
         );
         if (added > 0) {
@@ -16298,7 +16346,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             {
               targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
               maxCandidates: aiCreateScenarioStrict ? 40 : 30,
-              primaryBuilding
+              primaryBuilding,
+              strictFit: aiCreateScenarioStrict,
+              preferAcademicFit,
+              scenarioDepartment: inferredDept || scenarioAssignedDept || ''
             }
           );
           if (added > 0) {

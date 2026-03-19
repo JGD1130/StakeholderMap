@@ -1776,6 +1776,7 @@ Building fit + consolidation:
 - Prefer building-function compatibility. For academic departments, avoid facilities/maintenance/service-heavy buildings unless no viable alternatives exist.
 - If constraints.preferAcademicFit is true, treat constraints.lowFitBuildings as avoid-by-default.
 - Treat constraints.offlineBuildings as exclude-by-default unless the user explicitly asks to include them.
+- For non-athletics departments, avoid athletics/gym/arena/fieldhouse spaces unless explicitly requested or clearly required to satisfy a missing specialized baseline type.
 - If constraints.preferSingleBuilding is true (especially when constraints.sourceHomeBuildingCount <= 1), concentrate recommendations in one primary destination building.
 - Only split into additional buildings when needed to meet footprint/type targets, and prefer split exceptions for classroom/specialized space needs (see constraints.crossBuildingExceptionTypes if provided).
 - If you must use low-fit or multi-building recommendations, explain the reason explicitly in assumptions.
@@ -1789,6 +1790,7 @@ Vacancy/occupancy:
 Baseline/targets:
 - If constraints.baselineTotals is provided, use it as the target footprint.
 - Aim for total SF within +/- (constraints.targetSfTolerance or 0.10) of baselineTotals.totalSF.
+- If constraints.targetSfTolerance <= 0.05 (strict mode), do not intentionally exceed the upper SF bound; prefer a slight under-target and call out why.
 - Match sfByType / roomTypes mix as closely as possible.
 - Keep adding best-fit rooms until you reach the target range or exhaust the inventory.
 - If no single suitable building can reach the target, select across multiple buildings.
