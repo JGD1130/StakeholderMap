@@ -6267,6 +6267,12 @@ function normalizeAngleDelta(deg) {
   return a;
 }
 
+function toHorizontalAnchorAngle(deg) {
+  const base = normalizeAngleDelta(Number(deg) || 0);
+  const alt = normalizeAngleDelta(base + 90);
+  return Math.abs(alt) < Math.abs(base) ? alt : base;
+}
+
 function getFeatureOrientationDeg(feature, limit = 2000) {
   if (!feature?.geometry) return 0;
   const pts = extractLngLatPairs(feature.geometry, limit);
@@ -12703,7 +12709,9 @@ const StakeholderMap = ({
     const rawOrientationDeg = Number.isFinite(dominantEdgeDeg)
       ? dominantEdgeDeg
       : (Number.isFinite(weightedEdgeDeg) ? weightedEdgeDeg : 0);
-    const dominantOrientationDeg = normalizeAngleDelta(rawOrientationDeg);
+    // Anchor to the edge direction that is visually "more horizontal" on screen.
+    // This avoids 90deg ambiguity that can flip vertical/horizontal semantics.
+    const dominantOrientationDeg = toHorizontalAnchorAngle(rawOrientationDeg);
     // Align room-local axes to X/Y for halving so vertical/horizontal are relative to room orientation.
     const toAxisDeg = pivot && Number.isFinite(dominantOrientationDeg) && Math.abs(dominantOrientationDeg) > 1e-4
       ? -dominantOrientationDeg
@@ -12816,16 +12824,8 @@ const StakeholderMap = ({
       return bestResult;
     };
 
-    // In room-local axes, button semantics are opposite of splitter axis:
-    // - "Halve Vertical" expects an up/down divider line (parallel to room vertical direction),
-    //   which corresponds to the local "horizontal" split axis search.
-    // - "Halve Horizontal" expects a left/right divider line, which corresponds to local "vertical".
-    const mappedPreferredOrientation =
-      preferredOrientation === 'vertical'
-        ? 'horizontal'
-        : (preferredOrientation === 'horizontal' ? 'vertical' : 'auto');
-    const orientationsToTry = mappedPreferredOrientation === 'vertical' || mappedPreferredOrientation === 'horizontal'
-      ? [mappedPreferredOrientation]
+    const orientationsToTry = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal'
+      ? [preferredOrientation]
       : ['vertical', 'horizontal'];
     const bestResult = orientationsToTry
       .map((orientation) => evaluateOrientation(orientation))
@@ -12885,7 +12885,6 @@ const StakeholderMap = ({
     console.log('[Planning Scenario Debug] auto halve applied', {
       roomId,
       preferredOrientation,
-      mappedPreferredOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: dominantOrientationDeg,
       imbalanceRatio: bestImbalanceRatio,

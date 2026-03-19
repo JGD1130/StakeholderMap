@@ -325,3 +325,15 @@ Latest completed work (scenario halve button semantic fix)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (scenario halving 90deg axis ambiguity fix)
+- Fixed remaining vertical/horizontal reversal behavior by resolving room-axis ambiguity at source.
+- Root cause:
+  - For many polygons, dominant edge orientation can be represented by two equivalent axes 90deg apart, which flipped divider semantics across rooms.
+- Fix:
+  - Added `toHorizontalAnchorAngle(...)` to anchor room orientation to the edge direction that is most horizontal on screen.
+  - Removed prior global vertical/horizontal button remap; buttons now map directly to intended split orientation.
+  - Keeps room-relative halving while preserving consistent user-facing button behavior across angled and right-angle polygons.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
