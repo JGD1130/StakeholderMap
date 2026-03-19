@@ -277,3 +277,13 @@ Latest completed work (AI planning strict-fit guardrails)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (scenario room halving axis alignment)
+- Updated planning scenario `Halve Vertical` and `Halve Horizontal` to align with the selected room polygon orientation (room-local axes), instead of global map north/south east/west axes.
+- Implementation details:
+  - Halving now computes the room's dominant edge orientation.
+  - Geometry is rotated into a temporary room-aligned frame, split on strict orthogonal axes there, then rotated back.
+  - This keeps cuts orthogonal and visually correct on slanted/rotated floorplans.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

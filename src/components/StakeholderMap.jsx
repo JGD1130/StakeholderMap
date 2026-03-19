@@ -12765,8 +12765,33 @@ const StakeholderMap = ({
       alert('Unable to resolve room geometry to halve.');
       return false;
     }
-    const feature = { type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(effectiveRoom.geometry) };
-    const bbox = turf.bbox(feature);
+
+    const baseGeometry = cloneGeoJsonValue(effectiveRoom.geometry);
+    const feature = { type: 'Feature', properties: {}, geometry: baseGeometry };
+    const centroid = turf.centroid(feature)?.geometry?.coordinates || null;
+    const pivot = Array.isArray(centroid) && centroid.length >= 2
+      ? [Number(centroid[0]), Number(centroid[1])]
+      : null;
+    const edgeOrientationDeg = Number(getEdgeWeightedOrientationDeg(baseGeometry));
+    const dominantOrientationDeg = Number.isFinite(edgeOrientationDeg) ? edgeOrientationDeg : 0;
+    // Align room-local axes to X/Y for halving so vertical/horizontal are relative to room orientation.
+    const toAxisDeg = pivot && Number.isFinite(dominantOrientationDeg) && Math.abs(dominantOrientationDeg) > 1e-4
+      ? -dominantOrientationDeg
+      : 0;
+    const fromAxisDeg = -toAxisDeg;
+    const rotateGeometryAroundPivot = (geometry, deg) => {
+      if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
+        return cloneGeoJsonValue(geometry);
+      }
+      return {
+        ...geometry,
+        coordinates: mapCoords(geometry.coordinates, (pt) => rotatePoint(pt, pivot, deg))
+      };
+    };
+    const workingGeometry = rotateGeometryAroundPivot(baseGeometry, toAxisDeg);
+    const workingFeature = { type: 'Feature', properties: {}, geometry: workingGeometry };
+
+    const bbox = turf.bbox(workingFeature);
     const minX = Number(bbox?.[0]);
     const minY = Number(bbox?.[1]);
     const maxX = Number(bbox?.[2]);
@@ -12782,7 +12807,7 @@ const StakeholderMap = ({
       const maxOffset = isVertical ? maxX : maxY;
       const span = Math.max(0.001, maxOffset - minOffset);
       const evaluateOffset = (offset) => {
-        const splitResult = resolveScenarioAxisSplitPieces(effectiveRoom.geometry, orientation, offset);
+        const splitResult = resolveScenarioAxisSplitPieces(workingGeometry, orientation, offset);
         if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
         const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
         const firstArea = Math.max(0, Number(sideAreas[0] || 0));
@@ -12866,7 +12891,26 @@ const StakeholderMap = ({
       return false;
     }
 
-    const applied = commitScenarioRoomSplit(effectiveRoom, bestResult.splitResult, {
+    const finalSplitResult = (!pivot || Math.abs(fromAxisDeg) <= 1e-7)
+      ? bestResult.splitResult
+      : {
+          ...bestResult.splitResult,
+          splitStart: Array.isArray(bestResult.splitResult?.splitStart)
+            ? rotatePoint(bestResult.splitResult.splitStart, pivot, fromAxisDeg)
+            : bestResult.splitResult?.splitStart,
+          splitEnd: Array.isArray(bestResult.splitResult?.splitEnd)
+            ? rotatePoint(bestResult.splitResult.splitEnd, pivot, fromAxisDeg)
+            : bestResult.splitResult?.splitEnd,
+          pieces: (bestResult.splitResult?.pieces || []).map((piece) => {
+            if (!piece?.geometry) return piece;
+            return {
+              ...piece,
+              geometry: rotateGeometryAroundPivot(piece.geometry, fromAxisDeg)
+            };
+          })
+        };
+
+    const applied = commitScenarioRoomSplit(effectiveRoom, finalSplitResult, {
       roomTypeLabel: 'Halved Scenario Room',
       operationType: 'halve'
     });
@@ -12878,6 +12922,7 @@ const StakeholderMap = ({
       roomId,
       preferredOrientation,
       chosenOrientation: bestResult.orientation,
+      roomOrientationDeg: dominantOrientationDeg,
       absAreaDiff: bestResult.absDiff
     });
     return true;
