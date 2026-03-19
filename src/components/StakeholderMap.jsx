@@ -12698,8 +12698,12 @@ const StakeholderMap = ({
     const pivot = Array.isArray(centroid) && centroid.length >= 2
       ? [Number(centroid[0]), Number(centroid[1])]
       : null;
-    const edgeOrientationDeg = Number(getEdgeWeightedOrientationDeg(baseGeometry));
-    const dominantOrientationDeg = Number.isFinite(edgeOrientationDeg) ? edgeOrientationDeg : 0;
+    const dominantEdgeDeg = Number(getDominantEdgeAngleDeg(baseGeometry));
+    const weightedEdgeDeg = Number(getEdgeWeightedOrientationDeg(baseGeometry));
+    const rawOrientationDeg = Number.isFinite(dominantEdgeDeg)
+      ? dominantEdgeDeg
+      : (Number.isFinite(weightedEdgeDeg) ? weightedEdgeDeg : 0);
+    const dominantOrientationDeg = normalizeAngleDelta(rawOrientationDeg);
     // Align room-local axes to X/Y for halving so vertical/horizontal are relative to room orientation.
     const toAxisDeg = pivot && Number.isFinite(dominantOrientationDeg) && Math.abs(dominantOrientationDeg) > 1e-4
       ? -dominantOrientationDeg
@@ -12795,6 +12799,20 @@ const StakeholderMap = ({
           break;
         }
       }
+      const sampleStep = (span + (padding * 2)) / Math.max(1, sampleCount);
+      let refineOffset = Number(bestResult?.offset ?? ((minOffset + maxOffset) / 2));
+      let refineStep = Math.max(sampleStep, span * 0.15, 1e-6);
+      for (let iter = 0; iter < 14; iter += 1) {
+        const candidates = [refineOffset - refineStep, refineOffset, refineOffset + refineStep]
+          .map((off) => evaluateOffset(off))
+          .filter(Boolean);
+        if (candidates.length) {
+          const localBest = candidates.reduce((best, candidate) => (candidate.absDiff < best.absDiff ? candidate : best), candidates[0]);
+          if (localBest.absDiff < bestResult.absDiff) bestResult = localBest;
+          refineOffset = Number(localBest.offset);
+        }
+        refineStep *= 0.5;
+      }
       return bestResult;
     };
 
@@ -12823,7 +12841,8 @@ const StakeholderMap = ({
     const bestImbalanceRatio = bestTotalArea > 1e-8
       ? (Math.abs(bestResult.absDiff || 0) / bestTotalArea)
       : 1;
-    if (!Number.isFinite(bestImbalanceRatio) || bestImbalanceRatio > 0.2) {
+    const forcedOrientation = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal';
+    if (!forcedOrientation && (!Number.isFinite(bestImbalanceRatio) || bestImbalanceRatio > 0.2)) {
       alert('Unable to compute a reliable equal-area split for this room and orientation.');
       return false;
     }
@@ -12860,6 +12879,7 @@ const StakeholderMap = ({
       preferredOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: dominantOrientationDeg,
+      imbalanceRatio: bestImbalanceRatio,
       absAreaDiff: bestResult.absDiff
     });
     return true;

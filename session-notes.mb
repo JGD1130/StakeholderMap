@@ -299,3 +299,16 @@ Latest completed work (scenario halving reliability hotfix)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (scenario halving orientation/forced-mode refinement)
+- Improved room-axis detection for halving:
+  - Now prioritizes dominant edge angle (wall-aligned) over weighted average orientation, then normalizes angle.
+  - Reduces slant drift where split lines looked visually off-axis to room walls.
+- Improved strict direction behavior:
+  - `Halve Vertical` / `Halve Horizontal` no longer hard-fail due reliability threshold when orientation is explicitly forced by user.
+  - Reliability guard remains for auto-orientation mode only.
+- Improved equal-area search quality:
+  - Added local offset refinement around best sampled split to better minimize area difference for each orientation.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
