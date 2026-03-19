@@ -287,3 +287,15 @@ Latest completed work (scenario room halving axis alignment)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (scenario halving reliability hotfix)
+- Fixed bad/imbalanced room-halving outcomes on some slanted polygons after room-local alignment rollout.
+- Root-cause mitigation:
+  - Replaced the special-case axis splitter used by halving with the existing robust split engine (`resolveScenarioSplitPieces`) in axis-lock mode.
+  - This keeps axis constraints but uses the same geometry path as manual split, improving consistency and piece validity.
+- Added reliability guard:
+  - If the computed best split is still highly imbalanced (>20% area imbalance), the action now aborts with a clear alert instead of creating a bad halve.
+- Increased offset sampling density for halving search from 24 to 36 to better find balanced cuts.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

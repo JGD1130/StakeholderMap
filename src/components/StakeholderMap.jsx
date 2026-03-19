@@ -12664,98 +12664,24 @@ const StakeholderMap = ({
     if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
 
     const span = Math.max(Math.abs(maxX - minX), Math.abs(maxY - minY), 0.001);
-    const pad = Math.max(span * 2, 0.01);
     const axisOffset = Number(offset);
-
-    const clipPolygons = orientation === 'vertical'
-      ? [
-          turf.polygon([[
-            [minX - pad, minY - pad],
-            [axisOffset, minY - pad],
-            [axisOffset, maxY + pad],
-            [minX - pad, maxY + pad],
-            [minX - pad, minY - pad]
-          ]]),
-          turf.polygon([[
-            [axisOffset, minY - pad],
-            [maxX + pad, minY - pad],
-            [maxX + pad, maxY + pad],
-            [axisOffset, maxY + pad],
-            [axisOffset, minY - pad]
-          ]])
-        ]
-      : [
-          turf.polygon([[
-            [minX - pad, minY - pad],
-            [maxX + pad, minY - pad],
-            [maxX + pad, axisOffset],
-            [minX - pad, axisOffset],
-            [minX - pad, minY - pad]
-          ]]),
-          turf.polygon([[
-            [minX - pad, axisOffset],
-            [maxX + pad, axisOffset],
-            [maxX + pad, maxY + pad],
-            [minX - pad, maxY + pad],
-            [minX - pad, axisOffset]
-          ]])
-        ];
-
-    const intersectHalf = (clipPolygon) => {
-      try {
-        const intersection = turf.intersect(turf.featureCollection([feature, clipPolygon]));
-        const geometry = intersection?.geometry;
-        if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return null;
-        const area = Math.max(0, Number(turf.area(intersection) || 0));
-        if (area <= 1e-8) return null;
-        return intersection;
-      } catch {
-        return null;
-      }
-    };
-
-    const pieceA = intersectHalf(clipPolygons[0]);
-    const pieceB = intersectHalf(clipPolygons[1]);
-    if (!pieceA || !pieceB) return null;
-
-    let splitStart = orientation === 'vertical' ? [axisOffset, minY] : [minX, axisOffset];
-    let splitEnd = orientation === 'vertical' ? [axisOffset, maxY] : [maxX, axisOffset];
-    try {
-      const boundary = turf.polygonToLine(feature);
-      const guideLine = orientation === 'vertical'
-        ? turf.lineString([[axisOffset, minY - pad], [axisOffset, maxY + pad]])
-        : turf.lineString([[minX - pad, axisOffset], [maxX + pad, axisOffset]]);
-      const intersections = (turf.lineIntersect(boundary, guideLine)?.features || [])
-        .map((hit) => hit?.geometry?.coordinates || [])
-        .filter((coord) => Array.isArray(coord) && coord.length >= 2)
-        .map((coord) => [Number(coord[0]), Number(coord[1])])
-        .filter((coord) => Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
-      const axisEps = Math.max(span * 1e-8, 1e-7);
-      const uniqueIntersections = intersections.reduce((acc, coord) => {
-        const exists = acc.some((existing) => Math.hypot(existing[0] - coord[0], existing[1] - coord[1]) <= axisEps);
-        if (!exists) acc.push(coord);
-        return acc;
-      }, []);
-      if (uniqueIntersections.length >= 2) {
-        uniqueIntersections.sort((a, b) => orientation === 'vertical' ? (a[1] - b[1]) : (a[0] - b[0]));
-        const first = uniqueIntersections[0];
-        const last = uniqueIntersections[uniqueIntersections.length - 1];
-        splitStart = orientation === 'vertical'
-          ? [axisOffset, Number(first[1])]
-          : [Number(first[0]), axisOffset];
-        splitEnd = orientation === 'vertical'
-          ? [axisOffset, Number(last[1])]
-          : [Number(last[0]), axisOffset];
-      }
-    } catch {}
-
+    const baseStart = orientation === 'vertical' ? [axisOffset, minY] : [minX, axisOffset];
+    const baseEnd = orientation === 'vertical' ? [axisOffset, maxY] : [maxX, axisOffset];
+    const splitResult = resolveScenarioSplitPieces(targetGeometry, baseStart, baseEnd, {
+      snapEndpoints: true,
+      preserveAxis: orientation
+    });
+    if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
+    const keptPieces = splitResult.pieces.slice(0, 2);
+    const sideAreas = keptPieces.map((part) => Math.max(0, Number(turf.area(part) || 0)));
     return {
-      pieces: [pieceA, pieceB],
-      splitStart,
-      splitEnd,
-      sideAreas: [Math.max(0, Number(turf.area(pieceA) || 0)), Math.max(0, Number(turf.area(pieceB) || 0))]
+      ...splitResult,
+      pieces: keptPieces,
+      splitStart: Array.isArray(splitResult?.splitStart) ? splitResult.splitStart : baseStart,
+      splitEnd: Array.isArray(splitResult?.splitEnd) ? splitResult.splitEnd : baseEnd,
+      sideAreas
     };
-  }, []);
+  }, [resolveScenarioSplitPieces]);
 
   const applyScenarioRoomHalve = useCallback((targetRoomId, preferredOrientation = 'auto') => {
     const roomId = String(targetRoomId || '').trim();
@@ -12822,7 +12748,7 @@ const StakeholderMap = ({
         };
       };
 
-      const sampleCount = 24;
+      const sampleCount = 36;
       const padding = Math.max(span * 0.05, 0.001);
       const sampleResults = [];
       for (let i = 0; i <= sampleCount; i += 1) {
@@ -12888,6 +12814,17 @@ const StakeholderMap = ({
         ? 'vertical'
         : (preferredOrientation === 'horizontal' ? 'horizontal' : 'equal-area');
       alert(`Unable to compute a ${orientationLabel} split for this room.`);
+      return false;
+    }
+    const bestAreas = Array.isArray(bestResult?.splitResult?.sideAreas)
+      ? bestResult.splitResult.sideAreas
+      : [];
+    const bestTotalArea = bestAreas.reduce((sum, value) => sum + Math.max(0, Number(value || 0)), 0);
+    const bestImbalanceRatio = bestTotalArea > 1e-8
+      ? (Math.abs(bestResult.absDiff || 0) / bestTotalArea)
+      : 1;
+    if (!Number.isFinite(bestImbalanceRatio) || bestImbalanceRatio > 0.2) {
+      alert('Unable to compute a reliable equal-area split for this room and orientation.');
       return false;
     }
 
