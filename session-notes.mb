@@ -216,3 +216,8 @@ Latest completed work (technical route write-access simplification)
 - Enabled technical panel cloud-save behavior on technical-only routes regardless of admin-role state in the UI.
 - Updated Firestore rules so `buildingAssessments` writes are allowed for `hastings` and `hastings-demo` (matching selected-user route usage), while keeping admin writes intact everywhere else.
 - Updated release checklist expectation for signed-out technical route behavior to reflect full technical workflow availability.
+
+Release stamp (2026-03-19)
+- Hastings pre-release checklist: GO.
+- Manual URL/auth matrix: all rows verified GO by operator.
+- Current release posture: ready for stakeholder handoff.
