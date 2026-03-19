@@ -19,7 +19,7 @@ Project: StakeholderMap (`/StakeholderMap`)
 | `/hastings/admin/engagement` | Signed out / non-admin | Read-only messaging visible; no marker placement; archive/delete actions blocked; building condition toggle disabled. | PENDING MANUAL |
 | `/hastings/engagement` | Any user | Public stakeholder engagement map works (marker add + heatmap/floorplan flows per current Firestore rules). | PENDING MANUAL |
 | `/hastings/technical` | Signed-in admin | Technical panel cloud save works; progress/checklist reflects saved values. | PENDING MANUAL |
-| `/hastings/technical` | Signed out / non-admin | Technical panel allows local draft autosave; cloud save blocked with clear message. | PENDING MANUAL |
+| `/hastings/technical` | Signed out / non-admin | Technical panel supports full assessment workflow, including cloud save for selected users. | PENDING MANUAL |
 
 ## Manual Release Smoke Steps (Quick)
 1. Open each URL in a fresh tab (avoid stale state).

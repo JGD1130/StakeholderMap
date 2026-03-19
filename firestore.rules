@@ -21,6 +21,12 @@ service cloud.firestore {
         || universityId == 'hastings-demo';
     }
 
+    function canWriteTechnicalAssessment(universityId) {
+      return isUniversityAdmin(universityId)
+        || universityId == 'hastings'
+        || universityId == 'hastings-demo';
+    }
+
     match /moves/{docId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -49,7 +55,7 @@ service cloud.firestore {
 
       match /buildingAssessments/{docId} {
         allow read: if true;
-        allow write: if isUniversityAdmin(universityId);
+        allow write: if canWriteTechnicalAssessment(universityId);
       }
 
       match /floorAdjustments/{docId} {

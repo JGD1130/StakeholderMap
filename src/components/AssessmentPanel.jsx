@@ -110,13 +110,17 @@ const formatSavedTime = (timestampMs) => {
   }
 };
 
-const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos, isAdminRole }) => {
+const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos, isAdminRole, canWriteCloud }) => {
   const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
   const [saveState, setSaveState] = useState({ kind: 'idle', timestamp: 0, message: '' });
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const autosaveTimerRef = useRef(null);
   const initializedRef = useRef(false);
   const draftStorageKey = useMemo(() => buildDraftStorageKey(universityId, buildingId), [universityId, buildingId]);
+  const canSaveToCloud = useMemo(
+    () => (typeof canWriteCloud === 'boolean' ? canWriteCloud : Boolean(isAdminRole)),
+    [canWriteCloud, isAdminRole]
+  );
 
   const clearAutosaveTimer = useCallback(() => {
     if (!autosaveTimerRef.current) return;
@@ -213,8 +217,8 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
   };
 
   const handleSaveChanges = async () => {
-    if (!isAdminRole) {
-      alert('Admin sign-in required for cloud save. Local draft autosave remains active.');
+    if (!canSaveToCloud) {
+      alert('Cloud save is disabled in this mode. Local draft autosave remains active.');
       return;
     }
     if (!buildingId || !universityId) return;
@@ -274,9 +278,9 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
       case 'error':
         return { tone: 'error', text: saveState.message || 'Save failed' };
       default:
-        return { tone: 'muted', text: isAdminRole ? 'No unsaved changes' : 'Local draft autosave enabled' };
+        return { tone: 'muted', text: canSaveToCloud ? 'No unsaved changes' : 'Local draft autosave enabled' };
     }
-  }, [saveState, isAdminRole]);
+  }, [saveState, canSaveToCloud]);
   const assessmentProgress = useMemo(() => {
     const scores = localAssessment?.scores && typeof localAssessment.scores === 'object'
       ? localAssessment.scores
@@ -341,7 +345,7 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
             </div>
           )}
         </div>
-        {!isAdminRole && (
+        {!canSaveToCloud && (
           <div className="save-hint">
             Cloud save requires admin sign-in. Drafts autosave locally in this browser.
           </div>
@@ -369,8 +373,8 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
         <button
           className="save-button"
           onClick={handleSaveChanges}
-          disabled={!isAdminRole || saveState.kind === 'saving-cloud'}
-          title={!isAdminRole ? 'Sign in as admin to save to cloud.' : 'Save assessment to cloud'}
+          disabled={!canSaveToCloud || saveState.kind === 'saving-cloud'}
+          title={!canSaveToCloud ? 'Cloud save disabled in this mode.' : 'Save assessment to cloud'}
         >
           {saveState.kind === 'saving-cloud' ? 'Saving...' : 'Save to Cloud'}
         </button>

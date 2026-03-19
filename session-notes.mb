@@ -5,6 +5,7 @@ User workflow preferences
 - Commit and push to `main` after completed code changes until the user says otherwise.
 - Keep practical, restart-safe notes in this `.mb` file.
 - Prefer concise Ask Mapfluence AI responses by default (short summary + non-redundant short bullets).
+- `/hastings/technical` should behave like a selected-user tool without admin/non-admin gating in the UI; full technical assessment features (including cloud save) should be available there.
 
 Current Hastings map architecture target
 - Admin full map: `/:universityId/admin` (Mapfluence edit + AI + planning tools).
@@ -209,3 +210,9 @@ Latest completed work (AI docs compatibility hotfix)
 - Validation:
   - `node --check ai-server/server.js` passed
   - `npm.cmd run build` passed
+
+Latest completed work (technical route write-access simplification)
+- Removed admin access/auth block from the technical-only route controls (`/:universityId/technical`) to reduce admin/non-admin confusion there.
+- Enabled technical panel cloud-save behavior on technical-only routes regardless of admin-role state in the UI.
+- Updated Firestore rules so `buildingAssessments` writes are allowed for `hastings` and `hastings-demo` (matching selected-user route usage), while keeping admin writes intact everywhere else.
+- Updated release checklist expectation for signed-out technical route behavior to reflect full technical workflow availability.
