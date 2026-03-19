@@ -200,3 +200,11 @@ Latest completed work (pre-release handoff checklist)
   - URL/auth go-no-go matrix for the four Hastings routes
   - fast manual release-smoke sequence for final operator verification
   - explicit go/no-go criteria for stakeholder handoff
+
+Latest completed work (AI docs compatibility hotfix)
+- Fixed Ask Mapfluence `400 Invalid input ... got .xlsx` failures when local AI reference docs include `.xlsx`.
+- AI doc upload pipeline now converts `.xlsx` files to temporary `.txt` context files before upload to OpenAI.
+- Keeps original doc naming in Mapfluence AI reference metadata while using supported upload file types.
+- Validation:
+  - `node --check ai-server/server.js` passed
+  - `npm.cmd run build` passed

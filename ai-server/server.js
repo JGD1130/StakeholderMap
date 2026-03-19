@@ -2,6 +2,7 @@ import "dotenv/config";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
+import os from "os";
 import cors from "cors";
 import express from "express";
 import OpenAI from "openai";
@@ -42,6 +43,10 @@ const AI_DOC_FILE_IDS = String(process.env.AI_DOC_FILE_IDS || "")
 const AI_DOC_FILE_NAMES = String(process.env.AI_DOC_FILE_NAMES || "")
   .split(",")
   .map((v) => v.trim());
+const AI_DOC_TMP_DIR = process.env.AI_DOC_TMP_DIR
+  ? path.resolve(process.env.AI_DOC_TMP_DIR)
+  : path.join(os.tmpdir(), "mapfluence-ai-docs");
+const AI_DOC_XLSX_MAX_CHARS = Number(process.env.AI_DOC_XLSX_MAX_CHARS || 250000);
 const ASK_DOCS_SKIP_DATA_CHARS = Number(process.env.ASK_DOCS_SKIP_DATA_CHARS || 40000);
 const ASK_DOCS_SKIP_ROOM_ROWS = Number(process.env.ASK_DOCS_SKIP_ROOM_ROWS || 150);
 const EXPLAIN_CAMPUS_MAX_INPUT_CHARS = Number(process.env.EXPLAIN_CAMPUS_MAX_INPUT_CHARS || 20000);
@@ -69,6 +74,74 @@ const aiDocsCache = {
 
 function isAllowedAiDocFile(name) {
   return /\.(pdf|xlsx|xls|csv|txt|md)$/i.test(String(name || ""));
+}
+
+function isXlsxAiDoc(name) {
+  return /\.xlsx$/i.test(String(name || ""));
+}
+
+function normalizeAiDocBaseName(name) {
+  const base = path.basename(String(name || ""), path.extname(String(name || ""))) || "doc";
+  return base.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
+}
+
+function buildXlsxContextText(workbook) {
+  if (!XLSX_API?.utils?.sheet_to_csv) return "";
+  const sections = [];
+  let usedChars = 0;
+  const maxChars = Math.max(10000, AI_DOC_XLSX_MAX_CHARS);
+  const sheetNames = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames : [];
+
+  for (const sheetName of sheetNames) {
+    const sheet = workbook?.Sheets?.[sheetName];
+    if (!sheet) continue;
+    const csvBody = String(
+      XLSX_API.utils.sheet_to_csv(sheet, {
+        blankrows: false
+      }) || ""
+    ).trim();
+    if (!csvBody) continue;
+
+    const section = `Sheet: ${sheetName}\n${csvBody}`;
+    const remaining = maxChars - usedChars;
+    if (remaining <= 0) break;
+    if (section.length <= remaining) {
+      sections.push(section);
+      usedChars += section.length + 2;
+    } else {
+      sections.push(section.slice(0, remaining));
+      usedChars = maxChars;
+      break;
+    }
+  }
+
+  if (!sections.length) {
+    return "No readable worksheet data was found in this spreadsheet.";
+  }
+
+  if (usedChars >= maxChars) {
+    sections.push("[Spreadsheet context truncated for AI input size.]");
+  }
+  return sections.join("\n\n");
+}
+
+async function resolveAiDocUploadSource(doc) {
+  if (!doc?.fullPath) return null;
+  if (!isXlsxAiDoc(doc.name)) {
+    return { uploadPath: doc.fullPath, cleanupPath: null };
+  }
+  if (!XLSX_API?.readFile || !XLSX_API?.utils?.sheet_to_csv) {
+    throw new Error("XLSX parsing is unavailable on server");
+  }
+
+  const workbook = XLSX_API.readFile(doc.fullPath, { cellDates: false });
+  const contextText = buildXlsxContextText(workbook);
+  await fsp.mkdir(AI_DOC_TMP_DIR, { recursive: true });
+  const safeBase = normalizeAiDocBaseName(doc.name);
+  const tempName = `${safeBase}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
+  const tempPath = path.join(AI_DOC_TMP_DIR, tempName);
+  await fsp.writeFile(tempPath, contextText, "utf8");
+  return { uploadPath: tempPath, cleanupPath: tempPath };
 }
 
 async function listLocalAiDocs() {
@@ -118,14 +191,21 @@ async function ensureUploadedAiDocs() {
 
   const uploaded = [];
   for (const doc of docs) {
+    let uploadSource = null;
     try {
+      uploadSource = await resolveAiDocUploadSource(doc);
+      if (!uploadSource?.uploadPath) continue;
       const file = await client.files.create({
-        file: fs.createReadStream(doc.fullPath),
+        file: fs.createReadStream(uploadSource.uploadPath),
         purpose: AI_DOCS_FILE_PURPOSE
       });
       uploaded.push({ ...doc, fileId: file.id });
     } catch (err) {
       console.warn(`AI docs upload skipped for ${doc.name}:`, err?.message || err);
+    } finally {
+      if (uploadSource?.cleanupPath) {
+        await fsp.unlink(uploadSource.cleanupPath).catch(() => {});
+      }
     }
   }
 
