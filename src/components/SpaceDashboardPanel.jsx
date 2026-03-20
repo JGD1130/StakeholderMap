@@ -284,7 +284,7 @@ const DeptList = ({ entries = [], maxRows = 6 }) => {
   );
 };
 
-const StrategicDashboardSection = ({ strategic, onExpandedStateChange }) => {
+const StrategicDashboardSection = ({ strategic, onExpandedStateChange, hideTitle = false }) => {
   if (!strategic) return null;
   const [trendOpen, setTrendOpen] = React.useState(false);
   const [enrollmentOpen, setEnrollmentOpen] = React.useState(false);
@@ -305,7 +305,9 @@ const StrategicDashboardSection = ({ strategic, onExpandedStateChange }) => {
 
   return (
     <PanelCard>
-      <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 8 }}>Strategic Space Dashboard</div>
+      {!hideTitle ? (
+        <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 8 }}>Strategic Space Dashboard</div>
+      ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
         <div>
@@ -435,14 +437,10 @@ export default function SpaceDashboardPanel({
   onToggleHeatmap,
   strategic
 }) {
-  const [strategicExpansionState, setStrategicExpansionState] = React.useState({
-    trendOpen: false,
-    enrollmentOpen: false,
-    needsScroll: false
-  });
+  const [strategicOpen, setStrategicOpen] = React.useState(false);
   React.useEffect(() => {
     if (strategic) return;
-    setStrategicExpansionState({ trendOpen: false, enrollmentOpen: false, needsScroll: false });
+    setStrategicOpen(false);
   }, [strategic]);
   const officeOcc = metrics?.officeOccupancy || {};
   const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
@@ -458,14 +456,38 @@ export default function SpaceDashboardPanel({
         <div
           style={{
             flex: 1,
-            overflowY: strategicExpansionState.needsScroll ? 'auto' : 'hidden',
-            paddingRight: strategicExpansionState.needsScroll ? 3 : 0
+            overflowY: 'auto',
+            paddingRight: 3
           }}
         >
-          <StrategicDashboardSection
-            strategic={strategic}
-            onExpandedStateChange={setStrategicExpansionState}
-          />
+          {metrics ? (
+            <PanelCard>
+              <div className="mf-section-title">Campus Space Context</div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.25fr)',
+                  gap: 6,
+                  marginTop: 4,
+                  alignItems: 'stretch'
+                }}
+              >
+                <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
+                <PanelCard style={{ gridRow: '1 / span 2' }}>
+                  <OfficeOccupancyGauge
+                    pct={officeOcc.pct}
+                    occupied={officeOcc.occupied}
+                    vacant={officeOcc.vacant}
+                    unknown={officeOcc.unknown}
+                    scopeLabel={scopeLabel}
+                  />
+                </PanelCard>
+                <PanelCard>
+                  <DeptList entries={metrics.byDept || []} />
+                </PanelCard>
+              </div>
+            </PanelCard>
+          ) : null}
 
           <PanelCard style={{ marginTop: 6 }}>
             <div className="mf-section-title">Actual Classroom Utilization</div>
@@ -497,33 +519,17 @@ export default function SpaceDashboardPanel({
             )}
           </PanelCard>
 
-          {metrics ? (
-            <PanelCard style={{ marginTop: 6 }}>
-              <div className="mf-section-title">Campus Space Context</div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.25fr)',
-                  gap: 6,
-                  marginTop: 4,
-                  alignItems: 'stretch'
-                }}
-              >
-                <StatCard label="Total SF" value={fmtSF(metrics.totalSf)} />
-                <PanelCard style={{ gridRow: '1 / span 2' }}>
-                  <OfficeOccupancyGauge
-                    pct={officeOcc.pct}
-                    occupied={officeOcc.occupied}
-                    vacant={officeOcc.vacant}
-                    unknown={officeOcc.unknown}
-                    scopeLabel={scopeLabel}
-                  />
-                </PanelCard>
-                <PanelCard>
-                  <DeptList entries={metrics.byDept || []} />
-                </PanelCard>
-              </div>
-            </PanelCard>
+          {strategic ? (
+            <CollapsibleSection
+              title="Strategic Space Dashboard"
+              open={strategicOpen}
+              onToggle={setStrategicOpen}
+            >
+              <StrategicDashboardSection
+                strategic={strategic}
+                hideTitle
+              />
+            </CollapsibleSection>
           ) : null}
         </div>
       )}

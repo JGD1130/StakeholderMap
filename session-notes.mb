@@ -349,3 +349,14 @@ Latest completed work (vertical halving side-wall anchor on slanted rooms)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (right-rail dashboard layout reorder)
+- Reworked `SpaceDashboardPanel` section layout per UX request:
+  - Moved `Campus Space Context` to the top of the panel.
+  - Placed `Actual Classroom Utilization` directly below context.
+  - Moved `Strategic Space Dashboard` (including `Trend Charts` + `Enrollment by Year`) to the bottom.
+- Strategic dashboard is now collapsed by default in a top-level collapsible section to reduce initial visual noise and free panel space.
+- Panel scroll behavior now remains available so bottom sections are reachable without clipping.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
