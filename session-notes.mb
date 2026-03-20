@@ -360,3 +360,14 @@ Latest completed work (right-rail dashboard layout reorder)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (dashboard collapse whitespace + manifest fetch noise reduction)
+- Reduced right-rail whitespace when `Strategic Space Dashboard` is collapsed:
+  - Updated `.dashboard-box` sizing/overflow behavior so the panel shrinks to content instead of always stretching full rail height.
+  - Keeps scroll available when content grows.
+- Reduced noisy floorplan manifest fetch errors in console (e.g., per-building `manifest.json` 503/404):
+  - `loadFloorManifest(...)` now prefers global manifest floor URLs when complete, and skips per-building manifest fetch in that case.
+  - Falls back to per-building manifest only when needed.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

@@ -3479,9 +3479,6 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
 
   const campusSeg = encodeURIComponent(campus);
   const buildingSeg = encodeURIComponent(buildingKey);
-  const url = assetUrl(`floorplans/${campusSeg}/${buildingSeg}/manifest.json`);
-  const manifest = await fetchJSON(url);
-
   const globalManifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
   const floorsByBuilding = globalManifest?.floorsByBuilding || {};
   let globalFloors = floorsByBuilding[buildingKey];
@@ -3492,6 +3489,17 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
     globalFloors = matchKey ? floorsByBuilding[matchKey] : null;
   }
   const normalizedGlobal = normalizeFloorEntries(globalFloors || []);
+
+  // Prefer global manifest mappings when they already provide floor URLs.
+  // This avoids unnecessary per-building manifest fetches (and noisy 503/404 console errors)
+  // on static hosting when a building-level manifest is unavailable.
+  const hasCompleteGlobalUrls =
+    normalizedGlobal.length > 0 &&
+    normalizedGlobal.every((entry) => Boolean(entry?.url));
+  if (hasCompleteGlobalUrls) return normalizedGlobal;
+
+  const url = assetUrl(`floorplans/${campusSeg}/${buildingSeg}/manifest.json`);
+  const manifest = await fetchJSON(url);
 
   const manifestEntries = normalizeFloorEntries(manifest?.floors);
   if (!manifestEntries.length) return normalizedGlobal;
