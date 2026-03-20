@@ -6273,6 +6273,43 @@ function toHorizontalAnchorAngle(deg) {
   return Math.abs(alt) < Math.abs(base) ? alt : base;
 }
 
+function getUndirectedAngleDistanceDeg(a, b) {
+  return Math.abs(normalizeAngleDelta((Number(a) || 0) - (Number(b) || 0)));
+}
+
+function getDominantEdgeAngleNearDeg(geom, targetDeg, maxDeltaDeg = 35, minShare = 0.12) {
+  if (!geom?.coordinates) return null;
+  const rings = [];
+  collectRings(geom.coordinates, rings);
+  let totalLen = 0;
+  let matchedLen = 0;
+  let sumSin = 0;
+  let sumCos = 0;
+  rings.forEach((ring) => {
+    if (!Array.isArray(ring) || ring.length < 2) return;
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const a = ring[i];
+      const b = ring[i + 1];
+      if (!isPositionArray(a) || !isPositionArray(b)) continue;
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len <= 0) continue;
+      totalLen += len;
+      const angleDeg = normalizeAngleDelta((Math.atan2(dy, dx) * 180) / Math.PI);
+      if (getUndirectedAngleDistanceDeg(angleDeg, targetDeg) > Math.max(1, Number(maxDeltaDeg) || 35)) continue;
+      const angleRad = (angleDeg * Math.PI) / 180;
+      matchedLen += len;
+      sumCos += len * Math.cos(2 * angleRad);
+      sumSin += len * Math.sin(2 * angleRad);
+    }
+  });
+  if (matchedLen <= 1e-9) return null;
+  if (totalLen > 1e-9 && (matchedLen / totalLen) < Math.max(0, Number(minShare) || 0)) return null;
+  const angle = 0.5 * Math.atan2(sumSin, sumCos);
+  return normalizeAngleDelta((angle * 180) / Math.PI);
+}
+
 function getFeatureOrientationDeg(feature, limit = 2000) {
   if (!feature?.geometry) return 0;
   const pts = extractLngLatPairs(feature.geometry, limit);
@@ -12709,14 +12746,15 @@ const StakeholderMap = ({
     const rawOrientationDeg = Number.isFinite(dominantEdgeDeg)
       ? dominantEdgeDeg
       : (Number.isFinite(weightedEdgeDeg) ? weightedEdgeDeg : 0);
-    // Anchor to the edge direction that is visually "more horizontal" on screen.
-    // This avoids 90deg ambiguity that can flip vertical/horizontal semantics.
-    const dominantOrientationDeg = toHorizontalAnchorAngle(rawOrientationDeg);
-    // Align room-local axes to X/Y for halving so vertical/horizontal are relative to room orientation.
-    const toAxisDeg = pivot && Number.isFinite(dominantOrientationDeg) && Math.abs(dominantOrientationDeg) > 1e-4
-      ? -dominantOrientationDeg
-      : 0;
-    const fromAxisDeg = -toAxisDeg;
+    // Primary anchor is the wall direction that is most horizontal on screen.
+    // Horizontal halving uses this directly.
+    const primaryAxisDeg = toHorizontalAnchorAngle(rawOrientationDeg);
+    // Vertical halving should favor actual side-wall direction (if present),
+    // rather than forcing strict 90deg from primary.
+    const verticalTargetDeg = normalizeAngleDelta(primaryAxisDeg + 90);
+    const sideWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, verticalTargetDeg, 50, 0.1);
+    const verticalDividerDeg = Number.isFinite(sideWallDeg) ? sideWallDeg : verticalTargetDeg;
+
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
         return cloneGeoJsonValue(geometry);
@@ -12726,26 +12764,43 @@ const StakeholderMap = ({
         coordinates: mapCoords(geometry.coordinates, (pt) => rotatePoint(pt, pivot, deg))
       };
     };
-    const workingGeometry = rotateGeometryAroundPivot(baseGeometry, toAxisDeg);
-    const workingFeature = { type: 'Feature', properties: {}, geometry: workingGeometry };
 
-    const bbox = turf.bbox(workingFeature);
-    const minX = Number(bbox?.[0]);
-    const minY = Number(bbox?.[1]);
-    const maxX = Number(bbox?.[2]);
-    const maxY = Number(bbox?.[3]);
-    if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
-      alert('Unable to determine room bounds for halving.');
-      return false;
-    }
+    const buildOrientationFrame = (orientation) => {
+      const axisXDeg = orientation === 'vertical'
+        ? normalizeAngleDelta(verticalDividerDeg - 90)
+        : primaryAxisDeg;
+      const toAxisDeg = pivot && Number.isFinite(axisXDeg) && Math.abs(axisXDeg) > 1e-4
+        ? -axisXDeg
+        : 0;
+      const fromAxisDeg = -toAxisDeg;
+      const workingGeometry = rotateGeometryAroundPivot(baseGeometry, toAxisDeg);
+      const workingFeature = { type: 'Feature', properties: {}, geometry: workingGeometry };
+      const bbox = turf.bbox(workingFeature);
+      const minX = Number(bbox?.[0]);
+      const minY = Number(bbox?.[1]);
+      const maxX = Number(bbox?.[2]);
+      const maxY = Number(bbox?.[3]);
+      if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+      return {
+        axisXDeg,
+        toAxisDeg,
+        fromAxisDeg,
+        workingGeometry,
+        bounds: { minX, minY, maxX, maxY },
+        dividerDeg: normalizeAngleDelta(orientation === 'vertical' ? (axisXDeg + 90) : axisXDeg)
+      };
+    };
 
     const evaluateOrientation = (orientation) => {
+      const frame = buildOrientationFrame(orientation);
+      if (!frame) return null;
+      const { minX, minY, maxX, maxY } = frame.bounds;
       const isVertical = orientation === 'vertical';
       const minOffset = isVertical ? minX : minY;
       const maxOffset = isVertical ? maxX : maxY;
       const span = Math.max(0.001, maxOffset - minOffset);
       const evaluateOffset = (offset) => {
-        const splitResult = resolveScenarioAxisSplitPieces(workingGeometry, orientation, offset);
+        const splitResult = resolveScenarioAxisSplitPieces(frame.workingGeometry, orientation, offset);
         if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
         const sideAreas = Array.isArray(splitResult.sideAreas) ? splitResult.sideAreas : [];
         const firstArea = Math.max(0, Number(sideAreas[0] || 0));
@@ -12821,7 +12876,11 @@ const StakeholderMap = ({
         }
         refineStep *= 0.5;
       }
-      return bestResult;
+      return {
+        ...bestResult,
+        frame,
+        dividerDeg: frame.dividerDeg
+      };
     };
 
     const orientationsToTry = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal'
@@ -12855,21 +12914,22 @@ const StakeholderMap = ({
       return false;
     }
 
-    const finalSplitResult = (!pivot || Math.abs(fromAxisDeg) <= 1e-7)
+    const bestFromAxisDeg = Number(bestResult?.frame?.fromAxisDeg || 0);
+    const finalSplitResult = (!pivot || Math.abs(bestFromAxisDeg) <= 1e-7)
       ? bestResult.splitResult
       : {
           ...bestResult.splitResult,
           splitStart: Array.isArray(bestResult.splitResult?.splitStart)
-            ? rotatePoint(bestResult.splitResult.splitStart, pivot, fromAxisDeg)
+            ? rotatePoint(bestResult.splitResult.splitStart, pivot, bestFromAxisDeg)
             : bestResult.splitResult?.splitStart,
           splitEnd: Array.isArray(bestResult.splitResult?.splitEnd)
-            ? rotatePoint(bestResult.splitResult.splitEnd, pivot, fromAxisDeg)
+            ? rotatePoint(bestResult.splitResult.splitEnd, pivot, bestFromAxisDeg)
             : bestResult.splitResult?.splitEnd,
           pieces: (bestResult.splitResult?.pieces || []).map((piece) => {
             if (!piece?.geometry) return piece;
             return {
               ...piece,
-              geometry: rotateGeometryAroundPivot(piece.geometry, fromAxisDeg)
+              geometry: rotateGeometryAroundPivot(piece.geometry, bestFromAxisDeg)
             };
           })
         };
@@ -12886,7 +12946,9 @@ const StakeholderMap = ({
       roomId,
       preferredOrientation,
       chosenOrientation: bestResult.orientation,
-      roomOrientationDeg: dominantOrientationDeg,
+      roomOrientationDeg: primaryAxisDeg,
+      verticalDividerDeg,
+      chosenDividerDeg: bestResult?.dividerDeg,
       imbalanceRatio: bestImbalanceRatio,
       absAreaDiff: bestResult.absDiff
     });

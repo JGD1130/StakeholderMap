@@ -337,3 +337,15 @@ Latest completed work (scenario halving 90deg axis ambiguity fix)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (vertical halving side-wall anchor on slanted rooms)
+- Improved `Halve Vertical` behavior on slanted/non-orthogonal rooms without changing button order semantics.
+- Implementation updates:
+  - Kept `Halve Horizontal` anchored to primary room wall direction (most-horizontal dominant edge).
+  - Changed `Halve Vertical` to anchor to detected side-wall direction near the perpendicular target, instead of forcing exact 90deg from primary.
+  - Halving now builds per-orientation local frames (horizontal frame vs vertical frame) so each button uses the best wall-parallel axis for that direction.
+- Result:
+  - Better wall-parallel vertical dividers on angled rooms while preserving corrected horizontal/vertical button mapping on right-angle rooms.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
