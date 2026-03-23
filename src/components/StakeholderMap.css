@@ -81,8 +81,8 @@
 .dashboard-box {
   width: 100%;
   align-items: stretch;
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 1 auto;
+  min-height: fit-content;
   max-height: 100%;
   display: flex;
   flex-direction: column;

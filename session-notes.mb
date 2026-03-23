@@ -396,3 +396,11 @@ Latest completed work (strategic section scroll reachability + subsection order)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (remove collapsed dashboard whitespace while keeping strategic scroll)
+- Tuned right-rail dashboard box sizing to remove large blank white space when `Strategic Space Dashboard` is collapsed:
+  - Set `.dashboard-box` back to content-driven sizing (`flex: 0 1 auto`, `min-height: fit-content`).
+- Kept strategic expanded internal scrollbar behavior unchanged so long strategic content remains reachable when opened.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
