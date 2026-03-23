@@ -485,3 +485,22 @@ Latest completed work (maintenance marker visibility clarity)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance edit + archive/delete workflow)
+- Added full issue editing flow:
+  - New `Edit` action on maintenance issue cards opens the maintenance modal in edit mode.
+  - Modal title and save button now switch between Add vs Edit states.
+  - Edit save updates existing Firestore doc (merge) and local issue list.
+- Added archive workflow:
+  - New `Archive` / `Restore` action per issue card.
+  - Stores `archived`, `archivedAt`, `archivedBy` and updates `updatedAt`.
+  - Added `Show archived issues` toggle in maintenance panel with archived count.
+  - Dashboard/open counts now use active (non-archived) issues by default.
+- Added hard delete workflow:
+  - New `Delete` action per issue card with explicit confirmation prompt.
+  - Permanently deletes issue doc from Firestore and removes from local list.
+- Minor UX refinement:
+  - `View Issues` popup action now also forces archived toggle off so active issues are shown by default when focusing a location.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

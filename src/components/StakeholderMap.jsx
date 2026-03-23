@@ -5,7 +5,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import jsPDF from 'jspdf';
 import { db } from '../firebaseConfig';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, setDoc, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, setDoc, deleteDoc, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
@@ -8523,6 +8523,11 @@ const maintenancePriorityLabel = (priority) => {
   if (key === 'low') return 'Low';
   return 'Medium';
 };
+const isMaintenanceIssueArchived = (issue) => Boolean(
+  issue?.archived === true ||
+  issue?.isArchived === true ||
+  issue?.archivedAt
+);
 const TECHNICAL_SECTION_CONFIG = [
   {
     key: 'architecture',
@@ -9269,8 +9274,10 @@ const StakeholderMap = ({
   const [maintenanceIssueSaving, setMaintenanceIssueSaving] = useState(false);
   const [maintenanceIssueDraft, setMaintenanceIssueDraft] = useState(null);
   const [maintenanceShowIssueMarkers, setMaintenanceShowIssueMarkers] = useState(true);
+  const [maintenanceShowArchived, setMaintenanceShowArchived] = useState(false);
   const [maintenanceSelectedIssueId, setMaintenanceSelectedIssueId] = useState('');
   const [maintenanceStatusSavingId, setMaintenanceStatusSavingId] = useState('');
+  const [maintenanceDeletePendingId, setMaintenanceDeletePendingId] = useState('');
   const [maintenanceContext, setMaintenanceContext] = useState(null);
   const [airtableRooms, setAirtableRooms] = useState([]);
   const [campusRooms, setCampusRooms] = useState([]);
@@ -17575,11 +17582,16 @@ const maintenanceBuildingOptions = useMemo(
   () => maintenanceBuildingCatalog.map((row) => ({ value: row.key, label: row.label })),
   [maintenanceBuildingCatalog]
 );
+const maintenanceActiveIssues = useMemo(
+  () => (maintenanceIssues || []).filter((issue) => !isMaintenanceIssueArchived(issue)),
+  [maintenanceIssues]
+);
 const maintenanceFilteredIssues = useMemo(() => {
   const assignedNeedle = norm(maintenanceAssignedFilter).toLowerCase();
   const roomNeedle = norm(maintenanceRoomSearch).toLowerCase();
   return [...(maintenanceIssues || [])]
     .filter((issue) => {
+      if (!maintenanceShowArchived && isMaintenanceIssueArchived(issue)) return false;
       if (maintenanceTypeFilter !== '__all__' && String(issue?.issueType || '') !== maintenanceTypeFilter) return false;
       if (maintenanceStatusFilter !== '__all__' && normalizeMaintenanceStatus(issue?.status) !== maintenanceStatusFilter) return false;
       if (maintenancePriorityFilter !== '__all__' && normalizeMaintenancePriority(issue?.priority) !== maintenancePriorityFilter) return false;
@@ -17605,16 +17617,16 @@ const maintenanceFilteredIssues = useMemo(() => {
       const bMs = parseFirestoreTimestampMs(b?.updatedAt || b?.createdAt);
       return bMs - aMs;
     });
-}, [maintenanceIssues, maintenanceTypeFilter, maintenanceStatusFilter, maintenancePriorityFilter, maintenanceAssignedFilter, maintenanceBuildingFilter, maintenanceRoomSearch]);
+}, [maintenanceIssues, maintenanceShowArchived, maintenanceTypeFilter, maintenanceStatusFilter, maintenancePriorityFilter, maintenanceAssignedFilter, maintenanceBuildingFilter, maintenanceRoomSearch]);
 const maintenanceOpenIssues = useMemo(
-  () => (maintenanceIssues || []).filter((issue) => normalizeMaintenanceStatus(issue?.status) !== 'complete'),
-  [maintenanceIssues]
+  () => maintenanceActiveIssues.filter((issue) => normalizeMaintenanceStatus(issue?.status) !== 'complete'),
+  [maintenanceActiveIssues]
 );
 const maintenanceDashboard = useMemo(() => {
   const byBuilding = new Map();
   const byType = new Map();
   const recentCompleted = [];
-  (maintenanceIssues || []).forEach((issue) => {
+  maintenanceActiveIssues.forEach((issue) => {
     const statusKey = normalizeMaintenanceStatus(issue?.status);
     const typeKey = String(issue?.issueType || 'Other').trim() || 'Other';
     byType.set(typeKey, (byType.get(typeKey) || 0) + 1);
@@ -17631,7 +17643,8 @@ const maintenanceDashboard = useMemo(() => {
   });
   return {
     totalOpen: maintenanceOpenIssues.length,
-    totalAll: (maintenanceIssues || []).length,
+    totalAll: maintenanceActiveIssues.length,
+    archivedTotal: (maintenanceIssues || []).length - maintenanceActiveIssues.length,
     highPriorityOpen: highPriorityOpen.length,
     byBuilding: Array.from(byBuilding.entries())
       .map(([name, count]) => ({ name, count }))
@@ -17645,7 +17658,7 @@ const maintenanceDashboard = useMemo(() => {
       .sort((a, b) => parseFirestoreTimestampMs(b?.updatedAt || b?.completedAt) - parseFirestoreTimestampMs(a?.updatedAt || a?.completedAt))
       .slice(0, 5)
   };
-}, [maintenanceIssues, maintenanceOpenIssues]);
+}, [maintenanceIssues, maintenanceActiveIssues, maintenanceOpenIssues]);
 const maintenanceOpenByBuilding = useMemo(() => {
   const out = new Map();
   maintenanceOpenIssues.forEach((issue) => {
@@ -17679,6 +17692,7 @@ const maintenanceRenderableMarkerCount = useMemo(
     ).length,
   [maintenanceFilteredIssues]
 );
+const maintenanceIssueIsEditing = Boolean(String(maintenanceIssueDraft?.id || '').trim());
 const adminEngagementMarkerRows = useMemo(() => {
   if (!(isAdminCombinedMode && engagementMode)) return [];
   return (markers || [])
@@ -19878,6 +19892,9 @@ useEffect(() => {
               floorName: String(data.floorName || '').trim(),
               roomId: String(data.roomId || '').trim(),
               roomName: String(data.roomName || '').trim(),
+              archived: Boolean(data.archived === true || data.isArchived === true || data.archivedAt),
+              archivedAt: data.archivedAt || null,
+              archivedBy: String(data.archivedBy || '').trim(),
               coordinates: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
             };
           });
@@ -20038,6 +20055,7 @@ const openMaintenanceIssueModal = useCallback((context = null) => {
   const lat = Number(context?.lat ?? context?.lngLat?.lat ?? context?.coordinates?.[1]);
   setMaintenanceContext(context || null);
   setMaintenanceIssueDraft({
+    id: '',
     buildingId: buildingId ? bId(buildingId) : '',
     buildingName,
     floorId: floorId ? fId(floorId) : '',
@@ -20050,12 +20068,61 @@ const openMaintenanceIssueModal = useCallback((context = null) => {
     description: '',
     assignedTo: '',
     notes: '',
+    archived: false,
+    archivedAt: null,
+    archivedBy: '',
     estimatedCostLow: '',
     estimatedCostHigh: '',
     coordinates: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
   });
   setMaintenanceIssueModalOpen(true);
 }, [selectedBuildingId, selectedBuilding, resolveBuildingNameFromInput, activeBuildingName]);
+
+const openMaintenanceIssueEditor = useCallback((issue = null) => {
+  if (!issue) return;
+  const buildingId = String(issue?.buildingId || '').trim();
+  const buildingName = String(
+    issue?.buildingName ||
+    resolveBuildingNameFromInput(buildingId) ||
+    buildingId
+  ).trim();
+  const floorId = String(issue?.floorId || '').trim();
+  const floorName = String(issue?.floorName || floorId || '').trim();
+  const roomId = String(issue?.roomId || '').trim();
+  const roomName = String(issue?.roomName || '').trim();
+  const coords = Array.isArray(issue?.coordinates) ? issue.coordinates : null;
+  setMaintenanceContext({
+    buildingId,
+    buildingName,
+    floorId,
+    floorName,
+    roomId,
+    roomName,
+    coordinates: coords
+  });
+  setMaintenanceIssueDraft({
+    id: String(issue?.id || '').trim(),
+    buildingId,
+    buildingName,
+    floorId,
+    floorName,
+    roomId,
+    roomName,
+    issueType: String(issue?.issueType || 'Other').trim() || 'Other',
+    priority: normalizeMaintenancePriority(issue?.priority),
+    status: normalizeMaintenanceStatus(issue?.status),
+    description: String(issue?.description || '').trim(),
+    assignedTo: String(issue?.assignedTo || '').trim(),
+    notes: String(issue?.notes || '').trim(),
+    archived: isMaintenanceIssueArchived(issue),
+    archivedAt: issue?.archivedAt || null,
+    archivedBy: String(issue?.archivedBy || '').trim(),
+    estimatedCostLow: issue?.estimatedCostLow == null ? '' : String(issue.estimatedCostLow),
+    estimatedCostHigh: issue?.estimatedCostHigh == null ? '' : String(issue.estimatedCostHigh),
+    coordinates: coords
+  });
+  setMaintenanceIssueModalOpen(true);
+}, [resolveBuildingNameFromInput]);
 
 const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
   if (!mapRef.current || !lngLat) return;
@@ -20106,6 +20173,7 @@ const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
     setMaintenanceStatusFilter('__all__');
     setMaintenancePriorityFilter('__all__');
     setMaintenanceAssignedFilter('');
+    setMaintenanceShowArchived(false);
     if (context?.roomName || context?.roomId) {
       setMaintenanceRoomSearch(String(context.roomName || context.roomId));
     } else {
@@ -20134,6 +20202,8 @@ useEffect(() => () => {
 
 const handleSaveMaintenanceIssue = useCallback(async () => {
   const draft = maintenanceIssueDraft || {};
+  const editingIssueId = String(draft.id || '').trim();
+  const isEdit = Boolean(editingIssueId);
   const description = String(draft.description || '').trim();
   if (!description) {
     alert('Please enter an issue description.');
@@ -20145,6 +20215,8 @@ const handleSaveMaintenanceIssue = useCallback(async () => {
   }
   setMaintenanceIssueSaving(true);
   try {
+    const normalizedStatus = normalizeMaintenanceStatus(draft.status);
+    const archived = Boolean(draft.archived);
     const payload = {
       universityId: canon(universityId),
       campusId: floorplanCampus,
@@ -20156,44 +20228,81 @@ const handleSaveMaintenanceIssue = useCallback(async () => {
       roomName: String(draft.roomName || '').trim(),
       issueType: String(draft.issueType || 'Other').trim() || 'Other',
       priority: normalizeMaintenancePriority(draft.priority),
-      status: normalizeMaintenanceStatus(draft.status),
+      status: normalizedStatus,
       description,
       assignedTo: String(draft.assignedTo || '').trim(),
       notes: String(draft.notes || '').trim(),
       estimatedCostLow: draft.estimatedCostLow === '' ? null : Number(draft.estimatedCostLow || 0) || null,
       estimatedCostHigh: draft.estimatedCostHigh === '' ? null : Number(draft.estimatedCostHigh || 0) || null,
-      photoUrls: [],
-      createdBy: String(authUser?.email || authUser?.uid || '').trim() || null,
-      createdAt: serverTimestamp(),
+      photoUrls: Array.isArray(draft.photoUrls) ? draft.photoUrls : [],
+      archived,
+      archivedAt: archived ? (draft.archivedAt || serverTimestamp()) : null,
+      archivedBy: archived ? String(draft.archivedBy || authUser?.email || authUser?.uid || '').trim() || null : null,
       updatedAt: serverTimestamp(),
-      completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? serverTimestamp() : null
+      completedAt: normalizedStatus === 'complete' ? serverTimestamp() : null
     };
+    if (!isEdit) {
+      payload.createdBy = String(authUser?.email || authUser?.uid || '').trim() || null;
+      payload.createdAt = serverTimestamp();
+    }
     const coords = Array.isArray(draft.coordinates) ? draft.coordinates : null;
     if (coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))) {
       payload.coordinates = new GeoPoint(Number(coords[1]), Number(coords[0]));
+    } else if (coords === null) {
+      payload.coordinates = null;
     }
-    const createdRef = await addDoc(maintenanceIssuesCollection, payload);
+    let createdIssueId = '';
+    if (isEdit) {
+      await setDoc(doc(maintenanceIssuesCollection, editingIssueId), payload, { merge: true });
+    } else {
+      const createdRef = await addDoc(maintenanceIssuesCollection, payload);
+      createdIssueId = String(createdRef.id || '').trim();
+    }
     const localIssue = {
-      ...payload,
-      id: createdRef.id,
-      createdAt: new Date(),
+      ...draft,
+      id: isEdit ? editingIssueId : createdIssueId,
+      buildingId: String(payload.buildingId || '').trim(),
+      buildingName: String(payload.buildingName || '').trim(),
+      floorId: String(payload.floorId || '').trim(),
+      floorName: String(payload.floorName || '').trim(),
+      roomId: String(payload.roomId || '').trim(),
+      roomName: String(payload.roomName || '').trim(),
+      issueType: payload.issueType,
+      priority: payload.priority,
+      status: payload.status,
+      description: payload.description,
+      assignedTo: payload.assignedTo,
+      notes: payload.notes,
+      estimatedCostLow: payload.estimatedCostLow,
+      estimatedCostHigh: payload.estimatedCostHigh,
+      archived: Boolean(payload.archived),
+      archivedAt: payload.archived ? new Date() : null,
+      archivedBy: payload.archivedBy || '',
+      createdAt: isEdit
+        ? ((maintenanceIssues || []).find((issue) => String(issue?.id || '') === editingIssueId)?.createdAt || new Date())
+        : new Date(),
       updatedAt: new Date(),
-      completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? new Date() : null,
+      completedAt: payload.status === 'complete' ? new Date() : null,
       coordinates: coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))
         ? [Number(coords[0]), Number(coords[1])]
         : null
     };
-    setMaintenanceIssues((prev) => [...prev, localIssue]);
+    setMaintenanceIssues((prev) => {
+      if (isEdit) {
+        return prev.map((issue) => (String(issue?.id || '') === editingIssueId ? { ...issue, ...localIssue } : issue));
+      }
+      return [...prev, localIssue];
+    });
     setMaintenanceIssueModalOpen(false);
     setMaintenanceIssueDraft(null);
-    setMaintenanceMessage('Issue saved.');
+    setMaintenanceMessage(isEdit ? 'Issue updated.' : 'Issue saved.');
   } catch (err) {
     console.error('Failed to save maintenance issue:', err);
     alert('Failed to save maintenance issue. See console for details.');
   } finally {
     setMaintenanceIssueSaving(false);
   }
-}, [maintenanceIssueDraft, maintenanceCanWrite, universityId, floorplanCampus, authUser?.email, authUser?.uid, maintenanceIssuesCollection]);
+}, [maintenanceIssueDraft, maintenanceCanWrite, universityId, floorplanCampus, authUser?.email, authUser?.uid, maintenanceIssuesCollection, maintenanceIssues]);
 
 const handlePatchMaintenanceIssue = useCallback(async (issueId, patch = {}) => {
   const id = String(issueId || '').trim();
@@ -20228,6 +20337,57 @@ const handlePatchMaintenanceIssue = useCallback(async (issueId, patch = {}) => {
     setMaintenanceStatusSavingId('');
   }
 }, [maintenanceCanWrite, maintenanceIssuesCollection]);
+
+const handleArchiveMaintenanceIssue = useCallback(async (issueId, archivedNext = true) => {
+  const id = String(issueId || '').trim();
+  if (!id || !maintenanceCanWrite) return;
+  const archived = Boolean(archivedNext);
+  try {
+    const patch = {
+      archived,
+      archivedAt: archived ? serverTimestamp() : null,
+      archivedBy: archived ? (String(authUser?.email || authUser?.uid || '').trim() || null) : null,
+      updatedAt: serverTimestamp()
+    };
+    await setDoc(doc(maintenanceIssuesCollection, id), patch, { merge: true });
+    setMaintenanceIssues((prev) => prev.map((issue) => {
+      if (String(issue?.id || '') !== id) return issue;
+      return {
+        ...issue,
+        archived,
+        archivedAt: archived ? new Date() : null,
+        archivedBy: archived ? (String(authUser?.email || authUser?.uid || '').trim() || '') : '',
+        updatedAt: new Date()
+      };
+    }));
+    if (!maintenanceShowArchived && archived && String(maintenanceSelectedIssueId || '') === id) {
+      setMaintenanceSelectedIssueId('');
+    }
+    setMaintenanceMessage(archived ? 'Issue archived.' : 'Issue restored.');
+  } catch (err) {
+    console.error('Failed to archive/restore maintenance issue', err);
+    alert('Failed to update archive state.');
+  }
+}, [maintenanceCanWrite, maintenanceIssuesCollection, maintenanceShowArchived, maintenanceSelectedIssueId, authUser?.email, authUser?.uid]);
+
+const handleDeleteMaintenanceIssue = useCallback(async (issueId) => {
+  const id = String(issueId || '').trim();
+  if (!id || !maintenanceCanWrite) return;
+  setMaintenanceDeletePendingId(id);
+  try {
+    await deleteDoc(doc(maintenanceIssuesCollection, id));
+    setMaintenanceIssues((prev) => prev.filter((issue) => String(issue?.id || '') !== id));
+    if (String(maintenanceSelectedIssueId || '') === id) {
+      setMaintenanceSelectedIssueId('');
+    }
+    setMaintenanceMessage('Issue permanently deleted.');
+  } catch (err) {
+    console.error('Failed to delete maintenance issue', err);
+    alert('Failed to delete issue.');
+  } finally {
+    setMaintenanceDeletePendingId('');
+  }
+}, [maintenanceCanWrite, maintenanceIssuesCollection, maintenanceSelectedIssueId]);
 
 const exportMaintenanceIssuesCsv = useCallback(() => {
   if (!maintenanceFilteredIssues.length) {
@@ -22848,7 +23008,9 @@ useEffect(() => {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Add Maintenance Issue</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              {maintenanceIssueIsEditing ? 'Edit Maintenance Issue' : 'Add Maintenance Issue'}
+            </div>
             <button
               className="btn"
               onClick={() => {
@@ -22994,6 +23156,11 @@ useEffect(() => {
               </div>
             </div>
           </div>
+          {maintenanceIssueIsEditing && isMaintenanceIssueArchived(maintenanceIssueDraft) && (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#92400e' }}>
+              This issue is currently archived. Save to keep edits, or restore from the issue card actions.
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
             <button
               className="btn"
@@ -23011,7 +23178,7 @@ useEffect(() => {
               onClick={handleSaveMaintenanceIssue}
               disabled={maintenanceIssueSaving || !maintenanceCanWrite}
             >
-              {maintenanceIssueSaving ? 'Saving...' : 'Save Issue'}
+              {maintenanceIssueSaving ? 'Saving...' : (maintenanceIssueIsEditing ? 'Save Changes' : 'Save Issue')}
             </button>
           </div>
           {!maintenanceCanWrite && (
@@ -24196,6 +24363,17 @@ useEffect(() => {
               <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
                 Marker state: <b style={{ color: maintenanceShowIssueMarkers ? '#166534' : '#9a3412' }}>{maintenanceShowIssueMarkers ? 'ON' : 'OFF'}</b>
               </div>
+              <label style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#334155' }}>
+                <input
+                  type="checkbox"
+                  checked={maintenanceShowArchived}
+                  onChange={(e) => setMaintenanceShowArchived(Boolean(e.target.checked))}
+                />
+                Show archived issues
+                <span style={{ color: '#667085' }}>
+                  ({Number(maintenanceDashboard?.archivedTotal || 0).toLocaleString()})
+                </span>
+              </label>
               <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
                 <select value={maintenanceBuildingFilter} onChange={(e) => setMaintenanceBuildingFilter(e.target.value)}>
                   <option value="__all__">All buildings</option>
@@ -24286,9 +24464,16 @@ useEffect(() => {
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                           <span style={{ fontWeight: 700, color: '#1f2937' }}>{issue.issueType || 'Issue'}</span>
-                          <span style={{ fontSize: 10.5, color: priorityColor, fontWeight: 700 }}>
-                            {maintenancePriorityLabel(issue.priority)}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {isMaintenanceIssueArchived(issue) && (
+                              <span style={{ fontSize: 10, color: '#7c2d12', border: '1px solid #fdba74', padding: '1px 5px', borderRadius: 999 }}>
+                                Archived
+                              </span>
+                            )}
+                            <span style={{ fontSize: 10.5, color: priorityColor, fontWeight: 700 }}>
+                              {maintenancePriorityLabel(issue.priority)}
+                            </span>
+                          </div>
                         </div>
                         <div style={{ marginTop: 3, fontSize: 11, color: '#334155' }}>{issue.description || '(No description)'}</div>
                         <div style={{ marginTop: 3, fontSize: 10.5, color: '#667085' }}>{locationBits.join(' / ')}</div>
@@ -24300,7 +24485,7 @@ useEffect(() => {
                         <select
                           value={normalizeMaintenanceStatus(issue.status)}
                           onChange={(e) => handlePatchMaintenanceIssue(issue.id, { status: e.target.value })}
-                          disabled={!maintenanceCanWrite || maintenanceStatusSavingId === issue.id}
+                          disabled={!maintenanceCanWrite || maintenanceStatusSavingId === issue.id || isMaintenanceIssueArchived(issue)}
                         >
                           {MAINTENANCE_STATUS_VALUES.map((status) => (
                             <option key={status} value={status}>{maintenanceStatusLabel(status)}</option>
@@ -24313,9 +24498,36 @@ useEffect(() => {
                             if (next === null) return;
                             handlePatchMaintenanceIssue(issue.id, { assignedTo: String(next).trim() });
                           }}
-                          disabled={!maintenanceCanWrite || maintenanceStatusSavingId === issue.id}
+                          disabled={!maintenanceCanWrite || maintenanceStatusSavingId === issue.id || isMaintenanceIssueArchived(issue)}
                         >
                           Assign
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 6 }}>
+                        <button
+                          className="btn"
+                          onClick={() => openMaintenanceIssueEditor(issue)}
+                          disabled={!maintenanceCanWrite}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn"
+                          onClick={() => handleArchiveMaintenanceIssue(issue.id, !isMaintenanceIssueArchived(issue))}
+                          disabled={!maintenanceCanWrite}
+                        >
+                          {isMaintenanceIssueArchived(issue) ? 'Restore' : 'Archive'}
+                        </button>
+                        <button
+                          className="btn"
+                          style={{ color: '#b91c1c', borderColor: '#fecaca' }}
+                          onClick={() => {
+                            if (!window.confirm('Permanently delete this issue? This cannot be undone.')) return;
+                            handleDeleteMaintenanceIssue(issue.id);
+                          }}
+                          disabled={!maintenanceCanWrite || maintenanceDeletePendingId === issue.id}
+                        >
+                          {maintenanceDeletePendingId === issue.id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
                     </div>
