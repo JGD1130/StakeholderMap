@@ -460,3 +460,16 @@ Latest completed work (maintenance popup context + buildingName crash fix)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance View Issues targeting + Add Issue building dropdown)
+- Fixed `View Issues` from maintenance popup to reliably surface matching records:
+  - Uses canonical building-key matching (`buildingId`/`buildingName`) instead of raw string equality.
+  - Resets restrictive filters (`type/status/priority/assigned`) to `All` when `View Issues` is clicked so results are not accidentally hidden.
+  - Preserves room targeting when clicked from a room context.
+- Updated Add Maintenance Issue modal:
+  - Replaced free-text `Building` field with a dropdown list of campus buildings.
+  - Dropdown includes all known buildings (config features + known building list + observed issue records).
+  - Selecting a building updates stored building identity and clears stale floor/room context.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

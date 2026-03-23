@@ -7379,6 +7379,12 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
+const normalizeMaintenanceBuildingFilterKey = (buildingIdValue, buildingNameValue = '') => {
+  const idRaw = String(buildingIdValue || '').trim();
+  const nameRaw = String(buildingNameValue || '').trim();
+  const resolvedName = resolveBuildingNameFromInput(idRaw) || resolveBuildingNameFromInput(nameRaw) || nameRaw || idRaw;
+  return normalizeDashboardKey(resolvedName || idRaw || nameRaw);
+};
 const normalizeRoomLookupKey = (value) =>
   String(value || '')
     .trim()
@@ -17537,19 +17543,38 @@ const maintenanceIssueTypeOptions = useMemo(() => {
   });
   return Array.from(dynamic).sort((a, b) => a.localeCompare(b));
 }, [maintenanceIssues]);
-const maintenanceBuildingOptions = useMemo(() => {
-  const byId = new Map();
-  (maintenanceIssues || []).forEach((issue) => {
-    const id = String(issue?.buildingId || '').trim();
-    const name = String(issue?.buildingName || '').trim();
-    const key = id || name;
+const maintenanceBuildingCatalog = useMemo(() => {
+  const byKey = new Map();
+  const addBuilding = (rawId, rawName) => {
+    const id = String(rawId || '').trim();
+    const name = String(rawName || '').trim();
+    const resolvedName = resolveBuildingNameFromInput(name || id) || name || id;
+    const key = normalizeMaintenanceBuildingFilterKey(id, resolvedName);
     if (!key) return;
-    if (!byId.has(key)) byId.set(key, name || id);
+    const existing = byKey.get(key);
+    const next = {
+      key,
+      buildingId: bId(id || resolvedName || key) || key,
+      label: resolvedName || name || id || 'Unassigned'
+    };
+    if (!existing || (!existing.label && next.label)) {
+      byKey.set(key, next);
+    }
+  };
+  (config?.buildings?.features || []).forEach((feature) => {
+    const props = feature?.properties || {};
+    addBuilding(props.id, props.name || props.Name || '');
   });
-  return Array.from(byId.entries())
-    .map(([value, label]) => ({ value, label }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}, [maintenanceIssues]);
+  BUILDINGS_LIST.forEach((entry) => addBuilding(entry?.name, entry?.name));
+  (maintenanceIssues || []).forEach((issue) => {
+    addBuilding(issue?.buildingId, issue?.buildingName);
+  });
+  return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+}, [maintenanceIssues, config]);
+const maintenanceBuildingOptions = useMemo(
+  () => maintenanceBuildingCatalog.map((row) => ({ value: row.key, label: row.label })),
+  [maintenanceBuildingCatalog]
+);
 const maintenanceFilteredIssues = useMemo(() => {
   const assignedNeedle = norm(maintenanceAssignedFilter).toLowerCase();
   const roomNeedle = norm(maintenanceRoomSearch).toLowerCase();
@@ -17559,7 +17584,7 @@ const maintenanceFilteredIssues = useMemo(() => {
       if (maintenanceStatusFilter !== '__all__' && normalizeMaintenanceStatus(issue?.status) !== maintenanceStatusFilter) return false;
       if (maintenancePriorityFilter !== '__all__' && normalizeMaintenancePriority(issue?.priority) !== maintenancePriorityFilter) return false;
       if (maintenanceBuildingFilter !== '__all__') {
-        const key = String(issue?.buildingId || issue?.buildingName || '').trim();
+        const key = normalizeMaintenanceBuildingFilterKey(issue?.buildingId, issue?.buildingName);
         if (key !== maintenanceBuildingFilter) return false;
       }
       if (assignedNeedle) {
@@ -20068,10 +20093,18 @@ const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
     popup.remove();
   });
   popupNode.querySelector('#maintenance-view-issues')?.addEventListener('click', () => {
-    if (context?.buildingId) setMaintenanceBuildingFilter(String(context.buildingId));
+    const buildingKey = normalizeMaintenanceBuildingFilterKey(context?.buildingId, context?.buildingName);
+    setMaintenanceBuildingFilter(buildingKey || '__all__');
+    setMaintenanceTypeFilter('__all__');
+    setMaintenanceStatusFilter('__all__');
+    setMaintenancePriorityFilter('__all__');
+    setMaintenanceAssignedFilter('');
     if (context?.roomName || context?.roomId) {
       setMaintenanceRoomSearch(String(context.roomName || context.roomId));
+    } else {
+      setMaintenanceRoomSearch('');
     }
+    setMaintenanceSelectedIssueId('');
     setMaintenanceMessage('Issue filters focused to selected location.');
     popup.remove();
   });
@@ -22817,11 +22850,29 @@ useEffect(() => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <div>
                 <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Building</div>
-                <input
-                  type="text"
-                  value={maintenanceIssueDraft.buildingName || ''}
-                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, buildingName: e.target.value }))}
-                />
+                <select
+                  value={normalizeMaintenanceBuildingFilterKey(maintenanceIssueDraft.buildingId, maintenanceIssueDraft.buildingName)}
+                  onChange={(e) => {
+                    const selectedKey = String(e.target.value || '').trim();
+                    const selectedOption = maintenanceBuildingCatalog.find((row) => row.key === selectedKey) || null;
+                    setMaintenanceIssueDraft((prev) => ({
+                      ...prev,
+                      buildingId: selectedOption?.buildingId || '',
+                      buildingName: selectedOption?.label || '',
+                      floorId: selectedOption ? '' : prev.floorId,
+                      floorName: selectedOption ? '' : prev.floorName,
+                      roomId: selectedOption ? '' : prev.roomId,
+                      roomName: selectedOption ? '' : prev.roomName
+                    }));
+                  }}
+                >
+                  <option value="">Choose building...</option>
+                  {maintenanceBuildingCatalog.map((row) => (
+                    <option key={`maintenance-issue-building-${row.key}`} value={row.key}>
+                      {row.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Floor</div>
