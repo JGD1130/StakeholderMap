@@ -388,24 +388,12 @@ const StrategicDashboardSection = ({ strategic, onExpandedStateChange, hideTitle
         />
       </div>
 
-      <CollapsibleSection title="Trend Charts" open={trendOpen} onToggle={setTrendOpen}>
-        <ChartShell title="Enrollment Trend">
-          <EnrollmentTrendChart rows={rows} />
-        </ChartShell>
-        <ChartShell title="Required vs Available Seats">
-          <RequiredVsAvailableChart rows={rows} />
-        </ChartShell>
-        <ChartShell title="Seat Gap Over Time">
-          <SeatGapChart rows={rows} />
-        </ChartShell>
-      </CollapsibleSection>
-
       <CollapsibleSection
         title="Enrollment by Year (Editable)"
         open={enrollmentOpen}
         onToggle={setEnrollmentOpen}
       >
-        <div style={{ maxHeight: 130, overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{ paddingRight: 4 }}>
           {enrollmentSeries.map((row) => (
             <div key={row.year} style={{ display: 'grid', gridTemplateColumns: '60px 1fr', gap: 6, marginBottom: 4 }}>
               <div style={{ alignSelf: 'center', fontSize: 10, color: '#475467' }}>{row.year}</div>
@@ -420,6 +408,18 @@ const StrategicDashboardSection = ({ strategic, onExpandedStateChange, hideTitle
             </div>
           ))}
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Trend Charts" open={trendOpen} onToggle={setTrendOpen}>
+        <ChartShell title="Enrollment Trend">
+          <EnrollmentTrendChart rows={rows} />
+        </ChartShell>
+        <ChartShell title="Required vs Available Seats">
+          <RequiredVsAvailableChart rows={rows} />
+        </ChartShell>
+        <ChartShell title="Seat Gap Over Time">
+          <SeatGapChart rows={rows} />
+        </ChartShell>
       </CollapsibleSection>
     </PanelCard>
   );
@@ -527,10 +527,10 @@ export default function SpaceDashboardPanel({
             >
               <div
                 style={{
-                  maxHeight: strategicOpen ? '48vh' : 0,
-                  overflowY: strategicOpen ? 'auto' : 'hidden',
+                  maxHeight: strategicOpen ? '34vh' : 0,
+                  overflowY: strategicOpen ? 'scroll' : 'hidden',
                   overflowX: 'hidden',
-                  paddingRight: strategicOpen ? 4 : 0
+                  paddingRight: strategicOpen ? 6 : 0
                 }}
               >
                 <StrategicDashboardSection

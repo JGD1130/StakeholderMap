@@ -383,3 +383,16 @@ Latest completed work (strategic dashboard internal scroll when expanded)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (strategic section scroll reachability + subsection order)
+- Improved right-rail dashboard scroll behavior to ensure bottom strategic content remains reachable:
+  - Updated `.dashboard-box` flex sizing to `flex: 1 1 auto` with `min-height: 0` so the panel can shrink within the rail and scroll correctly.
+- Updated strategic expanded container behavior:
+  - Set a tighter expanded max height (`34vh`) with always-visible vertical scrollbar (`overflowY: scroll`) while open.
+- Reordered strategic subsections per request:
+  - `Enrollment by Year (Editable)` now appears above `Trend Charts`.
+- Simplified nested scrolling in enrollment subsection:
+  - Removed inner fixed-height enrollment scroller so the strategic section scrollbar governs long content flow.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
