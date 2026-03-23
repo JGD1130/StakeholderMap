@@ -17672,6 +17672,13 @@ const maintenanceOpenIssuesForFloor = useMemo(() => {
     return true;
   });
 }, [maintenanceOpenIssues, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
+const maintenanceRenderableMarkerCount = useMemo(
+  () =>
+    (maintenanceFilteredIssues || []).filter(
+      (issue) => Array.isArray(issue?.coordinates) && issue.coordinates.length === 2
+    ).length,
+  [maintenanceFilteredIssues]
+);
 const adminEngagementMarkerRows = useMemo(() => {
   if (!(isAdminCombinedMode && engagementMode)) return [];
   return (markers || [])
@@ -20845,10 +20852,17 @@ useEffect(() => {
           : (markerTypes[m.type] || '#9E9E9E');
       el.style.backgroundColor = markerColor;
       if (maintenanceWorkflowActive) {
-        el.style.border = '2px solid #ffffff';
-        el.style.boxShadow = '0 0 0 1px rgba(15,23,42,0.45)';
+        const priorityKey = normalizeMaintenancePriority(m.priority);
+        const isCritical = priorityKey === 'critical';
+        const isHigh = priorityKey === 'high';
+        const markerSize = isCritical ? 22 : (isHigh ? 20 : 18);
+        el.style.width = `${markerSize}px`;
+        el.style.height = `${markerSize}px`;
+        el.style.border = '3px solid #ffffff';
+        el.style.boxShadow = `0 0 0 2px rgba(15,23,42,0.95), 0 0 14px ${convertHexWithAlpha(markerColor, 0.65)}`;
+        el.style.opacity = isCritical ? '1' : '0.95';
         if (normalizeMaintenanceStatus(m.status) === 'complete') {
-          el.style.opacity = '0.55';
+          el.style.opacity = '0.45';
         }
       }
       const mk = new mapboxgl.Marker(el).setLngLat(m.coordinates);
@@ -24177,8 +24191,11 @@ useEffect(() => {
                   checked={maintenanceShowIssueMarkers}
                   onChange={(e) => setMaintenanceShowIssueMarkers(Boolean(e.target.checked))}
                 />
-                Show issue markers on map/floorplan
+                Show issue markers on map/floorplan ({maintenanceShowIssueMarkers ? maintenanceRenderableMarkerCount.toLocaleString() : 0} visible)
               </label>
+              <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
+                Marker state: <b style={{ color: maintenanceShowIssueMarkers ? '#166534' : '#9a3412' }}>{maintenanceShowIssueMarkers ? 'ON' : 'OFF'}</b>
+              </div>
               <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
                 <select value={maintenanceBuildingFilter} onChange={(e) => setMaintenanceBuildingFilter(e.target.value)}>
                   <option value="__all__">All buildings</option>

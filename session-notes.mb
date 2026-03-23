@@ -473,3 +473,15 @@ Latest completed work (maintenance View Issues targeting + Add Issue building dr
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance marker visibility clarity)
+- Improved maintenance marker visibility so marker on/off state is obvious:
+  - Increased marker size for maintenance issues (larger for high/critical).
+  - Stronger high-contrast ring + glow around issue markers.
+  - Kept completed issues visibly muted.
+- Added explicit marker-state cues in the left maintenance panel:
+  - Toggle now shows visible marker count in label text.
+  - Added ON/OFF status line directly under the toggle.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
