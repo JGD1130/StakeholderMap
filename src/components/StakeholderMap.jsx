@@ -19988,6 +19988,247 @@ useEffect(() => {
   }
 }, [selectedBuildingId]);
 
+const openMaintenanceIssueModal = useCallback((context = null) => {
+  const buildingId = String(context?.buildingId || selectedBuildingId || selectedBuilding || '').trim();
+  const buildingName = String(
+    context?.buildingName ||
+    resolveBuildingNameFromInput(buildingId) ||
+    activeBuildingName ||
+    selectedBuilding ||
+    ''
+  ).trim();
+  const floorId = String(context?.floorId || '').trim();
+  const floorName = String(context?.floorName || floorId || '').trim();
+  const roomId = String(context?.roomId || '').trim();
+  const roomName = String(context?.roomName || context?.roomLabel || context?.roomNumber || '').trim();
+  const lng = Number(context?.lng ?? context?.lngLat?.lng ?? context?.coordinates?.[0]);
+  const lat = Number(context?.lat ?? context?.lngLat?.lat ?? context?.coordinates?.[1]);
+  setMaintenanceContext(context || null);
+  setMaintenanceIssueDraft({
+    buildingId: buildingId ? bId(buildingId) : '',
+    buildingName,
+    floorId: floorId ? fId(floorId) : '',
+    floorName,
+    roomId,
+    roomName,
+    issueType: 'Other',
+    priority: 'medium',
+    status: 'open',
+    description: '',
+    assignedTo: '',
+    notes: '',
+    estimatedCostLow: '',
+    estimatedCostHigh: '',
+    coordinates: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
+  });
+  setMaintenanceIssueModalOpen(true);
+}, [selectedBuildingId, selectedBuilding, resolveBuildingNameFromInput, activeBuildingName]);
+
+const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
+  if (!mapRef.current || !lngLat) return;
+  const popupNode = document.createElement('div');
+  popupNode.className = 'marker-prompt-popup';
+  const buildingName = String(context?.buildingName || context?.buildingId || 'Campus').trim() || 'Campus';
+  const floorName = String(context?.floorName || '').trim();
+  const roomName = String(context?.roomName || context?.roomLabel || context?.roomNumber || '').trim();
+  const scopeBits = [buildingName, floorName, roomName].filter(Boolean);
+  popupNode.innerHTML = `
+    <h4 style="margin-bottom:6px;">Maintenance</h4>
+    <div style="font-size:11px;color:#475467;margin-bottom:8px;">${scopeBits.join(' / ') || 'Campus issue'}</div>
+    <div class="button-group">
+      <button id="maintenance-add-issue">Add Issue</button>
+      <button id="maintenance-view-issues">View Issues</button>
+    </div>`;
+
+  const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' })
+    .setDOMContent(popupNode)
+    .setLngLat(lngLat)
+    .addTo(mapRef.current);
+
+  popupNode.querySelector('#maintenance-add-issue')?.addEventListener('click', () => {
+    openMaintenanceIssueModal({
+      ...(context || {}),
+      lngLat,
+      lng: Number(lngLat.lng),
+      lat: Number(lngLat.lat)
+    });
+    popup.remove();
+  });
+  popupNode.querySelector('#maintenance-view-issues')?.addEventListener('click', () => {
+    if (context?.buildingId) setMaintenanceBuildingFilter(String(context.buildingId));
+    if (context?.roomName || context?.roomId) {
+      setMaintenanceRoomSearch(String(context.roomName || context.roomId));
+    }
+    setMaintenanceMessage('Issue filters focused to selected location.');
+    popup.remove();
+  });
+}, [openMaintenanceIssueModal]);
+
+const handleSaveMaintenanceIssue = useCallback(async () => {
+  const draft = maintenanceIssueDraft || {};
+  const description = String(draft.description || '').trim();
+  if (!description) {
+    alert('Please enter an issue description.');
+    return;
+  }
+  if (!maintenanceCanWrite) {
+    alert('Save failed: maintenance issue writes are not allowed for your current role.');
+    return;
+  }
+  setMaintenanceIssueSaving(true);
+  try {
+    const payload = {
+      universityId: canon(universityId),
+      campusId: floorplanCampus,
+      buildingId: String(draft.buildingId || '').trim(),
+      buildingName: String(draft.buildingName || '').trim(),
+      floorId: String(draft.floorId || '').trim(),
+      floorName: String(draft.floorName || '').trim(),
+      roomId: String(draft.roomId || '').trim(),
+      roomName: String(draft.roomName || '').trim(),
+      issueType: String(draft.issueType || 'Other').trim() || 'Other',
+      priority: normalizeMaintenancePriority(draft.priority),
+      status: normalizeMaintenanceStatus(draft.status),
+      description,
+      assignedTo: String(draft.assignedTo || '').trim(),
+      notes: String(draft.notes || '').trim(),
+      estimatedCostLow: draft.estimatedCostLow === '' ? null : Number(draft.estimatedCostLow || 0) || null,
+      estimatedCostHigh: draft.estimatedCostHigh === '' ? null : Number(draft.estimatedCostHigh || 0) || null,
+      photoUrls: [],
+      createdBy: String(authUser?.email || authUser?.uid || '').trim() || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? serverTimestamp() : null
+    };
+    const coords = Array.isArray(draft.coordinates) ? draft.coordinates : null;
+    if (coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))) {
+      payload.coordinates = new GeoPoint(Number(coords[1]), Number(coords[0]));
+    }
+    const createdRef = await addDoc(maintenanceIssuesCollection, payload);
+    const localIssue = {
+      ...payload,
+      id: createdRef.id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? new Date() : null,
+      coordinates: coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))
+        ? [Number(coords[0]), Number(coords[1])]
+        : null
+    };
+    setMaintenanceIssues((prev) => [...prev, localIssue]);
+    setMaintenanceIssueModalOpen(false);
+    setMaintenanceIssueDraft(null);
+    setMaintenanceMessage('Issue saved.');
+  } catch (err) {
+    console.error('Failed to save maintenance issue:', err);
+    alert('Failed to save maintenance issue. See console for details.');
+  } finally {
+    setMaintenanceIssueSaving(false);
+  }
+}, [maintenanceIssueDraft, maintenanceCanWrite, universityId, floorplanCampus, authUser?.email, authUser?.uid, maintenanceIssuesCollection]);
+
+const handlePatchMaintenanceIssue = useCallback(async (issueId, patch = {}) => {
+  const id = String(issueId || '').trim();
+  if (!id || !maintenanceCanWrite) return;
+  const next = { ...(patch || {}) };
+  if (Object.prototype.hasOwnProperty.call(next, 'status')) {
+    next.status = normalizeMaintenanceStatus(next.status);
+    next.completedAt = next.status === 'complete' ? serverTimestamp() : null;
+  }
+  next.updatedAt = serverTimestamp();
+  setMaintenanceStatusSavingId(id);
+  try {
+    await setDoc(doc(maintenanceIssuesCollection, id), next, { merge: true });
+    setMaintenanceIssues((prev) => prev.map((issue) => {
+      if (String(issue?.id || '') !== id) return issue;
+      return {
+        ...issue,
+        ...patch,
+        status: Object.prototype.hasOwnProperty.call(patch, 'status')
+          ? normalizeMaintenanceStatus(patch.status)
+          : issue.status,
+        updatedAt: new Date(),
+        completedAt: Object.prototype.hasOwnProperty.call(patch, 'status')
+          ? (normalizeMaintenanceStatus(patch.status) === 'complete' ? new Date() : null)
+          : issue.completedAt
+      };
+    }));
+  } catch (err) {
+    console.error('Failed to update maintenance issue', err);
+    alert('Failed to update issue.');
+  } finally {
+    setMaintenanceStatusSavingId('');
+  }
+}, [maintenanceCanWrite, maintenanceIssuesCollection]);
+
+const exportMaintenanceIssuesCsv = useCallback(() => {
+  if (!maintenanceFilteredIssues.length) {
+    setMaintenanceMessage('No filtered issues to export.');
+    return;
+  }
+  const esc = (value) => {
+    if (value == null) return '';
+    const text = String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const headers = [
+    'IssueId',
+    'IssueType',
+    'Priority',
+    'Status',
+    'AssignedTo',
+    'BuildingId',
+    'BuildingName',
+    'FloorId',
+    'FloorName',
+    'RoomId',
+    'RoomName',
+    'Description',
+    'Notes',
+    'EstimatedCostLow',
+    'EstimatedCostHigh',
+    'CreatedAt',
+    'UpdatedAt',
+    'CompletedAt'
+  ];
+  const lines = [
+    headers.join(','),
+    ...maintenanceFilteredIssues.map((issue) => {
+      const row = [
+        issue.id,
+        issue.issueType,
+        maintenancePriorityLabel(issue.priority),
+        maintenanceStatusLabel(issue.status),
+        issue.assignedTo || '',
+        issue.buildingId || '',
+        issue.buildingName || '',
+        issue.floorId || '',
+        issue.floorName || '',
+        issue.roomId || '',
+        issue.roomName || '',
+        issue.description || '',
+        issue.notes || '',
+        issue.estimatedCostLow ?? '',
+        issue.estimatedCostHigh ?? '',
+        toTimestampIso(issue.createdAt),
+        toTimestampIso(issue.updatedAt),
+        toTimestampIso(issue.completedAt)
+      ];
+      return row.map(esc).join(',');
+    })
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${canon(universityId) || 'campus'}-maintenance-issues.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  setMaintenanceMessage(`Exported ${maintenanceFilteredIssues.length.toLocaleString()} issues.`);
+}, [maintenanceFilteredIssues, universityId]);
+
 // ---------- Base layers + Outdoor polygons ----------
 useEffect(() => {
   if (engagementMode) return;
@@ -20749,247 +20990,6 @@ useEffect(() => {
       revitId
     };
   }, [isEngagementFloorScope, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor]);
-
-  const openMaintenanceIssueModal = useCallback((context = null) => {
-    const buildingId = String(context?.buildingId || selectedBuildingId || selectedBuilding || '').trim();
-    const buildingName = String(
-      context?.buildingName ||
-      resolveBuildingNameFromInput(buildingId) ||
-      activeBuildingName ||
-      selectedBuilding ||
-      ''
-    ).trim();
-    const floorId = String(context?.floorId || '').trim();
-    const floorName = String(context?.floorName || floorId || '').trim();
-    const roomId = String(context?.roomId || '').trim();
-    const roomName = String(context?.roomName || context?.roomLabel || context?.roomNumber || '').trim();
-    const lng = Number(context?.lng ?? context?.lngLat?.lng ?? context?.coordinates?.[0]);
-    const lat = Number(context?.lat ?? context?.lngLat?.lat ?? context?.coordinates?.[1]);
-    setMaintenanceContext(context || null);
-    setMaintenanceIssueDraft({
-      buildingId: buildingId ? bId(buildingId) : '',
-      buildingName,
-      floorId: floorId ? fId(floorId) : '',
-      floorName,
-      roomId,
-      roomName,
-      issueType: 'Other',
-      priority: 'medium',
-      status: 'open',
-      description: '',
-      assignedTo: '',
-      notes: '',
-      estimatedCostLow: '',
-      estimatedCostHigh: '',
-      coordinates: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
-    });
-    setMaintenanceIssueModalOpen(true);
-  }, [selectedBuildingId, selectedBuilding, resolveBuildingNameFromInput, activeBuildingName]);
-
-  const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
-    if (!mapRef.current || !lngLat) return;
-    const popupNode = document.createElement('div');
-    popupNode.className = 'marker-prompt-popup';
-    const buildingName = String(context?.buildingName || context?.buildingId || 'Campus').trim() || 'Campus';
-    const floorName = String(context?.floorName || '').trim();
-    const roomName = String(context?.roomName || context?.roomLabel || context?.roomNumber || '').trim();
-    const scopeBits = [buildingName, floorName, roomName].filter(Boolean);
-    popupNode.innerHTML = `
-      <h4 style="margin-bottom:6px;">Maintenance</h4>
-      <div style="font-size:11px;color:#475467;margin-bottom:8px;">${scopeBits.join(' / ') || 'Campus issue'}</div>
-      <div class="button-group">
-        <button id="maintenance-add-issue">Add Issue</button>
-        <button id="maintenance-view-issues">View Issues</button>
-      </div>`;
-
-    const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' })
-      .setDOMContent(popupNode)
-      .setLngLat(lngLat)
-      .addTo(mapRef.current);
-
-    popupNode.querySelector('#maintenance-add-issue')?.addEventListener('click', () => {
-      openMaintenanceIssueModal({
-        ...(context || {}),
-        lngLat,
-        lng: Number(lngLat.lng),
-        lat: Number(lngLat.lat)
-      });
-      popup.remove();
-    });
-    popupNode.querySelector('#maintenance-view-issues')?.addEventListener('click', () => {
-      if (context?.buildingId) setMaintenanceBuildingFilter(String(context.buildingId));
-      if (context?.roomName || context?.roomId) {
-        setMaintenanceRoomSearch(String(context.roomName || context.roomId));
-      }
-      setMaintenanceMessage('Issue filters focused to selected location.');
-      popup.remove();
-    });
-  }, [openMaintenanceIssueModal]);
-
-  const handleSaveMaintenanceIssue = useCallback(async () => {
-    const draft = maintenanceIssueDraft || {};
-    const description = String(draft.description || '').trim();
-    if (!description) {
-      alert('Please enter an issue description.');
-      return;
-    }
-    if (!maintenanceCanWrite) {
-      alert('Save failed: maintenance issue writes are not allowed for your current role.');
-      return;
-    }
-    setMaintenanceIssueSaving(true);
-    try {
-      const payload = {
-        universityId: canon(universityId),
-        campusId: floorplanCampus,
-        buildingId: String(draft.buildingId || '').trim(),
-        buildingName: String(draft.buildingName || '').trim(),
-        floorId: String(draft.floorId || '').trim(),
-        floorName: String(draft.floorName || '').trim(),
-        roomId: String(draft.roomId || '').trim(),
-        roomName: String(draft.roomName || '').trim(),
-        issueType: String(draft.issueType || 'Other').trim() || 'Other',
-        priority: normalizeMaintenancePriority(draft.priority),
-        status: normalizeMaintenanceStatus(draft.status),
-        description,
-        assignedTo: String(draft.assignedTo || '').trim(),
-        notes: String(draft.notes || '').trim(),
-        estimatedCostLow: draft.estimatedCostLow === '' ? null : Number(draft.estimatedCostLow || 0) || null,
-        estimatedCostHigh: draft.estimatedCostHigh === '' ? null : Number(draft.estimatedCostHigh || 0) || null,
-        photoUrls: [],
-        createdBy: String(authUser?.email || authUser?.uid || '').trim() || null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? serverTimestamp() : null
-      };
-      const coords = Array.isArray(draft.coordinates) ? draft.coordinates : null;
-      if (coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))) {
-        payload.coordinates = new GeoPoint(Number(coords[1]), Number(coords[0]));
-      }
-      const createdRef = await addDoc(maintenanceIssuesCollection, payload);
-      const localIssue = {
-        ...payload,
-        id: createdRef.id,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? new Date() : null,
-        coordinates: coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))
-          ? [Number(coords[0]), Number(coords[1])]
-          : null
-      };
-      setMaintenanceIssues((prev) => [...prev, localIssue]);
-      setMaintenanceIssueModalOpen(false);
-      setMaintenanceIssueDraft(null);
-      setMaintenanceMessage('Issue saved.');
-    } catch (err) {
-      console.error('Failed to save maintenance issue:', err);
-      alert('Failed to save maintenance issue. See console for details.');
-    } finally {
-      setMaintenanceIssueSaving(false);
-    }
-  }, [maintenanceIssueDraft, maintenanceCanWrite, universityId, floorplanCampus, authUser?.email, authUser?.uid, maintenanceIssuesCollection]);
-
-  const handlePatchMaintenanceIssue = useCallback(async (issueId, patch = {}) => {
-    const id = String(issueId || '').trim();
-    if (!id || !maintenanceCanWrite) return;
-    const next = { ...(patch || {}) };
-    if (Object.prototype.hasOwnProperty.call(next, 'status')) {
-      next.status = normalizeMaintenanceStatus(next.status);
-      next.completedAt = next.status === 'complete' ? serverTimestamp() : null;
-    }
-    next.updatedAt = serverTimestamp();
-    setMaintenanceStatusSavingId(id);
-    try {
-      await setDoc(doc(maintenanceIssuesCollection, id), next, { merge: true });
-      setMaintenanceIssues((prev) => prev.map((issue) => {
-        if (String(issue?.id || '') !== id) return issue;
-        return {
-          ...issue,
-          ...patch,
-          status: Object.prototype.hasOwnProperty.call(patch, 'status')
-            ? normalizeMaintenanceStatus(patch.status)
-            : issue.status,
-          updatedAt: new Date(),
-          completedAt: Object.prototype.hasOwnProperty.call(patch, 'status')
-            ? (normalizeMaintenanceStatus(patch.status) === 'complete' ? new Date() : null)
-            : issue.completedAt
-        };
-      }));
-    } catch (err) {
-      console.error('Failed to update maintenance issue', err);
-      alert('Failed to update issue.');
-    } finally {
-      setMaintenanceStatusSavingId('');
-    }
-  }, [maintenanceCanWrite, maintenanceIssuesCollection]);
-
-  const exportMaintenanceIssuesCsv = useCallback(() => {
-    if (!maintenanceFilteredIssues.length) {
-      setMaintenanceMessage('No filtered issues to export.');
-      return;
-    }
-    const esc = (value) => {
-      if (value == null) return '';
-      const text = String(value);
-      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    };
-    const headers = [
-      'IssueId',
-      'IssueType',
-      'Priority',
-      'Status',
-      'AssignedTo',
-      'BuildingId',
-      'BuildingName',
-      'FloorId',
-      'FloorName',
-      'RoomId',
-      'RoomName',
-      'Description',
-      'Notes',
-      'EstimatedCostLow',
-      'EstimatedCostHigh',
-      'CreatedAt',
-      'UpdatedAt',
-      'CompletedAt'
-    ];
-    const lines = [
-      headers.join(','),
-      ...maintenanceFilteredIssues.map((issue) => {
-        const row = [
-          issue.id,
-          issue.issueType,
-          maintenancePriorityLabel(issue.priority),
-          maintenanceStatusLabel(issue.status),
-          issue.assignedTo || '',
-          issue.buildingId || '',
-          issue.buildingName || '',
-          issue.floorId || '',
-          issue.floorName || '',
-          issue.roomId || '',
-          issue.roomName || '',
-          issue.description || '',
-          issue.notes || '',
-          issue.estimatedCostLow ?? '',
-          issue.estimatedCostHigh ?? '',
-          toTimestampIso(issue.createdAt),
-          toTimestampIso(issue.updatedAt),
-          toTimestampIso(issue.completedAt)
-        ];
-        return row.map(esc).join(',');
-      })
-    ];
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${canon(universityId) || 'campus'}-maintenance-issues.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setMaintenanceMessage(`Exported ${maintenanceFilteredIssues.length.toLocaleString()} issues.`);
-  }, [maintenanceFilteredIssues, universityId]);
 
   const showMarkerPopup = useCallback((lngLat, clickedRoomContext = null, clickedBuildingContext = null) => {
     if (!mapRef.current) return;

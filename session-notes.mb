@@ -433,3 +433,14 @@ Latest completed work (Maintenance Tracker v1 foundation in admin workspace)
   - `npm.cmd run smoke` passed (`24/24 checks`)
   - Firestore rules deployed successfully:
     - `npm.cmd exec --yes firebase-tools -- deploy --only firestore:rules --project stakeholder-map-a4bdc`
+
+Latest completed work (maintenance runtime crash hotfix)
+- Fixed production runtime error:
+  - `Uncaught ReferenceError: Cannot access '<minified var>' before initialization`
+  - Root cause was render-order TDZ: newly added maintenance callbacks were referenced in effects before their `const` initialization point inside `StakeholderMap`.
+- Fix:
+  - Moved maintenance callback declarations (`openMaintenanceIssueModal`, `showMaintenanceActionPopup`, save/update/export handlers) earlier in component scope so they are initialized before any consuming effects run.
+  - Removed duplicate late declarations to keep single source of truth.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
