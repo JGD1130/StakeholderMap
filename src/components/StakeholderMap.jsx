@@ -8523,6 +8523,24 @@ const maintenancePriorityLabel = (priority) => {
   if (key === 'low') return 'Low';
   return 'Medium';
 };
+const normalizeMaintenancePhotoUrls = (value) => {
+  const rawList = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/[\n,]+/g)
+        .map((item) => item.trim());
+  const seen = new Set();
+  const out = [];
+  rawList.forEach((item) => {
+    const text = String(item || '').trim();
+    if (!text) return;
+    if (!/^https?:\/\//i.test(text)) return;
+    if (seen.has(text)) return;
+    seen.add(text);
+    out.push(text);
+  });
+  return out;
+};
 const isMaintenanceIssueArchived = (issue) => Boolean(
   issue?.archived === true ||
   issue?.isArchived === true ||
@@ -19892,6 +19910,7 @@ useEffect(() => {
               floorName: String(data.floorName || '').trim(),
               roomId: String(data.roomId || '').trim(),
               roomName: String(data.roomName || '').trim(),
+              photoUrls: normalizeMaintenancePhotoUrls(data.photoUrls),
               archived: Boolean(data.archived === true || data.isArchived === true || data.archivedAt),
               archivedAt: data.archivedAt || null,
               archivedBy: String(data.archivedBy || '').trim(),
@@ -20068,6 +20087,8 @@ const openMaintenanceIssueModal = useCallback((context = null) => {
     description: '',
     assignedTo: '',
     notes: '',
+    photoUrls: [],
+    photoUrlsText: '',
     archived: false,
     archivedAt: null,
     archivedBy: '',
@@ -20091,6 +20112,7 @@ const openMaintenanceIssueEditor = useCallback((issue = null) => {
   const roomId = String(issue?.roomId || '').trim();
   const roomName = String(issue?.roomName || '').trim();
   const coords = Array.isArray(issue?.coordinates) ? issue.coordinates : null;
+  const photoUrls = normalizeMaintenancePhotoUrls(issue?.photoUrls);
   setMaintenanceContext({
     buildingId,
     buildingName,
@@ -20114,6 +20136,8 @@ const openMaintenanceIssueEditor = useCallback((issue = null) => {
     description: String(issue?.description || '').trim(),
     assignedTo: String(issue?.assignedTo || '').trim(),
     notes: String(issue?.notes || '').trim(),
+    photoUrls,
+    photoUrlsText: photoUrls.join('\n'),
     archived: isMaintenanceIssueArchived(issue),
     archivedAt: issue?.archivedAt || null,
     archivedBy: String(issue?.archivedBy || '').trim(),
@@ -20217,6 +20241,7 @@ const handleSaveMaintenanceIssue = useCallback(async () => {
   try {
     const normalizedStatus = normalizeMaintenanceStatus(draft.status);
     const archived = Boolean(draft.archived);
+    const photoUrls = normalizeMaintenancePhotoUrls(draft.photoUrlsText || draft.photoUrls);
     const payload = {
       universityId: canon(universityId),
       campusId: floorplanCampus,
@@ -20234,7 +20259,7 @@ const handleSaveMaintenanceIssue = useCallback(async () => {
       notes: String(draft.notes || '').trim(),
       estimatedCostLow: draft.estimatedCostLow === '' ? null : Number(draft.estimatedCostLow || 0) || null,
       estimatedCostHigh: draft.estimatedCostHigh === '' ? null : Number(draft.estimatedCostHigh || 0) || null,
-      photoUrls: Array.isArray(draft.photoUrls) ? draft.photoUrls : [],
+      photoUrls,
       archived,
       archivedAt: archived ? (draft.archivedAt || serverTimestamp()) : null,
       archivedBy: archived ? String(draft.archivedBy || authUser?.email || authUser?.uid || '').trim() || null : null,
@@ -20273,6 +20298,8 @@ const handleSaveMaintenanceIssue = useCallback(async () => {
       description: payload.description,
       assignedTo: payload.assignedTo,
       notes: payload.notes,
+      photoUrls,
+      photoUrlsText: photoUrls.join('\n'),
       estimatedCostLow: payload.estimatedCostLow,
       estimatedCostHigh: payload.estimatedCostHigh,
       archived: Boolean(payload.archived),
@@ -20413,6 +20440,7 @@ const exportMaintenanceIssuesCsv = useCallback(() => {
     'RoomName',
     'Description',
     'Notes',
+    'PhotoUrls',
     'EstimatedCostLow',
     'EstimatedCostHigh',
     'CreatedAt',
@@ -20436,6 +20464,7 @@ const exportMaintenanceIssuesCsv = useCallback(() => {
         issue.roomName || '',
         issue.description || '',
         issue.notes || '',
+        normalizeMaintenancePhotoUrls(issue.photoUrls).join(' | '),
         issue.estimatedCostLow ?? '',
         issue.estimatedCostHigh ?? '',
         toTimestampIso(issue.createdAt),
@@ -23122,6 +23151,15 @@ useEffect(() => {
                 placeholder="Optional notes"
               />
             </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Photo URLs (optional)</div>
+              <textarea
+                value={maintenanceIssueDraft.photoUrlsText || ''}
+                onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, photoUrlsText: e.target.value }))}
+                rows={2}
+                placeholder="One URL per line (https://...)"
+              />
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <div>
                 <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Assigned To</div>
@@ -24434,6 +24472,7 @@ useEffect(() => {
                 {maintenanceFilteredIssues.length ? maintenanceFilteredIssues.slice(0, 60).map((issue) => {
                   const selected = String(issue?.id || '') === String(maintenanceSelectedIssueId || '');
                   const priorityColor = maintenancePriorityColor(issue?.priority);
+                  const issuePhotoUrls = normalizeMaintenancePhotoUrls(issue?.photoUrls);
                   const locationBits = [
                     issue?.buildingName || issue?.buildingId || 'Unassigned',
                     issue?.floorName || issue?.floorId || '',
@@ -24481,6 +24520,25 @@ useEffect(() => {
                           Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` • Assigned: ${issue.assignedTo}` : ''}
                         </div>
                       </button>
+                      {!!issuePhotoUrls.length && (
+                        <div style={{ marginBottom: 6, fontSize: 10.5, color: '#667085' }}>
+                          Photos: {issuePhotoUrls.length}
+                          {issuePhotoUrls.length > 0 ? ' • ' : ''}
+                          {issuePhotoUrls.slice(0, 2).map((url, idx) => (
+                            <React.Fragment key={`issue-photo-link-${issue.id}-${idx}`}>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ color: '#2563eb' }}
+                              >
+                                Open {idx + 1}
+                              </a>
+                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' • ' : ''}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      )}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, alignItems: 'center' }}>
                         <select
                           value={normalizeMaintenanceStatus(issue.status)}

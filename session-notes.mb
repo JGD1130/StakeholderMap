@@ -504,3 +504,14 @@ Latest completed work (maintenance edit + archive/delete workflow)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance photo URL support)
+- Added lightweight photo URL support to maintenance issues (no storage upload dependency):
+  - New modal field: `Photo URLs (optional)` with one URL per line.
+  - URL normalization/validation keeps unique `http/https` links only.
+  - Saved into Firestore `photoUrls` array and preserved during edits.
+  - Issue cards now show photo count and quick `Open` links (first two).
+  - CSV export now includes `PhotoUrls` column.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
