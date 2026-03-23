@@ -444,3 +444,19 @@ Latest completed work (maintenance runtime crash hotfix)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance popup context + buildingName crash fix)
+- Fixed maintenance mode runtime error triggered by building clicks:
+  - `ReferenceError: buildingName is not defined`
+  - Root cause: `onBuildingClick` used `buildingName` before defining it in the handler scope.
+- Fixes implemented:
+  - Added local `buildingName` resolution in `onBuildingClick` from feature props (`name`/`Name`) with fallback to resolved building id.
+  - Reused that value for maintenance context and admin building popup content.
+  - Wired `maintenanceActionPopupRef` cleanup into `showMaintenanceActionPopup` so each new maintenance popup replaces the old one.
+  - Added maintenance popup cleanup when leaving Maintenance workflow and on component unmount.
+- Result:
+  - Clicking a different building now updates maintenance popup context instead of lingering on the previous building.
+  - Crash on building click in maintenance mode is resolved.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

@@ -9025,6 +9025,7 @@ const StakeholderMap = ({
   const roomEditPanelRef = useRef(null);
   const scenarioPanelRef = useRef(null);
   const renoPanelRef = useRef(null);
+  const maintenanceActionPopupRef = useRef(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
@@ -20026,6 +20027,10 @@ const openMaintenanceIssueModal = useCallback((context = null) => {
 
 const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
   if (!mapRef.current || !lngLat) return;
+  try {
+    maintenanceActionPopupRef.current?.remove?.();
+  } catch {}
+  maintenanceActionPopupRef.current = null;
   const popupNode = document.createElement('div');
   popupNode.className = 'marker-prompt-popup';
   const buildingName = String(context?.buildingName || context?.buildingId || 'Campus').trim() || 'Campus';
@@ -20044,6 +20049,14 @@ const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
     .setDOMContent(popupNode)
     .setLngLat(lngLat)
     .addTo(mapRef.current);
+  maintenanceActionPopupRef.current = popup;
+  try {
+    popup.on('close', () => {
+      if (maintenanceActionPopupRef.current === popup) {
+        maintenanceActionPopupRef.current = null;
+      }
+    });
+  } catch {}
 
   popupNode.querySelector('#maintenance-add-issue')?.addEventListener('click', () => {
     openMaintenanceIssueModal({
@@ -20063,6 +20076,21 @@ const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
     popup.remove();
   });
 }, [openMaintenanceIssueModal]);
+
+useEffect(() => {
+  if (maintenanceWorkflowActive) return;
+  try {
+    maintenanceActionPopupRef.current?.remove?.();
+  } catch {}
+  maintenanceActionPopupRef.current = null;
+}, [maintenanceWorkflowActive]);
+
+useEffect(() => () => {
+  try {
+    maintenanceActionPopupRef.current?.remove?.();
+  } catch {}
+  maintenanceActionPopupRef.current = null;
+}, []);
 
 const handleSaveMaintenanceIssue = useCallback(async () => {
   const draft = maintenanceIssueDraft || {};
@@ -20397,12 +20425,18 @@ useEffect(() => {
     } catch {}
     if (clickedRoom) return;
 
-    const f = e.features && e.features[0];
-    if (!f) return;
-    selectedBuildingFeatureRef.current = f;
+  const f = e.features && e.features[0];
+  if (!f) return;
+  selectedBuildingFeatureRef.current = f;
 
-    const id = f.properties?.id;
-    if (!id) return;
+  const id = f.properties?.id;
+  if (!id) return;
+  const buildingName = String(
+    f.properties?.name ||
+    f.properties?.Name ||
+    resolveBuildingNameFromInput(id) ||
+    id
+  ).trim() || String(id);
 
     // clear previous selection state
     try {
@@ -20496,7 +20530,7 @@ useEffect(() => {
       }
     } catch {}
   };
-}, [engagementMode, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup]);
+}, [engagementMode, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup, resolveBuildingNameFromInput]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
