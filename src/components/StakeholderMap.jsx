@@ -17600,6 +17600,140 @@ const maintenanceBuildingOptions = useMemo(
   () => maintenanceBuildingCatalog.map((row) => ({ value: row.key, label: row.label })),
   [maintenanceBuildingCatalog]
 );
+const maintenanceDraftBuildingKey = normalizeMaintenanceBuildingFilterKey(
+  maintenanceIssueDraft?.buildingId,
+  maintenanceIssueDraft?.buildingName
+);
+const maintenanceFloorOptionsForDraft = useMemo(() => {
+  const optionsMap = new Map();
+  const addFloorOption = (floorNameRaw, floorIdRaw = '') => {
+    const floorName = String(floorNameRaw || '').trim();
+    const floorIdValue = String(floorIdRaw || floorName).trim();
+    if (!floorName && !floorIdValue) return;
+    const key = floorName || floorIdValue;
+    if (!optionsMap.has(key)) {
+      optionsMap.set(key, {
+        value: floorName || floorIdValue,
+        label: floorName || floorIdValue,
+        floorId: floorIdValue
+      });
+    }
+  };
+
+  (maintenanceIssues || []).forEach((issue) => {
+    const issueBuildingKey = normalizeMaintenanceBuildingFilterKey(issue?.buildingId, issue?.buildingName);
+    if (maintenanceDraftBuildingKey && issueBuildingKey !== maintenanceDraftBuildingKey) return;
+    addFloorOption(issue?.floorName, issue?.floorId);
+  });
+
+  if (loadedSingleFloor) {
+    const floorCtx = currentFloorContextRef.current || {};
+    const ctxBuildingRaw = floorCtx.buildingId || selectedBuildingId || selectedBuilding || '';
+    const ctxBuildingName = resolveBuildingNameFromInput(ctxBuildingRaw) || selectedBuilding || ctxBuildingRaw;
+    const ctxBuildingKey = normalizeMaintenanceBuildingFilterKey(ctxBuildingRaw, ctxBuildingName);
+    if (!maintenanceDraftBuildingKey || maintenanceDraftBuildingKey === ctxBuildingKey) {
+      addFloorOption(floorCtx.floorLabel || selectedFloor || floorCtx.floorId, floorCtx.floorId || selectedFloor);
+    }
+  }
+
+  return Array.from(optionsMap.values()).sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+}, [
+  maintenanceIssues,
+  maintenanceDraftBuildingKey,
+  maintenanceIssueDraft?.buildingId,
+  maintenanceIssueDraft?.buildingName,
+  loadedSingleFloor,
+  floorFeatureVersion,
+  selectedBuildingId,
+  selectedBuilding,
+  selectedFloor,
+  resolveBuildingNameFromInput
+]);
+const maintenanceFloorOptionLookup = useMemo(() => {
+  const out = new Map();
+  maintenanceFloorOptionsForDraft.forEach((opt) => {
+    out.set(String(opt.value || ''), opt);
+  });
+  return out;
+}, [maintenanceFloorOptionsForDraft]);
+const maintenanceRoomOptionsForDraft = useMemo(() => {
+  const optionsMap = new Map();
+  const draftFloorKey = fId(maintenanceIssueDraft?.floorId || maintenanceIssueDraft?.floorName || '');
+  const addRoomOption = (roomNameRaw, roomIdRaw = '', roomLabelRaw = '') => {
+    const roomName = String(roomNameRaw || '').trim();
+    const roomId = String(roomIdRaw || '').trim();
+    const roomLabel = String(roomLabelRaw || roomName || roomId).trim();
+    if (!roomName && !roomId && !roomLabel) return;
+    const value = roomName || roomLabel || roomId;
+    const label = roomName && roomLabel && roomName !== roomLabel
+      ? `${roomName} - ${roomLabel}`
+      : (roomName || roomLabel || roomId);
+    if (!optionsMap.has(value)) {
+      optionsMap.set(value, { value, label, roomId });
+    }
+  };
+
+  (maintenanceIssues || []).forEach((issue) => {
+    const issueBuildingKey = normalizeMaintenanceBuildingFilterKey(issue?.buildingId, issue?.buildingName);
+    if (maintenanceDraftBuildingKey && issueBuildingKey !== maintenanceDraftBuildingKey) return;
+    const issueFloorKey = fId(issue?.floorId || issue?.floorName || '');
+    if (draftFloorKey && issueFloorKey && issueFloorKey !== draftFloorKey) return;
+    addRoomOption(issue?.roomName, issue?.roomId, issue?.roomName);
+  });
+
+  if (loadedSingleFloor) {
+    const floorCtx = currentFloorContextRef.current || {};
+    const ctxBuildingRaw = floorCtx.buildingId || selectedBuildingId || selectedBuilding || '';
+    const ctxBuildingName = resolveBuildingNameFromInput(ctxBuildingRaw) || selectedBuilding || ctxBuildingRaw;
+    const ctxBuildingKey = normalizeMaintenanceBuildingFilterKey(ctxBuildingRaw, ctxBuildingName);
+    const ctxFloorKey = fId(floorCtx.floorId || floorCtx.floorLabel || selectedFloor || '');
+    const buildingMatches = !maintenanceDraftBuildingKey || maintenanceDraftBuildingKey === ctxBuildingKey;
+    const floorMatches = !draftFloorKey || !ctxFloorKey || draftFloorKey === ctxFloorKey;
+    if (buildingMatches && floorMatches) {
+      (floorCtx?.fc?.features || []).forEach((feature) => {
+        const props = feature?.properties || {};
+        const revitId = String(feature?.id ?? props?.RevitId ?? props?.revitId ?? props?.id ?? '').trim();
+        const roomNumber = String(
+          props?.Number ??
+          props?.RoomNumber ??
+          props?.number ??
+          props?.roomNumber ??
+          ''
+        ).trim();
+        const roomLabel = String(
+          props?.Name ??
+          props?.Room ??
+          props?.name ??
+          props?.RoomName ??
+          ''
+        ).trim();
+        addRoomOption(roomNumber || roomLabel, revitId, roomLabel || roomNumber);
+      });
+    }
+  }
+
+  return Array.from(optionsMap.values()).sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+}, [
+  maintenanceIssues,
+  maintenanceDraftBuildingKey,
+  maintenanceIssueDraft?.buildingId,
+  maintenanceIssueDraft?.buildingName,
+  maintenanceIssueDraft?.floorId,
+  maintenanceIssueDraft?.floorName,
+  loadedSingleFloor,
+  floorFeatureVersion,
+  selectedBuildingId,
+  selectedBuilding,
+  selectedFloor,
+  resolveBuildingNameFromInput
+]);
+const maintenanceRoomOptionLookup = useMemo(() => {
+  const out = new Map();
+  maintenanceRoomOptionsForDraft.forEach((opt) => {
+    out.set(String(opt.value || ''), opt);
+  });
+  return out;
+}, [maintenanceRoomOptionsForDraft]);
 const maintenanceActiveIssues = useMemo(
   () => (maintenanceIssues || []).filter((issue) => !isMaintenanceIssueArchived(issue)),
   [maintenanceIssues]
@@ -23083,19 +23217,58 @@ useEffect(() => {
                 <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Floor</div>
                 <input
                   type="text"
+                  list="maintenance-floor-options"
                   value={maintenanceIssueDraft.floorName || ''}
-                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, floorName: e.target.value }))}
+                  onChange={(e) => {
+                    const nextFloorName = String(e.target.value || '');
+                    const matchedFloor = maintenanceFloorOptionLookup.get(nextFloorName) || null;
+                    setMaintenanceIssueDraft((prev) => ({
+                      ...prev,
+                      floorName: nextFloorName,
+                      floorId: matchedFloor?.floorId || '',
+                      roomId: '',
+                      roomName: ''
+                    }));
+                  }}
+                  placeholder={maintenanceFloorOptionsForDraft.length ? 'Pick or type a floor' : 'Optional floor name'}
                 />
+                {maintenanceFloorOptionsForDraft.length > 0 && (
+                  <datalist id="maintenance-floor-options">
+                    {maintenanceFloorOptionsForDraft.map((opt) => (
+                      <option key={`maintenance-floor-option-${opt.value}`} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </datalist>
+                )}
               </div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Room</div>
               <input
                 type="text"
+                list="maintenance-room-options"
                 value={maintenanceIssueDraft.roomName || ''}
-                onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, roomName: e.target.value }))}
-                placeholder="Optional room label/number"
+                onChange={(e) => {
+                  const nextRoomName = String(e.target.value || '');
+                  const matchedRoom = maintenanceRoomOptionLookup.get(nextRoomName) || null;
+                  setMaintenanceIssueDraft((prev) => ({
+                    ...prev,
+                    roomName: nextRoomName,
+                    roomId: matchedRoom?.roomId || ''
+                  }));
+                }}
+                placeholder={maintenanceRoomOptionsForDraft.length ? 'Pick or type a room' : 'Optional room label/number'}
               />
+              {maintenanceRoomOptionsForDraft.length > 0 && (
+                <datalist id="maintenance-room-options">
+                  {maintenanceRoomOptionsForDraft.map((opt) => (
+                    <option key={`maintenance-room-option-${opt.value}`} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </datalist>
+              )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
               <div>

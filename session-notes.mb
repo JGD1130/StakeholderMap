@@ -515,3 +515,17 @@ Latest completed work (maintenance photo URL support)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance floor/room pickers in modal)
+- Wired existing maintenance floor/room option builders into the Add/Edit Maintenance Issue modal:
+  - `Floor` now supports picker-style selection via datalist plus manual typing fallback.
+  - `Room` now supports picker-style selection via datalist plus manual typing fallback.
+- Added dependent behavior:
+  - Changing floor clears room selection to prevent stale cross-floor room values.
+  - Selecting known floor/room options now auto-populates internal `floorId`/`roomId` when available.
+- Result:
+  - Faster, more accurate issue entry when working inside loaded floorplans.
+  - Manual entry still supported for edge cases and off-catalog spaces.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
