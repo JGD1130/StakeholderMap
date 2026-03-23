@@ -371,3 +371,15 @@ Latest completed work (dashboard collapse whitespace + manifest fetch noise redu
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (strategic dashboard internal scroll when expanded)
+- Added a dedicated internal scroll area for `Strategic Space Dashboard` content in `SpaceDashboardPanel`.
+- Behavior:
+  - Scroll is active only when the strategic section is expanded.
+  - When collapsed, the strategic content container closes to zero height (no extra inner scrollbar/space).
+- Purpose:
+  - Makes `Trend Charts` and `Enrollment by Year` reachable without forcing excessive right-rail growth.
+  - Keeps the rest of the dashboard layout stable while strategic content is open.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

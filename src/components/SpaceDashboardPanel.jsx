@@ -525,10 +525,19 @@ export default function SpaceDashboardPanel({
               open={strategicOpen}
               onToggle={setStrategicOpen}
             >
-              <StrategicDashboardSection
-                strategic={strategic}
-                hideTitle
-              />
+              <div
+                style={{
+                  maxHeight: strategicOpen ? '48vh' : 0,
+                  overflowY: strategicOpen ? 'auto' : 'hidden',
+                  overflowX: 'hidden',
+                  paddingRight: strategicOpen ? 4 : 0
+                }}
+              >
+                <StrategicDashboardSection
+                  strategic={strategic}
+                  hideTitle
+                />
+              </div>
             </CollapsibleSection>
           ) : null}
         </div>
