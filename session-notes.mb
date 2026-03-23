@@ -404,3 +404,32 @@ Latest completed work (remove collapsed dashboard whitespace while keeping strat
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (Maintenance Tracker v1 foundation in admin workspace)
+- Added a new full-admin map view mode: `Maintenance`.
+  - Available in Map View dropdown on full admin workspace (`Space Data | Assessment | Technical | Maintenance`).
+- Added Firestore data model integration for `maintenanceIssues`:
+  - Read/load from `universities/{universityId}/maintenanceIssues`.
+  - Write helpers for create/update issue docs with timestamps and optional location coordinates.
+  - Deployed Firestore rules update for `maintenanceIssues` read/write using the same Hastings/Hastings-demo + admin pattern.
+- Added maintenance issue workflow UI (left control panel, maintenance mode only):
+  - Dashboard counts: open, high-priority, total, and loaded-floor open count.
+  - Filters: building, issue type, status, priority, assigned-to, room/floor search.
+  - Actions: `Add Issue`, `Export CSV`, marker visibility toggle.
+  - Issue list with quick actions:
+    - Focus issue on map
+    - Update status (`Open / In Progress / Complete`)
+    - Assign user via quick prompt
+- Added map/floor entry points:
+  - Building click popup now provides `Add Issue` and `View Issues` when in maintenance mode.
+  - Floor room click popup provides same actions, with room-aware context.
+  - `Add Issue` opens modal prefilled from clicked building/floor/room context.
+- Added maintenance visualization:
+  - Building recolor in maintenance mode based on open issue severity (highest open priority by building).
+  - Map/floor issue markers colored by priority, with issue popup details.
+- Kept scope intentionally light (CMMS-lite): no PM schedules, inventory, vendor workflows, or Airtable changes.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
+  - Firestore rules deployed successfully:
+    - `npm.cmd exec --yes firebase-tools -- deploy --only firestore:rules --project stakeholder-map-a4bdc`

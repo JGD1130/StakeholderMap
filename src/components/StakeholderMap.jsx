@@ -8456,6 +8456,67 @@ const progressColors = {
   2: '#5dade2',
   3: '#2e86c1'
 };
+const MAINTENANCE_ISSUE_TYPES = [
+  'Electrical',
+  'HVAC',
+  'Plumbing',
+  'Lighting',
+  'Life Safety',
+  'Accessibility',
+  'Building Envelope',
+  'Interior Finishes',
+  'Custodial',
+  'Security',
+  'Grounds',
+  'Other'
+];
+const MAINTENANCE_PRIORITY_ORDER = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4
+};
+const MAINTENANCE_STATUS_VALUES = ['open', 'in_progress', 'complete'];
+const normalizeMaintenancePriority = (value) => {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'critical') return 'critical';
+  if (key === 'high') return 'high';
+  if (key === 'low') return 'low';
+  return 'medium';
+};
+const normalizeMaintenanceStatus = (value) => {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'in progress') return 'in_progress';
+  if (key === 'in_progress') return 'in_progress';
+  if (key === 'complete') return 'complete';
+  return 'open';
+};
+const maintenancePriorityColor = (priority) => {
+  switch (normalizeMaintenancePriority(priority)) {
+    case 'critical':
+      return '#b91c1c';
+    case 'high':
+      return '#dc2626';
+    case 'medium':
+      return '#f59e0b';
+    case 'low':
+    default:
+      return '#22c55e';
+  }
+};
+const maintenanceStatusLabel = (status) => {
+  const key = normalizeMaintenanceStatus(status);
+  if (key === 'in_progress') return 'In Progress';
+  if (key === 'complete') return 'Complete';
+  return 'Open';
+};
+const maintenancePriorityLabel = (priority) => {
+  const key = normalizeMaintenancePriority(priority);
+  if (key === 'critical') return 'Critical';
+  if (key === 'high') return 'High';
+  if (key === 'low') return 'Low';
+  return 'Medium';
+};
 const TECHNICAL_SECTION_CONFIG = [
   {
     key: 'architecture',
@@ -8980,7 +9041,8 @@ const StakeholderMap = ({
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
     ASSESSMENT: 'assessment',
-    TECHNICAL: 'technical'
+    TECHNICAL: 'technical',
+    MAINTENANCE: 'maintenance'
   };
   const isAdminMode = mode === 'admin';
   const isAdminCombinedMode = isAdminMode && engagementMode;
@@ -8994,6 +9056,7 @@ const StakeholderMap = ({
   const [mapView, setMapView] = useState(defaultMapView);
   const stakeholderWorkflowActive = engagementMode && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
+  const maintenanceWorkflowActive = showFullMapfluenceControls && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(true);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -9012,7 +9075,8 @@ const StakeholderMap = ({
       return [
         { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
         { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment' },
-        { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
+        { value: MAP_VIEWS.TECHNICAL, label: 'Technical' },
+        { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
       ];
     }
     if (isAdminCombinedMode) {
@@ -9032,6 +9096,12 @@ const StakeholderMap = ({
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
     if (showFullMapfluenceControls) {
+      if (mapView === MAP_VIEWS.MAINTENANCE) {
+        return {
+          title: 'Admin Maintenance Tracker',
+          subtitle: 'Spatial issue/work-order tracking tied to building, floor, and room.'
+        };
+      }
       return {
         title: 'Admin Workspace',
         subtitle: 'Full Mapfluence editing, planning, and AI tools.'
@@ -9059,7 +9129,7 @@ const StakeholderMap = ({
       title: 'Public Map',
       subtitle: 'Campus space visualization view.'
     };
-  }, [showFullMapfluenceControls, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode]);
+  }, [showFullMapfluenceControls, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE]);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
@@ -9176,10 +9246,25 @@ const StakeholderMap = ({
   const [askLoading, setAskLoading] = useState(false);
   const [askErr, setAskErr] = useState('');
   const [askResult, setAskResult] = useState(null);
-    const [dashboardMetrics, setDashboardMetrics] = useState(null);
-    const [dashboardTitle, setDashboardTitle] = useState('Campus Summary');
-    const [dashboardLoading, setDashboardLoading] = useState(false);
-    const [dashboardError, setDashboardError] = useState(null);
+  const [dashboardMetrics, setDashboardMetrics] = useState(null);
+  const [dashboardTitle, setDashboardTitle] = useState('Campus Summary');
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState(null);
+  const [maintenanceIssues, setMaintenanceIssues] = useState([]);
+  const [maintenanceTypeFilter, setMaintenanceTypeFilter] = useState('__all__');
+  const [maintenanceStatusFilter, setMaintenanceStatusFilter] = useState('__all__');
+  const [maintenancePriorityFilter, setMaintenancePriorityFilter] = useState('__all__');
+  const [maintenanceAssignedFilter, setMaintenanceAssignedFilter] = useState('');
+  const [maintenanceBuildingFilter, setMaintenanceBuildingFilter] = useState('__all__');
+  const [maintenanceRoomSearch, setMaintenanceRoomSearch] = useState('');
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [maintenanceIssueModalOpen, setMaintenanceIssueModalOpen] = useState(false);
+  const [maintenanceIssueSaving, setMaintenanceIssueSaving] = useState(false);
+  const [maintenanceIssueDraft, setMaintenanceIssueDraft] = useState(null);
+  const [maintenanceShowIssueMarkers, setMaintenanceShowIssueMarkers] = useState(true);
+  const [maintenanceSelectedIssueId, setMaintenanceSelectedIssueId] = useState('');
+  const [maintenanceStatusSavingId, setMaintenanceStatusSavingId] = useState('');
+  const [maintenanceContext, setMaintenanceContext] = useState(null);
   const [airtableRooms, setAirtableRooms] = useState([]);
   const [campusRooms, setCampusRooms] = useState([]);
   const [campusRoomsLoaded, setCampusRoomsLoaded] = useState(false);
@@ -17305,6 +17390,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   // Paths collection removed
   const conditionsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingConditions'), [universityId]);
   const assessmentsCollection = useMemo(() => collection(db, 'universities', universityId, 'buildingAssessments'), [universityId]);
+  const maintenanceIssuesCollection = useMemo(() => collection(db, 'universities', universityId, 'maintenanceIssues'), [universityId]);
   const drawingEntriesCollection = useMemo(() => collection(db, 'universities', universityId, 'drawingEntries'), [universityId]);
   const movesCollection = useMemo(() => collection(db, 'moves'), [db]);
 
@@ -17438,6 +17524,128 @@ const scopedEngagementHeatmapData = useMemo(() => ({
       };
     })
 }), [scopedEngagementMarkers]);
+const maintenanceCanWrite = useMemo(() => {
+  const campusKey = canon(universityId);
+  return Boolean(isAdminUser || campusKey === 'hastings' || campusKey === 'hastings-demo');
+}, [isAdminUser, universityId]);
+const maintenanceIssueTypeOptions = useMemo(() => {
+  const dynamic = new Set(MAINTENANCE_ISSUE_TYPES);
+  (maintenanceIssues || []).forEach((issue) => {
+    const label = String(issue?.issueType || '').trim();
+    if (label) dynamic.add(label);
+  });
+  return Array.from(dynamic).sort((a, b) => a.localeCompare(b));
+}, [maintenanceIssues]);
+const maintenanceBuildingOptions = useMemo(() => {
+  const byId = new Map();
+  (maintenanceIssues || []).forEach((issue) => {
+    const id = String(issue?.buildingId || '').trim();
+    const name = String(issue?.buildingName || '').trim();
+    const key = id || name;
+    if (!key) return;
+    if (!byId.has(key)) byId.set(key, name || id);
+  });
+  return Array.from(byId.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}, [maintenanceIssues]);
+const maintenanceFilteredIssues = useMemo(() => {
+  const assignedNeedle = norm(maintenanceAssignedFilter).toLowerCase();
+  const roomNeedle = norm(maintenanceRoomSearch).toLowerCase();
+  return [...(maintenanceIssues || [])]
+    .filter((issue) => {
+      if (maintenanceTypeFilter !== '__all__' && String(issue?.issueType || '') !== maintenanceTypeFilter) return false;
+      if (maintenanceStatusFilter !== '__all__' && normalizeMaintenanceStatus(issue?.status) !== maintenanceStatusFilter) return false;
+      if (maintenancePriorityFilter !== '__all__' && normalizeMaintenancePriority(issue?.priority) !== maintenancePriorityFilter) return false;
+      if (maintenanceBuildingFilter !== '__all__') {
+        const key = String(issue?.buildingId || issue?.buildingName || '').trim();
+        if (key !== maintenanceBuildingFilter) return false;
+      }
+      if (assignedNeedle) {
+        const assigned = norm(issue?.assignedTo || '').toLowerCase();
+        if (!assigned.includes(assignedNeedle)) return false;
+      }
+      if (roomNeedle) {
+        const haystack = `${issue?.roomName || ''} ${issue?.roomId || ''} ${issue?.floorName || ''}`.toLowerCase();
+        if (!haystack.includes(roomNeedle)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const aPriority = MAINTENANCE_PRIORITY_ORDER[normalizeMaintenancePriority(a?.priority)] || 0;
+      const bPriority = MAINTENANCE_PRIORITY_ORDER[normalizeMaintenancePriority(b?.priority)] || 0;
+      if (bPriority !== aPriority) return bPriority - aPriority;
+      const aMs = parseFirestoreTimestampMs(a?.updatedAt || a?.createdAt);
+      const bMs = parseFirestoreTimestampMs(b?.updatedAt || b?.createdAt);
+      return bMs - aMs;
+    });
+}, [maintenanceIssues, maintenanceTypeFilter, maintenanceStatusFilter, maintenancePriorityFilter, maintenanceAssignedFilter, maintenanceBuildingFilter, maintenanceRoomSearch]);
+const maintenanceOpenIssues = useMemo(
+  () => (maintenanceIssues || []).filter((issue) => normalizeMaintenanceStatus(issue?.status) !== 'complete'),
+  [maintenanceIssues]
+);
+const maintenanceDashboard = useMemo(() => {
+  const byBuilding = new Map();
+  const byType = new Map();
+  const recentCompleted = [];
+  (maintenanceIssues || []).forEach((issue) => {
+    const statusKey = normalizeMaintenanceStatus(issue?.status);
+    const typeKey = String(issue?.issueType || 'Other').trim() || 'Other';
+    byType.set(typeKey, (byType.get(typeKey) || 0) + 1);
+    if (statusKey !== 'complete') {
+      const bName = String(issue?.buildingName || issue?.buildingId || 'Unassigned').trim() || 'Unassigned';
+      byBuilding.set(bName, (byBuilding.get(bName) || 0) + 1);
+    } else {
+      recentCompleted.push(issue);
+    }
+  });
+  const highPriorityOpen = maintenanceOpenIssues.filter((issue) => {
+    const p = normalizeMaintenancePriority(issue?.priority);
+    return p === 'high' || p === 'critical';
+  });
+  return {
+    totalOpen: maintenanceOpenIssues.length,
+    totalAll: (maintenanceIssues || []).length,
+    highPriorityOpen: highPriorityOpen.length,
+    byBuilding: Array.from(byBuilding.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6),
+    byType: Array.from(byType.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6),
+    recentCompleted: recentCompleted
+      .sort((a, b) => parseFirestoreTimestampMs(b?.updatedAt || b?.completedAt) - parseFirestoreTimestampMs(a?.updatedAt || a?.completedAt))
+      .slice(0, 5)
+  };
+}, [maintenanceIssues, maintenanceOpenIssues]);
+const maintenanceOpenByBuilding = useMemo(() => {
+  const out = new Map();
+  maintenanceOpenIssues.forEach((issue) => {
+    const key = String(issue?.buildingId || issue?.buildingName || '').trim();
+    if (!key) return;
+    const current = out.get(key) || { count: 0, priorityRank: 0 };
+    const rank = MAINTENANCE_PRIORITY_ORDER[normalizeMaintenancePriority(issue?.priority)] || 0;
+    current.count += 1;
+    if (rank > current.priorityRank) current.priorityRank = rank;
+    out.set(key, current);
+  });
+  return out;
+}, [maintenanceOpenIssues]);
+const maintenanceOpenIssuesForFloor = useMemo(() => {
+  if (!loadedSingleFloor) return [];
+  const floorCtx = currentFloorContextRef.current || {};
+  const buildingKey = bId(floorCtx.buildingId || selectedBuildingId || selectedBuilding || '');
+  const floorKey = fId(floorCtx.floorId || selectedFloor || '');
+  return maintenanceOpenIssues.filter((issue) => {
+    const issueBuilding = bId(issue?.buildingId || issue?.buildingName || '');
+    const issueFloor = fId(issue?.floorId || issue?.floorName || '');
+    if (buildingKey && issueBuilding && issueBuilding !== buildingKey) return false;
+    if (floorKey && issueFloor && issueFloor !== floorKey) return false;
+    return true;
+  });
+}, [maintenanceOpenIssues, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
 const adminEngagementMarkerRows = useMemo(() => {
   if (!(isAdminCombinedMode && engagementMode)) return [];
   return (markers || [])
@@ -19579,16 +19787,19 @@ useEffect(() => {
 
         const shouldLoadConditions = mode === 'admin';
         const shouldLoadAssessments = mode === 'admin' || technicalMode;
-        if (!shouldLoadConditions && !shouldLoadAssessments) {
+        const shouldLoadMaintenance = mode === 'admin';
+        if (!shouldLoadConditions && !shouldLoadAssessments && !shouldLoadMaintenance) {
           setBuildingConditions({});
           setBuildingAssessments({});
+          setMaintenanceIssues([]);
           return;
         }
 
-        // Load condition + assessment docs by mode.
-        const [condSnap, assessmentSnap] = await Promise.all([
+        // Load condition + assessment + maintenance docs by mode.
+        const [condSnap, assessmentSnap, maintenanceSnap] = await Promise.all([
           shouldLoadConditions ? getDocs(conditionsCollection) : Promise.resolve(null),
-          shouldLoadAssessments ? getDocs(assessmentsCollection) : Promise.resolve(null)
+          shouldLoadAssessments ? getDocs(assessmentsCollection) : Promise.resolve(null),
+          shouldLoadMaintenance ? getDocs(maintenanceIssuesCollection) : Promise.resolve(null)
         ]);
 
         if (shouldLoadConditions && condSnap) {
@@ -19612,13 +19823,43 @@ useEffect(() => {
         } else {
           setBuildingAssessments({});
         }
+
+        if (shouldLoadMaintenance && maintenanceSnap) {
+          const nextIssues = maintenanceSnap.docs.map((docSnap) => {
+            const data = docSnap.data() || {};
+            const geo = data.coordinates;
+            const lng = Number(geo?.longitude);
+            const lat = Number(geo?.latitude);
+            return {
+              id: docSnap.id,
+              ...data,
+              issueType: String(data.issueType || '').trim(),
+              priority: normalizeMaintenancePriority(data.priority),
+              status: normalizeMaintenanceStatus(data.status),
+              assignedTo: String(data.assignedTo || '').trim(),
+              description: String(data.description || '').trim(),
+              notes: String(data.notes || '').trim(),
+              buildingId: String(data.buildingId || '').trim(),
+              buildingName: String(data.buildingName || '').trim(),
+              floorId: String(data.floorId || '').trim(),
+              floorName: String(data.floorName || '').trim(),
+              roomId: String(data.roomId || '').trim(),
+              roomName: String(data.roomName || '').trim(),
+              coordinates: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
+            };
+          });
+          setMaintenanceIssues(nextIssues);
+        } else {
+          setMaintenanceIssues([]);
+        }
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setBuildingConditions({});
         setBuildingAssessments({});
+        setMaintenanceIssues([]);
       }
     })();
-  }, [mode, engagementMode, technicalMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection]);
+  }, [mode, engagementMode, technicalMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection, maintenanceIssuesCollection]);
 
 // Keep floorplan building input in sync with map selection (convenience)
 useEffect(() => {
@@ -19942,6 +20183,20 @@ useEffect(() => {
     setFloorStats(null);
     setBuildingStats(null);
     setPanelStats({ loading: true, mode: 'building' });
+    if (maintenanceWorkflowActive) {
+      const buildingContext = {
+        buildingId: String(id || '').trim(),
+        buildingName: String(buildingName || id || '').trim(),
+        floorId: '',
+        floorName: '',
+        roomId: '',
+        roomName: ''
+      };
+      setMaintenanceContext(buildingContext);
+      setMaintenanceSelectedIssueId('');
+      showMaintenanceActionPopup(e.lngLat, buildingContext);
+      return;
+    }
     if (technicalMode || technicalWorkflowActive) {
       setMapView(MAP_VIEWS.TECHNICAL);
       setIsTechnicalPanelOpen(true);
@@ -20000,7 +20255,7 @@ useEffect(() => {
       }
     } catch {}
   };
-}, [engagementMode, technicalMode, technicalWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary]);
+}, [engagementMode, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -20261,27 +20516,47 @@ useEffect(() => {
       .querySelectorAll('.custom-mapbox-marker')
       .forEach((el) => el.remove());
 
-    const markersToDraw = engagementMode
-      ? (stakeholderWorkflowActive ? scopedEngagementMarkers : [])
-      : (mode === 'admin' ? (showMarkers ? filteredMarkers : []) : sessionMarkers);
-    const shouldDrawMarkers = engagementMode
-      ? (stakeholderWorkflowActive && !(engagementHeatmapOn || engagementRoomSentimentOnly))
-      : true;
+    const markersToDraw = maintenanceWorkflowActive
+      ? (maintenanceShowIssueMarkers ? maintenanceFilteredIssues.filter((issue) => Array.isArray(issue?.coordinates) && issue.coordinates.length === 2) : [])
+      : engagementMode
+        ? (stakeholderWorkflowActive ? scopedEngagementMarkers : [])
+        : (mode === 'admin' ? (showMarkers ? filteredMarkers : []) : sessionMarkers);
+    const shouldDrawMarkers = maintenanceWorkflowActive
+      ? maintenanceShowIssueMarkers
+      : engagementMode
+        ? (stakeholderWorkflowActive && !(engagementHeatmapOn || engagementRoomSentimentOnly))
+        : true;
     if (!shouldDrawMarkers) return;
     markersToDraw.forEach((m) => {
       const el = document.createElement('div');
       el.className = 'custom-marker custom-mapbox-marker';
-      const markerColor = engagementMode
-        ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || engagementColorForType(m.type) || '#9E9E9E')
-        : (markerTypes[m.type] || '#9E9E9E');
+      const markerColor = maintenanceWorkflowActive
+        ? maintenancePriorityColor(m.priority)
+        : engagementMode
+          ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || engagementColorForType(m.type) || '#9E9E9E')
+          : (markerTypes[m.type] || '#9E9E9E');
       el.style.backgroundColor = markerColor;
+      if (maintenanceWorkflowActive) {
+        el.style.border = '2px solid #ffffff';
+        el.style.boxShadow = '0 0 0 1px rgba(15,23,42,0.45)';
+        if (normalizeMaintenanceStatus(m.status) === 'complete') {
+          el.style.opacity = '0.55';
+        }
+      }
       const mk = new mapboxgl.Marker(el).setLngLat(m.coordinates);
-      if (mapView !== MAP_VIEWS.SPACE_DATA) {
+      if (maintenanceWorkflowActive) {
+        const popupText = [
+          `${String(m.issueType || 'Issue')}`,
+          `${maintenancePriorityLabel(m.priority)} • ${maintenanceStatusLabel(m.status)}`,
+          String(m.description || '').trim()
+        ].filter(Boolean).join('\n');
+        mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(popupText));
+      } else if (mapView !== MAP_VIEWS.SPACE_DATA) {
         mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(m.comment || m.type));
       }
       mk.addTo(map);
     });
-  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, engagementMode, stakeholderWorkflowActive, engagementHeatmapOn, engagementRoomSentimentOnly]);  // ---------- Recolor buildings based on theme ----------
+  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, engagementMode, stakeholderWorkflowActive, engagementHeatmapOn, engagementRoomSentimentOnly, maintenanceWorkflowActive, maintenanceShowIssueMarkers, maintenanceFilteredIssues]);  // ---------- Recolor buildings based on theme ----------
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
   const map = mapRef.current;
@@ -20315,6 +20590,38 @@ useEffect(() => {
         }
       } catch {}
     }
+    return;
+  }
+
+  if (maintenanceWorkflowActive) {
+    const matchExpr = ['match', ['get', 'id']];
+    let hasEntries = false;
+    maintenanceOpenByBuilding.forEach((value, rawKey) => {
+      const rank = Number(value?.priorityRank || 0);
+      let color = '#86efac';
+      if (rank >= 4) color = '#ef4444';
+      else if (rank >= 3) color = '#f97316';
+      else if (rank >= 2) color = '#facc15';
+      const normalizedKey = String(rawKey || '').trim();
+      if (!normalizedKey) return;
+      matchExpr.push(normalizedKey, color);
+      const resolvedName = resolveBuildingNameFromInput(normalizedKey);
+      if (resolvedName && resolvedName !== normalizedKey) {
+        matchExpr.push(resolvedName, color);
+      }
+      hasEntries = true;
+    });
+    matchExpr.push('#e5e7eb');
+    const finalExpr = withNoFloorplanOverride(matchExpr);
+    try {
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', hasEntries ? finalExpr : withNoFloorplanOverride('#e5e7eb'));
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.6);
+      if (map.getLayer('buildings-fill')) {
+        map.setPaintProperty('buildings-fill', 'fill-color', finalExpr);
+        map.setPaintProperty('buildings-fill', 'fill-opacity', 0.35);
+        map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0.08)');
+      }
+    } catch {}
     return;
   }
 
@@ -20369,7 +20676,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, mapLoaded, mode, technicalMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId]);
+  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -20442,6 +20749,247 @@ useEffect(() => {
       revitId
     };
   }, [isEngagementFloorScope, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor]);
+
+  const openMaintenanceIssueModal = useCallback((context = null) => {
+    const buildingId = String(context?.buildingId || selectedBuildingId || selectedBuilding || '').trim();
+    const buildingName = String(
+      context?.buildingName ||
+      resolveBuildingNameFromInput(buildingId) ||
+      activeBuildingName ||
+      selectedBuilding ||
+      ''
+    ).trim();
+    const floorId = String(context?.floorId || '').trim();
+    const floorName = String(context?.floorName || floorId || '').trim();
+    const roomId = String(context?.roomId || '').trim();
+    const roomName = String(context?.roomName || context?.roomLabel || context?.roomNumber || '').trim();
+    const lng = Number(context?.lng ?? context?.lngLat?.lng ?? context?.coordinates?.[0]);
+    const lat = Number(context?.lat ?? context?.lngLat?.lat ?? context?.coordinates?.[1]);
+    setMaintenanceContext(context || null);
+    setMaintenanceIssueDraft({
+      buildingId: buildingId ? bId(buildingId) : '',
+      buildingName,
+      floorId: floorId ? fId(floorId) : '',
+      floorName,
+      roomId,
+      roomName,
+      issueType: 'Other',
+      priority: 'medium',
+      status: 'open',
+      description: '',
+      assignedTo: '',
+      notes: '',
+      estimatedCostLow: '',
+      estimatedCostHigh: '',
+      coordinates: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
+    });
+    setMaintenanceIssueModalOpen(true);
+  }, [selectedBuildingId, selectedBuilding, resolveBuildingNameFromInput, activeBuildingName]);
+
+  const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
+    if (!mapRef.current || !lngLat) return;
+    const popupNode = document.createElement('div');
+    popupNode.className = 'marker-prompt-popup';
+    const buildingName = String(context?.buildingName || context?.buildingId || 'Campus').trim() || 'Campus';
+    const floorName = String(context?.floorName || '').trim();
+    const roomName = String(context?.roomName || context?.roomLabel || context?.roomNumber || '').trim();
+    const scopeBits = [buildingName, floorName, roomName].filter(Boolean);
+    popupNode.innerHTML = `
+      <h4 style="margin-bottom:6px;">Maintenance</h4>
+      <div style="font-size:11px;color:#475467;margin-bottom:8px;">${scopeBits.join(' / ') || 'Campus issue'}</div>
+      <div class="button-group">
+        <button id="maintenance-add-issue">Add Issue</button>
+        <button id="maintenance-view-issues">View Issues</button>
+      </div>`;
+
+    const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: '280px' })
+      .setDOMContent(popupNode)
+      .setLngLat(lngLat)
+      .addTo(mapRef.current);
+
+    popupNode.querySelector('#maintenance-add-issue')?.addEventListener('click', () => {
+      openMaintenanceIssueModal({
+        ...(context || {}),
+        lngLat,
+        lng: Number(lngLat.lng),
+        lat: Number(lngLat.lat)
+      });
+      popup.remove();
+    });
+    popupNode.querySelector('#maintenance-view-issues')?.addEventListener('click', () => {
+      if (context?.buildingId) setMaintenanceBuildingFilter(String(context.buildingId));
+      if (context?.roomName || context?.roomId) {
+        setMaintenanceRoomSearch(String(context.roomName || context.roomId));
+      }
+      setMaintenanceMessage('Issue filters focused to selected location.');
+      popup.remove();
+    });
+  }, [openMaintenanceIssueModal]);
+
+  const handleSaveMaintenanceIssue = useCallback(async () => {
+    const draft = maintenanceIssueDraft || {};
+    const description = String(draft.description || '').trim();
+    if (!description) {
+      alert('Please enter an issue description.');
+      return;
+    }
+    if (!maintenanceCanWrite) {
+      alert('Save failed: maintenance issue writes are not allowed for your current role.');
+      return;
+    }
+    setMaintenanceIssueSaving(true);
+    try {
+      const payload = {
+        universityId: canon(universityId),
+        campusId: floorplanCampus,
+        buildingId: String(draft.buildingId || '').trim(),
+        buildingName: String(draft.buildingName || '').trim(),
+        floorId: String(draft.floorId || '').trim(),
+        floorName: String(draft.floorName || '').trim(),
+        roomId: String(draft.roomId || '').trim(),
+        roomName: String(draft.roomName || '').trim(),
+        issueType: String(draft.issueType || 'Other').trim() || 'Other',
+        priority: normalizeMaintenancePriority(draft.priority),
+        status: normalizeMaintenanceStatus(draft.status),
+        description,
+        assignedTo: String(draft.assignedTo || '').trim(),
+        notes: String(draft.notes || '').trim(),
+        estimatedCostLow: draft.estimatedCostLow === '' ? null : Number(draft.estimatedCostLow || 0) || null,
+        estimatedCostHigh: draft.estimatedCostHigh === '' ? null : Number(draft.estimatedCostHigh || 0) || null,
+        photoUrls: [],
+        createdBy: String(authUser?.email || authUser?.uid || '').trim() || null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? serverTimestamp() : null
+      };
+      const coords = Array.isArray(draft.coordinates) ? draft.coordinates : null;
+      if (coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))) {
+        payload.coordinates = new GeoPoint(Number(coords[1]), Number(coords[0]));
+      }
+      const createdRef = await addDoc(maintenanceIssuesCollection, payload);
+      const localIssue = {
+        ...payload,
+        id: createdRef.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        completedAt: normalizeMaintenanceStatus(draft.status) === 'complete' ? new Date() : null,
+        coordinates: coords && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1]))
+          ? [Number(coords[0]), Number(coords[1])]
+          : null
+      };
+      setMaintenanceIssues((prev) => [...prev, localIssue]);
+      setMaintenanceIssueModalOpen(false);
+      setMaintenanceIssueDraft(null);
+      setMaintenanceMessage('Issue saved.');
+    } catch (err) {
+      console.error('Failed to save maintenance issue:', err);
+      alert('Failed to save maintenance issue. See console for details.');
+    } finally {
+      setMaintenanceIssueSaving(false);
+    }
+  }, [maintenanceIssueDraft, maintenanceCanWrite, universityId, floorplanCampus, authUser?.email, authUser?.uid, maintenanceIssuesCollection]);
+
+  const handlePatchMaintenanceIssue = useCallback(async (issueId, patch = {}) => {
+    const id = String(issueId || '').trim();
+    if (!id || !maintenanceCanWrite) return;
+    const next = { ...(patch || {}) };
+    if (Object.prototype.hasOwnProperty.call(next, 'status')) {
+      next.status = normalizeMaintenanceStatus(next.status);
+      next.completedAt = next.status === 'complete' ? serverTimestamp() : null;
+    }
+    next.updatedAt = serverTimestamp();
+    setMaintenanceStatusSavingId(id);
+    try {
+      await setDoc(doc(maintenanceIssuesCollection, id), next, { merge: true });
+      setMaintenanceIssues((prev) => prev.map((issue) => {
+        if (String(issue?.id || '') !== id) return issue;
+        return {
+          ...issue,
+          ...patch,
+          status: Object.prototype.hasOwnProperty.call(patch, 'status')
+            ? normalizeMaintenanceStatus(patch.status)
+            : issue.status,
+          updatedAt: new Date(),
+          completedAt: Object.prototype.hasOwnProperty.call(patch, 'status')
+            ? (normalizeMaintenanceStatus(patch.status) === 'complete' ? new Date() : null)
+            : issue.completedAt
+        };
+      }));
+    } catch (err) {
+      console.error('Failed to update maintenance issue', err);
+      alert('Failed to update issue.');
+    } finally {
+      setMaintenanceStatusSavingId('');
+    }
+  }, [maintenanceCanWrite, maintenanceIssuesCollection]);
+
+  const exportMaintenanceIssuesCsv = useCallback(() => {
+    if (!maintenanceFilteredIssues.length) {
+      setMaintenanceMessage('No filtered issues to export.');
+      return;
+    }
+    const esc = (value) => {
+      if (value == null) return '';
+      const text = String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const headers = [
+      'IssueId',
+      'IssueType',
+      'Priority',
+      'Status',
+      'AssignedTo',
+      'BuildingId',
+      'BuildingName',
+      'FloorId',
+      'FloorName',
+      'RoomId',
+      'RoomName',
+      'Description',
+      'Notes',
+      'EstimatedCostLow',
+      'EstimatedCostHigh',
+      'CreatedAt',
+      'UpdatedAt',
+      'CompletedAt'
+    ];
+    const lines = [
+      headers.join(','),
+      ...maintenanceFilteredIssues.map((issue) => {
+        const row = [
+          issue.id,
+          issue.issueType,
+          maintenancePriorityLabel(issue.priority),
+          maintenanceStatusLabel(issue.status),
+          issue.assignedTo || '',
+          issue.buildingId || '',
+          issue.buildingName || '',
+          issue.floorId || '',
+          issue.floorName || '',
+          issue.roomId || '',
+          issue.roomName || '',
+          issue.description || '',
+          issue.notes || '',
+          issue.estimatedCostLow ?? '',
+          issue.estimatedCostHigh ?? '',
+          toTimestampIso(issue.createdAt),
+          toTimestampIso(issue.updatedAt),
+          toTimestampIso(issue.completedAt)
+        ];
+        return row.map(esc).join(',');
+      })
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${canon(universityId) || 'campus'}-maintenance-issues.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setMaintenanceMessage(`Exported ${maintenanceFilteredIssues.length.toLocaleString()} issues.`);
+  }, [maintenanceFilteredIssues, universityId]);
 
   const showMarkerPopup = useCallback((lngLat, clickedRoomContext = null, clickedBuildingContext = null) => {
     if (!mapRef.current) return;
@@ -20927,6 +21475,38 @@ useEffect(() => {
       currentRoomFeatureRef.current = null;
       const f = e.features?.[0];
       if (!f) return;
+      if (maintenanceWorkflowActive) {
+        const props = f.properties || {};
+        const floorCtx = currentFloorContextRef.current || {};
+        const buildingRaw = floorCtx.buildingId || selectedBuildingId || selectedBuilding || props.Building || props.buildingId || '';
+        const buildingId = String(buildingRaw || '').trim();
+        const floorRaw = floorCtx.floorId || floorCtx.floorLabel || selectedFloor || props.Floor || '';
+        const floorId = String(floorRaw || '').trim();
+        const roomId = String(f.id ?? props.RevitId ?? props.revitId ?? props.id ?? '').trim();
+        const roomName = String(
+          props.Number ??
+          props.RoomNumber ??
+          props.number ??
+          props.Room ??
+          props.Name ??
+          props.name ??
+          roomId
+        ).trim();
+        const context = {
+          buildingId,
+          buildingName: resolveBuildingNameFromInput(buildingId) || activeBuildingName || selectedBuilding || buildingId,
+          floorId,
+          floorName: String(floorCtx.floorLabel || floorId || '').trim(),
+          roomId,
+          roomName,
+          lng: Number(e?.lngLat?.lng),
+          lat: Number(e?.lngLat?.lat)
+        };
+        setMaintenanceContext(context);
+        setMaintenanceSelectedIssueId('');
+        showMaintenanceActionPopup(e.lngLat, context);
+        return;
+      }
 
       if (moveScenarioMode) {
         try {
@@ -21552,7 +22132,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -22163,6 +22743,183 @@ useEffect(() => {
               Missing data: {askResult.missingData.join(', ')}
             </div>
           ) : null}
+        </div>
+      </div>
+    )}
+    {maintenanceIssueModalOpen && maintenanceIssueDraft && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10006,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.4)'
+        }}
+      >
+        <div
+          className="mf-ai-modal-panel"
+          style={{
+            width: 'min(560px, 94vw)',
+            maxHeight: '86vh',
+            overflowY: 'auto',
+            padding: 14
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>Add Maintenance Issue</div>
+            <button
+              className="btn"
+              onClick={() => {
+                if (maintenanceIssueSaving) return;
+                setMaintenanceIssueModalOpen(false);
+                setMaintenanceIssueDraft(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Building</div>
+                <input
+                  type="text"
+                  value={maintenanceIssueDraft.buildingName || ''}
+                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, buildingName: e.target.value }))}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Floor</div>
+                <input
+                  type="text"
+                  value={maintenanceIssueDraft.floorName || ''}
+                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, floorName: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Room</div>
+              <input
+                type="text"
+                value={maintenanceIssueDraft.roomName || ''}
+                onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, roomName: e.target.value }))}
+                placeholder="Optional room label/number"
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Issue Type</div>
+                <select
+                  value={maintenanceIssueDraft.issueType || 'Other'}
+                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, issueType: e.target.value }))}
+                >
+                  {maintenanceIssueTypeOptions.map((type) => (
+                    <option key={`issue-type-${type}`} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Priority</div>
+                <select
+                  value={normalizeMaintenancePriority(maintenanceIssueDraft.priority)}
+                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, priority: e.target.value }))}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Status</div>
+                <select
+                  value={normalizeMaintenanceStatus(maintenanceIssueDraft.status)}
+                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, status: e.target.value }))}
+                >
+                  {MAINTENANCE_STATUS_VALUES.map((status) => (
+                    <option key={`issue-status-${status}`} value={status}>{maintenanceStatusLabel(status)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Description</div>
+              <textarea
+                value={maintenanceIssueDraft.description || ''}
+                onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, description: e.target.value }))}
+                rows={3}
+                placeholder="Describe the issue"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Notes</div>
+              <textarea
+                value={maintenanceIssueDraft.notes || ''}
+                onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, notes: e.target.value }))}
+                rows={2}
+                placeholder="Optional notes"
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Assigned To</div>
+                <input
+                  type="text"
+                  value={maintenanceIssueDraft.assignedTo || ''}
+                  onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, assignedTo: e.target.value }))}
+                  placeholder="Name or email"
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Cost Low ($)</div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={maintenanceIssueDraft.estimatedCostLow}
+                    onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, estimatedCostLow: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#667085', marginBottom: 2 }}>Cost High ($)</div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={maintenanceIssueDraft.estimatedCostHigh}
+                    onChange={(e) => setMaintenanceIssueDraft((prev) => ({ ...prev, estimatedCostHigh: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <button
+              className="btn"
+              onClick={() => {
+                if (maintenanceIssueSaving) return;
+                setMaintenanceIssueModalOpen(false);
+                setMaintenanceIssueDraft(null);
+              }}
+              disabled={maintenanceIssueSaving}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn primary"
+              onClick={handleSaveMaintenanceIssue}
+              disabled={maintenanceIssueSaving || !maintenanceCanWrite}
+            >
+              {maintenanceIssueSaving ? 'Saving...' : 'Save Issue'}
+            </button>
+          </div>
+          {!maintenanceCanWrite && (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#92400e' }}>
+              Read-only: sign in as admin (or use approved campus route) to save maintenance issues.
+            </div>
+          )}
         </div>
       </div>
     )}
@@ -23281,6 +24038,219 @@ useEffect(() => {
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {maintenanceWorkflowActive && (
+            <div
+              className="control-section"
+              style={{
+                marginTop: 6,
+                border: '1px solid #d8e0ea',
+                borderRadius: 6,
+                padding: 6,
+                background: '#f8fbff'
+              }}
+            >
+              <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Maintenance Tracker</h5>
+              <div style={{ fontSize: 11, color: '#475467' }}>
+                Open: <b>{maintenanceDashboard.totalOpen.toLocaleString()}</b>
+                {'  '}|{'  '}High Priority: <b>{maintenanceDashboard.highPriorityOpen.toLocaleString()}</b>
+                {'  '}|{'  '}Total: <b>{maintenanceDashboard.totalAll.toLocaleString()}</b>
+              </div>
+              {loadedSingleFloor && (
+                <div style={{ marginTop: 4, fontSize: 10.8, color: '#667085' }}>
+                  Open issues on loaded floor: {maintenanceOpenIssuesForFloor.length.toLocaleString()}
+                </div>
+              )}
+              {!!maintenanceDashboard.recentCompleted.length && (
+                <div style={{ marginTop: 4, fontSize: 10.8, color: '#667085' }}>
+                  Recently completed: {maintenanceDashboard.recentCompleted.length.toLocaleString()}
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+                <button
+                  className="btn"
+                  style={{ width: '100%', fontWeight: 600 }}
+                  onClick={() => openMaintenanceIssueModal(maintenanceContext || {})}
+                  disabled={!maintenanceCanWrite}
+                >
+                  Add Issue
+                </button>
+                <button
+                  className="btn"
+                  style={{ width: '100%' }}
+                  onClick={exportMaintenanceIssuesCsv}
+                  disabled={!maintenanceFilteredIssues.length}
+                >
+                  Export CSV
+                </button>
+              </div>
+              <label style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#334155' }}>
+                <input
+                  type="checkbox"
+                  checked={maintenanceShowIssueMarkers}
+                  onChange={(e) => setMaintenanceShowIssueMarkers(Boolean(e.target.checked))}
+                />
+                Show issue markers on map/floorplan
+              </label>
+              <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                <select value={maintenanceBuildingFilter} onChange={(e) => setMaintenanceBuildingFilter(e.target.value)}>
+                  <option value="__all__">All buildings</option>
+                  {maintenanceBuildingOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <select value={maintenanceTypeFilter} onChange={(e) => setMaintenanceTypeFilter(e.target.value)}>
+                  <option value="__all__">All issue types</option>
+                  {maintenanceIssueTypeOptions.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+                <select value={maintenanceStatusFilter} onChange={(e) => setMaintenanceStatusFilter(e.target.value)}>
+                  <option value="__all__">All statuses</option>
+                  {MAINTENANCE_STATUS_VALUES.map((status) => (
+                    <option key={status} value={status}>{maintenanceStatusLabel(status)}</option>
+                  ))}
+                </select>
+                <select value={maintenancePriorityFilter} onChange={(e) => setMaintenancePriorityFilter(e.target.value)}>
+                  <option value="__all__">All priorities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+                <input
+                  type="text"
+                  value={maintenanceAssignedFilter}
+                  onChange={(e) => setMaintenanceAssignedFilter(e.target.value)}
+                  placeholder="Assigned to filter"
+                />
+                <input
+                  type="text"
+                  value={maintenanceRoomSearch}
+                  onChange={(e) => setMaintenanceRoomSearch(e.target.value)}
+                  placeholder="Room/floor filter"
+                />
+              </div>
+              {!!maintenanceMessage && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
+                  {maintenanceMessage}
+                </div>
+              )}
+              <div
+                style={{
+                  marginTop: 8,
+                  border: '1px solid #dde5f0',
+                  borderRadius: 6,
+                  background: '#fff',
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  padding: 6,
+                  display: 'grid',
+                  gap: 6
+                }}
+              >
+                {maintenanceFilteredIssues.length ? maintenanceFilteredIssues.slice(0, 60).map((issue) => {
+                  const selected = String(issue?.id || '') === String(maintenanceSelectedIssueId || '');
+                  const priorityColor = maintenancePriorityColor(issue?.priority);
+                  const locationBits = [
+                    issue?.buildingName || issue?.buildingId || 'Unassigned',
+                    issue?.floorName || issue?.floorId || '',
+                    issue?.roomName || issue?.roomId || ''
+                  ].filter(Boolean);
+                  return (
+                    <div
+                      key={`maintenance-issue-${issue.id}`}
+                      style={{
+                        border: selected ? '1px solid #2563eb' : '1px solid #e4e7ec',
+                        borderRadius: 6,
+                        padding: 6,
+                        background: selected ? '#eff6ff' : '#fff'
+                      }}
+                    >
+                      <button
+                        className="btn"
+                        style={{ width: '100%', textAlign: 'left', marginBottom: 4, borderColor: '#d1d5db' }}
+                        onClick={() => {
+                          setMaintenanceSelectedIssueId(issue.id);
+                          const coords = issue?.coordinates;
+                          if (Array.isArray(coords) && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1])) && mapRef.current) {
+                            try {
+                              mapRef.current.flyTo({ center: [Number(coords[0]), Number(coords[1])], zoom: Math.max(16, Number(mapRef.current.getZoom?.() || 16)) });
+                            } catch {}
+                          }
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontWeight: 700, color: '#1f2937' }}>{issue.issueType || 'Issue'}</span>
+                          <span style={{ fontSize: 10.5, color: priorityColor, fontWeight: 700 }}>
+                            {maintenancePriorityLabel(issue.priority)}
+                          </span>
+                        </div>
+                        <div style={{ marginTop: 3, fontSize: 11, color: '#334155' }}>{issue.description || '(No description)'}</div>
+                        <div style={{ marginTop: 3, fontSize: 10.5, color: '#667085' }}>{locationBits.join(' / ')}</div>
+                        <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
+                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` • Assigned: ${issue.assignedTo}` : ''}
+                        </div>
+                      </button>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, alignItems: 'center' }}>
+                        <select
+                          value={normalizeMaintenanceStatus(issue.status)}
+                          onChange={(e) => handlePatchMaintenanceIssue(issue.id, { status: e.target.value })}
+                          disabled={!maintenanceCanWrite || maintenanceStatusSavingId === issue.id}
+                        >
+                          {MAINTENANCE_STATUS_VALUES.map((status) => (
+                            <option key={status} value={status}>{maintenanceStatusLabel(status)}</option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            const next = window.prompt('Assign to (name/email):', String(issue.assignedTo || ''));
+                            if (next === null) return;
+                            handlePatchMaintenanceIssue(issue.id, { assignedTo: String(next).trim() });
+                          }}
+                          disabled={!maintenanceCanWrite || maintenanceStatusSavingId === issue.id}
+                        >
+                          Assign
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    No issues match the current filters.
+                  </div>
+                )}
+                {maintenanceFilteredIssues.length > 60 && (
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    Showing first 60 filtered issues. Refine filters for narrower lists.
+                  </div>
+                )}
+              </div>
+              {!!maintenanceDashboard.byBuilding.length && (
+                <div style={{ marginTop: 8, fontSize: 10.8, color: '#475467' }}>
+                  <div style={{ fontWeight: 700, marginBottom: 3 }}>Open by Building</div>
+                  {maintenanceDashboard.byBuilding.map((row) => (
+                    <div key={`maint-bldg-${row.name}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
+                      <span>{row.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!!maintenanceDashboard.byType.length && (
+                <div style={{ marginTop: 6, fontSize: 10.8, color: '#475467' }}>
+                  <div style={{ fontWeight: 700, marginBottom: 3 }}>Open by Type</div>
+                  {maintenanceDashboard.byType.map((row) => (
+                    <div key={`maint-type-${row.name}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
+                      <span>{row.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
