@@ -16526,13 +16526,53 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           })
           : []
       );
+      const summarizeOptionDisplacement = (rows = []) => {
+        let occupiedRoomCount = 0;
+        let occupiedSf = 0;
+        const occupiedDepartments = new Set();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+          const occupant = String(row?.occupant || '').trim();
+          const occupancyStatus = String(row?.occupancyStatus || '').trim().toLowerCase();
+          const vacancy = row?.vacancy;
+          const isOccupied = Boolean(
+            occupant ||
+            occupancyStatus === 'occupied' ||
+            occupancyStatus === 'in-use' ||
+            occupancyStatus === 'in use' ||
+            vacancy === false
+          );
+          if (!isOccupied) return;
+          occupiedRoomCount += 1;
+          occupiedSf += Number(row?.sf || 0) || 0;
+          const dept = String(row?.occupantDept || row?.department || '').trim();
+          if (dept) occupiedDepartments.add(dept);
+        });
+        return {
+          occupiedRoomCount,
+          occupiedSf: Math.round(occupiedSf),
+          occupiedDepartments: Array.from(occupiedDepartments).sort()
+        };
+      };
       const recommended = normalizeScenarioCandidates(out?.recommendedCandidates);
       const copilotOptions = Array.isArray(out?.copilot?.generatedOptions)
-        ? out.copilot.generatedOptions.map((option, idx) => ({
-            ...option,
-            optionId: option?.optionId || `option_${idx + 1}`,
-            recommendedCandidates: normalizeScenarioCandidates(option?.recommendedCandidates)
-          }))
+        ? out.copilot.generatedOptions.map((option, idx) => {
+            const normalizedCandidates = normalizeScenarioCandidates(option?.recommendedCandidates);
+            const displacementSummary = option?.displacementSummary && typeof option.displacementSummary === 'object'
+              ? option.displacementSummary
+              : summarizeOptionDisplacement(normalizedCandidates);
+            return {
+              ...option,
+              optionId: option?.optionId || `option_${idx + 1}`,
+              recommendedCandidates: normalizedCandidates,
+              displacementSummary,
+              fitSummary: option?.fitSummary || {
+                totalSf: Math.round(Number(option?.scenarioTotals?.totalSF || 0) || 0),
+                sfGapPct: Number(option?.scoreBreakdown?.sfGapPct || 0) || 0,
+                typeGapPct: Number(option?.scoreBreakdown?.typeGapPct || 0) || 0,
+                inTargetRange: Boolean(option?.scoreBreakdown?.inTargetRange)
+              }
+            };
+          })
         : [];
       const selectedCopilotOptionId =
         String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '').trim();
@@ -26846,6 +26886,13 @@ useEffect(() => {
             {Array.isArray(aiCreateScenarioResult?.copilot?.generatedOptions) && aiCreateScenarioResult.copilot.generatedOptions.length ? (
               <div style={{ marginTop: 10 }}>
                 <b>Planner Copilot options</b>
+                {Array.isArray(aiCreateScenarioResult?.copilot?.comparisonSummary) && aiCreateScenarioResult.copilot.comparisonSummary.length ? (
+                  <ul style={{ margin: '6px 0 8px 18px', padding: 0, fontSize: 12, color: '#444' }}>
+                    {aiCreateScenarioResult.copilot.comparisonSummary.map((line, i) => (
+                      <li key={`copilot-compare-${i}`}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
                   {aiCreateScenarioResult.copilot.generatedOptions.map((option, idx) => {
                     const optionId = String(option?.optionId || `option_${idx + 1}`);
@@ -26858,6 +26905,12 @@ useEffect(() => {
                     const optionTotalSf = Math.round(Number(option?.scenarioTotals?.totalSF || 0) || 0);
                     const optionRooms = Math.round(Number(option?.scenarioTotals?.rooms || 0) || 0);
                     const optionBuildings = Array.isArray(option?.buildings) ? option.buildings.length : 0;
+                    const optionScore = Number(option?.score || 0) || 0;
+                    const sfGapPct = Number(option?.fitSummary?.sfGapPct ?? option?.scoreBreakdown?.sfGapPct ?? 0) || 0;
+                    const typeGapPct = Number(option?.fitSummary?.typeGapPct ?? option?.scoreBreakdown?.typeGapPct ?? 0) || 0;
+                    const inTargetRange = Boolean(option?.fitSummary?.inTargetRange ?? option?.scoreBreakdown?.inTargetRange);
+                    const occupiedRoomCount = Number(option?.displacementSummary?.occupiedRoomCount || 0) || 0;
+                    const occupiedSf = Math.round(Number(option?.displacementSummary?.occupiedSf || 0) || 0);
                     return (
                       <div
                         key={optionId}
@@ -26883,10 +26936,23 @@ useEffect(() => {
                         <div style={{ marginTop: 4, fontSize: 12, color: '#444' }}>
                           {optionTotalSf.toLocaleString()} SF | {optionRooms.toLocaleString()} rooms | {optionBuildings.toLocaleString()} building{optionBuildings === 1 ? '' : 's'}
                         </div>
+                        <div style={{ marginTop: 2, fontSize: 11, color: '#555' }}>
+                          Score {optionScore.toFixed(1)} | SF gap {sfGapPct.toFixed(1)}% | Type gap {typeGapPct.toFixed(1)}% | Fit {inTargetRange ? 'In range' : 'Out of range'}
+                        </div>
+                        <div style={{ marginTop: 2, fontSize: 11, color: '#555' }}>
+                          Displacement: {occupiedRoomCount.toLocaleString()} occupied room{occupiedRoomCount === 1 ? '' : 's'} ({occupiedSf.toLocaleString()} SF)
+                        </div>
                         {Array.isArray(option?.buildings) && option.buildings.length ? (
                           <div style={{ marginTop: 2, fontSize: 11, color: '#666' }}>
                             {option.buildings.join(', ')}
                           </div>
+                        ) : null}
+                        {Array.isArray(option?.whyThisOption) && option.whyThisOption.length ? (
+                          <ul style={{ margin: '6px 0 0 16px', padding: 0, fontSize: 11, color: '#666' }}>
+                            {option.whyThisOption.map((line, reasonIdx) => (
+                              <li key={`${optionId}-why-${reasonIdx}`}>{line}</li>
+                            ))}
+                          </ul>
                         ) : null}
                       </div>
                     );

@@ -623,3 +623,33 @@ Latest completed work (planner copilot phase 1 wiring)
 
 Workflow note
 - Continue default workflow of commit + push to `main` after requested changes unless user says otherwise.
+
+Latest completed work (planner copilot phase 2 transparency)
+- Added explicit copilot scoring transparency and rationale in both backend payload and UI:
+  - Per-option score details now surfaced:
+    - score
+    - SF gap %
+    - room-type gap %
+    - in-target-range flag
+    - building count
+  - Per-option displacement impact added:
+    - occupied room count
+    - occupied SF
+    - occupied department list
+  - Per-option rationale (`whyThisOption`) added for quick explanation.
+  - Top-vs-next option comparison summary (`comparisonSummary`) added so users can see why option A beat option B.
+
+- Backend updates (`ai-server/server.js`):
+  - Extended copilot room normalization to carry occupancy metadata.
+  - Added displacement summary calculation and integrated displacement penalty into score.
+  - Added option narrative generator and best-vs-runner-up comparison generator.
+  - Enriched `copilot.generatedOptions` with `fitSummary`, `displacementSummary`, `whyThisOption`, and rank.
+
+- Frontend updates (`src/components/StakeholderMap.jsx`):
+  - Copilot option cards now display explicit fit/displacement metrics and rationale bullets.
+  - Result modal now shows backend comparison summary.
+  - Added fallback displacement summarization from normalized candidates for robustness.
+
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

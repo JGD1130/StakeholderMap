@@ -1840,6 +1840,13 @@ function toCopilotRoom(room) {
   const roomLabel = normalizeCopilotText(room?.roomLabel ?? room?.roomNumber ?? roomId);
   const type = normalizeCopilotText(room?.type ?? room?.roomType);
   const sf = Number(room?.sf ?? room?.area ?? room?.areaSF ?? 0) || 0;
+  const occupant = normalizeCopilotText(room?.occupant ?? room?.occupantName);
+  const occupancyStatus = normalizeCopilotText(room?.occupancyStatus);
+  const occupantDept = normalizeCopilotText(room?.occupantDept ?? room?.department);
+  const vacancyRaw = room?.vacancy;
+  const vacancy = typeof vacancyRaw === "boolean"
+    ? vacancyRaw
+    : (typeof vacancyRaw === "number" ? vacancyRaw > 0 : null);
   if (!id || !roomId || !buildingLabel || !Number.isFinite(sf) || sf <= 0) return null;
   return {
     roomId,
@@ -1852,7 +1859,11 @@ function toCopilotRoom(room) {
     roomLabel,
     type,
     typeKey: normalizeCopilotTypeKey(type),
-    sf
+    sf,
+    occupant,
+    occupancyStatus,
+    occupantDept,
+    vacancy
   };
 }
 
@@ -1902,6 +1913,33 @@ function createSeededRng(seedInput) {
   };
 }
 
+function isLikelyOccupiedCopilotRoom(room = {}) {
+  const occupant = normalizeCopilotText(room?.occupant);
+  const occupancyStatus = normalizeCopilotText(room?.occupancyStatus).toLowerCase();
+  if (occupant) return true;
+  if (occupancyStatus === "occupied" || occupancyStatus === "in-use" || occupancyStatus === "in use") return true;
+  if (room?.vacancy === false) return true;
+  return false;
+}
+
+function buildCopilotDisplacementSummary(candidates = []) {
+  let occupiedRoomCount = 0;
+  let occupiedSf = 0;
+  const departments = new Set();
+  candidates.forEach((room) => {
+    if (!isLikelyOccupiedCopilotRoom(room)) return;
+    occupiedRoomCount += 1;
+    occupiedSf += Number(room?.sf || 0) || 0;
+    const dept = normalizeCopilotText(room?.occupantDept);
+    if (dept) departments.add(dept);
+  });
+  return {
+    occupiedRoomCount,
+    occupiedSf: Math.round(occupiedSf),
+    occupiedDepartments: Array.from(departments).sort()
+  };
+}
+
 function isCopilotExceptionType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
@@ -1916,7 +1954,8 @@ function buildCopilotOptionScore({
   maxSf,
   strictFit = false,
   preferSingleBuilding = false,
-  typeTargets = new Map()
+  typeTargets = new Map(),
+  displacementSummary = null
 }) {
   const uniqueBuildings = new Set(candidates.map((room) => room?.buildingKey).filter(Boolean));
   const buildingCount = uniqueBuildings.size;
@@ -1946,7 +1985,11 @@ function buildCopilotOptionScore({
   }
 
   const singlePenalty = preferSingleBuilding ? Math.max(0, buildingCount - 1) * 0.18 : 0;
-  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - (singlePenalty * 25);
+  const occupiedRoomCount = Number(displacementSummary?.occupiedRoomCount || 0) || 0;
+  const occupiedSf = Number(displacementSummary?.occupiedSf || 0) || 0;
+  const occupiedSfPenalty = targetSf > 0 ? (occupiedSf / targetSf) * 12 : 0;
+  const displacementPenalty = Math.min(22, (occupiedRoomCount * 1.8) + occupiedSfPenalty);
+  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - (singlePenalty * 25) - displacementPenalty;
   if (total >= minSf && total <= maxSf) score += 8;
   if (overUpper) score -= 24;
   if (belowLower) score -= 10;
@@ -1958,12 +2001,79 @@ function buildCopilotOptionScore({
       sfGapPct: Number((sfGapPct * 100).toFixed(2)),
       typeGapPct: Number((typeGapPct * 100).toFixed(2)),
       buildingCount,
+      occupiedRoomCount,
+      occupiedSf: Math.round(occupiedSf),
+      displacementPenalty: Number(displacementPenalty.toFixed(2)),
       strictFit,
       inTargetRange: total >= minSf && total <= maxSf,
       overUpperBound: overUpper,
       belowLowerBound: belowLower
     }
   };
+}
+
+function buildCopilotOptionNarrative({
+  option,
+  targetSf = 0,
+  minSf = 0,
+  maxSf = Number.POSITIVE_INFINITY
+}) {
+  const out = [];
+  const scoreBreakdown = option?.scoreBreakdown || {};
+  const totalSf = Number(option?.scenarioTotals?.totalSF || 0) || 0;
+  const buildingCount = Number(scoreBreakdown?.buildingCount || option?.buildingCount || 0) || 0;
+  const occupiedRoomCount = Number(option?.displacementSummary?.occupiedRoomCount || 0) || 0;
+  const sfGapPct = Number(scoreBreakdown?.sfGapPct || 0) || 0;
+  const typeGapPct = Number(scoreBreakdown?.typeGapPct || 0) || 0;
+
+  if (totalSf >= minSf && totalSf <= maxSf) {
+    out.push(`Within target SF band (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF).`);
+  } else if (targetSf > 0) {
+    const direction = totalSf > targetSf ? "over" : "under";
+    out.push(`SF is ${sfGapPct.toFixed(1)}% ${direction} target.`);
+  }
+  out.push(`Room-type fit gap is ${typeGapPct.toFixed(1)}%.`);
+  out.push(buildingCount <= 1 ? "Consolidated in one building." : `Spread across ${buildingCount} buildings.`);
+  out.push(
+    occupiedRoomCount > 0
+      ? `Requires relocating ${occupiedRoomCount} currently occupied rooms.`
+      : "Low displacement risk (no clearly occupied rooms selected)."
+  );
+  return out;
+}
+
+function buildCopilotComparisonSummary(best, runnerUp) {
+  if (!best) return [];
+  if (!runnerUp) return ["Highest-scoring option among generated candidates."];
+  const out = [];
+  const bestScore = Number(best?.score || 0) || 0;
+  const runnerScore = Number(runnerUp?.score || 0) || 0;
+  out.push(`Top score ${bestScore.toFixed(1)} vs next ${runnerScore.toFixed(1)} (+${(bestScore - runnerScore).toFixed(1)}).`);
+
+  const bestSfGap = Number(best?.scoreBreakdown?.sfGapPct || 0) || 0;
+  const runnerSfGap = Number(runnerUp?.scoreBreakdown?.sfGapPct || 0) || 0;
+  if (bestSfGap < runnerSfGap) {
+    out.push(`Closer SF fit (${bestSfGap.toFixed(1)}% gap vs ${runnerSfGap.toFixed(1)}%).`);
+  } else if (bestSfGap > runnerSfGap) {
+    out.push(`SF fit is weaker (${bestSfGap.toFixed(1)}% gap vs ${runnerSfGap.toFixed(1)}%).`);
+  }
+
+  const bestTypeGap = Number(best?.scoreBreakdown?.typeGapPct || 0) || 0;
+  const runnerTypeGap = Number(runnerUp?.scoreBreakdown?.typeGapPct || 0) || 0;
+  if (bestTypeGap < runnerTypeGap) {
+    out.push(`Better room-type alignment (${bestTypeGap.toFixed(1)}% gap vs ${runnerTypeGap.toFixed(1)}%).`);
+  } else if (bestTypeGap > runnerTypeGap) {
+    out.push(`Room-type alignment is weaker (${bestTypeGap.toFixed(1)}% gap vs ${runnerTypeGap.toFixed(1)}%).`);
+  }
+
+  const bestDisp = Number(best?.displacementSummary?.occupiedRoomCount || 0) || 0;
+  const runnerDisp = Number(runnerUp?.displacementSummary?.occupiedRoomCount || 0) || 0;
+  if (bestDisp < runnerDisp) {
+    out.push(`Lower displacement impact (${bestDisp} occupied rooms vs ${runnerDisp}).`);
+  } else if (bestDisp > runnerDisp) {
+    out.push(`Higher displacement impact (${bestDisp} occupied rooms vs ${runnerDisp}).`);
+  }
+  return out;
 }
 
 function buildCopilotCandidates({
@@ -2183,6 +2293,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     signatures.add(signature);
 
     const totals = buildCopilotScenarioTotals(selected);
+    const displacementSummary = buildCopilotDisplacementSummary(selected);
     const score = buildCopilotOptionScore({
       candidates: selected,
       totals,
@@ -2191,11 +2302,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       maxSf,
       strictFit,
       preferSingleBuilding,
-      typeTargets
+      typeTargets,
+      displacementSummary
     });
     const optionId = `option_${generatedOptions.length + 1}`;
     const selectedBuildings = Array.from(new Set(selected.map((room) => room.buildingLabel))).filter(Boolean);
-    generatedOptions.push({
+    const option = {
       optionId,
       label: `Option ${generatedOptions.length + 1}`,
       title: `${context?.targetDepartment || context?.scenarioDepartment || "Department"} scenario option ${generatedOptions.length + 1}`,
@@ -2203,6 +2315,16 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       scoreBreakdown: score.breakdown,
       buildingCount: selectedBuildings.length,
       buildings: selectedBuildings,
+      fitSummary: {
+        targetSf: Math.round(targetSf),
+        minSf: Math.round(minSf),
+        maxSf: Math.round(maxSf),
+        totalSf: Math.round(totals.totalSF || 0),
+        sfGapPct: Number(score.breakdown?.sfGapPct || 0),
+        typeGapPct: Number(score.breakdown?.typeGapPct || 0),
+        inTargetRange: Boolean(score.breakdown?.inTargetRange)
+      },
+      displacementSummary,
       scenarioTotals: totals,
       baselineTotals: constraints?.baselineTotals || {
         totalSF: Math.round(targetSf),
@@ -2210,7 +2332,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         sfByType: []
       },
       assumptions: [
-        strictFit ? `Strict fit mode enforced at ±${Math.round(tolerance * 100)}%.` : `Fit target set at ±${Math.round(tolerance * 100)}%.`,
+        strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
         preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
         ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : [])
       ],
@@ -2237,7 +2359,14 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         sf: Math.round(Number(room.sf || 0) || 0),
         rationale: room.rationale || "Selected for best-fit coverage."
       }))
+    };
+    option.whyThisOption = buildCopilotOptionNarrative({
+      option,
+      targetSf,
+      minSf,
+      maxSf
     });
+    generatedOptions.push(option);
   }
 
   if (!generatedOptions.length) {
@@ -2245,7 +2374,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   }
 
   generatedOptions.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  generatedOptions.forEach((option, idx) => {
+    option.rank = idx + 1;
+  });
   const best = generatedOptions[0];
+  const runnerUp = generatedOptions[1] || null;
   const runId = `copilot_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
   return {
@@ -2268,6 +2401,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       seed,
       recommendedOptionId: best.optionId,
       selectedOptionId: best.optionId,
+      comparisonSummary: buildCopilotComparisonSummary(best, runnerUp),
       generatedOptions
     }
   };
