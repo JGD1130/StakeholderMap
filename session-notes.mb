@@ -792,3 +792,22 @@ Latest completed work (athletics/shop exclusion hardening + single-building feas
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (single-building spread regression fix for copilot options)
+- Fixed regression where planner copilot could return 3-4 building options after severe-underfill recovery.
+- Backend (`ai-server/server.js`) updates:
+  - Tightened relaxed recovery pass when `preferSingleBuilding` is active:
+    - no longer opens the pool to all buildings.
+    - now bounds recovery to primary building + one best-fit backup building.
+  - Backup building is selected by deficit-to-target fit with academic low-fit penalty preserved.
+- Frontend (`src/components/StakeholderMap.jsx`) updates:
+  - Replaced severe-underfill fallback that restored the full pre-constrained candidate set (which reintroduced wide spread).
+  - New bounded recovery keeps spread to primary + one backup building max and re-fills SF only within that bounded set.
+  - Added note text so users can see when bounded two-building relaxation was applied.
+- Result:
+  - Recovery can still improve SF fit without reverting to 3-4 building options.
+  - Single-building intent now degrades in a controlled way (max two buildings) instead of wide spread.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

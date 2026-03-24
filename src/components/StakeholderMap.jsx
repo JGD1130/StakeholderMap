@@ -16676,6 +16676,56 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         );
         if (preferSingleTargetBuilding && primaryBuildingForOption) {
           const preSingleBuildingCandidates = Array.isArray(optionCandidates) ? [...optionCandidates] : [];
+          const primaryBuildingKey = normalizeDashboardKey(primaryBuildingForOption);
+          const buildBoundedRecoveryCandidates = ({
+            sourceCandidates = [],
+            currentCandidates = [],
+            currentTotalSf = 0
+          }) => {
+            if (!baselineTotals || !primaryBuildingKey) return { candidates: currentCandidates, backupLabel: '' };
+            const targetRecoverySf = Math.max(0, (baselineTotalSF * 0.85) - currentTotalSf);
+            const deficitTypeKeys = getScenarioBaselineDeficitTypeKeys(baselineTotals, currentCandidates);
+            const byBuilding = new Map();
+            sourceCandidates.forEach((row) => {
+              const bLabel = norm(row?.buildingLabel || '');
+              const bKey = normalizeDashboardKey(bLabel);
+              if (!bLabel || !bKey || bKey === primaryBuildingKey) return;
+              if (isScenarioNonAssignableType(row?.type ?? row?.roomType ?? '')) return;
+              if (!byBuilding.has(bKey)) {
+                byBuilding.set(bKey, { key: bKey, label: bLabel, totalSf: 0, deficitTypeSf: 0, roomCount: 0 });
+              }
+              const entry = byBuilding.get(bKey);
+              const sf = Number(row?.sf ?? row?.area ?? row?.areaSF ?? 0) || 0;
+              entry.totalSf += sf;
+              entry.roomCount += 1;
+              const typeKey = normalizeTypeMatch(row?.type ?? row?.roomType ?? '');
+              if (typeKey && deficitTypeKeys.has(typeKey)) {
+                entry.deficitTypeSf += sf;
+              }
+            });
+            const ranked = Array.from(byBuilding.values()).sort((a, b) => {
+              const aLowFit = (preferAcademicFit && lowFitBuildingKeys.has(a.key)) ? 1 : 0;
+              const bLowFit = (preferAcademicFit && lowFitBuildingKeys.has(b.key)) ? 1 : 0;
+              if (aLowFit !== bLowFit) return aLowFit - bLowFit;
+              const aRecovery = Math.min(a.totalSf, targetRecoverySf || a.totalSf);
+              const bRecovery = Math.min(b.totalSf, targetRecoverySf || b.totalSf);
+              const aScore = (a.deficitTypeSf * 2.5) + aRecovery + (a.roomCount * 5);
+              const bScore = (b.deficitTypeSf * 2.5) + bRecovery + (b.roomCount * 5);
+              return bScore - aScore;
+            });
+            const backup = ranked[0] || null;
+            if (!backup?.key) return { candidates: currentCandidates, backupLabel: '' };
+            const allowed = new Set([primaryBuildingKey, backup.key]);
+            const bounded = sourceCandidates.filter((row) => {
+              const bKey = normalizeDashboardKey(row?.buildingLabel || '');
+              if (!bKey || !allowed.has(bKey)) return false;
+              return !isScenarioNonAssignableType(row?.type ?? row?.roomType ?? '');
+            });
+            return {
+              candidates: bounded.length ? bounded : currentCandidates,
+              backupLabel: backup.label || ''
+            };
+          };
           let crossBuildingDeficitTypeKeys = getScenarioBaselineDeficitTypeKeys(
             baselineTotals,
             optionCandidates
@@ -16727,8 +16777,40 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             .reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
           const severeSingleBuildingUnderfill = baselineTotalSF > 0 && constrainedTotalSf < (baselineTotalSF * 0.85);
           if (severeSingleBuildingUnderfill && preSingleBuildingCandidates.length) {
-            optionCandidates = preSingleBuildingCandidates;
-            optionNote = `${optionNote ? optionNote + ' ' : ''}Single-building constraint relaxed because constrained fit underfilled target SF by more than 15%.`;
+            const recovered = buildBoundedRecoveryCandidates({
+              sourceCandidates: preSingleBuildingCandidates,
+              currentCandidates: optionCandidates,
+              currentTotalSf: constrainedTotalSf
+            });
+            optionCandidates = recovered.candidates;
+            optionNote = `${optionNote ? optionNote + ' ' : ''}Single-building constraint relaxed to include one backup building${recovered.backupLabel ? ` (${recovered.backupLabel})` : ''} because constrained fit underfilled target SF by more than 15%.`;
+            if (baselineTotals) {
+              const allowedKeys = new Set(
+                Array.from(new Set(optionCandidates.map((row) => normalizeDashboardKey(row?.buildingLabel || '')).filter(Boolean)))
+              );
+              const boundedInventory = inventory.filter((room) => {
+                const bKey = normalizeDashboardKey(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
+                if (!bKey || !allowedKeys.has(bKey)) return false;
+                return !isScenarioNonAssignableType(room?.type ?? room?.roomType ?? '');
+              });
+              const { candidates: refilledBounded, added: boundedAdded } = fillScenarioCandidatesToBaseline(
+                optionCandidates,
+                boundedInventory,
+                baselineTotals,
+                {
+                  targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
+                  maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+                  primaryBuilding: primaryBuildingForOption,
+                  strictFit: aiCreateScenarioStrict,
+                  preferAcademicFit,
+                  scenarioDepartment: inferredDept || scenarioAssignedDept || ''
+                }
+              );
+              if (boundedAdded > 0) {
+                optionCandidates = refilledBounded;
+                optionNote = `${optionNote ? optionNote + ' ' : ''}Auto-filled ${boundedAdded} rooms within bounded building spread to recover SF fit.`;
+              }
+            }
           }
         }
         optionCandidates = sortScenarioRoomsByPreference(optionCandidates, primaryBuildingForOption);

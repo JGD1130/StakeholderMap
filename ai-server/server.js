@@ -2482,7 +2482,26 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           }
         }
       } else {
-        if (relaxSingleBuilding) {
+        const pickBestRecoveryBackupBuilding = () => {
+          if (!preferSingleBuilding || !primary?.buildingKey) return null;
+          const deficitSf = Math.max(0, minSf - (Number(primary?.totalSf || 0) || 0));
+          const backupRows = runBuildingRows.filter((row) => row?.buildingKey && row.buildingKey !== primary.buildingKey);
+          if (!backupRows.length) return null;
+          const sorted = [...backupRows].sort((a, b) => {
+            const aGap = Math.abs((Number(a?.totalSf || 0) || 0) - deficitSf);
+            const bGap = Math.abs((Number(b?.totalSf || 0) || 0) - deficitSf);
+            const aLowFitPenalty = (preferAcademicFit && lowFitSet.has(a?.buildingKey || "")) ? 100000 : 0;
+            const bLowFitPenalty = (preferAcademicFit && lowFitSet.has(b?.buildingKey || "")) ? 100000 : 0;
+            return (aGap + aLowFitPenalty) - (bGap + bLowFitPenalty);
+          });
+          return sorted[0] || null;
+        };
+
+        if (relaxSingleBuilding && preferSingleBuilding) {
+          const backup = pickBestRecoveryBackupBuilding();
+          const allowed = new Set([primary?.buildingKey, backup?.buildingKey].filter(Boolean));
+          candidatePool = runRooms.filter((room) => allowed.has(room.buildingKey));
+        } else if (relaxSingleBuilding) {
           candidatePool = [...runRooms];
         } else {
           const tertiary = weightedBuildings[2] || null;
