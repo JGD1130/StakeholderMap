@@ -5235,6 +5235,7 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
     return (b.sf || 0) - (a.sf || 0);
   });
   const baselineTypeOrder = baselineTypeEntries.map((t) => t.key);
+  const baselineTypeKeySet = new Set(baselineTypeOrder);
 
   let added = 0;
   const addRoom = (room, reason) => {
@@ -5295,7 +5296,10 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
 
   if (totals.totalSF < targetMin && next.length < maxCandidates) {
     const remaining = [];
-    roomsByType.forEach((rooms) => rooms.forEach((room) => remaining.push(room)));
+    roomsByType.forEach((rooms, typeKey) => {
+      if (baselineTypeKeySet.size > 0 && !baselineTypeKeySet.has(typeKey)) return;
+      rooms.forEach((room) => remaining.push(room));
+    });
     const sortedRemaining = sortScenarioRoomsByPreference(remaining, primaryBuilding);
     for (const room of sortedRemaining) {
       if (totals.totalSF >= targetMin || next.length >= maxCandidates) break;
@@ -5336,6 +5340,33 @@ const getScenarioTypeRank = (value) => {
 const isLikelyOperationsDept = (value) =>
   /(facilit|maintenance|custod|grounds|operations|physical plant|service|warehouse|utility|dining|food service|security|safety)/i
     .test(String(value ?? ''));
+
+const getScenarioBaselineDeficitTypeKeys = (baselineTotals, candidates = []) => {
+  const baselineByType = new Map();
+  Object.entries(baselineTotals?.sfByRoomType || {}).forEach(([type, sfValue]) => {
+    const key = normalizeTypeMatch(type);
+    if (!key) return;
+    const sf = Number(sfValue || 0) || 0;
+    if (sf <= 0) return;
+    baselineByType.set(key, (baselineByType.get(key) || 0) + sf);
+  });
+  if (!baselineByType.size) return new Set();
+
+  const selectedByType = new Map();
+  (Array.isArray(candidates) ? candidates : []).forEach((row) => {
+    const key = normalizeTypeMatch(row?.type ?? row?.roomType ?? '');
+    if (!key) return;
+    const sf = Number(row?.sf ?? row?.area ?? row?.areaSF ?? 0) || 0;
+    selectedByType.set(key, (selectedByType.get(key) || 0) + sf);
+  });
+
+  const deficits = new Set();
+  baselineByType.forEach((targetSf, key) => {
+    const selectedSf = selectedByType.get(key) || 0;
+    if ((targetSf - selectedSf) > 1) deficits.add(key);
+  });
+  return deficits;
+};
 
 const shouldPreferAcademicFitForScenario = (deptName, baselineTotals) => {
   if (isLikelyOperationsDept(deptName)) return false;
@@ -16631,21 +16662,34 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           ''
         );
         if (preferSingleTargetBuilding && primaryBuildingForOption) {
+          let crossBuildingDeficitTypeKeys = getScenarioBaselineDeficitTypeKeys(
+            baselineTotals,
+            optionCandidates
+          );
           const constrained = optionCandidates.filter((c) => {
             const b = norm(c?.buildingLabel || '');
             if (b === primaryBuildingForOption) return true;
-            return isScenarioCrossBuildingExceptionType(c?.type);
+            if (!isScenarioCrossBuildingExceptionType(c?.type)) return false;
+            if (!baselineTotals) return true;
+            const typeKey = normalizeTypeMatch(c?.type ?? c?.roomType ?? '');
+            return Boolean(typeKey && crossBuildingDeficitTypeKeys.has(typeKey));
           });
           if (constrained.length) {
             optionCandidates = constrained;
             optionNote = `${optionNote ? optionNote + ' ' : ''}Constrained scenario to a single building (${primaryBuildingForOption}), allowing only classroom/specialized exceptions outside if needed.`;
           }
           if (baselineTotals) {
+            crossBuildingDeficitTypeKeys = getScenarioBaselineDeficitTypeKeys(
+              baselineTotals,
+              optionCandidates
+            );
             const allowedInventory = inventory.filter((room) => {
               const b = norm(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
               if (b === primaryBuildingForOption) return true;
               const t = room?.type ?? room?.roomType ?? '';
-              return isScenarioCrossBuildingExceptionType(t);
+              if (!isScenarioCrossBuildingExceptionType(t)) return false;
+              const typeKey = normalizeTypeMatch(t);
+              return Boolean(typeKey && crossBuildingDeficitTypeKeys.has(typeKey));
             });
             const { candidates: refilled, added } = fillScenarioCandidatesToBaseline(
               optionCandidates,

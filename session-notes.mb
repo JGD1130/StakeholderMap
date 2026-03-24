@@ -700,3 +700,18 @@ Latest completed work (planner copilot phase 2 transparency)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (single-building type-deficit guardrail fix)
+- Fixed remaining spillover where large off-profile room types could still appear as cross-building SF fillers in Planner Copilot options.
+- Tightened baseline fill logic in `fillScenarioCandidatesToBaseline`:
+  - Final SF top-up pass now only considers room types that exist in the baseline type mix.
+- Added explicit baseline type-deficit gating:
+  - New helper computes normalized baseline type deficits from current candidate selections.
+  - Cross-building classroom/specialized exceptions are now allowed only when that exact normalized type is still in deficit.
+  - Same deficit gating applied when building `allowedInventory` for strict single-building refill.
+- Result:
+  - Prevents cross-building out-of-profile “big SF” picks (like Public Performance / Assembly) from being kept solely to hit SF.
+  - Keeps single-building intent aligned with baseline room-type needs.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
