@@ -621,6 +621,27 @@ Latest completed work (planner copilot phase 1 wiring)
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
 
+Latest completed work (copilot type-fit-first fill logic + rationale upgrade)
+- Improved planner copilot room fill behavior so it no longer optimizes mostly for SF closeness:
+  - Fill pass now scores each candidate by net utility:
+    - SF-gap improvement
+    - Type-gap improvement (weighted higher)
+    - single-building penalty (if enabled)
+    - strong off-profile type penalty when room type is outside baseline mix
+    - penalty when a pick worsens type fit
+- Added stronger off-profile guardrail:
+  - Large non-baseline room types are strongly discouraged as SF-only fillers.
+  - Exception types can still be used as fallback, but with meaningful penalties.
+- Upgraded per-room rationale text:
+  - Uses type-aware reasons (for example, deficit reduction by SF) instead of mostly generic “Added to improve total SF fit.”
+  - Explicitly labels SF-only fallback picks when type is outside baseline mix.
+- Result:
+  - Candidate tables should better reflect room-type fidelity and avoid obvious “big but wrong type” additions.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
+
 Latest completed work (floor summary fetch noise reduction)
 - Reduced noisy floor-summary fetch errors for optional dashboard calculations:
   - `fetchFloorSummaryByUrl` now prefers local `campusRooms` in-memory rows (by building folder + floor) before attempting network GeoJSON fetch.

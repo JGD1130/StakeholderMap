@@ -2094,6 +2094,41 @@ function buildCopilotCandidates({
   const usedIds = new Set();
   let selectedSf = 0;
   const maxCandidates = 30;
+  const targetByType = new Map();
+  typeTargets.forEach((row, key) => {
+    const targetSf = Number(row?.targetSf || 0) || 0;
+    if (!key || targetSf <= 0) return;
+    targetByType.set(key, targetSf);
+  });
+  const targetTypeTotalSf = Array.from(targetByType.values()).reduce((sum, sf) => sum + sf, 0);
+  const actualByType = new Map();
+  const addActualTypeSf = (room) => {
+    const key = normalizeCopilotTypeKey(room?.type || "");
+    if (!key) return;
+    actualByType.set(key, (Number(actualByType.get(key) || 0) || 0) + (Number(room?.sf || 0) || 0));
+  };
+  const cloneActualByTypeWithRoom = (room) => {
+    const next = new Map(actualByType);
+    const key = normalizeCopilotTypeKey(room?.type || "");
+    if (!key) return next;
+    next.set(key, (Number(next.get(key) || 0) || 0) + (Number(room?.sf || 0) || 0));
+    return next;
+  };
+  const computeTypeGapSf = (actualMap) => {
+    if (!targetByType.size) return 0;
+    let diff = 0;
+    targetByType.forEach((targetSf, key) => {
+      const actualSf = Number(actualMap?.get(key) || 0) || 0;
+      diff += Math.abs(targetSf - actualSf);
+    });
+    return diff;
+  };
+  const getTypeDeficitSf = (typeKey, actualMap = actualByType) => {
+    if (!typeKey || !targetByType.has(typeKey)) return 0;
+    const targetSf = Number(targetByType.get(typeKey) || 0) || 0;
+    const actualSf = Number(actualMap?.get(typeKey) || 0) || 0;
+    return Math.max(0, targetSf - actualSf);
+  };
 
   const addRoom = (room, reason = "") => {
     if (!room?.id || usedIds.has(room.id)) return false;
@@ -2103,6 +2138,7 @@ function buildCopilotCandidates({
     usedIds.add(room.id);
     selected.push({ ...room, rationale: reason || "Selected to improve fit." });
     selectedSf += roomSf;
+    addActualTypeSf(room);
     return true;
   };
 
@@ -2142,23 +2178,68 @@ function buildCopilotCandidates({
     });
   }
 
-  // Pass 2: fill toward target SF.
+  // Pass 2: fill toward target SF with net fit utility (type + SF), not SF-only.
   const remainingPool = rooms.filter((room) => !usedIds.has(room.id));
+  const evaluateFillCandidate = (room) => {
+    const roomSf = Number(room?.sf || 0) || 0;
+    if (roomSf <= 0) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    const afterSf = selectedSf + roomSf;
+    if (strictFit && selectedSf >= minSf && afterSf > maxSf) {
+      return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    }
+    const sfGapBefore = Math.abs(targetSf - selectedSf);
+    const sfGapAfter = Math.abs(targetSf - afterSf);
+    const sfImprovement = sfGapBefore - sfGapAfter;
+
+    const typeGapBefore = computeTypeGapSf(actualByType);
+    const nextActualByType = cloneActualByTypeWithRoom(room);
+    const typeGapAfter = computeTypeGapSf(nextActualByType);
+    const typeImprovement = typeGapBefore - typeGapAfter;
+
+    const typeKey = normalizeCopilotTypeKey(room?.type || "");
+    const inBaselineTypeMix = typeKey && targetByType.has(typeKey);
+    const isExceptionType = isCopilotExceptionType(room?.type || "");
+    const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 120 : 0;
+
+    // Strongly discourage adding off-profile room types just to gain SF.
+    const offProfilePenalty = (targetByType.size > 0 && !inBaselineTypeMix)
+      ? (roomSf * (isExceptionType ? 1.0 : 1.35))
+      : 0;
+    // Penalize additions that worsen type fit.
+    const typeWorsenPenalty = typeImprovement < 0 ? Math.abs(typeImprovement) * 1.25 : 0;
+
+    const utility = (sfImprovement + (typeImprovement * 1.35)) - buildingPenalty - offProfilePenalty - typeWorsenPenalty;
+
+    let reason = "Added to improve total SF fit.";
+    if (inBaselineTypeMix) {
+      const deficitBefore = getTypeDeficitSf(typeKey, actualByType);
+      const deficitAfter = getTypeDeficitSf(typeKey, nextActualByType);
+      const reducedBy = Math.max(0, deficitBefore - deficitAfter);
+      if (reducedBy > 0) {
+        reason = `Type fit: ${room.type} (reduced deficit by ${Math.round(reducedBy).toLocaleString()} SF).`;
+      } else {
+        reason = `Type support: ${room.type}.`;
+      }
+    } else if (targetByType.size > 0) {
+      reason = `SF-only fallback: ${room.type || "Unspecified"} is outside baseline type mix.`;
+    }
+    if (typeImprovement > 0 && targetTypeTotalSf > 0) {
+      const pct = (typeImprovement / targetTypeTotalSf) * 100;
+      reason = `${reason} Type-gap improvement ${pct.toFixed(1)}%.`;
+    }
+    return { utility, reason };
+  };
   while (remainingPool.length && selected.length < maxCandidates) {
     if (selectedSf >= minSf && (!strictFit || selectedSf <= maxSf)) break;
-    const remainingTarget = Math.max(0, targetSf - selectedSf);
-    remainingPool.sort((a, b) => {
-      const roomASf = Number(a.sf || 0) || 0;
-      const roomBSf = Number(b.sf || 0) || 0;
-      const distA = Math.abs(remainingTarget - roomASf);
-      const distB = Math.abs(remainingTarget - roomBSf);
-      const buildingPenaltyA = preferSingleBuilding && primaryBuildingKey && a.buildingKey !== primaryBuildingKey ? 120 : 0;
-      const buildingPenaltyB = preferSingleBuilding && primaryBuildingKey && b.buildingKey !== primaryBuildingKey ? 120 : 0;
-      return (distA + buildingPenaltyA) - (distB + buildingPenaltyB) + ((rng() - 0.5) * 12);
-    });
-    const pick = remainingPool.shift();
-    if (!pick) break;
-    addRoom(pick, "Added to improve total SF fit.");
+    const ranked = remainingPool
+      .map((room) => ({ room, ...evaluateFillCandidate(room) }))
+      .filter((row) => Number.isFinite(row.utility))
+      .sort((a, b) => (b.utility - a.utility) + ((rng() - 0.5) * 3));
+    const top = ranked[0] || null;
+    if (!top?.room) break;
+    const pickIdx = remainingPool.findIndex((row) => row?.id === top.room.id);
+    if (pickIdx >= 0) remainingPool.splice(pickIdx, 1);
+    addRoom(top.room, top.reason || "Added to improve total SF fit.");
     if (selectedSf > maxSf && strictFit) break;
   }
 
