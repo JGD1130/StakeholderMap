@@ -556,3 +556,50 @@ Latest completed work (maintenance marker sizing + Farrell/Fleharty recolor matc
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Pause checkpoint (post-demo prep): Maintenance Reporter roadmap
+- Decision:
+  - Pause active maintenance feature development until user demo and interest validation.
+  - Keep current admin maintenance workflow unchanged during pause.
+
+- Future direction (if resumed):
+  - Build separate non-admin reporter interface for maintenance submission.
+  - Preserve admin map as internal full-control workspace.
+
+- Reporter experience goals:
+  - Mobile-friendly, submit-focused map UI.
+  - Tap/click location -> submit issue in simple 3-4 step flow.
+  - Inputs: issue type, description, building, floor/room (if known), optional contact, optional photo.
+  - Confirmation after submit.
+
+- Reporter guardrails:
+  - No edit/delete/assign/archive/export.
+  - No admin-only metadata or internal notes.
+  - Optional limited issue visibility to reduce duplicate reports (location/type/basic status only).
+
+- Access and routing:
+  - Suggested public reporter route: `/hastings/report`.
+  - Support direct URL + QR code + facilities portal link.
+
+- Data model and intake:
+  - Save reporter submissions to same `maintenanceIssues` collection with source tag (`source = reporter/public`).
+  - Default reporter status: `new`.
+  - Include timestamp + submitted coordinates + optional location fields.
+  - Reporter submissions appear in admin maintenance dashboard automatically.
+
+- Security target:
+  - Firestore rules allow reporter/public create.
+  - Reporter/public read only limited approved fields (if public visibility is enabled).
+  - Admin retains full CRUD.
+
+- Nice-to-have backlog:
+  - Auto-detect building from clicked polygon.
+  - Photo upload path.
+  - Duplicate warning for nearby existing issues.
+  - Mobile geolocation centering.
+  - QR code deployment workflow.
+
+- Suggested implementation sequence:
+  - Phase 1: reporter page + submit flow + Firebase write.
+  - Phase 2: responsive/mobile UX hardening + optional limited issue visibility.
+  - Phase 3: photo upload + QR workflow + validation/duplicate prevention.
