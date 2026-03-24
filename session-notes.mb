@@ -734,3 +734,25 @@ Latest completed work (move-scenario fit hardening: non-assignable + occupancy-n
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (planner copilot feasibility recovery + family-fit fallback)
+- Addressed under-target scenarios (for example <85% target SF) after strict type filtering.
+- Added type-family model in copilot backend (`ai-server/server.js`) so fill logic can recover toward target without reverting to poor room choices:
+  - New type helpers:
+    - `isCopilotShopType`
+    - `getCopilotTypeFamily`
+  - Family-level target/actual gap tracking added in candidate fill utility scoring.
+- Added two-pass option generation:
+  - Pass 1: strict fit against baseline type constraints.
+  - Pass 2 (auto-run only if best strict option <85% target SF): relaxed family-level fallback with explicit assumption note.
+- Maintained hard exclusions:
+  - Non-assignable support spaces (corridor/mechanical/etc.) remain excluded.
+  - Shop remains opt-in via baseline target presence (`allowShopFallback`).
+- Option generation now shortlists top scored options after both passes and re-ranks/relabels output set consistently.
+- Result:
+  - Better chance of reaching target SF while preserving fit quality.
+  - More robust “agentic” behavior by retrying with controlled relaxation when strict pass is infeasible.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

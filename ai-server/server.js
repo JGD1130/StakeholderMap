@@ -1919,11 +1919,30 @@ function isCopilotExceptionType(typeValue = "") {
   return /(classroom|lecture|seminar|lab|laboratory|studio|shop|auditorium|performance|clinic)/i.test(t);
 }
 
+function isCopilotShopType(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return false;
+  return /(shop|maker|fabrication|wood|metal)/i.test(t);
+}
+
 function isCopilotNonAssignableType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
   return /(corridor|circulation|vestibule|lobby|stair|elevator|restroom|toilet|mechanical area|mechanical room|electrical area|electrical room|utility room|janitor|custodial closet|shaft|pipe chase)/i
     .test(t);
+}
+
+function getCopilotTypeFamily(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return "other";
+  if (isCopilotNonAssignableType(t)) return "nonassignable";
+  if (/(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(t)) return "office";
+  if (/(classroom|lecture|seminar|training|teaching)/i.test(t)) return "classroom";
+  if (/(lab|laboratory|research)/i.test(t)) return "lab";
+  if (isCopilotShopType(t)) return "shop";
+  if (/(auditor|theater|theatre|performance|stage|studio|clinic|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(t)) return "specialized";
+  if (/(storage|service|support|mechanical|electrical|utility|custod|janitor|loading dock|warehouse)/i.test(t)) return "support";
+  return "other";
 }
 
 function buildCopilotOptionScore({
@@ -2047,6 +2066,8 @@ function buildCopilotCandidates({
   preferSingleBuilding = false,
   typeTargets = new Map(),
   primaryBuildingKey = "",
+  allowOffFamilyFallback = false,
+  allowShopFallback = false,
   rng
 }) {
   const selected = [];
@@ -2054,17 +2075,29 @@ function buildCopilotCandidates({
   let selectedSf = 0;
   const maxCandidates = 30;
   const targetByType = new Map();
+  const targetByFamily = new Map();
   typeTargets.forEach((row, key) => {
     const targetSf = Number(row?.targetSf || 0) || 0;
     if (!key || targetSf <= 0) return;
     targetByType.set(key, targetSf);
+    const family = getCopilotTypeFamily(row?.type || key);
+    if (family && family !== "nonassignable") {
+      targetByFamily.set(family, (targetByFamily.get(family) || 0) + targetSf);
+    }
   });
   const targetTypeTotalSf = Array.from(targetByType.values()).reduce((sum, sf) => sum + sf, 0);
+  const targetFamilyTotalSf = Array.from(targetByFamily.values()).reduce((sum, sf) => sum + sf, 0);
   const actualByType = new Map();
+  const actualByFamily = new Map();
   const addActualTypeSf = (room) => {
     const key = normalizeCopilotTypeKey(room?.type || "");
     if (!key) return;
-    actualByType.set(key, (Number(actualByType.get(key) || 0) || 0) + (Number(room?.sf || 0) || 0));
+    const sf = Number(room?.sf || 0) || 0;
+    actualByType.set(key, (Number(actualByType.get(key) || 0) || 0) + sf);
+    const family = getCopilotTypeFamily(room?.type || "");
+    if (family && family !== "nonassignable") {
+      actualByFamily.set(family, (Number(actualByFamily.get(family) || 0) || 0) + sf);
+    }
   };
   const cloneActualByTypeWithRoom = (room) => {
     const next = new Map(actualByType);
@@ -2073,10 +2106,17 @@ function buildCopilotCandidates({
     next.set(key, (Number(next.get(key) || 0) || 0) + (Number(room?.sf || 0) || 0));
     return next;
   };
-  const computeTypeGapSf = (actualMap) => {
-    if (!targetByType.size) return 0;
+  const cloneActualByFamilyWithRoom = (room) => {
+    const next = new Map(actualByFamily);
+    const family = getCopilotTypeFamily(room?.type || "");
+    if (!family || family === "nonassignable") return next;
+    next.set(family, (Number(next.get(family) || 0) || 0) + (Number(room?.sf || 0) || 0));
+    return next;
+  };
+  const computeTypeGapSf = (actualMap, targetMap = targetByType) => {
+    if (!targetMap.size) return 0;
     let diff = 0;
-    targetByType.forEach((targetSf, key) => {
+    targetMap.forEach((targetSf, key) => {
       const actualSf = Number(actualMap?.get(key) || 0) || 0;
       diff += Math.abs(targetSf - actualSf);
     });
@@ -2087,6 +2127,21 @@ function buildCopilotCandidates({
     const targetSf = Number(targetByType.get(typeKey) || 0) || 0;
     const actualSf = Number(actualMap?.get(typeKey) || 0) || 0;
     return Math.max(0, targetSf - actualSf);
+  };
+  const getFamilyDeficitSf = (familyKey, actualMap = actualByFamily) => {
+    if (!familyKey || !targetByFamily.has(familyKey)) return 0;
+    const targetSf = Number(targetByFamily.get(familyKey) || 0) || 0;
+    const actualSf = Number(actualMap?.get(familyKey) || 0) || 0;
+    return Math.max(0, targetSf - actualSf);
+  };
+  const computeFamilyGapSf = (actualMap) => {
+    if (!targetByFamily.size) return 0;
+    let diff = 0;
+    targetByFamily.forEach((targetSf, key) => {
+      const actualSf = Number(actualMap?.get(key) || 0) || 0;
+      diff += Math.abs(targetSf - actualSf);
+    });
+    return diff;
   };
 
   const addRoom = (room, reason = "") => {
@@ -2143,6 +2198,7 @@ function buildCopilotCandidates({
     const roomSf = Number(room?.sf || 0) || 0;
     if (roomSf <= 0) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     if (isCopilotNonAssignableType(room?.type || "")) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    if (isCopilotShopType(room?.type || "") && !allowShopFallback) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     const afterSf = selectedSf + roomSf;
     if (strictFit && selectedSf >= minSf && afterSf > maxSf) {
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
@@ -2151,22 +2207,29 @@ function buildCopilotCandidates({
     const sfGapAfter = Math.abs(targetSf - afterSf);
     const sfImprovement = sfGapBefore - sfGapAfter;
 
-    const typeGapBefore = computeTypeGapSf(actualByType);
+    const typeGapBefore = targetByFamily.size > 0
+      ? computeFamilyGapSf(actualByFamily)
+      : computeTypeGapSf(actualByType);
     const nextActualByType = cloneActualByTypeWithRoom(room);
-    const typeGapAfter = computeTypeGapSf(nextActualByType);
+    const nextActualByFamily = cloneActualByFamilyWithRoom(room);
+    const typeGapAfter = targetByFamily.size > 0
+      ? computeFamilyGapSf(nextActualByFamily)
+      : computeTypeGapSf(nextActualByType);
     const typeImprovement = typeGapBefore - typeGapAfter;
 
     const typeKey = normalizeCopilotTypeKey(room?.type || "");
     const inBaselineTypeMix = typeKey && targetByType.has(typeKey);
-    if (targetByType.size > 0 && !inBaselineTypeMix) {
+    const familyKey = getCopilotTypeFamily(room?.type || "");
+    const inBaselineFamilyMix = familyKey && targetByFamily.has(familyKey);
+    if (targetByFamily.size > 0 && !inBaselineFamilyMix && !allowOffFamilyFallback) {
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     }
     const isExceptionType = isCopilotExceptionType(room?.type || "");
     const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 120 : 0;
 
     // Strongly discourage adding off-profile room types just to gain SF (fallback path only).
-    const offProfilePenalty = (targetByType.size > 0 && !inBaselineTypeMix)
-      ? (roomSf * (isExceptionType ? 1.0 : 1.35))
+    const offProfilePenalty = (targetByFamily.size > 0 && !inBaselineFamilyMix)
+      ? (roomSf * (allowOffFamilyFallback ? 1.1 : (isExceptionType ? 1.0 : 1.35)))
       : 0;
     // Penalize additions that worsen type fit.
     const typeWorsenPenalty = typeImprovement < 0 ? Math.abs(typeImprovement) * 1.25 : 0;
@@ -2183,9 +2246,18 @@ function buildCopilotCandidates({
       } else {
         reason = `Type support: ${room.type}.`;
       }
+    } else if (inBaselineFamilyMix) {
+      const familyDeficitBefore = getFamilyDeficitSf(familyKey, actualByFamily);
+      const familyDeficitAfter = getFamilyDeficitSf(familyKey, nextActualByFamily);
+      const reducedBy = Math.max(0, familyDeficitBefore - familyDeficitAfter);
+      reason = reducedBy > 0
+        ? `Type-family fit: ${familyKey} (reduced deficit by ${Math.round(reducedBy).toLocaleString()} SF).`
+        : `Type-family support: ${familyKey}.`;
+    } else if (allowOffFamilyFallback && targetByFamily.size > 0) {
+      reason = `SF fallback: ${room.type || "Unspecified"} is outside baseline type families.`;
     }
-    if (typeImprovement > 0 && targetTypeTotalSf > 0) {
-      const pct = (typeImprovement / targetTypeTotalSf) * 100;
+    if (typeImprovement > 0 && (targetFamilyTotalSf > 0 || targetTypeTotalSf > 0)) {
+      const pct = (typeImprovement / Math.max(targetFamilyTotalSf, targetTypeTotalSf)) * 100;
       reason = `${reason} Type-gap improvement ${pct.toFixed(1)}%.`;
     }
     return { utility, reason };
@@ -2289,153 +2361,191 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const seed = Number(context?.seed || Date.now()) >>> 0;
   const generatedOptions = [];
   const signatures = new Set();
+  const allowShopFallback = Array.from(typeTargets.values()).some((row) => isCopilotShopType(row?.type || ""));
+  const targetFamilySet = new Set(
+    Array.from(typeTargets.values())
+      .map((row) => getCopilotTypeFamily(row?.type || ""))
+      .filter((family) => family && family !== "nonassignable")
+  );
+  const attemptBudget = optionTargetCount * 4;
+  const maxOptionPool = optionTargetCount * 3;
+  let optionSeq = 0;
 
-  for (let attempt = 0; attempt < optionTargetCount * 4 && generatedOptions.length < optionTargetCount; attempt += 1) {
-    const rng = createSeededRng(seed + (attempt * 31));
-    const buildingBiasShift = Math.min(buildingRows.length - 1, attempt % Math.max(1, Math.min(3, buildingRows.length)));
-    const weightedBuildings = [...buildingRows].sort((a, b) => {
-      const aGap = Math.abs(a.totalSf - targetSf) + (a === buildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
-      const bGap = Math.abs(b.totalSf - targetSf) + (b === buildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
-      return aGap - bGap;
-    });
+  const canUseSupplementRoom = (room, allowOffFamilyFallback = false) => {
+    if (!room) return false;
+    if (!isCopilotExceptionType(room.type)) return false;
+    if (isCopilotShopType(room.type) && !allowShopFallback) return false;
+    if (typeTargets.size <= 0) return true;
+    if (typeTargets.has(room.typeKey)) return true;
+    if (!allowOffFamilyFallback) return false;
+    const family = getCopilotTypeFamily(room.type);
+    return Boolean(family && family !== "nonassignable" && targetFamilySet.has(family));
+  };
 
-    const primary = weightedBuildings[0] || buildingRows[0];
-    const secondary = weightedBuildings[1] || null;
-    let candidatePool = [];
-    if (preferSingleBuilding || !secondary || attempt % 2 === 0) {
-      candidatePool = [...(primary?.rooms || [])];
-      if (primary && strictFit && (primary.totalSf < (minSf * 0.92))) {
-        const deficitSf = Math.max(0, minSf - primary.totalSf);
-        const exceptionsByBuilding = new Map();
-        rooms.forEach((room) => {
-          if (room.buildingKey === primary.buildingKey) return;
-          if (!isCopilotExceptionType(room.type)) return;
-          if (typeTargets.size > 0 && !typeTargets.has(room.typeKey)) return;
-          if (!exceptionsByBuilding.has(room.buildingKey)) {
-            exceptionsByBuilding.set(room.buildingKey, []);
-          }
-          exceptionsByBuilding.get(room.buildingKey).push(room);
-        });
-        const backupRows = Array.from(exceptionsByBuilding.entries()).map(([buildingKey, list]) => {
-          const totalExceptionSf = list.reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
-          return { buildingKey, list, totalExceptionSf };
-        });
-        backupRows.sort((a, b) => {
-          const aGap = Math.abs(deficitSf - a.totalExceptionSf);
-          const bGap = Math.abs(deficitSf - b.totalExceptionSf);
-          return aGap - bGap;
-        });
-        const backup = backupRows[0] || null;
-        if (backup?.list?.length) {
-          const rankedBackup = [...backup.list].sort((a, b) => {
-            const aGap = Math.abs(deficitSf - (Number(a?.sf || 0) || 0));
-            const bGap = Math.abs(deficitSf - (Number(b?.sf || 0) || 0));
+  const runGenerationPass = ({
+    passSeedOffset = 0,
+    allowOffFamilyFallback = false,
+    relaxSingleBuilding = false
+  } = {}) => {
+    for (let attempt = 0; attempt < attemptBudget && generatedOptions.length < maxOptionPool; attempt += 1) {
+      const rng = createSeededRng(seed + passSeedOffset + (attempt * 31));
+      const buildingBiasShift = Math.min(buildingRows.length - 1, attempt % Math.max(1, Math.min(3, buildingRows.length)));
+      const weightedBuildings = [...buildingRows].sort((a, b) => {
+        const aGap = Math.abs(a.totalSf - targetSf) + (a === buildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
+        const bGap = Math.abs(b.totalSf - targetSf) + (b === buildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
+        return aGap - bGap;
+      });
+
+      const primary = weightedBuildings[0] || buildingRows[0];
+      const secondary = weightedBuildings[1] || null;
+      let candidatePool = [];
+      const singleBuildingPass = !relaxSingleBuilding && (preferSingleBuilding || !secondary || attempt % 2 === 0);
+      if (singleBuildingPass) {
+        candidatePool = [...(primary?.rooms || [])];
+        if (primary && strictFit && (primary.totalSf < (minSf * 0.92))) {
+          const deficitSf = Math.max(0, minSf - primary.totalSf);
+          const exceptionsByBuilding = new Map();
+          rooms.forEach((room) => {
+            if (room.buildingKey === primary.buildingKey) return;
+            if (!canUseSupplementRoom(room, allowOffFamilyFallback)) return;
+            if (!exceptionsByBuilding.has(room.buildingKey)) {
+              exceptionsByBuilding.set(room.buildingKey, []);
+            }
+            exceptionsByBuilding.get(room.buildingKey).push(room);
+          });
+          const backupRows = Array.from(exceptionsByBuilding.entries()).map(([buildingKey, list]) => {
+            const totalExceptionSf = list.reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
+            return { buildingKey, list, totalExceptionSf };
+          });
+          backupRows.sort((a, b) => {
+            const aGap = Math.abs(deficitSf - a.totalExceptionSf);
+            const bGap = Math.abs(deficitSf - b.totalExceptionSf);
             return aGap - bGap;
           });
-          const maxSupplemental = Math.max(2, Math.min(6, Math.ceil(deficitSf / 900)));
-          rankedBackup.slice(0, maxSupplemental).forEach((room) => candidatePool.push(room));
+          const backup = backupRows[0] || null;
+          if (backup?.list?.length) {
+            const rankedBackup = [...backup.list].sort((a, b) => {
+              const aGap = Math.abs(deficitSf - (Number(a?.sf || 0) || 0));
+              const bGap = Math.abs(deficitSf - (Number(b?.sf || 0) || 0));
+              return aGap - bGap;
+            });
+            const maxSupplemental = Math.max(2, Math.min(6, Math.ceil(deficitSf / 900)));
+            rankedBackup.slice(0, maxSupplemental).forEach((room) => candidatePool.push(room));
+          }
         }
+      } else {
+        const tertiary = weightedBuildings[2] || null;
+        const allowed = new Set([primary?.buildingKey, secondary?.buildingKey, tertiary?.buildingKey].filter(Boolean));
+        candidatePool = rooms.filter((room) => allowed.has(room.buildingKey));
       }
-    } else {
-      const tertiary = weightedBuildings[2] || null;
-      const allowed = new Set([primary?.buildingKey, secondary?.buildingKey, tertiary?.buildingKey].filter(Boolean));
-      candidatePool = rooms.filter((room) => allowed.has(room.buildingKey));
+      if (!candidatePool.length) continue;
+
+      const selected = buildCopilotCandidates({
+        rooms: candidatePool,
+        targetSf,
+        minSf,
+        maxSf,
+        strictFit,
+        preferSingleBuilding,
+        typeTargets,
+        primaryBuildingKey: primary?.buildingKey || "",
+        allowOffFamilyFallback,
+        allowShopFallback,
+        rng
+      });
+      if (!selected.length) continue;
+
+      const signature = selected
+        .map((room) => room.id)
+        .sort()
+        .join("|");
+      if (!signature || signatures.has(signature)) continue;
+      signatures.add(signature);
+
+      const totals = buildCopilotScenarioTotals(selected);
+      const score = buildCopilotOptionScore({
+        candidates: selected,
+        totals,
+        targetSf,
+        minSf,
+        maxSf,
+        strictFit,
+        preferSingleBuilding,
+        typeTargets
+      });
+      optionSeq += 1;
+      const selectedBuildings = Array.from(new Set(selected.map((room) => room.buildingLabel))).filter(Boolean);
+      const option = {
+        optionId: `option_${optionSeq}`,
+        label: `Option ${optionSeq}`,
+        title: `${context?.targetDepartment || context?.scenarioDepartment || "Department"} scenario option ${optionSeq}`,
+        score: score.score,
+        scoreBreakdown: score.breakdown,
+        buildingCount: selectedBuildings.length,
+        buildings: selectedBuildings,
+        fitSummary: {
+          targetSf: Math.round(targetSf),
+          minSf: Math.round(minSf),
+          maxSf: Math.round(maxSf),
+          totalSf: Math.round(totals.totalSF || 0),
+          sfGapPct: Number(score.breakdown?.sfGapPct || 0),
+          typeGapPct: Number(score.breakdown?.typeGapPct || 0),
+          inTargetRange: Boolean(score.breakdown?.inTargetRange)
+        },
+        scenarioTotals: totals,
+        baselineTotals: constraints?.baselineTotals || {
+          totalSF: Math.round(targetSf),
+          rooms: 0,
+          sfByType: []
+        },
+        assumptions: [
+          strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
+          preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
+          ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : []),
+          ...(allowOffFamilyFallback ? ["Auto-relaxed to type-family fallback because strict pass underfilled target SF."] : [])
+        ],
+        selectionCriteria: [
+          "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
+          "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+          "Type fit weighted highest against baseline room-type SF mix (family-level fallback only when needed).",
+          "Total SF fit optimized toward baseline target range.",
+          ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : [])
+        ],
+        nextSteps: [
+          "Review adjacency and room-function impacts.",
+          "Apply selected option to Planning Scenario for visual validation.",
+          "Run scenario comparison and export summary for stakeholder review."
+        ],
+        recommendedCandidates: selected.map((room) => ({
+          roomId: room.roomId,
+          id: room.id,
+          revitId: room.revitId,
+          buildingLabel: room.buildingLabel,
+          floorId: room.floorId,
+          floorName: room.floorName,
+          roomLabel: room.roomLabel,
+          type: room.type,
+          sf: Math.round(Number(room.sf || 0) || 0),
+          rationale: room.rationale || "Selected for best-fit coverage."
+        }))
+      };
+      option.whyThisOption = buildCopilotOptionNarrative({
+        option,
+        targetSf,
+        minSf,
+        maxSf
+      });
+      generatedOptions.push(option);
     }
-    if (!candidatePool.length) continue;
+  };
 
-    const selected = buildCopilotCandidates({
-      rooms: candidatePool,
-      targetSf,
-      minSf,
-      maxSf,
-      strictFit,
-      preferSingleBuilding,
-      typeTargets,
-      primaryBuildingKey: primary?.buildingKey || "",
-      rng
-    });
-    if (!selected.length) continue;
-
-    const signature = selected
-      .map((room) => room.id)
-      .sort()
-      .join("|");
-    if (!signature || signatures.has(signature)) continue;
-    signatures.add(signature);
-
-    const totals = buildCopilotScenarioTotals(selected);
-    const score = buildCopilotOptionScore({
-      candidates: selected,
-      totals,
-      targetSf,
-      minSf,
-      maxSf,
-      strictFit,
-      preferSingleBuilding,
-      typeTargets
-    });
-    const optionId = `option_${generatedOptions.length + 1}`;
-    const selectedBuildings = Array.from(new Set(selected.map((room) => room.buildingLabel))).filter(Boolean);
-    const option = {
-      optionId,
-      label: `Option ${generatedOptions.length + 1}`,
-      title: `${context?.targetDepartment || context?.scenarioDepartment || "Department"} scenario option ${generatedOptions.length + 1}`,
-      score: score.score,
-      scoreBreakdown: score.breakdown,
-      buildingCount: selectedBuildings.length,
-      buildings: selectedBuildings,
-      fitSummary: {
-        targetSf: Math.round(targetSf),
-        minSf: Math.round(minSf),
-        maxSf: Math.round(maxSf),
-        totalSf: Math.round(totals.totalSF || 0),
-        sfGapPct: Number(score.breakdown?.sfGapPct || 0),
-        typeGapPct: Number(score.breakdown?.typeGapPct || 0),
-        inTargetRange: Boolean(score.breakdown?.inTargetRange)
-      },
-      scenarioTotals: totals,
-      baselineTotals: constraints?.baselineTotals || {
-        totalSF: Math.round(targetSf),
-        rooms: 0,
-        sfByType: []
-      },
-      assumptions: [
-        strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
-        preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
-        ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : [])
-      ],
-      selectionCriteria: [
-        "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
-        "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
-        "Type fit weighted highest against baseline room-type SF mix.",
-        "Total SF fit optimized toward baseline target range.",
-        ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : [])
-      ],
-      nextSteps: [
-        "Review adjacency and room-function impacts.",
-        "Apply selected option to Planning Scenario for visual validation.",
-        "Run scenario comparison and export summary for stakeholder review."
-      ],
-      recommendedCandidates: selected.map((room) => ({
-        roomId: room.roomId,
-        id: room.id,
-        revitId: room.revitId,
-        buildingLabel: room.buildingLabel,
-        floorId: room.floorId,
-        floorName: room.floorName,
-        roomLabel: room.roomLabel,
-        type: room.type,
-        sf: Math.round(Number(room.sf || 0) || 0),
-        rationale: room.rationale || "Selected for best-fit coverage."
-      }))
-    };
-    option.whyThisOption = buildCopilotOptionNarrative({
-      option,
-      targetSf,
-      minSf,
-      maxSf
-    });
-    generatedOptions.push(option);
+  runGenerationPass({ passSeedOffset: 0, allowOffFamilyFallback: false, relaxSingleBuilding: false });
+  const bestStrictSf = generatedOptions.reduce(
+    (max, option) => Math.max(max, Number(option?.scenarioTotals?.totalSF || 0) || 0),
+    0
+  );
+  if (targetSf > 0 && bestStrictSf < (targetSf * 0.85)) {
+    runGenerationPass({ passSeedOffset: 1000003, allowOffFamilyFallback: true, relaxSingleBuilding: true });
   }
 
   if (!generatedOptions.length) {
@@ -2443,11 +2553,14 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   }
 
   generatedOptions.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-  generatedOptions.forEach((option, idx) => {
+  const shortlistedOptions = generatedOptions.slice(0, optionTargetCount);
+  shortlistedOptions.forEach((option, idx) => {
+    option.optionId = `option_${idx + 1}`;
+    option.label = `Option ${idx + 1}`;
     option.rank = idx + 1;
   });
-  const best = generatedOptions[0];
-  const runnerUp = generatedOptions[1] || null;
+  const best = shortlistedOptions[0];
+  const runnerUp = shortlistedOptions[1] || null;
   const runId = `copilot_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
   return {
@@ -2471,7 +2584,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       recommendedOptionId: best.optionId,
       selectedOptionId: best.optionId,
       comparisonSummary: buildCopilotComparisonSummary(best, runnerUp),
-      generatedOptions
+      generatedOptions: shortlistedOptions
     }
   };
 }
