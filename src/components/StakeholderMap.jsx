@@ -16553,27 +16553,135 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           occupiedDepartments: Array.from(occupiedDepartments).sort()
         };
       };
-      const recommended = normalizeScenarioCandidates(out?.recommendedCandidates);
-      const copilotOptions = Array.isArray(out?.copilot?.generatedOptions)
-        ? out.copilot.generatedOptions.map((option, idx) => {
-            const normalizedCandidates = normalizeScenarioCandidates(option?.recommendedCandidates);
-            const displacementSummary = option?.displacementSummary && typeof option.displacementSummary === 'object'
-              ? option.displacementSummary
-              : summarizeOptionDisplacement(normalizedCandidates);
-            return {
-              ...option,
-              optionId: option?.optionId || `option_${idx + 1}`,
-              recommendedCandidates: normalizedCandidates,
-              displacementSummary,
-              fitSummary: option?.fitSummary || {
-                totalSf: Math.round(Number(option?.scenarioTotals?.totalSF || 0) || 0),
-                sfGapPct: Number(option?.scoreBreakdown?.sfGapPct || 0) || 0,
-                typeGapPct: Number(option?.scoreBreakdown?.typeGapPct || 0) || 0,
-                inTargetRange: Boolean(option?.scoreBreakdown?.inTargetRange)
+      const baselineTotalSF = baselineTotals?.totalSF || out?.baselineTotals?.totalSF || 0;
+      const tolerancePct = Math.round(((scenarioConstraints?.targetSfTolerance ?? 0.1) * 100));
+      const minTargetSf = baselineTotalSF ? baselineTotalSF * (1 - (scenarioConstraints?.targetSfTolerance ?? 0.1)) : 0;
+      const maxTargetSf = baselineTotalSF ? baselineTotalSF * (1 + (scenarioConstraints?.targetSfTolerance ?? 0.1)) : 0;
+      const applyScenarioCandidateConstraints = (seedCandidates = []) => {
+        let optionCandidates = Array.isArray(seedCandidates) ? [...seedCandidates] : [];
+        let optionNote = '';
+        const preferredBuildingForOption = norm(
+          inferredBuilding ||
+          pickPreferredScenarioBuilding(optionCandidates, { preferAcademicFit, lowFitBuildingKeys }) ||
+          getPrimaryScenarioBuilding(optionCandidates) ||
+          ''
+        );
+        if (baselineTotals) {
+          const { candidates: filled, added } = fillScenarioCandidatesToBaseline(
+            optionCandidates,
+            inventory,
+            baselineTotals,
+            {
+              targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
+              maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+              primaryBuilding: preferredBuildingForOption,
+              strictFit: aiCreateScenarioStrict,
+              preferAcademicFit,
+              scenarioDepartment: inferredDept || scenarioAssignedDept || ''
+            }
+          );
+          if (added > 0) {
+            optionCandidates = filled;
+            optionNote = `Auto-filled ${added} rooms to better match baseline SF and room-type mix.`;
+          }
+        }
+        const primaryBuildingForOption = norm(
+          preferredBuildingForOption ||
+          pickPreferredScenarioBuilding(optionCandidates, { preferAcademicFit, lowFitBuildingKeys }) ||
+          getPrimaryScenarioBuilding(optionCandidates) ||
+          ''
+        );
+        if (preferSingleTargetBuilding && primaryBuildingForOption) {
+          const constrained = optionCandidates.filter((c) => {
+            const b = norm(c?.buildingLabel || '');
+            if (b === primaryBuildingForOption) return true;
+            return isScenarioCrossBuildingExceptionType(c?.type);
+          });
+          if (constrained.length) {
+            optionCandidates = constrained;
+            optionNote = `${optionNote ? optionNote + ' ' : ''}Constrained scenario to a single building (${primaryBuildingForOption}), allowing only classroom/specialized exceptions outside if needed.`;
+          }
+          if (baselineTotals) {
+            const allowedInventory = inventory.filter((room) => {
+              const b = norm(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
+              if (b === primaryBuildingForOption) return true;
+              const t = room?.type ?? room?.roomType ?? '';
+              return isScenarioCrossBuildingExceptionType(t);
+            });
+            const { candidates: refilled, added } = fillScenarioCandidatesToBaseline(
+              optionCandidates,
+              allowedInventory,
+              baselineTotals,
+              {
+                targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
+                maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+                primaryBuilding: primaryBuildingForOption,
+                strictFit: aiCreateScenarioStrict,
+                preferAcademicFit,
+                scenarioDepartment: inferredDept || scenarioAssignedDept || ''
               }
-            };
-          })
+            );
+            if (added > 0) {
+              optionCandidates = refilled;
+              optionNote = `${optionNote ? optionNote + ' ' : ''}Auto-filled ${added} rooms to better match baseline SF.`;
+            }
+          }
+        }
+        optionCandidates = sortScenarioRoomsByPreference(optionCandidates, primaryBuildingForOption);
+        return {
+          candidates: optionCandidates,
+          primaryBuilding: primaryBuildingForOption,
+          note: optionNote
+        };
+      };
+      const decorateCopilotOption = (option, candidates) => {
+        const safeCandidates = Array.isArray(candidates) ? candidates : [];
+        const totalSf = safeCandidates.reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
+        const buildings = Array.from(
+          new Set(
+            safeCandidates
+              .map((row) => String(row?.buildingLabel || '').trim())
+              .filter(Boolean)
+          )
+        );
+        const sfGapPct = baselineTotalSF > 0 ? (Math.abs(totalSf - baselineTotalSF) / baselineTotalSF) * 100 : 0;
+        return {
+          ...option,
+          recommendedCandidates: safeCandidates,
+          buildings,
+          buildingCount: buildings.length,
+          scenarioTotals: {
+            ...(option?.scenarioTotals || {}),
+            totalSF: Math.round(totalSf),
+            rooms: safeCandidates.length
+          },
+          displacementSummary: summarizeOptionDisplacement(safeCandidates),
+          fitSummary: {
+            ...(option?.fitSummary || {}),
+            targetSf: Math.round(baselineTotalSF || 0),
+            minSf: Math.round(minTargetSf || 0),
+            maxSf: Math.round(maxTargetSf || 0),
+            totalSf: Math.round(totalSf),
+            sfGapPct: Number(sfGapPct.toFixed(2)),
+            typeGapPct: Number(option?.fitSummary?.typeGapPct ?? option?.scoreBreakdown?.typeGapPct ?? 0) || 0,
+            inTargetRange: baselineTotalSF > 0
+              ? (totalSf >= minTargetSf && totalSf <= maxTargetSf)
+              : Boolean(option?.fitSummary?.inTargetRange ?? option?.scoreBreakdown?.inTargetRange)
+          }
+        };
+      };
+      const recommended = normalizeScenarioCandidates(out?.recommendedCandidates);
+      const copilotOptionsRaw = Array.isArray(out?.copilot?.generatedOptions)
+        ? out.copilot.generatedOptions.map((option, idx) => ({
+            ...option,
+            optionId: option?.optionId || `option_${idx + 1}`,
+            recommendedCandidates: normalizeScenarioCandidates(option?.recommendedCandidates)
+          }))
         : [];
+      const copilotOptions = copilotOptionsRaw.map((option) => {
+        const processed = applyScenarioCandidateConstraints(option?.recommendedCandidates || []);
+        return decorateCopilotOption(option, processed.candidates);
+      });
       const selectedCopilotOptionId =
         String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '').trim();
       const selectedCopilotOption = selectedCopilotOptionId
@@ -16582,80 +16690,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const effectiveRecommended = selectedCopilotOption?.recommendedCandidates?.length
         ? selectedCopilotOption.recommendedCandidates
         : recommended;
-      const preferredBuilding = norm(
-        inferredBuilding ||
-        pickPreferredScenarioBuilding(effectiveRecommended, { preferAcademicFit, lowFitBuildingKeys }) ||
-        getPrimaryScenarioBuilding(effectiveRecommended) ||
-        ''
-      );
-      let adjustedCandidates = effectiveRecommended;
-      let autoFillNote = '';
-      if (baselineTotals) {
-          const { candidates: filled, added } = fillScenarioCandidatesToBaseline(
-            effectiveRecommended,
-            inventory,
-            baselineTotals,
-            {
-            targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
-            maxCandidates: aiCreateScenarioStrict ? 40 : 30,
-            primaryBuilding: preferredBuilding,
-            strictFit: aiCreateScenarioStrict,
-            preferAcademicFit,
-            scenarioDepartment: inferredDept || scenarioAssignedDept || ''
-          }
-        );
-        if (added > 0) {
-          adjustedCandidates = filled;
-          autoFillNote = `Auto-filled ${added} rooms to better match baseline SF and room-type mix.`;
-        }
-      }
-      const isCrossBuildingExceptionCandidate = (c) =>
-        isScenarioCrossBuildingExceptionType(c?.type);
-      const primaryBuilding = norm(
-        preferredBuilding ||
-        pickPreferredScenarioBuilding(adjustedCandidates, { preferAcademicFit, lowFitBuildingKeys }) ||
-        getPrimaryScenarioBuilding(adjustedCandidates) ||
-        ''
-      );
-      if (preferSingleTargetBuilding && primaryBuilding) {
-        const constrained = adjustedCandidates.filter((c) => {
-          const b = norm(c?.buildingLabel || '');
-          if (b === primaryBuilding) return true;
-          return isCrossBuildingExceptionCandidate(c);
-        });
-        if (constrained.length) {
-          adjustedCandidates = constrained;
-          autoFillNote = `${autoFillNote ? autoFillNote + ' ' : ''}Constrained scenario to a single building (${primaryBuilding}), allowing only classroom/specialized exceptions outside if needed.`;
-        }
-        if (baselineTotals) {
-          const allowedInventory = inventory.filter((room) => {
-            const b = norm(room?.buildingLabel ?? room?.building ?? room?.buildingName ?? '');
-            if (b === primaryBuilding) return true;
-            const t = room?.type ?? room?.roomType ?? '';
-            return isScenarioCrossBuildingExceptionType(t);
-          });
-          const { candidates: refilled, added } = fillScenarioCandidatesToBaseline(
-            adjustedCandidates,
-            allowedInventory,
-            baselineTotals,
-            {
-              targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
-              maxCandidates: aiCreateScenarioStrict ? 40 : 30,
-              primaryBuilding,
-              strictFit: aiCreateScenarioStrict,
-              preferAcademicFit,
-              scenarioDepartment: inferredDept || scenarioAssignedDept || ''
-            }
-          );
-          if (added > 0) {
-            adjustedCandidates = refilled;
-            autoFillNote = `${autoFillNote ? autoFillNote + ' ' : ''}Auto-filled ${added} rooms to better match baseline SF.`;
-          }
-        }
-      }
-      adjustedCandidates = sortScenarioRoomsByPreference(adjustedCandidates, primaryBuilding);
-      const baselineTotalSF = baselineTotals?.totalSF || out?.baselineTotals?.totalSF || 0;
-      const tolerancePct = Math.round(((scenarioConstraints?.targetSfTolerance ?? 0.1) * 100));
+      const effectiveProcessing = applyScenarioCandidateConstraints(effectiveRecommended);
+      const adjustedCandidates = effectiveProcessing.candidates;
+      const autoFillNote = effectiveProcessing.note;
       const baselineCriteria = baselineTotalSF
         ? [`Aim for total SF within +/-${tolerancePct}% of baseline department total SF (${Math.round(baselineTotalSF).toLocaleString()} SF).`]
         : [];
@@ -16679,10 +16716,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptions?.[0]?.optionId || '',
           generatedOptions: copilotOptions.map((option) => {
             if (String(option?.optionId || '') === selectedCopilotOptionId) {
-              return {
+              return decorateCopilotOption({
                 ...option,
-                recommendedCandidates: adjustedCandidates
-              };
+                whyThisOption: Array.isArray(option?.whyThisOption) ? option.whyThisOption : []
+              }, adjustedCandidates);
             }
             return option;
           })

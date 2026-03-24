@@ -621,6 +621,20 @@ Latest completed work (planner copilot phase 1 wiring)
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
 
+Latest completed work (copilot single-building guardrail tightening)
+- Tightened Planner Copilot to better preserve single-building intent for department relocation:
+  - Increased scoring penalty for building spread when single-building preference is active.
+  - Reduced supplemental exception pooling in strict-fit mode:
+    - Instead of pulling exception rooms from all buildings, copilot now chooses one best backup building and caps supplemental exception rooms.
+- Strengthened frontend post-processing consistency:
+  - Guardrail constraints (baseline fill + single-building constraint logic) are now applied to each copilot option before display.
+  - Option cards now recalculate displayed totals/building count/displacement from constrained candidate sets, so UI reflects actual guarded options.
+- Result:
+  - Copilot options should no longer drift to 3-4 building spreads under the same single-building policy used by scenario selection.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
+
 Workflow note
 - Continue default workflow of commit + push to `main` after requested changes unless user says otherwise.
 

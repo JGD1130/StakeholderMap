@@ -1984,12 +1984,14 @@ function buildCopilotOptionScore({
     typeGapPct = targetSum > 0 ? diffSum / targetSum : 0;
   }
 
-  const singlePenalty = preferSingleBuilding ? Math.max(0, buildingCount - 1) * 0.18 : 0;
+  const buildingSpreadPenalty = preferSingleBuilding
+    ? Math.max(0, buildingCount - 1) * 12
+    : Math.max(0, buildingCount - 1) * 2;
   const occupiedRoomCount = Number(displacementSummary?.occupiedRoomCount || 0) || 0;
   const occupiedSf = Number(displacementSummary?.occupiedSf || 0) || 0;
   const occupiedSfPenalty = targetSf > 0 ? (occupiedSf / targetSf) * 12 : 0;
   const displacementPenalty = Math.min(22, (occupiedRoomCount * 1.8) + occupiedSfPenalty);
-  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - (singlePenalty * 25) - displacementPenalty;
+  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - buildingSpreadPenalty - displacementPenalty;
   if (total >= minSf && total <= maxSf) score += 8;
   if (overUpper) score -= 24;
   if (belowLower) score -= 10;
@@ -2003,6 +2005,7 @@ function buildCopilotOptionScore({
       buildingCount,
       occupiedRoomCount,
       occupiedSf: Math.round(occupiedSf),
+      buildingSpreadPenalty: Number(buildingSpreadPenalty.toFixed(2)),
       displacementPenalty: Number(displacementPenalty.toFixed(2)),
       strictFit,
       inTargetRange: total >= minSf && total <= maxSf,
@@ -2259,11 +2262,35 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     if (preferSingleBuilding || !secondary || attempt % 2 === 0) {
       candidatePool = [...(primary?.rooms || [])];
       if (primary && strictFit && (primary.totalSf < (minSf * 0.92))) {
+        const deficitSf = Math.max(0, minSf - primary.totalSf);
+        const exceptionsByBuilding = new Map();
         rooms.forEach((room) => {
           if (room.buildingKey === primary.buildingKey) return;
           if (!isCopilotExceptionType(room.type)) return;
-          candidatePool.push(room);
+          if (!exceptionsByBuilding.has(room.buildingKey)) {
+            exceptionsByBuilding.set(room.buildingKey, []);
+          }
+          exceptionsByBuilding.get(room.buildingKey).push(room);
         });
+        const backupRows = Array.from(exceptionsByBuilding.entries()).map(([buildingKey, list]) => {
+          const totalExceptionSf = list.reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
+          return { buildingKey, list, totalExceptionSf };
+        });
+        backupRows.sort((a, b) => {
+          const aGap = Math.abs(deficitSf - a.totalExceptionSf);
+          const bGap = Math.abs(deficitSf - b.totalExceptionSf);
+          return aGap - bGap;
+        });
+        const backup = backupRows[0] || null;
+        if (backup?.list?.length) {
+          const rankedBackup = [...backup.list].sort((a, b) => {
+            const aGap = Math.abs(deficitSf - (Number(a?.sf || 0) || 0));
+            const bGap = Math.abs(deficitSf - (Number(b?.sf || 0) || 0));
+            return aGap - bGap;
+          });
+          const maxSupplemental = Math.max(2, Math.min(6, Math.ceil(deficitSf / 900)));
+          rankedBackup.slice(0, maxSupplemental).forEach((room) => candidatePool.push(room));
+        }
       }
     } else {
       const tertiary = weightedBuildings[2] || null;
