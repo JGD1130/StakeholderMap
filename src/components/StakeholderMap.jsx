@@ -24774,6 +24774,67 @@ useEffect(() => {
                   </div>
                 )}
               </div>
+              {!!maintenanceDashboard.recentCompleted.length && (
+                <div style={{ marginTop: 8, fontSize: 10.8, color: '#475467' }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>Recently Completed</div>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    {maintenanceDashboard.recentCompleted.map((issue) => {
+                      const whenMs = parseFirestoreTimestampMs(issue?.completedAt || issue?.updatedAt);
+                      const whenLabel = whenMs > 0 ? new Date(whenMs).toLocaleDateString() : '';
+                      const locationBits = [
+                        issue?.buildingName || issue?.buildingId || 'Unassigned',
+                        issue?.floorName || issue?.floorId || '',
+                        issue?.roomName || issue?.roomId || ''
+                      ].filter(Boolean);
+                      return (
+                        <div
+                          key={`maint-complete-${issue.id}`}
+                          style={{
+                            border: '1px solid #dbe4f0',
+                            borderRadius: 6,
+                            padding: 5,
+                            background: '#f8fafc'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                            <div style={{ fontWeight: 600, color: '#334155' }}>{issue.issueType || 'Issue'}</div>
+                            <div style={{ fontSize: 10.2, color: '#64748b' }}>{whenLabel}</div>
+                          </div>
+                          <div style={{ marginTop: 2, fontSize: 10.2, color: '#667085' }}>
+                            {locationBits.join(' / ')}
+                          </div>
+                          <div style={{ marginTop: 4, display: 'grid', gridTemplateColumns: maintenanceCanWrite ? '1fr auto' : '1fr', gap: 6 }}>
+                            <button
+                              className="btn"
+                              style={{ width: '100%' }}
+                              onClick={() => {
+                                setMaintenanceSelectedIssueId(String(issue?.id || ''));
+                                const coords = issue?.coordinates;
+                                if (Array.isArray(coords) && Number.isFinite(Number(coords[0])) && Number.isFinite(Number(coords[1])) && mapRef.current) {
+                                  try {
+                                    mapRef.current.flyTo({ center: [Number(coords[0]), Number(coords[1])], zoom: Math.max(16, Number(mapRef.current.getZoom?.() || 16)) });
+                                  } catch {}
+                                }
+                              }}
+                            >
+                              Focus
+                            </button>
+                            {maintenanceCanWrite && (
+                              <button
+                                className="btn"
+                                onClick={() => handlePatchMaintenanceIssue(issue.id, { status: 'open' })}
+                                disabled={maintenanceStatusSavingId === issue.id}
+                              >
+                                Reopen
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {!!maintenanceDashboard.byBuilding.length && (
                 <div style={{ marginTop: 8, fontSize: 10.8, color: '#475467' }}>
                   <div style={{ fontWeight: 700, marginBottom: 3 }}>Open by Building</div>

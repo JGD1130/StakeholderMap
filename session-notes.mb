@@ -529,3 +529,15 @@ Latest completed work (maintenance floor/room pickers in modal)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance recently-completed action list)
+- Added a dedicated `Recently Completed` section to the Maintenance Tracker panel (admin map, maintenance mode):
+  - Shows latest completed issues with type, location, and completion date.
+  - Added `Focus` action to fly to issue coordinates and select the issue.
+  - Added `Reopen` action (admin/write users) to set status back to `Open`.
+- Result:
+  - Completed work is now actionable without losing context in long issue lists.
+  - Faster QA/reopen workflow for incorrectly closed or recurring issues.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)
