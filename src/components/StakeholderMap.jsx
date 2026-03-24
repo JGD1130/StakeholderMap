@@ -16675,6 +16675,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           ''
         );
         if (preferSingleTargetBuilding && primaryBuildingForOption) {
+          const preSingleBuildingCandidates = Array.isArray(optionCandidates) ? [...optionCandidates] : [];
           let crossBuildingDeficitTypeKeys = getScenarioBaselineDeficitTypeKeys(
             baselineTotals,
             optionCandidates
@@ -16721,6 +16722,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
               optionCandidates = refilled;
               optionNote = `${optionNote ? optionNote + ' ' : ''}Auto-filled ${added} rooms to better match baseline SF.`;
             }
+          }
+          const constrainedTotalSf = (Array.isArray(optionCandidates) ? optionCandidates : [])
+            .reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
+          const severeSingleBuildingUnderfill = baselineTotalSF > 0 && constrainedTotalSf < (baselineTotalSF * 0.85);
+          if (severeSingleBuildingUnderfill && preSingleBuildingCandidates.length) {
+            optionCandidates = preSingleBuildingCandidates;
+            optionNote = `${optionNote ? optionNote + ' ' : ''}Single-building constraint relaxed because constrained fit underfilled target SF by more than 15%.`;
           }
         }
         optionCandidates = sortScenarioRoomsByPreference(optionCandidates, primaryBuildingForOption);

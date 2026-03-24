@@ -777,3 +777,18 @@ Latest completed work (underfill recovery + messaging consistency)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (athletics/shop exclusion hardening + single-building feasibility relax)
+- Further tightened move-scenario copilot to avoid discipline-mismatched spaces and severe underfill outcomes:
+  - Added athletics type detection in backend and excluded athletics/gym/arena spaces unless explicitly requested or discipline-aligned.
+  - Kept shop exclusion logic and made both shop + athletics target gating intent-aware.
+  - Added stronger underfill penalty in copilot scoring to down-rank severe under-target options.
+- Added frontend feasibility guard for post-processing constraints:
+  - If single-building constraint causes severe underfill (>15% below baseline target SF), the constraint is automatically relaxed for that option and noted in criteria.
+- Result:
+  - Fewer inappropriate room types for non-athletics academic moves.
+  - Better protection against presenting heavily underfilled options due to over-constrained single-building filtering.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

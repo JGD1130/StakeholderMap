@@ -1925,6 +1925,12 @@ function isCopilotShopType(typeValue = "") {
   return /(shop|maker|fabrication|wood|metal)/i.test(t);
 }
 
+function isCopilotAthleticsType(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return false;
+  return /(athletic|athletics|gym|arena|fieldhouse|locker room|sports|intercollegiate)/i.test(t);
+}
+
 function isCopilotNonAssignableType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
@@ -1936,6 +1942,7 @@ function getCopilotTypeFamily(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return "other";
   if (isCopilotNonAssignableType(t)) return "nonassignable";
+  if (isCopilotAthleticsType(t)) return "athletics";
   if (/(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(t)) return "office";
   if (/(classroom|lecture|seminar|training|teaching)/i.test(t)) return "classroom";
   if (/(lab|laboratory|research)/i.test(t)) return "lab";
@@ -1952,6 +1959,14 @@ function shouldAllowShopByIntent(requestText = "", deptText = "") {
   if (/(facilit|maintenance|operations|physical plant|industrial|engineering tech|theater|theatre|music|performing art|studio art|fine art|art)/i.test(dept)) {
     return true;
   }
+  return false;
+}
+
+function shouldAllowAthleticsByIntent(requestText = "", deptText = "") {
+  const req = normalizeCopilotText(requestText).toLowerCase();
+  const dept = normalizeCopilotText(deptText).toLowerCase();
+  if (/(athletic|athletics|sports|gym|fieldhouse|kinesiology|physical education|pe|recreation)/i.test(req)) return true;
+  if (/(athletic|athletics|sports|kinesiology|physical education|recreation)/i.test(dept)) return true;
   return false;
 }
 
@@ -2081,6 +2096,7 @@ function buildCopilotCandidates({
   primaryBuildingKey = "",
   allowOffFamilyFallback = false,
   allowShopFallback = false,
+  allowAthleticsFallback = false,
   rng
 }) {
   const selected = [];
@@ -2212,6 +2228,7 @@ function buildCopilotCandidates({
     if (roomSf <= 0) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     if (isCopilotNonAssignableType(room?.type || "")) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     if (isCopilotShopType(room?.type || "") && !allowShopFallback) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    if (isCopilotAthleticsType(room?.type || "") && !allowAthleticsFallback) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     const afterSf = selectedSf + roomSf;
     if (strictFit && selectedSf >= minSf && afterSf > maxSf) {
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
@@ -2329,9 +2346,15 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const maxSf = targetSf * (1 + tolerance);
   const typeTargets = buildCopilotTypeTargetMap(constraints);
   const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
+  const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
   if (!allowShopTargeting && typeTargets.size > 0) {
     Array.from(typeTargets.entries()).forEach(([key, row]) => {
       if (isCopilotShopType(row?.type || key)) typeTargets.delete(key);
+    });
+  }
+  if (!allowAthleticsTargeting && typeTargets.size > 0) {
+    Array.from(typeTargets.entries()).forEach(([key, row]) => {
+      if (isCopilotAthleticsType(row?.type || key)) typeTargets.delete(key);
     });
   }
   const offlineSet = new Set((constraints?.offlineBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
@@ -2343,6 +2366,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .map(toCopilotRoom)
     .filter(Boolean)
     .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
+    .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
 
   const filteredRooms = normalizedRooms.filter((room) => {
@@ -2360,7 +2384,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const seed = Number(context?.seed || Date.now()) >>> 0;
   const generatedOptions = [];
   const signatures = new Set();
-  const allowShopFallback = Array.from(typeTargets.values()).some((row) => isCopilotShopType(row?.type || ""));
+  const allowShopFallback = allowShopTargeting && Array.from(typeTargets.values()).some((row) => isCopilotShopType(row?.type || ""));
+  const allowAthleticsFallback = allowAthleticsTargeting && Array.from(typeTargets.values()).some((row) => isCopilotAthleticsType(row?.type || ""));
   const targetFamilySet = new Set(
     Array.from(typeTargets.values())
       .map((row) => getCopilotTypeFamily(row?.type || ""))
@@ -2374,6 +2399,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     if (!room) return false;
     if (!isCopilotExceptionType(room.type)) return false;
     if (isCopilotShopType(room.type) && !allowShopFallback) return false;
+    if (isCopilotAthleticsType(room.type) && !allowAthleticsFallback) return false;
     if (typeTargets.size <= 0) return true;
     if (typeTargets.has(room.typeKey)) return true;
     if (!allowOffFamilyFallback) return false;
@@ -2477,6 +2503,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         primaryBuildingKey: primary?.buildingKey || "",
         allowOffFamilyFallback,
         allowShopFallback,
+        allowAthleticsFallback,
         rng
       });
       if (!selected.length) continue;
@@ -2529,6 +2556,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
           ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : []),
           ...(!allowShopTargeting ? ["Shop/maker spaces are excluded unless explicitly requested or discipline-aligned."] : []),
+          ...(!allowAthleticsTargeting ? ["Athletics/gym/arena spaces are excluded unless explicitly requested or discipline-aligned."] : []),
           ...(allowOffFamilyFallback ? ["Auto-relaxed to type-family fallback because strict pass underfilled target SF."] : [])
         ],
         selectionCriteria: [
