@@ -9299,6 +9299,7 @@ const StakeholderMap = ({
   const [aiCreateScenarioErr, setAiCreateScenarioErr] = useState('');
   const [aiCreateScenarioResult, setAiCreateScenarioResult] = useState(null);
   const [aiCreateScenarioStrict, setAiCreateScenarioStrict] = useState(true);
+  const [aiCreateScenarioMode, setAiCreateScenarioMode] = useState('copilot');
   const [aiScenarioComparePending, setAiScenarioComparePending] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState('');
@@ -15722,8 +15723,9 @@ useEffect(() => {
     return data;
   }, []);
 
-  const createMoveScenario = useCallback(async ({ request, context, inventory, constraints }) => {
-    const res = await guardedAiFetch('/ai/create-move-scenario', {
+  const createMoveScenario = useCallback(async ({ request, context, inventory, constraints, mode = 'standard' }) => {
+    const endpoint = mode === 'copilot' ? '/ai/create-move-scenario-copilot' : '/ai/create-move-scenario';
+    const res = await guardedAiFetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ request, context, inventory, constraints })
@@ -16477,56 +16479,83 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         scenarioConstraints.baselineTotals = baselineTotalsForConstraints;
       }
 
-      const out = await createMoveScenario({ request, context, inventory, constraints: scenarioConstraints });
-      const recommended = Array.isArray(out?.recommendedCandidates)
-        ? out.recommendedCandidates.map((c) => {
-          const keys = [c?.roomId, c?.id, c?.revitId].filter((v) => v != null).map((v) => String(v));
-          const match = keys.map((k) => inventoryLookup.get(k)).find(Boolean) || findInventoryMatchForCandidate(c);
-          if (!match) {
+      const out = await createMoveScenario({
+        request,
+        context: {
+          ...context,
+          copilotOptionCount: 4
+        },
+        inventory,
+        constraints: scenarioConstraints,
+        mode: aiCreateScenarioMode
+      });
+      const normalizeScenarioCandidates = (candidateRows = []) => (
+        Array.isArray(candidateRows)
+          ? candidateRows.map((c) => {
+            const keys = [c?.roomId, c?.id, c?.revitId].filter((v) => v != null).map((v) => String(v));
+            const match = keys.map((k) => inventoryLookup.get(k)).find(Boolean) || findInventoryMatchForCandidate(c);
+            if (!match) {
+              return {
+                ...c,
+                floorName: c?.floorName || c?.floorId || '',
+                rationale: sanitizeVacancyLanguage(c?.rationale)
+              };
+            }
+            const matchSf = Number(match.sf ?? match.area ?? match.areaSF ?? 0);
+            const candidateSf = Number(c?.sf ?? 0);
             return {
               ...c,
-              floorName: c?.floorName || c?.floorId || '',
+              roomId: c?.roomId || match.roomId || match.id || '',
+              id: c?.id || match.id || match.roomId || '',
+              revitId: c?.revitId ?? match.revitId ?? null,
+              roomGuid: c?.roomGuid ?? match.roomGuid ?? match.revitId ?? null,
+              buildingLabel: c?.buildingLabel || match.buildingLabel || match.buildingName || match.building || '',
+              roomLabel: c?.roomLabel || match.roomLabel || match.roomNumber || '',
+              type: c?.type || match.type || match.roomType || '',
+              sf: Number.isFinite(candidateSf) && candidateSf > 0
+                ? candidateSf
+                : (Number.isFinite(matchSf) ? matchSf : 0),
+              vacancy: match.vacancy ?? c.vacancy,
+              occupant: match.occupant ?? c.occupant,
+              occupancyStatus: match.occupancyStatus ?? c.occupancyStatus,
+              occupantDept: match.occupantDept ?? c.occupantDept,
+              department: match.department ?? c.department,
+              floorName: c?.floorName || c?.floorId || match.floorName || match.floorId || '',
               rationale: sanitizeVacancyLanguage(c?.rationale)
             };
-          }
-          const matchSf = Number(match.sf ?? match.area ?? match.areaSF ?? 0);
-          const candidateSf = Number(c?.sf ?? 0);
-          return {
-            ...c,
-            roomId: c?.roomId || match.roomId || match.id || '',
-            id: c?.id || match.id || match.roomId || '',
-            revitId: c?.revitId ?? match.revitId ?? null,
-            roomGuid: c?.roomGuid ?? match.roomGuid ?? match.revitId ?? null,
-            buildingLabel: c?.buildingLabel || match.buildingLabel || match.buildingName || match.building || '',
-            roomLabel: c?.roomLabel || match.roomLabel || match.roomNumber || '',
-            type: c?.type || match.type || match.roomType || '',
-            sf: Number.isFinite(candidateSf) && candidateSf > 0
-              ? candidateSf
-              : (Number.isFinite(matchSf) ? matchSf : 0),
-            vacancy: match.vacancy ?? c.vacancy,
-            occupant: match.occupant ?? c.occupant,
-            occupancyStatus: match.occupancyStatus ?? c.occupancyStatus,
-            occupantDept: match.occupantDept ?? c.occupantDept,
-            department: match.department ?? c.department,
-            floorName: c?.floorName || c?.floorId || match.floorName || match.floorId || '',
-            rationale: sanitizeVacancyLanguage(c?.rationale)
-          };
-        })
+          })
+          : []
+      );
+      const recommended = normalizeScenarioCandidates(out?.recommendedCandidates);
+      const copilotOptions = Array.isArray(out?.copilot?.generatedOptions)
+        ? out.copilot.generatedOptions.map((option, idx) => ({
+            ...option,
+            optionId: option?.optionId || `option_${idx + 1}`,
+            recommendedCandidates: normalizeScenarioCandidates(option?.recommendedCandidates)
+          }))
         : [];
+      const selectedCopilotOptionId =
+        String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '').trim();
+      const selectedCopilotOption = selectedCopilotOptionId
+        ? (copilotOptions.find((option) => String(option?.optionId || '') === selectedCopilotOptionId) || null)
+        : null;
+      const effectiveRecommended = selectedCopilotOption?.recommendedCandidates?.length
+        ? selectedCopilotOption.recommendedCandidates
+        : recommended;
       const preferredBuilding = norm(
         inferredBuilding ||
-        pickPreferredScenarioBuilding(recommended, { preferAcademicFit, lowFitBuildingKeys }) ||
-        getPrimaryScenarioBuilding(recommended) ||
+        pickPreferredScenarioBuilding(effectiveRecommended, { preferAcademicFit, lowFitBuildingKeys }) ||
+        getPrimaryScenarioBuilding(effectiveRecommended) ||
         ''
       );
-      let adjustedCandidates = recommended;
+      let adjustedCandidates = effectiveRecommended;
       let autoFillNote = '';
       if (baselineTotals) {
-        const { candidates: filled, added } = fillScenarioCandidatesToBaseline(
-          recommended,
-          inventory,
-          baselineTotals,
-          {
+          const { candidates: filled, added } = fillScenarioCandidatesToBaseline(
+            effectiveRecommended,
+            inventory,
+            baselineTotals,
+            {
             targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
             maxCandidates: aiCreateScenarioStrict ? 40 : 30,
             primaryBuilding: preferredBuilding,
@@ -16596,12 +16625,30 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const cleanedCriteria = Array.isArray(out?.selectionCriteria)
         ? out.selectionCriteria.filter((c) => !/baseline|total\s*sf|sf within/i.test(c || ''))
         : [];
-      setAiCreateScenarioResult({
+      const nextResult = {
         ...out,
         baselineTotals: baselineTotals || out?.baselineTotals,
+        scenarioTotals: selectedCopilotOption?.scenarioTotals || out?.scenarioTotals,
         selectionCriteria: [...baselineCriteria, ...fitCriteria, ...scenarioPolicyNotes, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
         recommendedCandidates: adjustedCandidates
-      });
+      };
+      if (out?.copilot && copilotOptions.length) {
+        nextResult.copilot = {
+          ...out.copilot,
+          selectedOptionId: selectedCopilotOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '',
+          recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptions?.[0]?.optionId || '',
+          generatedOptions: copilotOptions.map((option) => {
+            if (String(option?.optionId || '') === selectedCopilotOptionId) {
+              return {
+                ...option,
+                recommendedCandidates: adjustedCandidates
+              };
+            }
+            return option;
+          })
+        };
+      }
+      setAiCreateScenarioResult(nextResult);
       setAiCreateScenarioOpen(false);
     } catch (e) {
       setAiCreateScenarioErr(String(e?.message || e));
@@ -16611,6 +16658,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   }, [
     activeBuildingName,
     activeUniversityName,
+    aiCreateScenarioMode,
     aiCreateScenarioStrict,
     aiCreateScenarioText,
     aiStatus,
@@ -17131,6 +17179,33 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       applyScenarioCandidates(candidates);
     })();
   }, [selectedBuilding, selectedFloor, handleLoadFloorplan, applyScenarioCandidates]);
+
+  const selectAiCopilotScenarioOption = useCallback((optionId) => {
+    const targetId = String(optionId || '').trim();
+    if (!targetId) return;
+    setAiCreateScenarioResult((prev) => {
+      if (!prev?.copilot?.generatedOptions?.length) return prev;
+      const selected = prev.copilot.generatedOptions.find(
+        (option) => String(option?.optionId || '') === targetId
+      );
+      if (!selected) return prev;
+      return {
+        ...prev,
+        title: selected?.title || prev?.title,
+        scenarioTotals: selected?.scenarioTotals || prev?.scenarioTotals,
+        assumptions: Array.isArray(selected?.assumptions) ? selected.assumptions : prev?.assumptions,
+        selectionCriteria: Array.isArray(selected?.selectionCriteria) ? selected.selectionCriteria : prev?.selectionCriteria,
+        nextSteps: Array.isArray(selected?.nextSteps) ? selected.nextSteps : prev?.nextSteps,
+        recommendedCandidates: Array.isArray(selected?.recommendedCandidates)
+          ? selected.recommendedCandidates
+          : prev?.recommendedCandidates,
+        copilot: {
+          ...prev.copilot,
+          selectedOptionId: targetId
+        }
+      };
+    });
+  }, []);
 
   const applyAiMoveCandidatesToScenario = useCallback(async () => {
     const candidates = aiCreateScenarioResult?.recommendedCandidates || [];
@@ -26670,6 +26745,21 @@ useEffect(() => {
             </div>
           ) : null}
 
+          <label style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: 12, color: '#444' }}>
+            <span style={{ fontWeight: 600 }}>Planning mode</span>
+            <select
+              value={aiCreateScenarioMode}
+              onChange={(e) => setAiCreateScenarioMode(e.target.value)}
+              style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #d0d0d0' }}
+            >
+              <option value="copilot">Planner Copilot (multi-option)</option>
+              <option value="standard">Standard (single-pass)</option>
+            </select>
+            <span style={{ fontSize: 11, color: '#666' }}>
+              Copilot generates multiple candidate options and lets you choose one.
+            </span>
+          </label>
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#444' }}>
               <input
@@ -26739,6 +26829,11 @@ useEffect(() => {
                 {aiCreateScenarioResult.interpretedIntent ? (
                   <div style={{ fontSize: 12, color: '#555' }}>{aiCreateScenarioResult.interpretedIntent}</div>
                 ) : null}
+                {aiCreateScenarioResult?.copilot?.selectedOptionId ? (
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                    Selected option: {aiCreateScenarioResult.copilot.selectedOptionId}
+                  </div>
+                ) : null}
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn" onClick={() => applyAiScenarioToComparison(aiCreateScenarioResult)}>
@@ -26747,6 +26842,58 @@ useEffect(() => {
                 <button className="btn" onClick={() => setAiCreateScenarioResult(null)}>Close</button>
               </div>
             </div>
+
+            {Array.isArray(aiCreateScenarioResult?.copilot?.generatedOptions) && aiCreateScenarioResult.copilot.generatedOptions.length ? (
+              <div style={{ marginTop: 10 }}>
+                <b>Planner Copilot options</b>
+                <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
+                  {aiCreateScenarioResult.copilot.generatedOptions.map((option, idx) => {
+                    const optionId = String(option?.optionId || `option_${idx + 1}`);
+                    const selectedOptionId = String(
+                      aiCreateScenarioResult?.copilot?.selectedOptionId ||
+                      aiCreateScenarioResult?.copilot?.recommendedOptionId ||
+                      ''
+                    );
+                    const isSelected = optionId === selectedOptionId;
+                    const optionTotalSf = Math.round(Number(option?.scenarioTotals?.totalSF || 0) || 0);
+                    const optionRooms = Math.round(Number(option?.scenarioTotals?.rooms || 0) || 0);
+                    const optionBuildings = Array.isArray(option?.buildings) ? option.buildings.length : 0;
+                    return (
+                      <div
+                        key={optionId}
+                        style={{
+                          border: `1px solid ${isSelected ? '#2d7ff9' : '#dcdfe6'}`,
+                          borderRadius: 8,
+                          padding: 8,
+                          background: isSelected ? '#f5f9ff' : '#fff'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <div style={{ fontWeight: 600 }}>
+                            {option?.label || `Option ${idx + 1}`} {isSelected ? '(Selected)' : ''}
+                          </div>
+                          <button
+                            className="btn"
+                            onClick={() => selectAiCopilotScenarioOption(optionId)}
+                            disabled={isSelected}
+                          >
+                            {isSelected ? 'Selected' : 'Use this option'}
+                          </button>
+                        </div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#444' }}>
+                          {optionTotalSf.toLocaleString()} SF | {optionRooms.toLocaleString()} rooms | {optionBuildings.toLocaleString()} building{optionBuildings === 1 ? '' : 's'}
+                        </div>
+                        {Array.isArray(option?.buildings) && option.buildings.length ? (
+                          <div style={{ marginTop: 2, fontSize: 11, color: '#666' }}>
+                            {option.buildings.join(', ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             {aiCreateScenarioResult.selectionCriteria?.filter((c) => !/vacan/i.test(c || '')).length ? (
               <div style={{ marginTop: 10 }}>

@@ -603,3 +603,23 @@ Pause checkpoint (post-demo prep): Maintenance Reporter roadmap
   - Phase 1: reporter page + submit flow + Firebase write.
   - Phase 2: responsive/mobile UX hardening + optional limited issue visibility.
   - Phase 3: photo upload + QR workflow + validation/duplicate prevention.
+
+Latest completed work (planner copilot phase 1 wiring)
+- Added a selectable AI mode for `Create planning scenario`:
+  - `Planner Copilot (multi-option)` and `Standard (single-pass)`.
+- Added new backend endpoint:
+  - `POST /create-move-scenario-copilot` in `ai-server/server.js`.
+  - Generates multiple scored options (typically 3-5) with guardrails and fit scoring.
+- Wired frontend create flow to call endpoint by selected mode:
+  - Copilot mode sends `copilotOptionCount` and receives `copilot.generatedOptions`.
+- Added copilot option switching in the results modal:
+  - Shows option cards with SF/room/building counts.
+  - `Use this option` swaps selected option and updates displayed candidates/totals.
+- Fixed candidate post-processing bug:
+  - Baseline-fill now runs against the effective selected option candidates (not only top-level defaults).
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Workflow note
+- Continue default workflow of commit + push to `main` after requested changes unless user says otherwise.
