@@ -5212,6 +5212,7 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
     const key = String(room?.roomId ?? room?.id ?? room?.revitId ?? '');
     if (!key || usedKeys.has(key)) return;
     const roomType = room?.type ?? room?.roomType ?? '';
+    if (isScenarioNonAssignableType(roomType)) return;
     if (disallowAthleticsFallback && isScenarioAthleticsType(roomType)) return;
     const typeKey = normalizeTypeMatch(room?.type ?? room?.roomType ?? '') || 'other';
     if (!roomsByType.has(typeKey)) roomsByType.set(typeKey, []);
@@ -5227,7 +5228,7 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
       label,
       sf: Number(sf || 0) || 0
     }))
-    .filter((t) => t.key);
+    .filter((t) => t.key && !isScenarioNonAssignableType(t.label));
   baselineTypeEntries.sort((a, b) => {
     const rankA = getScenarioTypeRank(a.label);
     const rankB = getScenarioTypeRank(b.label);
@@ -5325,6 +5326,7 @@ const isScenarioLab = (value) => /(lab|laboratory|research)/i.test(String(value 
 const isScenarioAthleticsType = (value) => /(athletic|gym|arena|fieldhouse|locker room|sports)/i.test(String(value ?? ''));
 const isScenarioSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|arena|gym|athletic|fieldhouse|maker|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(String(value ?? ''));
 const isScenarioMaintenanceType = (value) => /(custod|janitor|maintenance|mechanical|electrical|utility|boiler|loading dock|warehouse|storage room|storage|service)/i.test(String(value ?? ''));
+const isScenarioNonAssignableType = (value) => /(corridor|circulation|vestibule|lobby|stair|elevator|restroom|toilet|mechanical area|mechanical room|electrical area|electrical room|utility room|janitor|custodial closet|shaft|pipe chase)/i.test(String(value ?? ''));
 const isScenarioCrossBuildingSpecializedType = (value) => /(shop|auditor|theater|theatre|performance|stage|studio|clinic|maker|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(String(value ?? ''));
 const isScenarioCrossBuildingExceptionType = (value) =>
   isScenarioClassroom(value) || isScenarioCrossBuildingSpecializedType(value);
@@ -16596,39 +16598,14 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           })
           : []
       );
-      const summarizeOptionDisplacement = (rows = []) => {
-        let occupiedRoomCount = 0;
-        let occupiedSf = 0;
-        const occupiedDepartments = new Set();
-        (Array.isArray(rows) ? rows : []).forEach((row) => {
-          const occupant = String(row?.occupant || '').trim();
-          const occupancyStatus = String(row?.occupancyStatus || '').trim().toLowerCase();
-          const vacancy = row?.vacancy;
-          const isOccupied = Boolean(
-            occupant ||
-            occupancyStatus === 'occupied' ||
-            occupancyStatus === 'in-use' ||
-            occupancyStatus === 'in use' ||
-            vacancy === false
-          );
-          if (!isOccupied) return;
-          occupiedRoomCount += 1;
-          occupiedSf += Number(row?.sf || 0) || 0;
-          const dept = String(row?.occupantDept || row?.department || '').trim();
-          if (dept) occupiedDepartments.add(dept);
-        });
-        return {
-          occupiedRoomCount,
-          occupiedSf: Math.round(occupiedSf),
-          occupiedDepartments: Array.from(occupiedDepartments).sort()
-        };
-      };
       const baselineTotalSF = baselineTotals?.totalSF || out?.baselineTotals?.totalSF || 0;
       const tolerancePct = Math.round(((scenarioConstraints?.targetSfTolerance ?? 0.1) * 100));
       const minTargetSf = baselineTotalSF ? baselineTotalSF * (1 - (scenarioConstraints?.targetSfTolerance ?? 0.1)) : 0;
       const maxTargetSf = baselineTotalSF ? baselineTotalSF * (1 + (scenarioConstraints?.targetSfTolerance ?? 0.1)) : 0;
       const applyScenarioCandidateConstraints = (seedCandidates = []) => {
-        let optionCandidates = Array.isArray(seedCandidates) ? [...seedCandidates] : [];
+        let optionCandidates = Array.isArray(seedCandidates)
+          ? seedCandidates.filter((row) => !isScenarioNonAssignableType(row?.type ?? row?.roomType ?? ''))
+          : [];
         let optionNote = '';
         const preferredBuildingForOption = norm(
           inferredBuilding ||
@@ -16738,7 +16715,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             totalSF: Math.round(totalSf),
             rooms: safeCandidates.length
           },
-          displacementSummary: summarizeOptionDisplacement(safeCandidates),
           fitSummary: {
             ...(option?.fitSummary || {}),
             targetSf: Math.round(baselineTotalSF || 0),
@@ -27029,8 +27005,6 @@ useEffect(() => {
                     const sfGapPct = Number(option?.fitSummary?.sfGapPct ?? option?.scoreBreakdown?.sfGapPct ?? 0) || 0;
                     const typeGapPct = Number(option?.fitSummary?.typeGapPct ?? option?.scoreBreakdown?.typeGapPct ?? 0) || 0;
                     const inTargetRange = Boolean(option?.fitSummary?.inTargetRange ?? option?.scoreBreakdown?.inTargetRange);
-                    const occupiedRoomCount = Number(option?.displacementSummary?.occupiedRoomCount || 0) || 0;
-                    const occupiedSf = Math.round(Number(option?.displacementSummary?.occupiedSf || 0) || 0);
                     return (
                       <div
                         key={optionId}
@@ -27058,9 +27032,6 @@ useEffect(() => {
                         </div>
                         <div style={{ marginTop: 2, fontSize: 11, color: '#555' }}>
                           Score {optionScore.toFixed(1)} | SF gap {sfGapPct.toFixed(1)}% | Type gap {typeGapPct.toFixed(1)}% | Fit {inTargetRange ? 'In range' : 'Out of range'}
-                        </div>
-                        <div style={{ marginTop: 2, fontSize: 11, color: '#555' }}>
-                          Displacement: {occupiedRoomCount.toLocaleString()} occupied room{occupiedRoomCount === 1 ? '' : 's'} ({occupiedSf.toLocaleString()} SF)
                         </div>
                         {Array.isArray(option?.buildings) && option.buildings.length ? (
                           <div style={{ marginTop: 2, fontSize: 11, color: '#666' }}>

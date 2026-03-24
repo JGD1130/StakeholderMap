@@ -715,3 +715,22 @@ Latest completed work (single-building type-deficit guardrail fix)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (move-scenario fit hardening: non-assignable + occupancy-neutral)
+- Addressed planner copilot mismatch where non-assignable support spaces (for example corridors/mechanical areas) could still appear in department move candidates.
+- Backend (`ai-server/server.js`) updates:
+  - Added hard non-assignable type filter (`isCopilotNonAssignableType`) and excluded these room types from candidate inventory and fill scoring.
+  - Enforced baseline type membership during fill when baseline type targets exist (prevents off-profile type fillers).
+  - Tightened cross-building exception supplements to baseline type-target keys only.
+  - Removed displacement/occupancy penalty from copilot option scoring and removed displacement narrative/comparison lines.
+  - Updated move-scenario system instructions to treat planning scenarios as occupancy-neutral unless explicitly requested.
+- Frontend (`src/components/StakeholderMap.jsx`) updates:
+  - Added matching non-assignable type guard in scenario fill/post-processing so corridor/mechanical-style rooms are filtered out client-side too.
+  - Removed frontend copilot displacement summary/display from option cards.
+- Result:
+  - Scenario options prioritize assignable, baseline-aligned room types.
+  - No occupancy/displacement logic is used in move-scenario ranking by default.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

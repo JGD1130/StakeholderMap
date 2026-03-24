@@ -1769,8 +1769,8 @@ IMPORTANT:
   - total SF (+/-10-15% if possible)
   - room type mix using NCES_Type (match SF by type)
   - count of key functional types (labs, classrooms, offices if present)
-- If an occupied room is a better functional match, recommend it and clearly note the displacement.
 - Do NOT assume vacant-only unless explicitly stated by the user.
+- Treat this as a planning scenario (not a commitment): ignore occupancy/displacement in ranking unless the user explicitly asks to include it.
 
 Building fit + consolidation:
 - Prefer building-function compatibility. For academic departments, avoid facilities/maintenance/service-heavy buildings unless no viable alternatives exist.
@@ -1804,8 +1804,7 @@ Return:
 Score rooms/buildings using:
 1. NCES room type similarity (highest weight)
 2. Building fit for department function and consolidation preference
-3. Area match (+/- 20%)
-4. Minimal displacement penalty`
+3. Area match (+/- 20%)`
         },
         {
           role: "user",
@@ -1874,6 +1873,7 @@ function buildCopilotTypeTargetMap(constraints = {}) {
     const type = normalizeCopilotText(row?.type);
     const sf = Number(row?.sf || 0) || 0;
     if (!type || sf <= 0) return;
+    if (isCopilotNonAssignableType(type)) return;
     out.set(normalizeCopilotTypeKey(type), {
       type,
       targetSf: sf
@@ -1913,37 +1913,17 @@ function createSeededRng(seedInput) {
   };
 }
 
-function isLikelyOccupiedCopilotRoom(room = {}) {
-  const occupant = normalizeCopilotText(room?.occupant);
-  const occupancyStatus = normalizeCopilotText(room?.occupancyStatus).toLowerCase();
-  if (occupant) return true;
-  if (occupancyStatus === "occupied" || occupancyStatus === "in-use" || occupancyStatus === "in use") return true;
-  if (room?.vacancy === false) return true;
-  return false;
-}
-
-function buildCopilotDisplacementSummary(candidates = []) {
-  let occupiedRoomCount = 0;
-  let occupiedSf = 0;
-  const departments = new Set();
-  candidates.forEach((room) => {
-    if (!isLikelyOccupiedCopilotRoom(room)) return;
-    occupiedRoomCount += 1;
-    occupiedSf += Number(room?.sf || 0) || 0;
-    const dept = normalizeCopilotText(room?.occupantDept);
-    if (dept) departments.add(dept);
-  });
-  return {
-    occupiedRoomCount,
-    occupiedSf: Math.round(occupiedSf),
-    occupiedDepartments: Array.from(departments).sort()
-  };
-}
-
 function isCopilotExceptionType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
   return /(classroom|lecture|seminar|lab|laboratory|studio|shop|auditorium|performance|clinic)/i.test(t);
+}
+
+function isCopilotNonAssignableType(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return false;
+  return /(corridor|circulation|vestibule|lobby|stair|elevator|restroom|toilet|mechanical area|mechanical room|electrical area|electrical room|utility room|janitor|custodial closet|shaft|pipe chase)/i
+    .test(t);
 }
 
 function buildCopilotOptionScore({
@@ -1954,8 +1934,7 @@ function buildCopilotOptionScore({
   maxSf,
   strictFit = false,
   preferSingleBuilding = false,
-  typeTargets = new Map(),
-  displacementSummary = null
+  typeTargets = new Map()
 }) {
   const uniqueBuildings = new Set(candidates.map((room) => room?.buildingKey).filter(Boolean));
   const buildingCount = uniqueBuildings.size;
@@ -1987,11 +1966,7 @@ function buildCopilotOptionScore({
   const buildingSpreadPenalty = preferSingleBuilding
     ? Math.max(0, buildingCount - 1) * 12
     : Math.max(0, buildingCount - 1) * 2;
-  const occupiedRoomCount = Number(displacementSummary?.occupiedRoomCount || 0) || 0;
-  const occupiedSf = Number(displacementSummary?.occupiedSf || 0) || 0;
-  const occupiedSfPenalty = targetSf > 0 ? (occupiedSf / targetSf) * 12 : 0;
-  const displacementPenalty = Math.min(22, (occupiedRoomCount * 1.8) + occupiedSfPenalty);
-  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - buildingSpreadPenalty - displacementPenalty;
+  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - buildingSpreadPenalty;
   if (total >= minSf && total <= maxSf) score += 8;
   if (overUpper) score -= 24;
   if (belowLower) score -= 10;
@@ -2003,10 +1978,7 @@ function buildCopilotOptionScore({
       sfGapPct: Number((sfGapPct * 100).toFixed(2)),
       typeGapPct: Number((typeGapPct * 100).toFixed(2)),
       buildingCount,
-      occupiedRoomCount,
-      occupiedSf: Math.round(occupiedSf),
       buildingSpreadPenalty: Number(buildingSpreadPenalty.toFixed(2)),
-      displacementPenalty: Number(displacementPenalty.toFixed(2)),
       strictFit,
       inTargetRange: total >= minSf && total <= maxSf,
       overUpperBound: overUpper,
@@ -2025,7 +1997,6 @@ function buildCopilotOptionNarrative({
   const scoreBreakdown = option?.scoreBreakdown || {};
   const totalSf = Number(option?.scenarioTotals?.totalSF || 0) || 0;
   const buildingCount = Number(scoreBreakdown?.buildingCount || option?.buildingCount || 0) || 0;
-  const occupiedRoomCount = Number(option?.displacementSummary?.occupiedRoomCount || 0) || 0;
   const sfGapPct = Number(scoreBreakdown?.sfGapPct || 0) || 0;
   const typeGapPct = Number(scoreBreakdown?.typeGapPct || 0) || 0;
 
@@ -2037,11 +2008,6 @@ function buildCopilotOptionNarrative({
   }
   out.push(`Room-type fit gap is ${typeGapPct.toFixed(1)}%.`);
   out.push(buildingCount <= 1 ? "Consolidated in one building." : `Spread across ${buildingCount} buildings.`);
-  out.push(
-    occupiedRoomCount > 0
-      ? `Requires relocating ${occupiedRoomCount} currently occupied rooms.`
-      : "Low displacement risk (no clearly occupied rooms selected)."
-  );
   return out;
 }
 
@@ -2069,13 +2035,6 @@ function buildCopilotComparisonSummary(best, runnerUp) {
     out.push(`Room-type alignment is weaker (${bestTypeGap.toFixed(1)}% gap vs ${runnerTypeGap.toFixed(1)}%).`);
   }
 
-  const bestDisp = Number(best?.displacementSummary?.occupiedRoomCount || 0) || 0;
-  const runnerDisp = Number(runnerUp?.displacementSummary?.occupiedRoomCount || 0) || 0;
-  if (bestDisp < runnerDisp) {
-    out.push(`Lower displacement impact (${bestDisp} occupied rooms vs ${runnerDisp}).`);
-  } else if (bestDisp > runnerDisp) {
-    out.push(`Higher displacement impact (${bestDisp} occupied rooms vs ${runnerDisp}).`);
-  }
   return out;
 }
 
@@ -2183,6 +2142,7 @@ function buildCopilotCandidates({
   const evaluateFillCandidate = (room) => {
     const roomSf = Number(room?.sf || 0) || 0;
     if (roomSf <= 0) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    if (isCopilotNonAssignableType(room?.type || "")) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     const afterSf = selectedSf + roomSf;
     if (strictFit && selectedSf >= minSf && afterSf > maxSf) {
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
@@ -2198,10 +2158,13 @@ function buildCopilotCandidates({
 
     const typeKey = normalizeCopilotTypeKey(room?.type || "");
     const inBaselineTypeMix = typeKey && targetByType.has(typeKey);
+    if (targetByType.size > 0 && !inBaselineTypeMix) {
+      return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    }
     const isExceptionType = isCopilotExceptionType(room?.type || "");
     const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 120 : 0;
 
-    // Strongly discourage adding off-profile room types just to gain SF.
+    // Strongly discourage adding off-profile room types just to gain SF (fallback path only).
     const offProfilePenalty = (targetByType.size > 0 && !inBaselineTypeMix)
       ? (roomSf * (isExceptionType ? 1.0 : 1.35))
       : 0;
@@ -2220,8 +2183,6 @@ function buildCopilotCandidates({
       } else {
         reason = `Type support: ${room.type}.`;
       }
-    } else if (targetByType.size > 0) {
-      reason = `SF-only fallback: ${room.type || "Unspecified"} is outside baseline type mix.`;
     }
     if (typeImprovement > 0 && targetTypeTotalSf > 0) {
       const pct = (typeImprovement / targetTypeTotalSf) * 100;
@@ -2289,6 +2250,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const normalizedRooms = sourceRooms
     .map(toCopilotRoom)
     .filter(Boolean)
+    .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
 
   const filteredRooms = normalizedRooms.filter((room) => {
@@ -2348,6 +2310,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         rooms.forEach((room) => {
           if (room.buildingKey === primary.buildingKey) return;
           if (!isCopilotExceptionType(room.type)) return;
+          if (typeTargets.size > 0 && !typeTargets.has(room.typeKey)) return;
           if (!exceptionsByBuilding.has(room.buildingKey)) {
             exceptionsByBuilding.set(room.buildingKey, []);
           }
@@ -2401,7 +2364,6 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     signatures.add(signature);
 
     const totals = buildCopilotScenarioTotals(selected);
-    const displacementSummary = buildCopilotDisplacementSummary(selected);
     const score = buildCopilotOptionScore({
       candidates: selected,
       totals,
@@ -2410,8 +2372,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       maxSf,
       strictFit,
       preferSingleBuilding,
-      typeTargets,
-      displacementSummary
+      typeTargets
     });
     const optionId = `option_${generatedOptions.length + 1}`;
     const selectedBuildings = Array.from(new Set(selected.map((room) => room.buildingLabel))).filter(Boolean);
@@ -2432,7 +2393,6 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         typeGapPct: Number(score.breakdown?.typeGapPct || 0),
         inTargetRange: Boolean(score.breakdown?.inTargetRange)
       },
-      displacementSummary,
       scenarioTotals: totals,
       baselineTotals: constraints?.baselineTotals || {
         totalSF: Math.round(targetSf),
@@ -2446,12 +2406,13 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       ],
       selectionCriteria: [
         "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
+        "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
         "Type fit weighted highest against baseline room-type SF mix.",
         "Total SF fit optimized toward baseline target range.",
         ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : [])
       ],
       nextSteps: [
-        "Review room-level displacement and adjacency impacts.",
+        "Review adjacency and room-function impacts.",
         "Apply selected option to Planning Scenario for visual validation.",
         "Run scenario comparison and export summary for stakeholder review."
       ],
