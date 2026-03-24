@@ -4116,7 +4116,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     if (floorBasePath && floorId) {
       const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId, skipAffine });
       if (!roomsLoad.rawFC) {
-        console.warn('Floor summary: no data returned', `${floorBasePath}/${floorId}_Dept.geojson`);
+        console.debug('Floor summary: no data returned', `${floorBasePath}/${floorId}_Dept.geojson`);
         return;
       }
       data = roomsLoad.rawFC;
@@ -14249,6 +14249,45 @@ const StakeholderMap = ({
       if (floorStatsCache.current[u]) return floorStatsCache.current[u];
     }
 
+    // Prefer local campus room rows when available to avoid extra network fetches.
+    try {
+      if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+        const parseUrlContext = (sourceUrl) => {
+          const clean = String(sourceUrl || '').split('?')[0];
+          if (!clean) return null;
+          const fileMatch = clean.match(/\/(?:Rooms\/)?([^/]+?)_(?:Dept_Rooms|Dept)\.geojson$/i);
+          if (!fileMatch) return null;
+          const floorIdParsed = String(fileMatch[1] || '').trim();
+          if (!floorIdParsed) return null;
+          const parts = clean.split('/').filter(Boolean);
+          const floorplansIdx = parts.findIndex((part) => String(part).toLowerCase() === 'floorplans');
+          if (floorplansIdx < 0 || (floorplansIdx + 2) >= parts.length) return null;
+          const folderPart = decodeURIComponent(parts[floorplansIdx + 2] || '').trim();
+          if (!folderPart) return null;
+          return { floorId: floorIdParsed, folderPart };
+        };
+        const sourceContext = parseUrlContext(candidates[0] || url);
+        if (sourceContext?.floorId && sourceContext?.folderPart) {
+          const folderKey = String(sourceContext.folderPart || '').trim();
+          const floorKey = normalizeDashboardKey(sourceContext.floorId);
+          const scoped = campusRooms.filter((room) => {
+            const roomBuilding = String(room?.buildingLabel ?? room?.buildingName ?? room?.building ?? '').trim();
+            const roomFolder = getBuildingFolderKey(roomBuilding) || '';
+            if (roomFolder !== folderKey) return false;
+            const roomFloor = String(room?.floorName ?? room?.floorId ?? '').trim();
+            return normalizeDashboardKey(roomFloor) === floorKey;
+          });
+          if (scoped.length) {
+            const localSummary = summarizeRoomRowsForPanels(scoped);
+            if (localSummary) {
+              for (const u of candidates) floorStatsCache.current[u] = localSummary;
+              return localSummary;
+            }
+          }
+        }
+      }
+    } catch {}
+
     let data = null;
     let usedUrl = null;
 
@@ -14266,7 +14305,7 @@ const StakeholderMap = ({
     }
 
     if (!data) {
-      console.warn("Floor summary: no data returned", url);
+      console.debug("Floor summary: no data returned", url);
       return null;
     }
 
@@ -17282,7 +17321,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         }
       };
     });
-  }, []);
+  }, [campusRoomsLoaded, campusRooms, getBuildingFolderKey]);
 
   const applyAiMoveCandidatesToScenario = useCallback(async () => {
     const candidates = aiCreateScenarioResult?.recommendedCandidates || [];

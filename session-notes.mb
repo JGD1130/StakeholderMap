@@ -621,6 +621,18 @@ Latest completed work (planner copilot phase 1 wiring)
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
 
+Latest completed work (floor summary fetch noise reduction)
+- Reduced noisy floor-summary fetch errors for optional dashboard calculations:
+  - `fetchFloorSummaryByUrl` now prefers local `campusRooms` in-memory rows (by building folder + floor) before attempting network GeoJSON fetch.
+  - This avoids many unnecessary requests to floorplan files when equivalent room data is already loaded.
+- Downgraded optional no-data floor summary logs from `console.warn` to `console.debug` in non-critical fallback paths.
+- Result:
+  - Fewer console warnings/errors during scenario + dashboard workflows.
+  - Better resilience when GitHub Pages briefly returns 503 for specific floor assets.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
+
 Latest completed work (copilot single-building guardrail tightening)
 - Tightened Planner Copilot to better preserve single-building intent for department relocation:
   - Increased scoring penalty for building spread when single-building preference is active.
