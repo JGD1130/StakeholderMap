@@ -541,3 +541,18 @@ Latest completed work (maintenance recently-completed action list)
 - Validation:
   - `npm.cmd run build` passed
   - `npm.cmd run smoke` passed (`24/24 checks`)
+
+Latest completed work (maintenance marker sizing + Farrell/Fleharty recolor match)
+- Reduced maintenance marker dot size and ring/glow intensity for cleaner campus view:
+  - Critical/high/default marker sizing tuned down.
+  - Border and glow strength reduced while preserving visibility.
+- Fixed maintenance building recolor matching for alias/id variants:
+  - Open-issue recolor now keys by normalized maintenance building key.
+  - Recolor matching now considers multiple building id/name candidates (canonical id, resolved name, alias/reverse-alias forms).
+  - Building match expression now falls back across `id`, `name`, and `Name` feature fields.
+- Result:
+  - Farrell/Fleharty footprint now recolors reliably when issues are present.
+  - Issue dots are less visually oversized.
+- Validation:
+  - `npm.cmd run build` passed
+  - `npm.cmd run smoke` passed (`24/24 checks`)

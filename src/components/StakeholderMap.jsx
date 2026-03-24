@@ -7385,6 +7385,35 @@ const normalizeMaintenanceBuildingFilterKey = (buildingIdValue, buildingNameValu
   const resolvedName = resolveBuildingNameFromInput(idRaw) || resolveBuildingNameFromInput(nameRaw) || nameRaw || idRaw;
   return normalizeDashboardKey(resolvedName || idRaw || nameRaw);
 };
+const getMaintenanceBuildingIdCandidates = (buildingIdValue, buildingNameValue = '') => {
+  const idRaw = String(buildingIdValue || '').trim();
+  const nameRaw = String(buildingNameValue || '').trim();
+  const resolvedName = resolveBuildingNameFromInput(idRaw) || resolveBuildingNameFromInput(nameRaw) || nameRaw || idRaw;
+  const reverseAlias =
+    BUILDING_ALIAS_REVERSE?.[idRaw] ||
+    BUILDING_ALIAS_REVERSE?.[nameRaw] ||
+    BUILDING_ALIAS_REVERSE?.[resolvedName] ||
+    '';
+  const forwardAlias =
+    BUILDING_ALIAS?.[idRaw] ||
+    BUILDING_ALIAS?.[nameRaw] ||
+    BUILDING_ALIAS?.[resolvedName] ||
+    '';
+  const out = new Set();
+  const add = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    out.add(text);
+    const canonical = bId(text);
+    if (canonical && canonical !== 'na') out.add(canonical);
+  };
+  add(idRaw);
+  add(nameRaw);
+  add(resolvedName);
+  add(reverseAlias);
+  add(forwardAlias);
+  return Array.from(out);
+};
 const normalizeRoomLookupKey = (value) =>
   String(value || '')
     .trim()
@@ -17814,12 +17843,14 @@ const maintenanceDashboard = useMemo(() => {
 const maintenanceOpenByBuilding = useMemo(() => {
   const out = new Map();
   maintenanceOpenIssues.forEach((issue) => {
-    const key = String(issue?.buildingId || issue?.buildingName || '').trim();
+    const key = normalizeMaintenanceBuildingFilterKey(issue?.buildingId, issue?.buildingName);
     if (!key) return;
-    const current = out.get(key) || { count: 0, priorityRank: 0 };
+    const current = out.get(key) || { count: 0, priorityRank: 0, buildingId: '', buildingName: '' };
     const rank = MAINTENANCE_PRIORITY_ORDER[normalizeMaintenancePriority(issue?.priority)] || 0;
     current.count += 1;
     if (rank > current.priorityRank) current.priorityRank = rank;
+    if (!current.buildingId) current.buildingId = String(issue?.buildingId || '').trim();
+    if (!current.buildingName) current.buildingName = String(issue?.buildingName || '').trim();
     out.set(key, current);
   });
   return out;
@@ -21178,11 +21209,11 @@ useEffect(() => {
         const priorityKey = normalizeMaintenancePriority(m.priority);
         const isCritical = priorityKey === 'critical';
         const isHigh = priorityKey === 'high';
-        const markerSize = isCritical ? 22 : (isHigh ? 20 : 18);
+        const markerSize = isCritical ? 18 : (isHigh ? 17 : 15);
         el.style.width = `${markerSize}px`;
         el.style.height = `${markerSize}px`;
-        el.style.border = '3px solid #ffffff';
-        el.style.boxShadow = `0 0 0 2px rgba(15,23,42,0.95), 0 0 14px ${convertHexWithAlpha(markerColor, 0.65)}`;
+        el.style.border = '2px solid #ffffff';
+        el.style.boxShadow = `0 0 0 1.5px rgba(15,23,42,0.9), 0 0 9px ${convertHexWithAlpha(markerColor, 0.5)}`;
         el.style.opacity = isCritical ? '1' : '0.95';
         if (normalizeMaintenanceStatus(m.status) === 'complete') {
           el.style.opacity = '0.45';
@@ -21239,7 +21270,7 @@ useEffect(() => {
   }
 
   if (maintenanceWorkflowActive) {
-    const matchExpr = ['match', ['get', 'id']];
+    const matchExpr = ['match', ['coalesce', ['get', 'id'], ['get', 'name'], ['get', 'Name']]];
     let hasEntries = false;
     maintenanceOpenByBuilding.forEach((value, rawKey) => {
       const rank = Number(value?.priorityRank || 0);
@@ -21247,14 +21278,16 @@ useEffect(() => {
       if (rank >= 4) color = '#ef4444';
       else if (rank >= 3) color = '#f97316';
       else if (rank >= 2) color = '#facc15';
-      const normalizedKey = String(rawKey || '').trim();
-      if (!normalizedKey) return;
-      matchExpr.push(normalizedKey, color);
-      const resolvedName = resolveBuildingNameFromInput(normalizedKey);
-      if (resolvedName && resolvedName !== normalizedKey) {
-        matchExpr.push(resolvedName, color);
-      }
-      hasEntries = true;
+      const candidateIds = new Set([
+        ...getMaintenanceBuildingIdCandidates(value?.buildingId || rawKey, value?.buildingName || ''),
+        ...getMaintenanceBuildingIdCandidates(rawKey, '')
+      ]);
+      candidateIds.forEach((candidate) => {
+        const normalizedCandidate = String(candidate || '').trim();
+        if (!normalizedCandidate) return;
+        matchExpr.push(normalizedCandidate, color);
+        hasEntries = true;
+      });
     });
     matchExpr.push('#e5e7eb');
     const finalExpr = withNoFloorplanOverride(matchExpr);
