@@ -756,3 +756,24 @@ Latest completed work (planner copilot feasibility recovery + family-fit fallbac
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (underfill recovery + messaging consistency)
+- Addressed persistent under-target SF outcomes in planner copilot and contradictory option messaging.
+- Backend (`ai-server/server.js`) updates:
+  - Added stronger underfill scoring penalty so severely short options are deprioritized.
+  - Added shop-intent gating:
+    - shop/maker types are removed from baseline target matching unless explicitly requested or discipline-aligned.
+  - Extended generation pass control:
+    - strict pass first
+    - recovery pass can use broader room source and relaxed single-building behavior when strict pass underfills.
+  - Recovery pass now supports family-level fallback across broader building coverage before giving up.
+- Frontend (`src/components/StakeholderMap.jsx`) updates:
+  - Recompute `whyThisOption` from post-constraint totals and fit metrics so bullets match displayed SF/building counts.
+  - Recompute copilot comparison summary from the displayed option set to avoid stale backend comparisons.
+- Result:
+  - Option cards are now internally consistent (no false “within target band” when out of range).
+  - Better chance to recover from strict underfill while preserving non-assignable exclusions.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

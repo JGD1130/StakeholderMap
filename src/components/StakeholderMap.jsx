@@ -16602,6 +16602,42 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const tolerancePct = Math.round(((scenarioConstraints?.targetSfTolerance ?? 0.1) * 100));
       const minTargetSf = baselineTotalSF ? baselineTotalSF * (1 - (scenarioConstraints?.targetSfTolerance ?? 0.1)) : 0;
       const maxTargetSf = baselineTotalSF ? baselineTotalSF * (1 + (scenarioConstraints?.targetSfTolerance ?? 0.1)) : 0;
+      const buildClientOptionNarrative = ({ totalSf = 0, buildingCount = 0, sfGapPct = 0, typeGapPct = 0 }) => {
+        const lines = [];
+        if (baselineTotalSF > 0 && totalSf >= minTargetSf && totalSf <= maxTargetSf) {
+          lines.push(`Within target SF band (${Math.round(minTargetSf).toLocaleString()}-${Math.round(maxTargetSf).toLocaleString()} SF).`);
+        } else if (baselineTotalSF > 0) {
+          const direction = totalSf > baselineTotalSF ? 'over' : 'under';
+          lines.push(`SF is ${Number(sfGapPct || 0).toFixed(1)}% ${direction} target.`);
+        }
+        lines.push(`Room-type fit gap is ${Number(typeGapPct || 0).toFixed(1)}%.`);
+        lines.push(buildingCount <= 1 ? 'Consolidated in one building.' : `Spread across ${buildingCount} buildings.`);
+        return lines;
+      };
+      const buildClientComparisonSummary = (sortedOptions = []) => {
+        const best = sortedOptions?.[0];
+        const runner = sortedOptions?.[1];
+        if (!best) return [];
+        if (!runner) return ['Highest-scoring option among generated candidates.'];
+        const bestScore = Number(best?.score || 0) || 0;
+        const runnerScore = Number(runner?.score || 0) || 0;
+        const bestSfGap = Number(best?.fitSummary?.sfGapPct ?? best?.scoreBreakdown?.sfGapPct ?? 0) || 0;
+        const runnerSfGap = Number(runner?.fitSummary?.sfGapPct ?? runner?.scoreBreakdown?.sfGapPct ?? 0) || 0;
+        const bestTypeGap = Number(best?.fitSummary?.typeGapPct ?? best?.scoreBreakdown?.typeGapPct ?? 0) || 0;
+        const runnerTypeGap = Number(runner?.fitSummary?.typeGapPct ?? runner?.scoreBreakdown?.typeGapPct ?? 0) || 0;
+        const lines = [`Top score ${bestScore.toFixed(1)} vs next ${runnerScore.toFixed(1)} (+${(bestScore - runnerScore).toFixed(1)}).`];
+        if (bestSfGap !== runnerSfGap) {
+          lines.push(bestSfGap < runnerSfGap
+            ? `Closer SF fit (${bestSfGap.toFixed(1)}% gap vs ${runnerSfGap.toFixed(1)}%).`
+            : `SF fit is weaker (${bestSfGap.toFixed(1)}% gap vs ${runnerSfGap.toFixed(1)}%).`);
+        }
+        if (bestTypeGap !== runnerTypeGap) {
+          lines.push(bestTypeGap < runnerTypeGap
+            ? `Better room-type alignment (${bestTypeGap.toFixed(1)}% gap vs ${runnerTypeGap.toFixed(1)}%).`
+            : `Room-type alignment is weaker (${bestTypeGap.toFixed(1)}% gap vs ${runnerTypeGap.toFixed(1)}%).`);
+        }
+        return lines;
+      };
       const applyScenarioCandidateConstraints = (seedCandidates = []) => {
         let optionCandidates = Array.isArray(seedCandidates)
           ? seedCandidates.filter((row) => !isScenarioNonAssignableType(row?.type ?? row?.roomType ?? ''))
@@ -16705,11 +16741,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           )
         );
         const sfGapPct = baselineTotalSF > 0 ? (Math.abs(totalSf - baselineTotalSF) / baselineTotalSF) * 100 : 0;
+        const typeGapPct = Number(option?.fitSummary?.typeGapPct ?? option?.scoreBreakdown?.typeGapPct ?? 0) || 0;
+        const buildingCount = buildings.length;
         return {
           ...option,
           recommendedCandidates: safeCandidates,
           buildings,
-          buildingCount: buildings.length,
+          buildingCount,
           scenarioTotals: {
             ...(option?.scenarioTotals || {}),
             totalSF: Math.round(totalSf),
@@ -16722,11 +16760,17 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             maxSf: Math.round(maxTargetSf || 0),
             totalSf: Math.round(totalSf),
             sfGapPct: Number(sfGapPct.toFixed(2)),
-            typeGapPct: Number(option?.fitSummary?.typeGapPct ?? option?.scoreBreakdown?.typeGapPct ?? 0) || 0,
+            typeGapPct,
             inTargetRange: baselineTotalSF > 0
               ? (totalSf >= minTargetSf && totalSf <= maxTargetSf)
               : Boolean(option?.fitSummary?.inTargetRange ?? option?.scoreBreakdown?.inTargetRange)
-          }
+          },
+          whyThisOption: buildClientOptionNarrative({
+            totalSf,
+            buildingCount,
+            sfGapPct,
+            typeGapPct
+          })
         };
       };
       const recommended = normalizeScenarioCandidates(out?.recommendedCandidates);
@@ -16769,16 +16813,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         recommendedCandidates: adjustedCandidates
       };
       if (out?.copilot && copilotOptions.length) {
+        const copilotOptionsSorted = [...copilotOptions].sort((a, b) => (Number(b?.score || 0) - Number(a?.score || 0)));
         nextResult.copilot = {
           ...out.copilot,
           selectedOptionId: selectedCopilotOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '',
           recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptions?.[0]?.optionId || '',
+          comparisonSummary: buildClientComparisonSummary(copilotOptionsSorted),
           generatedOptions: copilotOptions.map((option) => {
             if (String(option?.optionId || '') === selectedCopilotOptionId) {
-              return decorateCopilotOption({
-                ...option,
-                whyThisOption: Array.isArray(option?.whyThisOption) ? option.whyThisOption : []
-              }, adjustedCandidates);
+              return decorateCopilotOption(option, adjustedCandidates);
             }
             return option;
           })

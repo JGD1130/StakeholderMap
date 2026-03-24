@@ -1945,6 +1945,16 @@ function getCopilotTypeFamily(typeValue = "") {
   return "other";
 }
 
+function shouldAllowShopByIntent(requestText = "", deptText = "") {
+  const req = normalizeCopilotText(requestText).toLowerCase();
+  const dept = normalizeCopilotText(deptText).toLowerCase();
+  if (/(shop|maker|fabrication|wood shop|metal shop|workshop)/i.test(req)) return true;
+  if (/(facilit|maintenance|operations|physical plant|industrial|engineering tech|theater|theatre|music|performing art|studio art|fine art|art)/i.test(dept)) {
+    return true;
+  }
+  return false;
+}
+
 function buildCopilotOptionScore({
   candidates = [],
   totals,
@@ -1961,6 +1971,7 @@ function buildCopilotOptionScore({
   const sfGapPct = targetSf > 0 ? Math.abs(total - targetSf) / targetSf : 0;
   const overUpper = strictFit && total > maxSf;
   const belowLower = total < minSf;
+  const underfillRatio = targetSf > 0 ? Math.max(0, (minSf - total) / targetSf) : 0;
 
   let typeGapPct = 0;
   if (typeTargets.size > 0) {
@@ -1986,6 +1997,7 @@ function buildCopilotOptionScore({
     ? Math.max(0, buildingCount - 1) * 12
     : Math.max(0, buildingCount - 1) * 2;
   let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - buildingSpreadPenalty;
+  score -= underfillRatio * 90;
   if (total >= minSf && total <= maxSf) score += 8;
   if (overUpper) score -= 24;
   if (belowLower) score -= 10;
@@ -1998,6 +2010,7 @@ function buildCopilotOptionScore({
       typeGapPct: Number((typeGapPct * 100).toFixed(2)),
       buildingCount,
       buildingSpreadPenalty: Number(buildingSpreadPenalty.toFixed(2)),
+      underfillPenalty: Number((underfillRatio * 90).toFixed(2)),
       strictFit,
       inTargetRange: total >= minSf && total <= maxSf,
       overUpperBound: overUpper,
@@ -2303,6 +2316,7 @@ function buildCopilotCandidates({
 
 function generateMoveScenarioCopilotPlan({ request, context, inventory, constraints }) {
   const requestText = normalizeCopilotText(request);
+  const scenarioDeptText = normalizeCopilotText(context?.targetDepartment || context?.scenarioDepartment || "");
   const preferSingleBuilding = Boolean(constraints?.preferSingleBuilding);
   const preferAcademicFit = Boolean(constraints?.preferAcademicFit);
   const strictFit = Number(constraints?.targetSfTolerance || 0.1) <= 0.05;
@@ -2314,6 +2328,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const minSf = Math.max(0, targetSf * (1 - tolerance));
   const maxSf = targetSf * (1 + tolerance);
   const typeTargets = buildCopilotTypeTargetMap(constraints);
+  const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
+  if (!allowShopTargeting && typeTargets.size > 0) {
+    Array.from(typeTargets.entries()).forEach(([key, row]) => {
+      if (isCopilotShopType(row?.type || key)) typeTargets.delete(key);
+    });
+  }
   const offlineSet = new Set((constraints?.offlineBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
   const lowFitSet = new Set((constraints?.lowFitBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
   const excludeSet = new Set((context?.excludeBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
@@ -2335,27 +2355,6 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   if (!rooms.length) {
     throw new Error("No eligible room inventory remained after scenario guardrails.");
   }
-
-  const byBuilding = new Map();
-  rooms.forEach((room) => {
-    if (!byBuilding.has(room.buildingKey)) {
-      byBuilding.set(room.buildingKey, {
-        buildingKey: room.buildingKey,
-        buildingLabel: room.buildingLabel,
-        totalSf: 0,
-        rooms: []
-      });
-    }
-    const row = byBuilding.get(room.buildingKey);
-    row.totalSf += Number(room.sf || 0) || 0;
-    row.rooms.push(room);
-  });
-
-  const buildingRows = Array.from(byBuilding.values()).sort((a, b) => {
-    const aGap = Math.abs(a.totalSf - targetSf);
-    const bGap = Math.abs(b.totalSf - targetSf);
-    return aGap - bGap;
-  });
 
   const optionTargetCount = Math.max(3, Math.min(5, Number(context?.copilotOptionCount || 4)));
   const seed = Number(context?.seed || Date.now()) >>> 0;
@@ -2385,18 +2384,41 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const runGenerationPass = ({
     passSeedOffset = 0,
     allowOffFamilyFallback = false,
-    relaxSingleBuilding = false
+    relaxSingleBuilding = false,
+    roomSource = rooms
   } = {}) => {
+    const runRooms = Array.isArray(roomSource) && roomSource.length ? roomSource : rooms;
+    const runByBuilding = new Map();
+    runRooms.forEach((room) => {
+      if (!runByBuilding.has(room.buildingKey)) {
+        runByBuilding.set(room.buildingKey, {
+          buildingKey: room.buildingKey,
+          buildingLabel: room.buildingLabel,
+          totalSf: 0,
+          rooms: []
+        });
+      }
+      const row = runByBuilding.get(room.buildingKey);
+      row.totalSf += Number(room.sf || 0) || 0;
+      row.rooms.push(room);
+    });
+    const runBuildingRows = Array.from(runByBuilding.values()).sort((a, b) => {
+      const aGap = Math.abs(a.totalSf - targetSf);
+      const bGap = Math.abs(b.totalSf - targetSf);
+      return aGap - bGap;
+    });
+    if (!runBuildingRows.length) return;
+
     for (let attempt = 0; attempt < attemptBudget && generatedOptions.length < maxOptionPool; attempt += 1) {
       const rng = createSeededRng(seed + passSeedOffset + (attempt * 31));
-      const buildingBiasShift = Math.min(buildingRows.length - 1, attempt % Math.max(1, Math.min(3, buildingRows.length)));
-      const weightedBuildings = [...buildingRows].sort((a, b) => {
-        const aGap = Math.abs(a.totalSf - targetSf) + (a === buildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
-        const bGap = Math.abs(b.totalSf - targetSf) + (b === buildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
+      const buildingBiasShift = Math.min(runBuildingRows.length - 1, attempt % Math.max(1, Math.min(3, runBuildingRows.length)));
+      const weightedBuildings = [...runBuildingRows].sort((a, b) => {
+        const aGap = Math.abs(a.totalSf - targetSf) + (a === runBuildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
+        const bGap = Math.abs(b.totalSf - targetSf) + (b === runBuildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
         return aGap - bGap;
       });
 
-      const primary = weightedBuildings[0] || buildingRows[0];
+      const primary = weightedBuildings[0] || runBuildingRows[0];
       const secondary = weightedBuildings[1] || null;
       let candidatePool = [];
       const singleBuildingPass = !relaxSingleBuilding && (preferSingleBuilding || !secondary || attempt % 2 === 0);
@@ -2405,7 +2427,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         if (primary && strictFit && (primary.totalSf < (minSf * 0.92))) {
           const deficitSf = Math.max(0, minSf - primary.totalSf);
           const exceptionsByBuilding = new Map();
-          rooms.forEach((room) => {
+          runRooms.forEach((room) => {
             if (room.buildingKey === primary.buildingKey) return;
             if (!canUseSupplementRoom(room, allowOffFamilyFallback)) return;
             if (!exceptionsByBuilding.has(room.buildingKey)) {
@@ -2434,9 +2456,13 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           }
         }
       } else {
-        const tertiary = weightedBuildings[2] || null;
-        const allowed = new Set([primary?.buildingKey, secondary?.buildingKey, tertiary?.buildingKey].filter(Boolean));
-        candidatePool = rooms.filter((room) => allowed.has(room.buildingKey));
+        if (relaxSingleBuilding) {
+          candidatePool = [...runRooms];
+        } else {
+          const tertiary = weightedBuildings[2] || null;
+          const allowed = new Set([primary?.buildingKey, secondary?.buildingKey, tertiary?.buildingKey].filter(Boolean));
+          candidatePool = runRooms.filter((room) => allowed.has(room.buildingKey));
+        }
       }
       if (!candidatePool.length) continue;
 
@@ -2502,6 +2528,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
           preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
           ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : []),
+          ...(!allowShopTargeting ? ["Shop/maker spaces are excluded unless explicitly requested or discipline-aligned."] : []),
           ...(allowOffFamilyFallback ? ["Auto-relaxed to type-family fallback because strict pass underfilled target SF."] : [])
         ],
         selectionCriteria: [
