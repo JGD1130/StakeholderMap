@@ -1049,3 +1049,17 @@ Latest completed work (deterministic strict-range fallback)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (strict repair E: cap+1 rescue)
+- Added a final strict fallback pass in `generateMoveScenarioCopilotPlan(...)`:
+  - `repair E: strict-range rescue (cap +1)`
+  - Runs only when strict mode still has zero in-range options after baseline + repairs A/B/C/D.
+  - Relaxes only the building cap by one (for example, 2 -> 3) while retaining:
+    - non-assignable exclusion,
+    - public performance exclusion (unless explicitly requested),
+    - academic-fit building penalties/exclusions.
+  - Adds explicit assumptions/labeling so user can see this was a last-resort strict salvage path.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

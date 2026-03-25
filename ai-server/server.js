@@ -4086,6 +4086,151 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     });
   }
 
+  if (
+    strictFit &&
+    countInRangeOptions() === 0 &&
+    preferSingleBuilding &&
+    Number.isFinite(maxPreferredBuildingCount) &&
+    maxPreferredBuildingCount > 0
+  ) {
+    const before = generatedOptions.length;
+    const byBuildingTotals = new Map();
+    rooms.forEach((room) => {
+      if (!room?.buildingKey) return;
+      if (!byBuildingTotals.has(room.buildingKey)) {
+        byBuildingTotals.set(room.buildingKey, { key: room.buildingKey, sf: 0, label: room.buildingLabel || room.buildingKey });
+      }
+      const row = byBuildingTotals.get(room.buildingKey);
+      row.sf += Number(room?.sf || 0) || 0;
+    });
+    const primaryBuildingKey = Array.from(byBuildingTotals.values())
+      .sort((a, b) => {
+        const aPenalty = (
+          (preferAcademicFit && hardAcademicAvoidSet.has(a?.key || "") ? 100000 : 0) +
+          (preferAcademicFit && lowFitSet.has(a?.key || "") ? 45000 : 0)
+        );
+        const bPenalty = (
+          (preferAcademicFit && hardAcademicAvoidSet.has(b?.key || "") ? 100000 : 0) +
+          (preferAcademicFit && lowFitSet.has(b?.key || "") ? 45000 : 0)
+        );
+        return (b.sf - bPenalty) - (a.sf - aPenalty);
+      })[0]?.key || "";
+
+    const expandedCap = maxPreferredBuildingCount + 1;
+    const rescueSelection = findStrictRangeRescueSelection({
+      rooms,
+      targetSf,
+      minSf,
+      maxSf,
+      maxCandidates: 30,
+      seed: seed + 9000007,
+      iterations: 2600,
+      typeTargets,
+      allowShopFallback,
+      allowAthleticsFallback,
+      allowPublicPerformanceFallback,
+      allowSupportFallback: true,
+      preferSingleBuilding,
+      maxBuildingCount: expandedCap,
+      primaryBuildingKey,
+      scoreOptions: {
+        ...(copilotPreferences || {}),
+        singleBuildingBoost: Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) * 1.35),
+        supportPenaltyBoost: Math.max(1, Number(copilotPreferences?.supportPenaltyBoost || 1) * 1.8),
+        contiguityBoost: Math.max(1, Number(copilotPreferences?.contiguityBoost || 1) * 1.2)
+      }
+    });
+    if (Array.isArray(rescueSelection) && rescueSelection.length) {
+      const signature = rescueSelection
+        .map((room) => room.id)
+        .filter(Boolean)
+        .sort()
+        .join("|");
+      if (signature && !signatures.has(signature)) {
+        signatures.add(signature);
+        const totals = buildCopilotScenarioTotals(rescueSelection);
+        const score = buildCopilotOptionScore({
+          candidates: rescueSelection,
+          totals,
+          targetSf,
+          minSf,
+          maxSf,
+          strictFit,
+          preferSingleBuilding,
+          typeTargets,
+          copilotPreferences
+        });
+        optionSeq += 1;
+        const selectedBuildings = Array.from(new Set(rescueSelection.map((room) => room.buildingLabel))).filter(Boolean);
+        const option = {
+          optionId: `option_${optionSeq}`,
+          label: `Option ${optionSeq}`,
+          title: `${context?.targetDepartment || context?.scenarioDepartment || "Department"} scenario option ${optionSeq}`,
+          score: score.score,
+          scoreBreakdown: score.breakdown,
+          buildingCount: selectedBuildings.length,
+          buildings: selectedBuildings,
+          fitSummary: {
+            targetSf: Math.round(targetSf),
+            minSf: Math.round(minSf),
+            maxSf: Math.round(maxSf),
+            totalSf: Math.round(totals.totalSF || 0),
+            sfGapPct: Number(score.breakdown?.sfGapPct || 0),
+            typeGapPct: Number(score.breakdown?.typeGapPct || 0),
+            inTargetRange: Boolean(score.breakdown?.inTargetRange)
+          },
+          scenarioTotals: totals,
+          baselineTotals: constraints?.baselineTotals || {
+            totalSF: Math.round(targetSf),
+            rooms: 0,
+            sfByType: []
+          },
+          assumptions: [
+            `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.`,
+            `Generated in repair pass: repair E: strict-range rescue (building cap relaxed to ${expandedCap}).`,
+            "Rescue expanded building cap by one only after all stricter passes failed."
+          ],
+          selectionCriteria: [
+            "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
+            "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+            ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : []),
+            "Strict-range rescue searched for in-band SF combinations when stricter building-cap passes failed."
+          ],
+          nextSteps: [
+            "Review adjacency and room-function impacts.",
+            "Apply selected option to Planning Scenario for visual validation.",
+            "Run scenario comparison and export summary for stakeholder review."
+          ],
+          recommendedCandidates: rescueSelection.map((room) => ({
+            roomId: room.roomId,
+            id: room.id,
+            revitId: room.revitId,
+            buildingLabel: room.buildingLabel,
+            floorId: room.floorId,
+            floorName: room.floorName,
+            roomLabel: room.roomLabel,
+            type: room.type,
+            sf: Math.round(Number(room.sf || 0) || 0),
+            rationale: room.rationale || "Strict-range rescue selection."
+          }))
+        };
+        option.whyThisOption = buildCopilotOptionNarrative({
+          option,
+          targetSf,
+          minSf,
+          maxSf
+        });
+        generatedOptions.push(option);
+      }
+    }
+    const after = generatedOptions.length;
+    repairPassHistory.push({
+      label: "repair E: strict-range rescue (cap +1)",
+      generated: Math.max(0, after - before),
+      inRange: strictFit ? countInRangeOptions() : after
+    });
+  }
+
   if (!generatedOptions.length) {
     throw new Error("Planner Copilot could not generate a valid option from the provided inventory.");
   }
