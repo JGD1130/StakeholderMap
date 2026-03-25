@@ -4272,9 +4272,171 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     });
   }
 
-  if (!generatedOptions.length) {
-    throw new Error("Planner Copilot could not generate a valid option from the provided inventory.");
-  }
+  const appendUniqueLines = (base = [], additions = []) => {
+    const out = Array.isArray(base) ? [...base] : [];
+    const seen = new Set(out.map((line) => String(line || "").trim()).filter(Boolean));
+    (Array.isArray(additions) ? additions : []).forEach((line) => {
+      const normalized = String(line || "").trim();
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      out.push(normalized);
+    });
+    return out;
+  };
+  const sortOptionsByClosestFit = (options = []) => {
+    return [...(Array.isArray(options) ? options : [])].sort((a, b) => {
+      const aTotal = Number(a?.scenarioTotals?.totalSF || 0) || 0;
+      const bTotal = Number(b?.scenarioTotals?.totalSF || 0) || 0;
+      const aGap = Math.abs(targetSf - aTotal);
+      const bGap = Math.abs(targetSf - bTotal);
+      if (aGap !== bGap) return aGap - bGap;
+      return Number(b?.score || 0) - Number(a?.score || 0);
+    });
+  };
+  const derivePrimaryBuildingKey = () => {
+    const byBuildingTotals = new Map();
+    rooms.forEach((room) => {
+      if (!room?.buildingKey) return;
+      if (!byBuildingTotals.has(room.buildingKey)) {
+        byBuildingTotals.set(room.buildingKey, { key: room.buildingKey, sf: 0 });
+      }
+      const row = byBuildingTotals.get(room.buildingKey);
+      row.sf += Number(room?.sf || 0) || 0;
+    });
+    return Array.from(byBuildingTotals.values())
+      .sort((a, b) => {
+        const aPenalty = (
+          (preferAcademicFit && hardAcademicAvoidSet.has(a?.key || "") ? 100000 : 0) +
+          (preferAcademicFit && lowFitSet.has(a?.key || "") ? 45000 : 0)
+        );
+        const bPenalty = (
+          (preferAcademicFit && hardAcademicAvoidSet.has(b?.key || "") ? 100000 : 0) +
+          (preferAcademicFit && lowFitSet.has(b?.key || "") ? 45000 : 0)
+        );
+        return (b.sf - bPenalty) - (a.sf - aPenalty);
+      })[0]?.key || "";
+  };
+  const buildOptionFromSelection = ({
+    selection = [],
+    passLabel = "",
+    extraAssumptions = [],
+    extraSelectionCriteria = [],
+    rationaleFallback = "Closest-fit fallback selection."
+  } = {}) => {
+    if (!Array.isArray(selection) || !selection.length) return null;
+    const totals = buildCopilotScenarioTotals(selection);
+    const score = buildCopilotOptionScore({
+      candidates: selection,
+      totals,
+      targetSf,
+      minSf,
+      maxSf,
+      strictFit,
+      preferSingleBuilding,
+      typeTargets,
+      copilotPreferences
+    });
+    optionSeq += 1;
+    const selectedBuildings = Array.from(new Set(selection.map((room) => room.buildingLabel))).filter(Boolean);
+    const option = {
+      optionId: `option_${optionSeq}`,
+      label: `Option ${optionSeq}`,
+      title: `${context?.targetDepartment || context?.scenarioDepartment || "Department"} scenario option ${optionSeq}`,
+      score: score.score,
+      scoreBreakdown: score.breakdown,
+      buildingCount: selectedBuildings.length,
+      buildings: selectedBuildings,
+      fitSummary: {
+        targetSf: Math.round(targetSf),
+        minSf: Math.round(minSf),
+        maxSf: Math.round(maxSf),
+        totalSf: Math.round(totals.totalSF || 0),
+        sfGapPct: Number(score.breakdown?.sfGapPct || 0),
+        typeGapPct: Number(score.breakdown?.typeGapPct || 0),
+        inTargetRange: Boolean(score.breakdown?.inTargetRange)
+      },
+      scenarioTotals: totals,
+      baselineTotals: constraints?.baselineTotals || {
+        totalSF: Math.round(targetSf),
+        rooms: 0,
+        sfByType: []
+      },
+      assumptions: appendUniqueLines([
+        strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
+        ...(passLabel ? [`Generated in fallback pass: ${passLabel}.`] : [])
+      ], extraAssumptions),
+      selectionCriteria: appendUniqueLines([
+        "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
+        "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+        ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : [])
+      ], extraSelectionCriteria),
+      nextSteps: [
+        "Review adjacency and room-function impacts.",
+        "Apply selected option to Planning Scenario for visual validation.",
+        "Run scenario comparison and export summary for stakeholder review."
+      ],
+      recommendedCandidates: selection.map((room) => ({
+        roomId: room.roomId,
+        id: room.id,
+        revitId: room.revitId,
+        buildingLabel: room.buildingLabel,
+        floorId: room.floorId,
+        floorName: room.floorName,
+        roomLabel: room.roomLabel,
+        type: room.type,
+        sf: Math.round(Number(room.sf || 0) || 0),
+        rationale: room.rationale || rationaleFallback
+      }))
+    };
+    option.whyThisOption = buildCopilotOptionNarrative({
+      option,
+      targetSf,
+      minSf,
+      maxSf
+    });
+    return option;
+  };
+  const buildClosestFallbackOption = ({
+    label = "closest-fit fallback",
+    maxBuildingCountOverride = maxPreferredBuildingCount,
+    allowSupportFallbackOverride = false,
+    allowPublicPerformanceFallbackOverride = allowPublicPerformanceFallback,
+    preferSingleBuildingOverride = preferSingleBuilding,
+    seedOffset = 0,
+    extraAssumptions = []
+  } = {}) => {
+    const primaryBuildingKey = derivePrimaryBuildingKey();
+    const selection = buildCopilotCandidates({
+      rooms,
+      targetSf,
+      minSf,
+      maxSf,
+      strictFit: false,
+      preferSingleBuilding: Boolean(preferSingleBuildingOverride),
+      typeTargets,
+      primaryBuildingKey,
+      allowOffFamilyFallback: true,
+      allowShopFallback,
+      allowAthleticsFallback,
+      allowPublicPerformanceFallback: Boolean(allowPublicPerformanceFallbackOverride),
+      allowSupportFallback: Boolean(allowSupportFallbackOverride),
+      maxBuildingCount: Number.isFinite(maxBuildingCountOverride) ? maxBuildingCountOverride : Number.POSITIVE_INFINITY,
+      copilotPreferences,
+      rng: createSeededRng(seed + seedOffset)
+    });
+    if (!Array.isArray(selection) || !selection.length) return null;
+    return buildOptionFromSelection({
+      selection,
+      passLabel: label,
+      extraAssumptions: appendUniqueLines([
+        "Closest-fit fallback used because no strict in-range option was available."
+      ], extraAssumptions),
+      extraSelectionCriteria: [
+        "Strict in-range target was not achievable with active controls; nearest-fit fallback returned."
+      ],
+      rationaleFallback: "Closest-fit fallback selection."
+    });
+  };
 
   generatedOptions.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
   const strictInRangeOptions = strictFit
@@ -4297,7 +4459,84 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         : (strictInRangeWithBuildingCap.length ? strictInRangeWithBuildingCap : strictInRangeOptions)
     )
     : strictInRangeOptions;
+  let optionsForShortlist = strictFit ? effectiveStrictOptions : generatedOptions;
   if (strictFit && !effectiveStrictOptions.length) {
+    let fallbackPool = sortOptionsByClosestFit(generatedOptions);
+    const relaxNotes = [];
+    if (fallbackPool.length) {
+      relaxNotes.push("No in-range strict option found; returning closest-fit option under current hard controls.");
+    }
+    if (!fallbackPool.length) {
+      const fallbackA = buildClosestFallbackOption({
+        label: "auto-relax A: closest-fit under current hard controls",
+        maxBuildingCountOverride: maxPreferredBuildingCount,
+        allowSupportFallbackOverride: false,
+        allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
+        preferSingleBuildingOverride: preferSingleBuilding,
+        seedOffset: 21000011
+      });
+      if (fallbackA) {
+        fallbackPool = [fallbackA];
+        relaxNotes.push("Auto-relax A applied: strict range disabled; kept current hard controls.");
+      }
+    }
+    if (!fallbackPool.length && hardMaxBuildings != null) {
+      const fallbackB = buildClosestFallbackOption({
+        label: `auto-relax B: closest-fit with building cap ${hardMaxBuildings + 1}`,
+        maxBuildingCountOverride: hardMaxBuildings + 1,
+        allowSupportFallbackOverride: false,
+        allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
+        preferSingleBuildingOverride: preferSingleBuilding,
+        seedOffset: 22000021,
+        extraAssumptions: [`Building cap relaxed by +1 (${hardMaxBuildings} -> ${hardMaxBuildings + 1}).`]
+      });
+      if (fallbackB) {
+        fallbackPool = [fallbackB];
+        relaxNotes.push(`Auto-relax B applied: building cap temporarily relaxed to ${hardMaxBuildings + 1}.`);
+      }
+    }
+    if (!fallbackPool.length && disallowSupportStorage) {
+      const fallbackC = buildClosestFallbackOption({
+        label: "auto-relax C: closest-fit with limited support fallback",
+        maxBuildingCountOverride: hardMaxBuildings != null ? (hardMaxBuildings + 1) : maxPreferredBuildingCount,
+        allowSupportFallbackOverride: true,
+        allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
+        preferSingleBuildingOverride: preferSingleBuilding,
+        seedOffset: 23000031,
+        extraAssumptions: ["Support/storage hard exclusion relaxed in fallback to avoid no-solution dead-end."]
+      });
+      if (fallbackC) {
+        fallbackPool = [fallbackC];
+        relaxNotes.push("Auto-relax C applied: support/storage exclusion relaxed.");
+      }
+    }
+    if (!fallbackPool.length && disallowPublicPerformance) {
+      const fallbackD = buildClosestFallbackOption({
+        label: "auto-relax D: closest-fit with public performance fallback",
+        maxBuildingCountOverride: hardMaxBuildings != null ? (hardMaxBuildings + 1) : maxPreferredBuildingCount,
+        allowSupportFallbackOverride: disallowSupportStorage ? false : allowSupportFallbackForRepairs,
+        allowPublicPerformanceFallbackOverride: true,
+        preferSingleBuildingOverride: preferSingleBuilding,
+        seedOffset: 24000041,
+        extraAssumptions: ["Public performance hard exclusion relaxed in fallback to avoid no-solution dead-end."]
+      });
+      if (fallbackD) {
+        fallbackPool = [fallbackD];
+        relaxNotes.push("Auto-relax D applied: public performance exclusion relaxed.");
+      }
+    }
+    if (fallbackPool.length) {
+      optionsForShortlist = sortOptionsByClosestFit(fallbackPool).map((option) => ({
+        ...option,
+        assumptions: appendUniqueLines(option?.assumptions || [], relaxNotes),
+        selectionCriteria: appendUniqueLines(
+          option?.selectionCriteria || [],
+          ["Closest-fit fallback was used because strict in-range options were unavailable."]
+        )
+      }));
+    }
+  }
+  if (strictFit && !optionsForShortlist.length) {
     const repairSummary = repairPassHistory
       .map((row) => `${row.label}: +${row.generated} options, ${row.inRange} in-range`)
       .join("; ");
@@ -4309,7 +4548,10 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}${Number.isFinite(reachableSf) ? ` Max reachable SF under current assignable filters (top 30 rooms): ${Math.round(reachableSf).toLocaleString()} SF.` : ""}`
     );
   }
-  const shortlistedOptions = effectiveStrictOptions.slice(0, optionTargetCount);
+  if (!optionsForShortlist.length) {
+    throw new Error("Planner Copilot could not generate a valid option from the provided inventory.");
+  }
+  const shortlistedOptions = optionsForShortlist.slice(0, optionTargetCount);
   shortlistedOptions.forEach((option, idx) => {
     option.optionId = `option_${idx + 1}`;
     option.label = `Option ${idx + 1}`;

@@ -1087,3 +1087,18 @@ Latest completed work (Planner hard-controls phase 1)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (strict auto-relax + closest-fit fallback)
+- Updated `generateMoveScenarioCopilotPlan(...)` in `ai-server/server.js` so strict mode no longer hard-fails immediately when no in-range option exists.
+- New behavior in strict mode:
+  - If in-range options are unavailable, copilot now returns a closest-fit option under current hard controls when possible.
+  - If no option can be generated, copilot runs controlled auto-relax steps:
+    - A: disable strict-range only (keep hard controls),
+    - B: if max-buildings is hard set, temporarily relax cap by +1,
+    - C: relax support/storage exclusion only if still no solution,
+    - D: relax public performance exclusion only if still no solution.
+- Returned fallback options now include explicit assumptions/criteria that describe which auto-relax step was used.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
