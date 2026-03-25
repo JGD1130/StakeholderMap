@@ -1063,3 +1063,27 @@ Latest completed work (strict repair E: cap+1 rescue)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (Planner hard-controls phase 1)
+- Added new Create Planning Scenario controls in `src/components/StakeholderMap.jsx`:
+  - `Max buildings` (`Auto`, `1`, `2`, `3`, `4`)
+  - `Contiguity preference` (`Low`, `Medium`, `High`)
+  - `Disallow support/storage`
+  - `Disallow public performance`
+- Wired controls into `scenarioConstraints` for copilot requests:
+  - `maxBuildings`
+  - `contiguityPreference`
+  - `disallowSupportStorage`
+  - `disallowPublicPerformance`
+  - Also maps contiguity preference to `copilotPreferences.contiguityBoost`.
+- Enforced controls server-side in `ai-server/server.js`:
+  - Hard max building cap now applies to strict option acceptance.
+  - Hard support/storage exclusion filters support-family candidates before selection.
+  - Hard public-performance exclusion blocks public performance / assembly candidates.
+  - Contiguity preference overrides `contiguityBoost` for scoring.
+  - Repair E (cap +1) is skipped when user sets a hard `maxBuildings`.
+- Added explicit assumptions/selection-criteria lines to reflect active hard controls in returned copilot options.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

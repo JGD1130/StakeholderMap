@@ -9360,6 +9360,10 @@ const StakeholderMap = ({
   const [aiCreateScenarioResult, setAiCreateScenarioResult] = useState(null);
   const [aiCreateScenarioStrict, setAiCreateScenarioStrict] = useState(true);
   const [aiCreateScenarioMode, setAiCreateScenarioMode] = useState('copilot');
+  const [aiCopilotMaxBuildings, setAiCopilotMaxBuildings] = useState('auto');
+  const [aiCopilotDisallowSupportStorage, setAiCopilotDisallowSupportStorage] = useState(true);
+  const [aiCopilotDisallowPublicPerformance, setAiCopilotDisallowPublicPerformance] = useState(true);
+  const [aiCopilotContiguityPreference, setAiCopilotContiguityPreference] = useState('medium');
   const [aiScenarioComparePending, setAiScenarioComparePending] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState('');
@@ -16628,6 +16632,21 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         offlineBuildings: offlineBuildingLabels,
         crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic; excludes athletics/gym/arena)']
       };
+      const maxBuildingsParsed = aiCopilotMaxBuildings === 'auto'
+        ? null
+        : Math.max(1, Math.round(Number(aiCopilotMaxBuildings) || 0));
+      if (maxBuildingsParsed) {
+        scenarioConstraints.maxBuildings = maxBuildingsParsed;
+        scenarioPolicyNotes.push(`Building cap set to ${maxBuildingsParsed} for this run.`);
+      }
+      scenarioConstraints.disallowSupportStorage = Boolean(aiCopilotDisallowSupportStorage);
+      scenarioConstraints.disallowPublicPerformance = Boolean(aiCopilotDisallowPublicPerformance);
+      if (aiCopilotDisallowSupportStorage) {
+        scenarioPolicyNotes.push('Support/storage-like spaces are hard excluded from this run.');
+      }
+      if (aiCopilotDisallowPublicPerformance) {
+        scenarioPolicyNotes.push('Public performance/assembly spaces are hard excluded from this run.');
+      }
       try {
         const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
         const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
@@ -16650,6 +16669,25 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           scenarioPolicyNotes.push('Applied planner feedback from prior scenario comparison (single-building, SF fit, support-type cap, contiguity).');
         }
       } catch {}
+      const contiguityBoostByPreference = {
+        low: 1,
+        medium: 1.6,
+        high: 2.3
+      };
+      const selectedContiguityPreference = String(aiCopilotContiguityPreference || 'medium').toLowerCase();
+      const selectedContiguityBoost = contiguityBoostByPreference[selectedContiguityPreference] || 1.6;
+      scenarioConstraints.contiguityPreference = selectedContiguityPreference;
+      scenarioConstraints.copilotPreferences = {
+        ...(scenarioConstraints.copilotPreferences || {}),
+        contiguityBoost: selectedContiguityBoost
+      };
+      scenarioPolicyNotes.push(
+        selectedContiguityPreference === 'high'
+          ? 'Contiguity preference: high (favor clustered, same-floor picks).'
+          : (selectedContiguityPreference === 'low'
+            ? 'Contiguity preference: low (allow broader spread for fit).'
+            : 'Contiguity preference: medium.')
+      );
       if (baselineTotalsForConstraints) {
         scenarioConstraints.baselineTotals = baselineTotalsForConstraints;
       }
@@ -17044,6 +17082,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   }, [
     activeBuildingName,
     activeUniversityName,
+    aiCopilotContiguityPreference,
+    aiCopilotDisallowPublicPerformance,
+    aiCopilotDisallowSupportStorage,
+    aiCopilotMaxBuildings,
     aiCreateScenarioMode,
     aiCreateScenarioStrict,
     aiCreateScenarioText,
@@ -27147,6 +27189,65 @@ useEffect(() => {
               Copilot generates multiple candidate options and lets you choose one.
             </span>
           </label>
+
+          <div
+            style={{
+              marginTop: 10,
+              border: '1px solid #e1e4ea',
+              borderRadius: 8,
+              padding: 10,
+              display: 'grid',
+              gap: 8
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 12, color: '#444' }}>Planner hard controls</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <label style={{ display: 'grid', gap: 4, fontSize: 12, color: '#444' }}>
+                <span>Max buildings</span>
+                <select
+                  value={aiCopilotMaxBuildings}
+                  onChange={(e) => setAiCopilotMaxBuildings(e.target.value)}
+                  style={{ width: '100%', padding: 7, borderRadius: 8, border: '1px solid #d0d0d0' }}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="1">1 building</option>
+                  <option value="2">2 buildings</option>
+                  <option value="3">3 buildings</option>
+                  <option value="4">4 buildings</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 4, fontSize: 12, color: '#444' }}>
+                <span>Contiguity preference</span>
+                <select
+                  value={aiCopilotContiguityPreference}
+                  onChange={(e) => setAiCopilotContiguityPreference(e.target.value)}
+                  style={{ width: '100%', padding: 7, borderRadius: 8, border: '1px solid #d0d0d0' }}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#444' }}>
+                <input
+                  type="checkbox"
+                  checked={aiCopilotDisallowSupportStorage}
+                  onChange={(e) => setAiCopilotDisallowSupportStorage(e.target.checked)}
+                />
+                Disallow support/storage
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#444' }}>
+                <input
+                  type="checkbox"
+                  checked={aiCopilotDisallowPublicPerformance}
+                  onChange={(e) => setAiCopilotDisallowPublicPerformance(e.target.checked)}
+                />
+                Disallow public performance
+              </label>
+            </div>
+          </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#444' }}>

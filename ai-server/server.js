@@ -3469,11 +3469,22 @@ function buildCopilotCandidates({
 function generateMoveScenarioCopilotPlan({ request, context, inventory, constraints }) {
   const requestText = normalizeCopilotText(request);
   const scenarioDeptText = normalizeCopilotText(context?.targetDepartment || context?.scenarioDepartment || "");
-  const preferSingleBuilding = Boolean(constraints?.preferSingleBuilding);
+  const maxBuildingsRaw = Number(constraints?.maxBuildings || 0);
+  const hardMaxBuildings = Number.isFinite(maxBuildingsRaw) && maxBuildingsRaw > 0
+    ? Math.max(1, Math.round(maxBuildingsRaw))
+    : null;
+  const preferSingleBuilding = Boolean(constraints?.preferSingleBuilding) || hardMaxBuildings === 1;
   const preferAcademicFit = Boolean(constraints?.preferAcademicFit);
+  const disallowSupportStorage = Boolean(constraints?.disallowSupportStorage);
+  const disallowPublicPerformance = Boolean(constraints?.disallowPublicPerformance);
+  const contiguityPreference = normalizeCopilotText(constraints?.contiguityPreference || "").toLowerCase();
+  const contiguityBoostByPreference = { low: 1, medium: 1.6, high: 2.3 };
   const copilotPreferences = (constraints?.copilotPreferences && typeof constraints.copilotPreferences === "object")
-    ? constraints.copilotPreferences
+    ? { ...constraints.copilotPreferences }
     : {};
+  if (contiguityBoostByPreference[contiguityPreference] != null) {
+    copilotPreferences.contiguityBoost = contiguityBoostByPreference[contiguityPreference];
+  }
   const strictFit = Number(constraints?.targetSfTolerance || 0.1) <= 0.05;
   const tolerance = Math.max(0.03, Math.min(0.25, Number(constraints?.targetSfTolerance || 0.1) || 0.1));
   const singleBuildingBoost = Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) || 1);
@@ -3486,15 +3497,18 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const typeTargets = buildCopilotTypeTargetMap(constraints);
   const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
   const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
-  const allowPublicPerformanceTargeting = shouldAllowPublicPerformanceByIntent(requestText, scenarioDeptText);
-  const allowSupportTargeting = shouldAllowSupportByIntent(requestText, scenarioDeptText);
+  const allowPublicPerformanceTargeting = !disallowPublicPerformance && shouldAllowPublicPerformanceByIntent(requestText, scenarioDeptText);
+  const allowSupportTargeting = !disallowSupportStorage && shouldAllowSupportByIntent(requestText, scenarioDeptText);
   const sourceHomeBuildingCountRaw = Number(constraints?.sourceHomeBuildingCount || 0);
   const sourceHomeBuildingCount = Number.isFinite(sourceHomeBuildingCountRaw) && sourceHomeBuildingCountRaw > 0
     ? sourceHomeBuildingCountRaw
     : (preferSingleBuilding ? 1 : 2);
-  const maxPreferredBuildingCount = preferSingleBuilding
+  let maxPreferredBuildingCount = preferSingleBuilding
     ? (sourceHomeBuildingCount <= 1 ? 2 : 3)
     : Number.POSITIVE_INFINITY;
+  if (hardMaxBuildings != null) {
+    maxPreferredBuildingCount = Math.min(maxPreferredBuildingCount, hardMaxBuildings);
+  }
   const baselineNeedsTelecom = Array.from(typeTargets.values()).some((row) => isCopilotTelecomType(row?.type || ""));
   const baselineSupportTypeKeys = new Set(
     Array.from(typeTargets.entries())
@@ -3517,6 +3531,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       if (isCopilotPublicPerformanceType(row?.type || key)) typeTargets.delete(key);
     });
   }
+  if (disallowSupportStorage && typeTargets.size > 0) {
+    Array.from(typeTargets.entries()).forEach(([key, row]) => {
+      if (getCopilotTypeFamily(row?.type || key) === "support") typeTargets.delete(key);
+    });
+  }
   const offlineSet = new Set((constraints?.offlineBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
   const lowFitSet = new Set((constraints?.lowFitBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
   const excludeSet = new Set((context?.excludeBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
@@ -3527,6 +3546,9 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .filter(Boolean)
     .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
     .filter((room) => {
+      if (disallowSupportStorage) {
+        return getCopilotTypeFamily(room?.type || "") !== "support";
+      }
       if (allowSupportTargeting) return true;
       if (getCopilotTypeFamily(room?.type || "") !== "support") return true;
       return baselineSupportTypeKeys.has(room?.typeKey || normalizeCopilotTypeKey(room?.type || ""));
@@ -3576,6 +3598,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const allowShopFallback = allowShopTargeting && Array.from(typeTargets.values()).some((row) => isCopilotShopType(row?.type || ""));
   const allowAthleticsFallback = allowAthleticsTargeting && Array.from(typeTargets.values()).some((row) => isCopilotAthleticsType(row?.type || ""));
   const allowPublicPerformanceFallback = allowPublicPerformanceTargeting && Array.from(typeTargets.values()).some((row) => isCopilotPublicPerformanceType(row?.type || ""));
+  const allowSupportFallbackForRepairs = !disallowSupportStorage;
   const targetFamilySet = new Set(
     Array.from(typeTargets.values())
       .map((row) => getCopilotTypeFamily(row?.type || ""))
@@ -3589,6 +3612,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const canUseSupplementRoom = (room, allowOffFamilyFallback = false) => {
     if (!room) return false;
     if (!isCopilotExceptionType(room.type)) return false;
+    if (disallowSupportStorage && getCopilotTypeFamily(room.type) === "support") return false;
     if (isCopilotShopType(room.type) && !allowShopFallback) return false;
     if (isCopilotAthleticsType(room.type) && !allowAthleticsFallback) return false;
     if (isCopilotPublicPerformanceType(room.type) && !allowPublicPerformanceFallback) return false;
@@ -3841,18 +3865,24 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         assumptions: [
           strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
           preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
+          ...(hardMaxBuildings != null ? [`Hard max buildings enforced: ${hardMaxBuildings}.`] : []),
           ...(passLabel ? [`Generated in repair pass: ${passLabel}.`] : []),
           ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : []),
           ...(preferAcademicFit ? ["Master-plan-style building suitability filtering is active for academic moves."] : []),
           ...(!allowShopTargeting ? ["Shop/maker spaces are excluded unless explicitly requested or discipline-aligned."] : []),
           ...(!allowAthleticsTargeting ? ["Athletics/gym/arena spaces are excluded unless explicitly requested or discipline-aligned."] : []),
+          ...(disallowSupportStorage ? ["Support/storage-like spaces are hard excluded for this run."] : []),
+          ...(disallowPublicPerformance ? ["Public performance/assembly spaces are hard excluded for this run."] : []),
           ...(allowOffFamilyFallback ? ["Auto-relaxed to type-family fallback because strict pass underfilled target SF."] : [])
         ],
         selectionCriteria: [
           "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
           "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+          ...(hardMaxBuildings != null ? [`Building cap applied before candidate acceptance (max ${hardMaxBuildings}).`] : []),
           ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : []),
           ...(!allowSupportTargeting ? ["Support/storage/telecom spaces excluded for academic move-fit unless explicitly requested."] : []),
+          ...(disallowSupportStorage ? ["Support/storage family is hard-excluded by planner control."] : []),
+          ...(disallowPublicPerformance ? ["Public performance/assembly family is hard-excluded by planner control."] : []),
           ...(preferAcademicFit ? ["Academic-fit building ranking uses master-plan category hints (avoid facilities, athletics, student-life buildings by default)."] : []),
           "Type fit weighted highest against baseline room-type SF mix (family-level fallback only when needed).",
           "Total SF fit optimized toward baseline target range.",
@@ -3932,13 +3962,13 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       relaxSingleBuilding: true
     });
   }
-  if (strictFit && countInRangeOptions() === 0) {
+  if (strictFit && countInRangeOptions() === 0 && allowSupportFallbackForRepairs) {
     runRepairPass({
       passLabel: "repair C: constrained support fallback strict",
       passSeedOffset: 1500007,
       attemptScale: 1.15,
       allowOffFamilyFallback: true,
-      allowSupportFallback: true,
+      allowSupportFallback: allowSupportFallbackForRepairs,
       relaxSingleBuilding: true
     });
   }
@@ -3948,7 +3978,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       passSeedOffset: 2000033,
       attemptScale: 1.2,
       allowOffFamilyFallback: true,
-      allowSupportFallback: true,
+      allowSupportFallback: allowSupportFallbackForRepairs,
       relaxSingleBuilding: true
     });
   }
@@ -4043,11 +4073,17 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           assumptions: [
             `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.`,
             "Generated in repair pass: repair D: strict-range rescue.",
+            ...(hardMaxBuildings != null ? [`Hard max buildings enforced: ${hardMaxBuildings}.`] : []),
+            ...(disallowSupportStorage ? ["Support/storage-like spaces are hard excluded for this run."] : []),
+            ...(disallowPublicPerformance ? ["Public performance/assembly spaces are hard excluded for this run."] : []),
             "Rescue search prioritized in-range SF combinations with type/family penalties still active."
           ],
           selectionCriteria: [
             "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
             "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+            ...(hardMaxBuildings != null ? [`Building cap applied before candidate acceptance (max ${hardMaxBuildings}).`] : []),
+            ...(disallowSupportStorage ? ["Support/storage family is hard-excluded by planner control."] : []),
+            ...(disallowPublicPerformance ? ["Public performance/assembly family is hard-excluded by planner control."] : []),
             ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : []),
             "Strict-range rescue searched for in-band SF combinations when greedy strict passes failed."
           ],
@@ -4090,6 +4126,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     strictFit &&
     countInRangeOptions() === 0 &&
     preferSingleBuilding &&
+    hardMaxBuildings == null &&
     Number.isFinite(maxPreferredBuildingCount) &&
     maxPreferredBuildingCount > 0
   ) {
@@ -4129,7 +4166,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       allowShopFallback,
       allowAthleticsFallback,
       allowPublicPerformanceFallback,
-      allowSupportFallback: true,
+      allowSupportFallback: allowSupportFallbackForRepairs,
       preferSingleBuilding,
       maxBuildingCount: expandedCap,
       primaryBuildingKey,
@@ -4188,11 +4225,15 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           assumptions: [
             `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.`,
             `Generated in repair pass: repair E: strict-range rescue (building cap relaxed to ${expandedCap}).`,
+            ...(disallowSupportStorage ? ["Support/storage-like spaces remain hard excluded during rescue."] : []),
+            ...(disallowPublicPerformance ? ["Public performance/assembly spaces remain hard excluded during rescue."] : []),
             "Rescue expanded building cap by one only after all stricter passes failed."
           ],
           selectionCriteria: [
             "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
             "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+            ...(disallowSupportStorage ? ["Support/storage family is hard-excluded by planner control."] : []),
+            ...(disallowPublicPerformance ? ["Public performance/assembly family is hard-excluded by planner control."] : []),
             ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : []),
             "Strict-range rescue searched for in-band SF combinations when stricter building-cap passes failed."
           ],
@@ -4249,8 +4290,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         return count <= maxPreferredBuildingCount;
       })
     : strictInRangeOptions;
-  const effectiveStrictOptions = strictFit && strictInRangeWithBuildingCap.length
-    ? strictInRangeWithBuildingCap
+  const effectiveStrictOptions = strictFit
+    ? (
+      hardMaxBuildings != null
+        ? strictInRangeWithBuildingCap
+        : (strictInRangeWithBuildingCap.length ? strictInRangeWithBuildingCap : strictInRangeOptions)
+    )
     : strictInRangeOptions;
   if (strictFit && !effectiveStrictOptions.length) {
     const repairSummary = repairPassHistory
