@@ -16396,7 +16396,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     return { campusRow, buildingRows };
   }, [buildFloorUrl, ensureFloorsForBuilding, roomPatches]);
 
-  const onCreateMoveScenario = useCallback(async () => {
+  const onCreateMoveScenario = useCallback(async (opts = {}) => {
     setAiCreateScenarioErr('');
     setAiCreateScenarioLoading(true);
     setAiCreateScenarioResult(null);
@@ -16405,6 +16405,12 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (aiStatus === 'down') throw new Error('AI server is offline.');
       const request = (aiCreateScenarioText || '').trim();
       if (!request) throw new Error('Enter a short request for the planning scenario.');
+      const forceRelaxed = Boolean(opts?.forceRelaxed);
+      const effectiveStrict = forceRelaxed ? false : aiCreateScenarioStrict;
+      const effectiveMaxBuildings = forceRelaxed ? 'auto' : aiCopilotMaxBuildings;
+      const effectiveDisallowSupportStorage = forceRelaxed ? false : aiCopilotDisallowSupportStorage;
+      const effectiveDisallowPublicPerformance = forceRelaxed ? false : aiCopilotDisallowPublicPerformance;
+      const effectiveContiguityPreference = forceRelaxed ? 'medium' : aiCopilotContiguityPreference;
 
       const allRooms = (campusRoomsLoaded && Array.isArray(campusRooms)) ? campusRooms : [];
       const deptCandidates = getDeptCandidates(allRooms);
@@ -16512,6 +16518,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       }
 
       const scenarioPolicyNotes = [];
+      if (forceRelaxed) {
+        scenarioPolicyNotes.push('User-triggered relax retry: strict fit off, hard excludes disabled, and building cap reset to Auto for this run.');
+      }
       const preferAcademicFit = shouldPreferAcademicFitForScenario(inferredDept, baselineTotals);
       const preferSingleTargetBuilding = Boolean(inferredBuilding || (sourceHomeBuildingCount > 0 && sourceHomeBuildingCount <= 1));
       let inventoryBuildingProfiles = summarizeScenarioBuildingProfiles(inventory);
@@ -16624,7 +16633,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           }
         : null;
       const scenarioConstraints = {
-        targetSfTolerance: aiCreateScenarioStrict ? 0.05 : 0.1,
+        targetSfTolerance: effectiveStrict ? 0.05 : 0.1,
         preferSingleBuilding: preferSingleTargetBuilding,
         sourceHomeBuildingCount,
         preferAcademicFit,
@@ -16632,19 +16641,19 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         offlineBuildings: offlineBuildingLabels,
         crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic; excludes athletics/gym/arena)']
       };
-      const maxBuildingsParsed = aiCopilotMaxBuildings === 'auto'
+      const maxBuildingsParsed = effectiveMaxBuildings === 'auto'
         ? null
-        : Math.max(1, Math.round(Number(aiCopilotMaxBuildings) || 0));
+        : Math.max(1, Math.round(Number(effectiveMaxBuildings) || 0));
       if (maxBuildingsParsed) {
         scenarioConstraints.maxBuildings = maxBuildingsParsed;
         scenarioPolicyNotes.push(`Building cap set to ${maxBuildingsParsed} for this run.`);
       }
-      scenarioConstraints.disallowSupportStorage = Boolean(aiCopilotDisallowSupportStorage);
-      scenarioConstraints.disallowPublicPerformance = Boolean(aiCopilotDisallowPublicPerformance);
-      if (aiCopilotDisallowSupportStorage) {
+      scenarioConstraints.disallowSupportStorage = Boolean(effectiveDisallowSupportStorage);
+      scenarioConstraints.disallowPublicPerformance = Boolean(effectiveDisallowPublicPerformance);
+      if (effectiveDisallowSupportStorage) {
         scenarioPolicyNotes.push('Support/storage-like spaces are hard excluded from this run.');
       }
-      if (aiCopilotDisallowPublicPerformance) {
+      if (effectiveDisallowPublicPerformance) {
         scenarioPolicyNotes.push('Public performance/assembly spaces are hard excluded from this run.');
       }
       try {
@@ -16674,7 +16683,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         medium: 1.6,
         high: 2.3
       };
-      const selectedContiguityPreference = String(aiCopilotContiguityPreference || 'medium').toLowerCase();
+      const selectedContiguityPreference = String(effectiveContiguityPreference || 'medium').toLowerCase();
       const selectedContiguityBoost = contiguityBoostByPreference[selectedContiguityPreference] || 1.6;
       scenarioConstraints.contiguityPreference = selectedContiguityPreference;
       scenarioConstraints.copilotPreferences = {
@@ -16811,9 +16820,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             baselineTotals,
             {
               targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
-              maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+              maxCandidates: effectiveStrict ? 40 : 30,
               primaryBuilding: preferredBuildingForOption,
-              strictFit: aiCreateScenarioStrict,
+              strictFit: effectiveStrict,
               preferAcademicFit,
               scenarioDepartment: inferredDept || scenarioAssignedDept || ''
             }
@@ -16916,9 +16925,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
               baselineTotals,
               {
                 targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
-                maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+                maxCandidates: effectiveStrict ? 40 : 30,
                 primaryBuilding: primaryBuildingForOption,
-                strictFit: aiCreateScenarioStrict,
+                strictFit: effectiveStrict,
                 preferAcademicFit,
                 scenarioDepartment: inferredDept || scenarioAssignedDept || ''
               }
@@ -16954,9 +16963,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
                 baselineTotals,
                 {
                   targetTolerance: scenarioConstraints?.targetSfTolerance ?? 0.1,
-                  maxCandidates: aiCreateScenarioStrict ? 40 : 30,
+                  maxCandidates: effectiveStrict ? 40 : 30,
                   primaryBuilding: primaryBuildingForOption,
-                  strictFit: aiCreateScenarioStrict,
+                  strictFit: effectiveStrict,
                   preferAcademicFit,
                   scenarioDepartment: inferredDept || scenarioAssignedDept || ''
                 }
@@ -27170,8 +27179,21 @@ useEffect(() => {
           </div>
 
           {aiCreateScenarioErr ? (
-            <div style={{ color: 'crimson', marginTop: 6, fontSize: 12 }}>
-              {aiCreateScenarioErr}
+            <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
+              <div style={{ color: 'crimson', fontSize: 12 }}>
+                {aiCreateScenarioErr}
+              </div>
+              {aiCreateScenarioMode === 'copilot' ? (
+                <div>
+                  <button
+                    className="btn"
+                    disabled={aiCreateScenarioLoading || aiIsDown}
+                    onClick={() => onCreateMoveScenario({ forceRelaxed: true })}
+                  >
+                    Retry relaxed
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

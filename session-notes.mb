@@ -1102,3 +1102,19 @@ Latest completed work (strict auto-relax + closest-fit fallback)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (explicit relaxed retry in planner modal)
+- Updated `onCreateMoveScenario(...)` in `src/components/StakeholderMap.jsx` to accept a one-off override:
+  - `forceRelaxed: true` now runs with temporary relaxed controls for that run only:
+    - strict fit off,
+    - max buildings reset to `Auto`,
+    - support/storage exclusion off,
+    - public performance exclusion off,
+    - contiguity reset to `Medium`.
+  - User defaults in the modal are unchanged after the retry.
+- Added visible `Retry relaxed` button in the Create Planning Scenario error area:
+  - Appears when copilot mode returns an error/no-fit.
+  - Triggers `onCreateMoveScenario({ forceRelaxed: true })`.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
