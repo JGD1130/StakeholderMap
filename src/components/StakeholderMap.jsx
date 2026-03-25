@@ -5423,7 +5423,7 @@ const shouldPreferAcademicFitForScenario = (deptName, baselineTotals) => {
 };
 
 const isScenarioLowFitBuildingName = (value) =>
-  /(general services|facility maintenance|facilities maintenance|physical plant|plant operations|central services|warehouse|service center|student union|residence|residency|apartment|stadium|fitness facility|chapel|health center|alumni center|engagement center|student engagement)/i
+  /(general services|facility maintenance|facilities maintenance|physical plant|plant operations|central services|warehouse|service center|student union|residence|residency|apartment|stadium|arena|fieldhouse|fitness facility|athletic center|chapel|health center|alumni center|engagement center|student engagement)/i
     .test(String(value ?? ''));
 
 const SCENARIO_OFFLINE_BUILDINGS = [

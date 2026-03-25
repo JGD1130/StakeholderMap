@@ -941,3 +941,24 @@ Latest completed work (agentic repair loop v1 + smarter strict support handling)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (master-plan suitability gate + stricter support/storage fallback)
+- Added master-plan-aware building suitability in backend copilot (`ai-server/server.js`):
+  - New optional profile file support:
+    - `ai-server/Docs/master-plan-building-profiles.json`
+    - fields supported per building: `category`, `hardAcademicAvoid`, `softAcademicAvoid`, `notes`.
+  - Added deterministic fallback categorization by building name when no profile file exists.
+  - Academic moves now apply hard/soft suitability penalties to building ranking and backup-building selection.
+  - Hard academic-avoid categories (facilities/maintenance, athletics/arena/stadium, student-life/alumni/engagement/residential) are excluded by default in academic-fit filtering.
+  - Fallback inventory no longer reintroduces hard-avoid buildings in strict-fit recovery.
+- Tightened fill-stage room selection guardrails:
+  - Added core-candidate availability check:
+    - blocks support/storage fill while core-type candidates still exist and core deficits remain.
+  - Increased support type-count penalties.
+  - Increased support substitution and storage-scatter penalties.
+  - Added extra penalties for small support rooms during strict fill.
+- Frontend low-fit name classifier update (`src/components/StakeholderMap.jsx`):
+  - Added `arena`, `fieldhouse`, and `athletic center` keywords so low-fit building hints are passed more consistently.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.

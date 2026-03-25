@@ -2006,6 +2006,82 @@ function shouldAllowSupportByIntent(requestText = "", deptText = "") {
   return false;
 }
 
+const MASTER_PLAN_BUILDING_PROFILE_FILE = process.env.MASTER_PLAN_BUILDING_PROFILE_FILE
+  ? path.resolve(process.env.MASTER_PLAN_BUILDING_PROFILE_FILE)
+  : path.join(AI_DOCS_DIR, "master-plan-building-profiles.json");
+let masterPlanBuildingProfilesLoaded = false;
+let masterPlanBuildingProfilesMap = new Map();
+
+function normalizeCopilotBuildingKey(value = "") {
+  return normalizeLoose(normalizeCopilotText(value));
+}
+
+function loadMasterPlanBuildingProfiles() {
+  if (masterPlanBuildingProfilesLoaded) return masterPlanBuildingProfilesMap;
+  masterPlanBuildingProfilesLoaded = true;
+  masterPlanBuildingProfilesMap = new Map();
+  try {
+    if (!fs.existsSync(MASTER_PLAN_BUILDING_PROFILE_FILE)) return masterPlanBuildingProfilesMap;
+    const raw = String(fs.readFileSync(MASTER_PLAN_BUILDING_PROFILE_FILE, "utf8") || "");
+    if (!raw.trim()) return masterPlanBuildingProfilesMap;
+    const parsed = JSON.parse(raw);
+    const entries = Array.isArray(parsed)
+      ? parsed
+      : Object.entries(parsed || {}).map(([name, profile]) => ({ name, ...(profile || {}) }));
+    entries.forEach((entry) => {
+      const label = normalizeCopilotText(entry?.name || entry?.building || entry?.buildingLabel || "");
+      if (!label) return;
+      const key = normalizeCopilotBuildingKey(label);
+      if (!key) return;
+      masterPlanBuildingProfilesMap.set(key, {
+        name: label,
+        category: normalizeCopilotText(entry?.category || "").toLowerCase(),
+        hardAcademicAvoid: Boolean(entry?.hardAcademicAvoid),
+        softAcademicAvoid: Boolean(entry?.softAcademicAvoid),
+        notes: normalizeCopilotText(entry?.notes || "")
+      });
+    });
+  } catch (err) {
+    console.warn("Master plan building profile load skipped:", err?.message || err);
+  }
+  return masterPlanBuildingProfilesMap;
+}
+
+function inferBuildingSuitabilityFromName(buildingLabel = "") {
+  const text = normalizeCopilotText(buildingLabel).toLowerCase();
+  if (!text) {
+    return { category: "unknown", hardAcademicAvoid: false, softAcademicAvoid: false };
+  }
+  if (/(general services|facility|facilities|maintenance|physical plant|plant operations|service center|warehouse|central services)/i.test(text)) {
+    return { category: "facilities", hardAcademicAvoid: true, softAcademicAvoid: true };
+  }
+  if (/(arena|stadium|fieldhouse|athletic|athletics|sports complex|fitness)/i.test(text)) {
+    return { category: "athletics", hardAcademicAvoid: true, softAcademicAvoid: true };
+  }
+  if (/(alumni|student union|engagement center|residence|residency|apartment|dorm|chapel|health center)/i.test(text)) {
+    return { category: "student-life", hardAcademicAvoid: true, softAcademicAvoid: true };
+  }
+  if (/(science|academic|education|library|hall|center|building|college)/i.test(text)) {
+    return { category: "academic", hardAcademicAvoid: false, softAcademicAvoid: false };
+  }
+  return { category: "mixed", hardAcademicAvoid: false, softAcademicAvoid: false };
+}
+
+function resolveBuildingSuitabilityProfile(buildingLabel = "") {
+  const key = normalizeCopilotBuildingKey(buildingLabel);
+  const fallback = inferBuildingSuitabilityFromName(buildingLabel);
+  if (!key) return fallback;
+  const profiles = loadMasterPlanBuildingProfiles();
+  const profile = profiles.get(key);
+  if (!profile) return fallback;
+  return {
+    category: profile.category || fallback.category,
+    hardAcademicAvoid: Boolean(profile.hardAcademicAvoid || fallback.hardAcademicAvoid),
+    softAcademicAvoid: Boolean(profile.softAcademicAvoid || fallback.softAcademicAvoid),
+    notes: profile.notes || ""
+  };
+}
+
 function extractCopilotRoomSequence(value = "") {
   const text = normalizeCopilotText(value);
   if (!text) return null;
@@ -2219,6 +2295,7 @@ function buildCopilotCandidates({
   allowOffFamilyFallback = false,
   allowShopFallback = false,
   allowAthleticsFallback = false,
+  allowSupportFallback = false,
   copilotPreferences = {},
   rng
 }) {
@@ -2368,7 +2445,7 @@ function buildCopilotCandidates({
 
   // Pass 2: fill toward target SF with net fit utility (type + SF), not SF-only.
   const remainingPool = rooms.filter((room) => !usedIds.has(room.id));
-  const evaluateFillCandidate = (room) => {
+  const evaluateFillCandidate = (room, options = {}) => {
     const roomSf = Number(room?.sf || 0) || 0;
     if (roomSf <= 0) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     if (isCopilotNonAssignableType(room?.type || "")) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
@@ -2408,6 +2485,7 @@ function buildCopilotCandidates({
     const isStorageLike = isCopilotStorageType(room?.type || "");
     const isTelecomLike = isCopilotTelecomType(room?.type || "");
     const isUnknownLike = /^\?+$/.test(String(room?.roomLabel || "").trim());
+    const coreCandidateAvailable = Boolean(options?.coreCandidateAvailable);
     const currentSupportSf = Number(actualByFamily.get("support") || 0) || 0;
     const supportCapSf = targetSupportSf > 0
       ? targetSupportSf * (1 + maxSupportOverBaselinePct)
@@ -2423,16 +2501,30 @@ function buildCopilotCandidates({
     const currentTypeCount = Number(actualByTypeCount.get(typeKey) || 0) || 0;
     const projectedTypeCount = currentTypeCount + 1;
     const countOverBy = targetTypeCount > 0 ? Math.max(0, projectedTypeCount - targetTypeCount) : 0;
-    const typeCountPenalty = countOverBy > 0 ? countOverBy * (isSupportLike ? 95 : 25) : 0;
+    const typeCountPenalty = countOverBy > 0 ? countOverBy * (isSupportLike ? 220 : 28) : 0;
     const supportCapPenalty = supportOverCapAfter * 2.2 * supportPenaltyBoost;
     const supportSubstitutionPenalty = (() => {
       if (!isSupportLike) return 0;
       const coreDeficit = getCoreDeficitSf(actualByFamily);
       if (coreDeficit <= 0) return 0;
       const ratio = Math.min(1, coreDeficit / Math.max(1, targetSf || coreDeficit));
-      const storageWeight = isStorageLike ? 2.3 : 1.4;
+      const storageWeight = isStorageLike ? 3.8 : 1.9;
       return roomSf * ratio * storageWeight;
     })();
+    const aggressiveSupportBlock = (
+      !allowSupportFallback &&
+      isSupportLike &&
+      coreCandidateAvailable &&
+      getCoreDeficitSf(actualByFamily) > 0 &&
+      selectedSf < minSf
+    );
+    if (aggressiveSupportBlock) {
+      return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    }
+    const smallSupportPenalty = isSupportLike && roomSf < 220
+      ? (260 + ((220 - roomSf) * 1.6))
+      : 0;
+    const storageScatterPenalty = isStorageLike ? (roomSf < 260 ? 220 : 120) : 0;
     const telecomPenalty = isTelecomLike && targetTypeSf <= 0 ? (700 + (roomSf * 0.9)) : 0;
     const unknownRoomPenalty = isUnknownLike ? 320 : 0;
     const currentPrimaryFloors = new Set(
@@ -2469,6 +2561,8 @@ function buildCopilotCandidates({
       - typeCountPenalty
       - supportCapPenalty
       - supportSubstitutionPenalty
+      - smallSupportPenalty
+      - storageScatterPenalty
       - telecomPenalty
       - unknownRoomPenalty
       - floorSpreadPenalty
@@ -2502,8 +2596,16 @@ function buildCopilotCandidates({
   };
   while (remainingPool.length && selected.length < maxCandidates) {
     if (selectedSf >= minSf && (!strictFit || selectedSf <= maxSf)) break;
+    const coreCandidateAvailable = remainingPool.some((room) => {
+      const roomTypeKey = normalizeCopilotTypeKey(room?.type || "");
+      const familyKey = getCopilotTypeFamily(room?.type || "");
+      if (!roomTypeKey) return false;
+      if (familyKey === "support" || familyKey === "nonassignable") return false;
+      if (targetByType.has(roomTypeKey)) return true;
+      return Boolean(targetByFamily.size > 0 && familyKey && targetByFamily.has(familyKey));
+    });
     const ranked = remainingPool
-      .map((room) => ({ room, ...evaluateFillCandidate(room) }))
+      .map((room) => ({ room, ...evaluateFillCandidate(room, { coreCandidateAvailable }) }))
       .filter((row) => Number.isFinite(row.utility))
       .sort((a, b) => (b.utility - a.utility) + ((rng() - 0.5) * 3));
     const top = ranked[0] || null;
@@ -2595,13 +2697,35 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
 
+  const buildingSuitabilityByKey = new Map();
+  normalizedRooms.forEach((room) => {
+    if (!room?.buildingKey) return;
+    if (buildingSuitabilityByKey.has(room.buildingKey)) return;
+    buildingSuitabilityByKey.set(room.buildingKey, resolveBuildingSuitabilityProfile(room?.buildingLabel || ""));
+  });
+  const hardAcademicAvoidSet = new Set();
+  buildingSuitabilityByKey.forEach((profile, key) => {
+    if (!key) return;
+    if (profile?.hardAcademicAvoid) hardAcademicAvoidSet.add(key);
+  });
+
   const filteredRooms = normalizedRooms.filter((room) => {
     if (offlineSet.has(room.buildingKey)) return false;
+    if (preferAcademicFit && hardAcademicAvoidSet.has(room.buildingKey)) return false;
     if (preferAcademicFit && lowFitSet.has(room.buildingKey)) return false;
     return true;
   });
-  const fallbackUsed = filteredRooms.length < Math.min(25, Math.ceil(normalizedRooms.length * 0.2));
-  const rooms = fallbackUsed ? normalizedRooms : filteredRooms;
+  const filteredSf = filteredRooms.reduce((sum, room) => sum + (Number(room?.sf || 0) || 0), 0);
+  const fallbackPool = normalizedRooms.filter((room) => {
+    if (offlineSet.has(room.buildingKey)) return false;
+    if (preferAcademicFit && hardAcademicAvoidSet.has(room.buildingKey)) return false;
+    return true;
+  });
+  const fallbackUsed = (
+    filteredRooms.length < Math.min(25, Math.ceil(normalizedRooms.length * 0.2)) ||
+    (strictFit && filteredSf < (minSf * 0.92))
+  );
+  const rooms = fallbackUsed ? fallbackPool : filteredRooms;
   if (!rooms.length) {
     throw new Error("No eligible room inventory remained after scenario guardrails.");
   }
@@ -2665,12 +2789,28 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       row.rooms.push(room);
     });
     const runBuildingRows = Array.from(runByBuilding.values()).sort((a, b) => {
+      const aSuitability = buildingSuitabilityByKey.get(a?.buildingKey || "") || {};
+      const bSuitability = buildingSuitabilityByKey.get(b?.buildingKey || "") || {};
       const aCoreGap = Math.abs(a.coreSf - targetSf);
       const bCoreGap = Math.abs(b.coreSf - targetSf);
       const aSupportPenalty = Math.max(0, a.supportSf - (a.coreSf * 0.35));
       const bSupportPenalty = Math.max(0, b.supportSf - (b.coreSf * 0.35));
-      const aScore = aCoreGap + (aSupportPenalty * 0.35);
-      const bScore = bCoreGap + (bSupportPenalty * 0.35);
+      const aLowFitPenalty = preferAcademicFit
+        ? (
+            (hardAcademicAvoidSet.has(a?.buildingKey || "") ? 100000 : 0) +
+            (lowFitSet.has(a?.buildingKey || "") ? 45000 : 0) +
+            (aSuitability?.softAcademicAvoid ? 7000 : 0)
+          )
+        : 0;
+      const bLowFitPenalty = preferAcademicFit
+        ? (
+            (hardAcademicAvoidSet.has(b?.buildingKey || "") ? 100000 : 0) +
+            (lowFitSet.has(b?.buildingKey || "") ? 45000 : 0) +
+            (bSuitability?.softAcademicAvoid ? 7000 : 0)
+          )
+        : 0;
+      const aScore = aCoreGap + (aSupportPenalty * 0.35) + aLowFitPenalty;
+      const bScore = bCoreGap + (bSupportPenalty * 0.35) + bLowFitPenalty;
       return aScore - bScore;
     });
     if (!runBuildingRows.length) return;
@@ -2679,9 +2819,25 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       const rng = createSeededRng(seed + passSeedOffset + (attempt * 31));
       const buildingBiasShift = Math.min(runBuildingRows.length - 1, attempt % Math.max(1, Math.min(3, runBuildingRows.length)));
       const weightedBuildings = [...runBuildingRows].sort((a, b) => {
+        const aSuitability = buildingSuitabilityByKey.get(a?.buildingKey || "") || {};
+        const bSuitability = buildingSuitabilityByKey.get(b?.buildingKey || "") || {};
+        const aFitPenalty = preferAcademicFit
+          ? (
+              (hardAcademicAvoidSet.has(a?.buildingKey || "") ? 100000 : 0) +
+              (lowFitSet.has(a?.buildingKey || "") ? 45000 : 0) +
+              (aSuitability?.softAcademicAvoid ? 6500 : 0)
+            )
+          : 0;
+        const bFitPenalty = preferAcademicFit
+          ? (
+              (hardAcademicAvoidSet.has(b?.buildingKey || "") ? 100000 : 0) +
+              (lowFitSet.has(b?.buildingKey || "") ? 45000 : 0) +
+              (bSuitability?.softAcademicAvoid ? 6500 : 0)
+            )
+          : 0;
         const aGap = Math.abs(a.totalSf - targetSf) + (a === runBuildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
         const bGap = Math.abs(b.totalSf - targetSf) + (b === runBuildingRows[buildingBiasShift] ? -250 : 0) + ((rng() - 0.5) * 120);
-        return aGap - bGap;
+        return (aGap + aFitPenalty) - (bGap + bFitPenalty);
       });
 
       const primary = weightedBuildings[0] || runBuildingRows[0];
@@ -2730,8 +2886,22 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           const sorted = [...backupRows].sort((a, b) => {
             const aGap = Math.abs((Number(a?.totalSf || 0) || 0) - deficitSf);
             const bGap = Math.abs((Number(b?.totalSf || 0) || 0) - deficitSf);
-            const aLowFitPenalty = (preferAcademicFit && lowFitSet.has(a?.buildingKey || "")) ? 100000 : 0;
-            const bLowFitPenalty = (preferAcademicFit && lowFitSet.has(b?.buildingKey || "")) ? 100000 : 0;
+            const aSuitability = buildingSuitabilityByKey.get(a?.buildingKey || "") || {};
+            const bSuitability = buildingSuitabilityByKey.get(b?.buildingKey || "") || {};
+            const aLowFitPenalty = preferAcademicFit
+              ? (
+                  (hardAcademicAvoidSet.has(a?.buildingKey || "") ? 100000 : 0) +
+                  (lowFitSet.has(a?.buildingKey || "") ? 45000 : 0) +
+                  (aSuitability?.softAcademicAvoid ? 7000 : 0)
+                )
+              : 0;
+            const bLowFitPenalty = preferAcademicFit
+              ? (
+                  (hardAcademicAvoidSet.has(b?.buildingKey || "") ? 100000 : 0) +
+                  (lowFitSet.has(b?.buildingKey || "") ? 45000 : 0) +
+                  (bSuitability?.softAcademicAvoid ? 7000 : 0)
+                )
+              : 0;
             return (aGap + aLowFitPenalty) - (bGap + bLowFitPenalty);
           });
           return sorted[0] || null;
@@ -2763,6 +2933,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowOffFamilyFallback,
         allowShopFallback,
         allowAthleticsFallback,
+        allowSupportFallback: allowSupportTargeting,
         copilotPreferences,
         rng
       });
@@ -2817,6 +2988,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
           ...(passLabel ? [`Generated in repair pass: ${passLabel}.`] : []),
           ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : []),
+          ...(preferAcademicFit ? ["Master-plan-style building suitability filtering is active for academic moves."] : []),
           ...(!allowShopTargeting ? ["Shop/maker spaces are excluded unless explicitly requested or discipline-aligned."] : []),
           ...(!allowAthleticsTargeting ? ["Athletics/gym/arena spaces are excluded unless explicitly requested or discipline-aligned."] : []),
           ...(allowOffFamilyFallback ? ["Auto-relaxed to type-family fallback because strict pass underfilled target SF."] : [])
@@ -2825,6 +2997,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
           "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
           ...(!allowSupportTargeting ? ["Support/storage/telecom spaces excluded for academic move-fit unless explicitly requested."] : []),
+          ...(preferAcademicFit ? ["Academic-fit building ranking uses master-plan category hints (avoid facilities, athletics, student-life buildings by default)."] : []),
           "Type fit weighted highest against baseline room-type SF mix (family-level fallback only when needed).",
           "Total SF fit optimized toward baseline target range.",
           ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : []),
