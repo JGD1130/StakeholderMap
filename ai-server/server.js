@@ -1994,6 +1994,18 @@ function shouldAllowAthleticsByIntent(requestText = "", deptText = "") {
   return false;
 }
 
+function shouldAllowSupportByIntent(requestText = "", deptText = "") {
+  const req = normalizeCopilotText(requestText).toLowerCase();
+  const dept = normalizeCopilotText(deptText).toLowerCase();
+  if (/(storage|warehouse|service area|service room|support area|telecom|data room|mechanical|electrical|plant operations|facilities)/i.test(req)) {
+    return true;
+  }
+  if (/(facilit|maintenance|operations|physical plant|industrial|central services|warehouse|dining|food service|custodial|grounds)/i.test(dept)) {
+    return true;
+  }
+  return false;
+}
+
 function extractCopilotRoomSequence(value = "") {
   const text = normalizeCopilotText(value);
   if (!text) return null;
@@ -2391,7 +2403,7 @@ function buildCopilotCandidates({
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     }
     const isExceptionType = isCopilotExceptionType(room?.type || "");
-    const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 120 : 0;
+    const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 260 : 0;
     const isSupportLike = familyKey === "support" || /(storage|service|support|telecom|audio|video|it|data|server)/i.test(String(room?.type || ""));
     const isStorageLike = isCopilotStorageType(room?.type || "");
     const isTelecomLike = isCopilotTelecomType(room?.type || "");
@@ -2423,6 +2435,21 @@ function buildCopilotCandidates({
     })();
     const telecomPenalty = isTelecomLike && targetTypeSf <= 0 ? (700 + (roomSf * 0.9)) : 0;
     const unknownRoomPenalty = isUnknownLike ? 320 : 0;
+    const currentPrimaryFloors = new Set(
+      selected
+        .filter((row) => !primaryBuildingKey || row?.buildingKey === primaryBuildingKey)
+        .map((row) => normalizeLoose(row?.floorId || row?.floorName || ""))
+        .filter(Boolean)
+    );
+    const candidateFloor = normalizeLoose(room?.floorId || room?.floorName || "");
+    const addsNewPrimaryFloor = Boolean(
+      primaryBuildingKey &&
+      room?.buildingKey === primaryBuildingKey &&
+      candidateFloor &&
+      currentPrimaryFloors.size > 0 &&
+      !currentPrimaryFloors.has(candidateFloor)
+    );
+    const floorSpreadPenalty = addsNewPrimaryFloor ? (180 * contiguityBoost) : 0;
     const contiguityBefore = computeCopilotContiguityPenalty(selected).penalty;
     const contiguityAfter = computeCopilotContiguityPenalty([...selected, room]).penalty;
     const contiguityDeltaPenalty = Math.max(0, contiguityAfter - contiguityBefore) * (2.2 * contiguityBoost);
@@ -2444,6 +2471,7 @@ function buildCopilotCandidates({
       - supportSubstitutionPenalty
       - telecomPenalty
       - unknownRoomPenalty
+      - floorSpreadPenalty
       - contiguityDeltaPenalty;
 
     let reason = "Added to improve total SF fit.";
@@ -2535,6 +2563,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const typeTargets = buildCopilotTypeTargetMap(constraints);
   const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
   const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
+  const allowSupportTargeting = shouldAllowSupportByIntent(requestText, scenarioDeptText);
   const baselineNeedsTelecom = Array.from(typeTargets.values()).some((row) => isCopilotTelecomType(row?.type || ""));
   if (!allowShopTargeting && typeTargets.size > 0) {
     Array.from(typeTargets.entries()).forEach(([key, row]) => {
@@ -2546,6 +2575,14 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       if (isCopilotAthleticsType(row?.type || key)) typeTargets.delete(key);
     });
   }
+  if (!allowSupportTargeting && typeTargets.size > 0) {
+    Array.from(typeTargets.entries()).forEach(([key, row]) => {
+      const family = getCopilotTypeFamily(row?.type || key);
+      if (family === "support" || isCopilotStorageType(row?.type || key) || isCopilotTelecomType(row?.type || key)) {
+        typeTargets.delete(key);
+      }
+    });
+  }
   const offlineSet = new Set((constraints?.offlineBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
   const lowFitSet = new Set((constraints?.lowFitBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
   const excludeSet = new Set((context?.excludeBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
@@ -2555,6 +2592,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .map(toCopilotRoom)
     .filter(Boolean)
     .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
+    .filter((room) => allowSupportTargeting || getCopilotTypeFamily(room?.type || "") !== "support")
     .filter((room) => baselineNeedsTelecom || !isCopilotTelecomType(room?.type || ""))
     .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
@@ -2611,17 +2649,27 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           buildingKey: room.buildingKey,
           buildingLabel: room.buildingLabel,
           totalSf: 0,
+          coreSf: 0,
+          supportSf: 0,
           rooms: []
         });
       }
       const row = runByBuilding.get(room.buildingKey);
-      row.totalSf += Number(room.sf || 0) || 0;
+      const sf = Number(room.sf || 0) || 0;
+      row.totalSf += sf;
+      const fam = getCopilotTypeFamily(room?.type || "");
+      if (fam === "support") row.supportSf += sf;
+      else row.coreSf += sf;
       row.rooms.push(room);
     });
     const runBuildingRows = Array.from(runByBuilding.values()).sort((a, b) => {
-      const aGap = Math.abs(a.totalSf - targetSf);
-      const bGap = Math.abs(b.totalSf - targetSf);
-      return aGap - bGap;
+      const aCoreGap = Math.abs(a.coreSf - targetSf);
+      const bCoreGap = Math.abs(b.coreSf - targetSf);
+      const aSupportPenalty = Math.max(0, a.supportSf - (a.coreSf * 0.35));
+      const bSupportPenalty = Math.max(0, b.supportSf - (b.coreSf * 0.35));
+      const aScore = aCoreGap + (aSupportPenalty * 0.35);
+      const bScore = bCoreGap + (bSupportPenalty * 0.35);
+      return aScore - bScore;
     });
     if (!runBuildingRows.length) return;
 
@@ -2773,6 +2821,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         selectionCriteria: [
           "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
           "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+          ...(!allowSupportTargeting ? ["Support/storage/telecom spaces excluded for academic move-fit unless explicitly requested."] : []),
           "Type fit weighted highest against baseline room-type SF mix (family-level fallback only when needed).",
           "Total SF fit optimized toward baseline target range.",
           ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : []),

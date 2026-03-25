@@ -883,3 +883,29 @@ Latest completed work (copilot hardening: stricter planner guardrails + less cli
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (planner copilot hard-constraint pass for academic move scenarios)
+- Addressed poor physics outputs (storage-heavy, scattered, non-academic building bleed, underfit SF):
+  - Frontend (`src/components/StakeholderMap.jsx`):
+    - Expanded low-fit building classification to include `alumni center` and `engagement center` labels so these are avoided when academic-fit preference is active.
+  - Backend (`ai-server/server.js`):
+    - Added `shouldAllowSupportByIntent(...)`.
+      - For non-operations/academic move requests, support/storage/telecom are now treated as disallowed-by-default.
+    - When support targeting is not requested:
+      - support/storage/telecom type targets are removed from copilot baseline type targets.
+      - support-family candidate rooms are filtered out of inventory before option generation.
+    - Strengthened building ranking toward academic/core SF:
+      - per-building ranking now uses core-family SF fit and penalizes support-heavy footprints.
+    - Strengthened candidate utility constraints:
+      - higher cross-building penalty in single-building mode.
+      - added floor-spread penalty when a candidate opens a new floor in primary building (contiguity pressure).
+    - Kept non-assignable exclusions and support-overuse penalties in place.
+    - Added explicit selection-criteria note when support/storage/telecom were excluded for academic fit.
+- Result:
+  - Copilot should stop using storage/telecom as default filler for academic relocations.
+  - Better avoidance of non-academic buildings (including alumni/engagement-labeled facilities).
+  - Stronger same-floor/cluster tendency for selected rooms.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
