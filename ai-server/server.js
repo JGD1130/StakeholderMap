@@ -2812,6 +2812,134 @@ function buildCopilotCandidates({
     }
   }
 
+  // Pass 4: strict-fit stochastic repair (find an in-range combination when greedy lands out-of-range).
+  const isInStrictRange = (sf) => Number.isFinite(sf) && sf >= minSf && sf <= maxSf;
+  const selectionSf = (rows = []) => rows.reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
+  const staticRoomUtility = (room) => {
+    if (!room) return Number.NEGATIVE_INFINITY;
+    if (isCopilotNonAssignableType(room?.type || "")) return Number.NEGATIVE_INFINITY;
+    if (isCopilotShopType(room?.type || "") && !allowShopFallback) return Number.NEGATIVE_INFINITY;
+    if (isCopilotAthleticsType(room?.type || "") && !allowAthleticsFallback) return Number.NEGATIVE_INFINITY;
+    const roomSf = Number(room?.sf || 0) || 0;
+    if (roomSf <= 0) return Number.NEGATIVE_INFINITY;
+    const typeKey = normalizeCopilotTypeKey(room?.type || "");
+    const familyKey = getCopilotTypeFamily(room?.type || "");
+    const inBaselineTypeMix = typeKey && targetByType.has(typeKey);
+    const inBaselineFamilyMix = familyKey && targetByFamily.has(familyKey);
+    if (!inBaselineTypeMix && !allowOffFamilyFallback) return Number.NEGATIVE_INFINITY;
+    if (useFamilyGap && !inBaselineFamilyMix) return Number.NEGATIVE_INFINITY;
+    const isSupportLike = familyKey === "support" || /(storage|service|support|telecom|audio|video|it|data|server)/i.test(String(room?.type || ""));
+    const isStorageLike = isCopilotStorageType(room?.type || "");
+    const isTelecomLike = isCopilotTelecomType(room?.type || "");
+    let u = 0;
+    if (inBaselineTypeMix) u += 280;
+    else if (inBaselineFamilyMix) u += 160;
+    else u += 40;
+    if (isSupportLike) u -= allowSupportFallback ? 120 : 280;
+    if (isStorageLike) u -= 190;
+    if (isTelecomLike && !targetByType.has(typeKey)) u -= 260;
+    if (preferSingleBuilding && primaryBuildingKey && room?.buildingKey !== primaryBuildingKey) u -= 105;
+    u -= Math.max(0, roomSf - (targetSf * 0.22)) * 0.02;
+    return u;
+  };
+  const tryStrictStochasticRepair = () => {
+    const viablePool = rooms
+      .map((room) => ({ room, utility: staticRoomUtility(room) }))
+      .filter((row) => Number.isFinite(row.utility))
+      .sort((a, b) => b.utility - a.utility)
+      .slice(0, 220)
+      .map((row) => row.room);
+    if (!viablePool.length) return null;
+
+    const iterations = Math.max(420, Math.min(1800, viablePool.length * 10));
+    let bestSelection = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < iterations; i += 1) {
+      const picked = [];
+      const used = new Set();
+      let sumSf = 0;
+
+      while (sumSf < minSf && picked.length < maxCandidates) {
+        const remaining = viablePool.filter((room) => !used.has(room?.id));
+        if (!remaining.length) break;
+        const needSf = Math.max(0, minSf - sumSf);
+        const scored = remaining
+          .map((room) => {
+            const roomSf = Number(room?.sf || 0) || 0;
+            const afterSf = sumSf + roomSf;
+            const overPenalty = afterSf > maxSf ? ((afterSf - maxSf) * 0.45) : 0;
+            const fitScore = -Math.abs(needSf - roomSf) * 0.12;
+            const utility = staticRoomUtility(room) + fitScore - overPenalty + ((rng() - 0.5) * 14);
+            return { room, utility };
+          })
+          .sort((a, b) => b.utility - a.utility);
+        const top = scored.slice(0, Math.min(12, scored.length));
+        if (!top.length) break;
+        const pick = top[Math.floor(rng() * top.length)]?.room || top[0]?.room;
+        if (!pick?.id) break;
+        used.add(pick.id);
+        picked.push({ ...pick, rationale: "Strict-fit stochastic repair selection." });
+        sumSf += Number(pick?.sf || 0) || 0;
+      }
+
+      if (sumSf < minSf) continue;
+      if (sumSf > maxSf && picked.length > 1) {
+        let trimmed = true;
+        while (sumSf > maxSf && trimmed) {
+          trimmed = false;
+          let bestIdx = -1;
+          let bestRemoveScore = Number.POSITIVE_INFINITY;
+          for (let idx = 0; idx < picked.length; idx += 1) {
+            const row = picked[idx];
+            const rowSf = Number(row?.sf || 0) || 0;
+            const after = sumSf - rowSf;
+            if (after < minSf) continue;
+            const removeBias = staticRoomUtility(row);
+            const removeScore = Math.abs(targetSf - after) + (removeBias * 0.03);
+            if (removeScore < bestRemoveScore) {
+              bestRemoveScore = removeScore;
+              bestIdx = idx;
+            }
+          }
+          if (bestIdx >= 0) {
+            const removed = picked.splice(bestIdx, 1)[0];
+            sumSf -= Number(removed?.sf || 0) || 0;
+            trimmed = true;
+          }
+        }
+      }
+      if (!isInStrictRange(sumSf)) continue;
+
+      const totals = buildCopilotScenarioTotals(picked);
+      const scoreObj = buildCopilotOptionScore({
+        candidates: picked,
+        totals,
+        targetSf,
+        minSf,
+        maxSf,
+        strictFit,
+        preferSingleBuilding,
+        typeTargets,
+        copilotPreferences
+      });
+      const score = Number(scoreObj?.score || Number.NEGATIVE_INFINITY);
+      if (score > bestScore) {
+        bestScore = score;
+        bestSelection = picked;
+      }
+    }
+    return bestSelection;
+  };
+
+  const currentSf = selectionSf(selected);
+  if (strictFit && !isInStrictRange(currentSf)) {
+    const repaired = tryStrictStochasticRepair();
+    if (Array.isArray(repaired) && repaired.length) {
+      return repaired;
+    }
+  }
+
   return selected;
 }
 

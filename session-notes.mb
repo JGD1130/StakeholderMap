@@ -983,3 +983,13 @@ Latest completed work (FICM classifier integration + strict-fit recovery refinem
 - Validation:
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
+
+Latest completed work (strict-fit stochastic repair pass inside candidate builder)
+- Added a new in-function strict-fit repair step in `buildCopilotCandidates(...)`:
+  - When greedy selection lands outside strict range, copilot now runs a stochastic in-range search over viable rooms before returning.
+  - Search uses weighted candidate utility (type-family alignment, support/storage penalties, single-building preference, SF gap pressure) and iterative trim-to-range.
+  - Returns repaired in-range room set when found, reducing strict-fit dead-end failures.
+- Kept existing strict repair pass sequence (`baseline`, `repair A`, `repair B`, `repair C`) and layered this as a local option-level salvage step.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
