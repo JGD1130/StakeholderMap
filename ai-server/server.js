@@ -1942,10 +1942,22 @@ function isCopilotAthleticsType(typeValue = "") {
   return /(athletic|athletics|gym|arena|fieldhouse|locker room|sports|intercollegiate)/i.test(t);
 }
 
+function isCopilotStorageType(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return false;
+  return /(storage|warehouse|record room|file room|stock room)/i.test(t);
+}
+
+function isCopilotTelecomType(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return false;
+  return /(telecom|audio|video|server room|network|data center|it\/telecom)/i.test(t);
+}
+
 function isCopilotNonAssignableType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
-  return /(corridor|circulation|vestibule|lobby|stair|elevator|restroom|toilet|mechanical area|mechanical room|electrical area|electrical room|utility room|janitor|custodial closet|shaft|pipe chase)/i
+  return /(corridor|circulation|vestibule|lobby|stair|elevator|restroom|toilet|mechanical area|mechanical room|electrical area|electrical room|utility room|janitor|custodial area|custodial storage|custodial closet|shaft|pipe chase|loading dock)/i
     .test(t);
 }
 
@@ -1957,6 +1969,7 @@ function getCopilotTypeFamily(typeValue = "") {
   if (/(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(t)) return "office";
   if (/(classroom|lecture|seminar|training|teaching)/i.test(t)) return "classroom";
   if (/(lab|laboratory|research)/i.test(t)) return "lab";
+  if (isCopilotTelecomType(t)) return "support";
   if (isCopilotShopType(t)) return "shop";
   if (/(auditor|theater|theatre|performance|stage|studio|clinic|kiln|greenhouse|recital|music practice|sound booth|black box)/i.test(t)) return "specialized";
   if (/(storage|service|support|mechanical|electrical|utility|custod|janitor|loading dock|warehouse)/i.test(t)) return "support";
@@ -1981,6 +1994,56 @@ function shouldAllowAthleticsByIntent(requestText = "", deptText = "") {
   return false;
 }
 
+function extractCopilotRoomSequence(value = "") {
+  const text = normalizeCopilotText(value);
+  if (!text) return null;
+  const match = text.match(/(\d{2,4})/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function computeCopilotContiguityPenalty(candidates = []) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  if (!rows.length) {
+    return { penalty: 0, uniqueFloors: 0, floorConcentration: 1 };
+  }
+  const floorGroups = new Map();
+  rows.forEach((room) => {
+    const buildingKey = normalizeLoose(room?.buildingKey || room?.buildingLabel || "");
+    const floorKey = normalizeLoose(room?.floorId || room?.floorName || "");
+    const key = `${buildingKey}::${floorKey || "unknown"}`;
+    if (!floorGroups.has(key)) floorGroups.set(key, []);
+    floorGroups.get(key).push(room);
+  });
+  const uniqueFloors = floorGroups.size;
+  const maxGroupSize = Math.max(0, ...Array.from(floorGroups.values()).map((list) => list.length));
+  const floorConcentration = rows.length > 0 ? (maxGroupSize / rows.length) : 1;
+
+  let densityScore = 0;
+  let densityWeight = 0;
+  floorGroups.forEach((list) => {
+    const nums = list
+      .map((room) => extractCopilotRoomSequence(room?.roomLabel || ""))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (nums.length < 2) return;
+    const span = Math.max(1, nums[nums.length - 1] - nums[0] + 1);
+    const density = nums.length / span;
+    densityScore += density * nums.length;
+    densityWeight += nums.length;
+  });
+  const avgDensity = densityWeight > 0 ? (densityScore / densityWeight) : 0.25;
+  const floorPenalty = Math.max(0, uniqueFloors - 1) * 10;
+  const concentrationPenalty = Math.max(0, (0.78 - floorConcentration)) * 36;
+  const densityPenalty = Math.max(0, (0.35 - avgDensity)) * 26;
+  return {
+    penalty: Number((floorPenalty + concentrationPenalty + densityPenalty).toFixed(2)),
+    uniqueFloors,
+    floorConcentration: Number(floorConcentration.toFixed(3))
+  };
+}
+
 function buildCopilotOptionScore({
   candidates = [],
   totals,
@@ -1989,7 +2052,8 @@ function buildCopilotOptionScore({
   maxSf,
   strictFit = false,
   preferSingleBuilding = false,
-  typeTargets = new Map()
+  typeTargets = new Map(),
+  copilotPreferences = {}
 }) {
   const uniqueBuildings = new Set(candidates.map((room) => room?.buildingKey).filter(Boolean));
   const buildingCount = uniqueBuildings.size;
@@ -2013,17 +2077,47 @@ function buildCopilotOptionScore({
       const target = Number(row?.targetSf || 0) || 0;
       if (target <= 0) return;
       const actual = Number(actualByType.get(key) || 0) || 0;
-      targetSum += target;
-      diffSum += Math.abs(actual - target);
+      const family = getCopilotTypeFamily(row?.type || key);
+      const familyWeight = family === "support"
+        ? 0.45
+        : (family === "office" ? 1.2 : (family === "classroom" || family === "lab" || family === "specialized" || family === "shop" ? 1.5 : 1.0));
+      targetSum += target * familyWeight;
+      diffSum += Math.abs(actual - target) * familyWeight;
     });
     typeGapPct = targetSum > 0 ? diffSum / targetSum : 0;
   }
 
+  const singleBuildingBoost = Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) || 1);
+  const sfPriorityBoost = Math.max(1, Number(copilotPreferences?.sfPriorityBoost || 1) || 1);
+  const supportPenaltyBoost = Math.max(1, Number(copilotPreferences?.supportPenaltyBoost || 1) || 1);
+  const contiguityBoost = Math.max(1, Number(copilotPreferences?.contiguityBoost || 1) || 1);
+  const maxSupportOverBaselinePct = Math.max(
+    0.01,
+    Math.min(0.12, Number(copilotPreferences?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
+  );
+
+  let targetSupportSf = 0;
+  typeTargets.forEach((row, key) => {
+    const family = getCopilotTypeFamily(row?.type || key);
+    if (family === "support") targetSupportSf += Number(row?.targetSf || 0) || 0;
+  });
+  const actualSupportSf = (Array.isArray(candidates) ? candidates : []).reduce((sum, room) => {
+    const family = getCopilotTypeFamily(room?.type || "");
+    return family === "support" ? (sum + (Number(room?.sf || 0) || 0)) : sum;
+  }, 0);
+  const supportCapSf = targetSupportSf > 0
+    ? targetSupportSf * (1 + maxSupportOverBaselinePct)
+    : (targetSf > 0 ? targetSf * 0.04 : 0);
+  const supportOverSf = Math.max(0, actualSupportSf - supportCapSf);
+  const supportPenalty = (supportOverSf / 100) * 4.8 * supportPenaltyBoost;
+
+  const contiguity = computeCopilotContiguityPenalty(candidates);
+  const contiguityPenalty = contiguity.penalty * contiguityBoost;
   const buildingSpreadPenalty = preferSingleBuilding
-    ? Math.max(0, buildingCount - 1) * 12
+    ? Math.max(0, buildingCount - 1) * (18 * singleBuildingBoost)
     : Math.max(0, buildingCount - 1) * 2;
-  let score = 100 - (sfGapPct * 58) - (typeGapPct * 34) - buildingSpreadPenalty;
-  score -= underfillRatio * 90;
+  let score = 100 - (sfGapPct * 72 * sfPriorityBoost) - (typeGapPct * 42) - buildingSpreadPenalty - supportPenalty - contiguityPenalty;
+  score -= underfillRatio * 220;
   if (total >= minSf && total <= maxSf) score += 8;
   if (overUpper) score -= 24;
   if (belowLower) score -= 10;
@@ -2036,6 +2130,11 @@ function buildCopilotOptionScore({
       typeGapPct: Number((typeGapPct * 100).toFixed(2)),
       buildingCount,
       buildingSpreadPenalty: Number(buildingSpreadPenalty.toFixed(2)),
+      supportPenalty: Number(supportPenalty.toFixed(2)),
+      supportOverSf: Math.round(supportOverSf),
+      contiguityPenalty: Number(contiguityPenalty.toFixed(2)),
+      floorSpreadCount: Number(contiguity.uniqueFloors || 0),
+      floorConcentration: Number(contiguity.floorConcentration || 0),
       underfillPenalty: Number((underfillRatio * 90).toFixed(2)),
       strictFit,
       inTargetRange: total >= minSf && total <= maxSf,
@@ -2108,6 +2207,7 @@ function buildCopilotCandidates({
   allowOffFamilyFallback = false,
   allowShopFallback = false,
   allowAthleticsFallback = false,
+  copilotPreferences = {},
   rng
 }) {
   const selected = [];
@@ -2130,6 +2230,14 @@ function buildCopilotCandidates({
   const targetTypeTotalSf = Array.from(targetByType.values()).reduce((sum, sf) => sum + sf, 0);
   const targetFamilyTotalSf = Array.from(targetByFamily.values()).reduce((sum, sf) => sum + sf, 0);
   const useFamilyGap = Boolean(allowOffFamilyFallback && targetByFamily.size > 0);
+  const supportPenaltyBoost = Math.max(1, Number(copilotPreferences?.supportPenaltyBoost || 1) || 1);
+  const contiguityBoost = Math.max(1, Number(copilotPreferences?.contiguityBoost || 1) || 1);
+  const maxSupportOverBaselinePct = Math.max(
+    0.01,
+    Math.min(0.12, Number(copilotPreferences?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
+  );
+  const targetSupportSf = Number(targetByFamily.get("support") || 0) || 0;
+  const coreFamilies = new Set(["office", "classroom", "lab", "specialized", "shop", "other"]);
   const actualByType = new Map();
   const actualByTypeCount = new Map();
   const actualByFamily = new Map();
@@ -2187,6 +2295,15 @@ function buildCopilotCandidates({
       diff += Math.abs(targetSf - actualSf);
     });
     return diff;
+  };
+  const getCoreDeficitSf = (actualMap = actualByFamily) => {
+    let deficit = 0;
+    targetByFamily.forEach((targetSf, key) => {
+      if (!coreFamilies.has(key)) return;
+      const actualSf = Number(actualMap?.get(key) || 0) || 0;
+      deficit += Math.max(0, targetSf - actualSf);
+    });
+    return deficit;
   };
 
   const addRoom = (room, reason = "") => {
@@ -2276,6 +2393,14 @@ function buildCopilotCandidates({
     const isExceptionType = isCopilotExceptionType(room?.type || "");
     const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 120 : 0;
     const isSupportLike = familyKey === "support" || /(storage|service|support|telecom|audio|video|it|data|server)/i.test(String(room?.type || ""));
+    const isStorageLike = isCopilotStorageType(room?.type || "");
+    const isTelecomLike = isCopilotTelecomType(room?.type || "");
+    const isUnknownLike = /^\?+$/.test(String(room?.roomLabel || "").trim());
+    const currentSupportSf = Number(actualByFamily.get("support") || 0) || 0;
+    const supportCapSf = targetSupportSf > 0
+      ? targetSupportSf * (1 + maxSupportOverBaselinePct)
+      : (targetSf > 0 ? targetSf * 0.04 : 0);
+    const supportOverCapAfter = isSupportLike ? Math.max(0, (currentSupportSf + roomSf) - supportCapSf) : 0;
     const currentTypeSf = Number(actualByType.get(typeKey) || 0) || 0;
     const targetTypeSf = Number(targetByType.get(typeKey) || 0) || 0;
     const overTypeSfAfter = (inBaselineTypeMix && targetTypeSf > 0)
@@ -2287,6 +2412,20 @@ function buildCopilotCandidates({
     const projectedTypeCount = currentTypeCount + 1;
     const countOverBy = targetTypeCount > 0 ? Math.max(0, projectedTypeCount - targetTypeCount) : 0;
     const typeCountPenalty = countOverBy > 0 ? countOverBy * (isSupportLike ? 95 : 25) : 0;
+    const supportCapPenalty = supportOverCapAfter * 2.2 * supportPenaltyBoost;
+    const supportSubstitutionPenalty = (() => {
+      if (!isSupportLike) return 0;
+      const coreDeficit = getCoreDeficitSf(actualByFamily);
+      if (coreDeficit <= 0) return 0;
+      const ratio = Math.min(1, coreDeficit / Math.max(1, targetSf || coreDeficit));
+      const storageWeight = isStorageLike ? 2.3 : 1.4;
+      return roomSf * ratio * storageWeight;
+    })();
+    const telecomPenalty = isTelecomLike && targetTypeSf <= 0 ? (700 + (roomSf * 0.9)) : 0;
+    const unknownRoomPenalty = isUnknownLike ? 320 : 0;
+    const contiguityBefore = computeCopilotContiguityPenalty(selected).penalty;
+    const contiguityAfter = computeCopilotContiguityPenalty([...selected, room]).penalty;
+    const contiguityDeltaPenalty = Math.max(0, contiguityAfter - contiguityBefore) * (2.2 * contiguityBoost);
 
     // Strongly discourage adding off-profile room types just to gain SF (fallback path only).
     const offProfilePenalty = (useFamilyGap && !inBaselineFamilyMix)
@@ -2300,7 +2439,12 @@ function buildCopilotCandidates({
       - offProfilePenalty
       - typeWorsenPenalty
       - typeOverfillPenalty
-      - typeCountPenalty;
+      - typeCountPenalty
+      - supportCapPenalty
+      - supportSubstitutionPenalty
+      - telecomPenalty
+      - unknownRoomPenalty
+      - contiguityDeltaPenalty;
 
     let reason = "Added to improve total SF fit.";
     if (inBaselineTypeMix) {
@@ -2372,8 +2516,16 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const scenarioDeptText = normalizeCopilotText(context?.targetDepartment || context?.scenarioDepartment || "");
   const preferSingleBuilding = Boolean(constraints?.preferSingleBuilding);
   const preferAcademicFit = Boolean(constraints?.preferAcademicFit);
+  const copilotPreferences = (constraints?.copilotPreferences && typeof constraints.copilotPreferences === "object")
+    ? constraints.copilotPreferences
+    : {};
   const strictFit = Number(constraints?.targetSfTolerance || 0.1) <= 0.05;
   const tolerance = Math.max(0.03, Math.min(0.25, Number(constraints?.targetSfTolerance || 0.1) || 0.1));
+  const singleBuildingBoost = Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) || 1);
+  const sfPriorityBoost = Math.max(1, Number(copilotPreferences?.sfPriorityBoost || 1) || 1);
+  const relaxUnderfillThreshold = preferSingleBuilding
+    ? (singleBuildingBoost >= 1.5 ? 0.72 : 0.78)
+    : (sfPriorityBoost >= 1.5 ? 0.8 : 0.85);
   const baselineTotalSf = Number(constraints?.baselineTotals?.totalSF || 0) || 0;
   const targetSf = baselineTotalSf > 0
     ? baselineTotalSf
@@ -2383,6 +2535,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const typeTargets = buildCopilotTypeTargetMap(constraints);
   const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
   const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
+  const baselineNeedsTelecom = Array.from(typeTargets.values()).some((row) => isCopilotTelecomType(row?.type || ""));
   if (!allowShopTargeting && typeTargets.size > 0) {
     Array.from(typeTargets.entries()).forEach(([key, row]) => {
       if (isCopilotShopType(row?.type || key)) typeTargets.delete(key);
@@ -2402,6 +2555,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .map(toCopilotRoom)
     .filter(Boolean)
     .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
+    .filter((room) => baselineNeedsTelecom || !isCopilotTelecomType(room?.type || ""))
     .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
 
@@ -2559,6 +2713,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowOffFamilyFallback,
         allowShopFallback,
         allowAthleticsFallback,
+        copilotPreferences,
         rng
       });
       if (!selected.length) continue;
@@ -2579,7 +2734,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         maxSf,
         strictFit,
         preferSingleBuilding,
-        typeTargets
+        typeTargets,
+        copilotPreferences
       });
       optionSeq += 1;
       const selectedBuildings = Array.from(new Set(selected.map((room) => room.buildingLabel))).filter(Boolean);
@@ -2619,7 +2775,9 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
           "Type fit weighted highest against baseline room-type SF mix (family-level fallback only when needed).",
           "Total SF fit optimized toward baseline target range.",
-          ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : [])
+          ...(preferSingleBuilding ? ["Cross-building spread penalized unless needed for fit."] : []),
+          ...(Number(copilotPreferences?.contiguityBoost || 1) > 1 ? ["Room clustering/floor contiguity is weighted to reduce scattered selections."] : []),
+          ...(Number(copilotPreferences?.supportPenaltyBoost || 1) > 1 ? ["Support/storage over-selection is capped relative to baseline mix."] : [])
         ],
         nextSteps: [
           "Review adjacency and room-function impacts.",
@@ -2654,7 +2812,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     (max, option) => Math.max(max, Number(option?.scenarioTotals?.totalSF || 0) || 0),
     0
   );
-  if (targetSf > 0 && bestStrictSf < (targetSf * 0.85)) {
+  if (targetSf > 0 && bestStrictSf < (targetSf * relaxUnderfillThreshold)) {
     runGenerationPass({ passSeedOffset: 1000003, allowOffFamilyFallback: true, relaxSingleBuilding: true });
   }
 

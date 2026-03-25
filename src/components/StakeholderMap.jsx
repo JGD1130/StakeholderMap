@@ -64,6 +64,7 @@ const SCENARIO_LAYOUT_OP_TYPES = new Set(['layoutMerge', 'layoutRemoveDivider', 
 const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
 const LOCAL_RENO_SCENARIO_STORAGE_PREFIX = 'mf-reno-scenarios';
 const ADMIN_COMBINED_PREFS_STORAGE_PREFIX = 'mf-admin-engagement-prefs';
+const COPILOT_PREFS_STORAGE_PREFIX = 'mf-copilot-prefs';
 const PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT = 20;
 const PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY = 1.0;
 
@@ -85,6 +86,32 @@ const loadAdminCombinedPrefs = (storageKey) => {
   }
 };
 const saveAdminCombinedPrefs = (storageKey, payload) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return false;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(payload || {}));
+    return true;
+  } catch {
+    return false;
+  }
+};
+const buildCopilotPrefsStorageKey = (universityId, userKey = 'session') => {
+  const uni = String(universityId || '').trim();
+  const user = String(userKey || 'session').trim().toLowerCase();
+  if (!uni) return '';
+  return `${COPILOT_PREFS_STORAGE_PREFIX}:${uni}:${user}`;
+};
+const loadCopilotPrefs = (storageKey) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+const saveCopilotPrefs = (storageKey, payload) => {
   if (!storageKey || typeof window === 'undefined' || !window.localStorage) return false;
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(payload || {}));
@@ -15982,6 +16009,58 @@ useEffect(() => {
 
       setAiScenarioResult(out);
       setAiScenarioOpen(true);
+      try {
+        const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
+        const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
+        const deptKey = normalizeDashboardKey(scenarioAssignedDept || 'default');
+        const prior = loadCopilotPrefs(prefsStorageKey) || {};
+        const currentDeptPrefs = (prior?.[deptKey] && typeof prior[deptKey] === 'object') ? prior[deptKey] : {};
+        const textBlob = [
+          out?.summary || '',
+          ...(Array.isArray(out?.scenarioCons) ? out.scenarioCons : []),
+          ...(Array.isArray(out?.risks) ? out.risks : []),
+          ...(Array.isArray(out?.notes) ? out.notes : [])
+        ]
+          .join(' ')
+          .toLowerCase();
+        const nextDeptPrefs = {
+          ...currentDeptPrefs,
+          singleBuildingBoost: Math.max(
+            Number(currentDeptPrefs?.singleBuildingBoost || 1) || 1,
+            /spread across|multiple buildings|multi-building|across\s+\d+\s+buildings/i.test(textBlob) ? 1.8 : 1.4
+          ),
+          sfPriorityBoost: Math.max(
+            Number(currentDeptPrefs?.sfPriorityBoost || 1) || 1,
+            /under target|reduction in total|shortfall|decrease in total|out of range/i.test(textBlob) ? 1.7 : 1.35
+          ),
+          supportPenaltyBoost: Math.max(
+            Number(currentDeptPrefs?.supportPenaltyBoost || 1) || 1,
+            /storage|telecom|service|support room|custodial/i.test(textBlob) ? 2.25 : 1.6
+          ),
+          contiguityBoost: Math.max(
+            Number(currentDeptPrefs?.contiguityBoost || 1) || 1,
+            /across floors|scattered|not contiguous|fragment|dispersed/i.test(textBlob) ? 2.0 : 1.5
+          ),
+          maxSupportOverBaselinePct: Math.min(
+            0.08,
+            Math.max(
+              0.015,
+              /storage|telecom|service|support room|custodial/i.test(textBlob)
+                ? 0.02
+                : Number(currentDeptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03
+            )
+          ),
+          updatedAt: Date.now()
+        };
+        saveCopilotPrefs(prefsStorageKey, {
+          ...prior,
+          [deptKey]: nextDeptPrefs,
+          __global: {
+            ...(prior?.__global && typeof prior.__global === 'object' ? prior.__global : {}),
+            updatedAt: Date.now()
+          }
+        });
+      } catch {}
     } catch (e) {
       setAiScenarioErr(String(e?.message || e));
     } finally {
@@ -16000,7 +16079,9 @@ useEffect(() => {
     selectedBuilding,
     selectedBuildingId,
     selectedFloor,
-    universityId
+    universityId,
+    authUser?.uid,
+    authUser?.email
   ]);
 
   useEffect(() => {
@@ -16547,6 +16628,28 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         offlineBuildings: offlineBuildingLabels,
         crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic; excludes athletics/gym/arena)']
       };
+      try {
+        const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
+        const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
+        const storedPrefs = loadCopilotPrefs(prefsStorageKey) || {};
+        const deptPrefKey = normalizeDashboardKey(inferredDept || scenarioAssignedDept || 'default');
+        const deptPrefs = (storedPrefs?.[deptPrefKey] && typeof storedPrefs[deptPrefKey] === 'object')
+          ? storedPrefs[deptPrefKey]
+          : null;
+        if (deptPrefs) {
+          scenarioConstraints.copilotPreferences = {
+            singleBuildingBoost: Math.max(1, Number(deptPrefs?.singleBuildingBoost || 1) || 1),
+            sfPriorityBoost: Math.max(1, Number(deptPrefs?.sfPriorityBoost || 1) || 1),
+            supportPenaltyBoost: Math.max(1, Number(deptPrefs?.supportPenaltyBoost || 1) || 1),
+            contiguityBoost: Math.max(1, Number(deptPrefs?.contiguityBoost || 1) || 1),
+            maxSupportOverBaselinePct: Math.max(
+              0.015,
+              Math.min(0.12, Number(deptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
+            )
+          };
+          scenarioPolicyNotes.push('Applied planner feedback from prior scenario comparison (single-building, SF fit, support-type cap, contiguity).');
+        }
+      } catch {}
       if (baselineTotalsForConstraints) {
         scenarioConstraints.baselineTotals = baselineTotalsForConstraints;
       }
@@ -16588,10 +16691,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
                 ? candidateSf
                 : (Number.isFinite(matchSf) ? matchSf : 0),
               vacancy: match.vacancy ?? c.vacancy,
-              occupant: match.occupant ?? c.occupant,
-              occupancyStatus: match.occupancyStatus ?? c.occupancyStatus,
-              occupantDept: match.occupantDept ?? c.occupantDept,
-              department: match.department ?? c.department,
+              occupant: '',
+              occupancyStatus: '',
+              occupantDept: '',
+              department: '',
               floorName: c?.floorName || c?.floorId || match.floorName || match.floorId || '',
               rationale: sanitizeVacancyLanguage(c?.rationale)
             };
@@ -16649,6 +16752,20 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           getPrimaryScenarioBuilding(optionCandidates) ||
           ''
         );
+        if (aiCreateScenarioMode === 'copilot') {
+          const primaryBuildingForOption = norm(
+            preferredBuildingForOption ||
+            pickPreferredScenarioBuilding(optionCandidates, { preferAcademicFit, lowFitBuildingKeys }) ||
+            getPrimaryScenarioBuilding(optionCandidates) ||
+            ''
+          );
+          optionCandidates = sortScenarioRoomsByPreference(optionCandidates, primaryBuildingForOption);
+          return {
+            candidates: optionCandidates,
+            primaryBuilding: primaryBuildingForOption,
+            note: optionNote
+          };
+        }
         if (baselineTotals) {
           const { candidates: filled, added } = fillScenarioCandidatesToBaseline(
             optionCandidates,
@@ -16942,7 +17059,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     scenarioLabel,
     selectedBuilding,
     selectedFloor,
-    universityId
+    universityId,
+    authUser?.uid,
+    authUser?.email
   ]);
 
   const onAskRun = useCallback(async () => {

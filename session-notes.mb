@@ -825,3 +825,61 @@ Latest completed work (planner copilot type-selection hardening)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (copilot feedback loop + contiguity weighting)
+- Added lightweight planner feedback memory tied to scenario comparison:
+  - After `Compare scenario vs current`, the app now derives per-department planner preferences from comparison summary/cons/risks/notes.
+  - Stored preferences include stronger weighting for:
+    - single-building consolidation
+    - tighter SF fit
+    - lower support/storage over-selection
+    - floor/room contiguity (less scattered selections)
+  - Preferences are persisted in localStorage per university + user + department and injected into future copilot requests.
+- Backend (`ai-server/server.js`) updates:
+  - Added `constraints.copilotPreferences` support in copilot generation/scoring.
+  - Added contiguity scoring penalty (floor spread + floor concentration + room-sequence density proxy).
+  - Added support-overfill scoring penalty relative to baseline support mix cap.
+  - Strengthened candidate-level penalties when support-like rooms exceed baseline-driven limits.
+- Frontend (`src/components/StakeholderMap.jsx`) updates:
+  - Added copilot preference storage helpers.
+  - On scenario comparison completion, derives and persists copilot preference boosts.
+  - During next copilot create run, loads and passes these preferences via `scenarioConstraints.copilotPreferences`.
+- Result:
+  - “Add to Scenario Comparison” now feeds back into future option generation behavior.
+  - Copilot is biased toward less scattered, less storage-heavy, better-consolidated options.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (copilot hardening: stricter planner guardrails + less client-side drift)
+- Further tightened planner copilot behavior to align with planner intent (single-building bias, SF fit, less storage-overuse, better contiguity):
+  - Backend (`ai-server/server.js`):
+    - Strengthened weighted type-gap scoring:
+      - core academic families (office/classroom/lab/specialized/shop) weighted higher.
+      - support-family mismatch weighted lower so storage does not dominate fit.
+    - Tightened support/storage pressure:
+      - lower default support over-baseline cap.
+      - stronger support-over-cap penalty.
+      - stronger penalty for support substitution when core family deficits remain.
+      - stronger penalty for storage-heavy substitutions.
+    - Added explicit telecom/unknown penalties:
+      - telecom/audio/video/server types discouraged unless baseline target needs them.
+      - `???`/unknown room labels penalized.
+    - Strengthened contiguity:
+      - stronger global contiguity penalty constants.
+      - candidate-level contiguity delta penalty during room selection.
+    - Increased SF underfill penalty and single-building spread penalty in final score.
+    - Made single-building relax trigger stricter (only relax when underfill is truly severe).
+  - Frontend (`src/components/StakeholderMap.jsx`):
+    - Disabled client-side copilot candidate auto-refill/reshape so backend copilot guardrails are preserved (prevents local re-introduction of storage/scatter).
+    - Tightened persisted feedback cap (`maxSupportOverBaselinePct`) defaults/range.
+    - Cleared scenario candidate occupancy fields so move-scenario output no longer injects occupied/displacement messaging.
+- Result:
+  - Copilot options should now behave more like a planner and less like SF-only fallback logic.
+  - Reduced drift between backend copilot decisions and what the UI finally presents.
+  - Stronger pressure toward contiguous, core-type-aligned selections with fewer storage/telecom artifacts.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
