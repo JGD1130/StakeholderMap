@@ -2441,6 +2441,144 @@ function buildCopilotComparisonSummary(best, runnerUp) {
   return out;
 }
 
+function findStrictRangeRescueSelection({
+  rooms = [],
+  targetSf = 0,
+  minSf = 0,
+  maxSf = Number.POSITIVE_INFINITY,
+  maxCandidates = 30,
+  seed = Date.now(),
+  iterations = 1400,
+  typeTargets = new Map(),
+  allowShopFallback = false,
+  allowAthleticsFallback = false,
+  allowSupportFallback = false,
+  preferSingleBuilding = false,
+  primaryBuildingKey = "",
+  scoreOptions = null
+} = {}) {
+  const targetTypeKeys = new Set(Array.from(typeTargets.keys()).filter(Boolean));
+  const targetFamilySet = new Set(
+    Array.from(typeTargets.values())
+      .map((row) => getCopilotTypeFamily(row?.type || ""))
+      .filter((f) => f && f !== "nonassignable")
+  );
+  const eligible = (Array.isArray(rooms) ? rooms : [])
+    .filter((room) => {
+      const sf = Number(room?.sf || 0) || 0;
+      if (sf <= 0) return false;
+      if (isCopilotNonAssignableType(room?.type || "")) return false;
+      if (isCopilotShopType(room?.type || "") && !allowShopFallback) return false;
+      if (isCopilotAthleticsType(room?.type || "") && !allowAthleticsFallback) return false;
+      const typeKey = normalizeCopilotTypeKey(room?.type || "");
+      const family = getCopilotTypeFamily(room?.type || "");
+      if (family === "support" && !allowSupportFallback) return false;
+      if (targetTypeKeys.size > 0) {
+        if (typeKey && targetTypeKeys.has(typeKey)) return true;
+        if (targetFamilySet.size > 0 && family && targetFamilySet.has(family)) return true;
+        return false;
+      }
+      return true;
+    })
+    .map((room) => {
+      const typeKey = normalizeCopilotTypeKey(room?.type || "");
+      const family = getCopilotTypeFamily(room?.type || "");
+      const sf = Number(room?.sf || 0) || 0;
+      const inType = Boolean(typeKey && targetTypeKeys.has(typeKey));
+      const inFamily = Boolean(family && targetFamilySet.has(family));
+      const isSupport = family === "support";
+      const isStorage = isCopilotStorageType(room?.type || "");
+      let utility = 0;
+      utility += inType ? 260 : (inFamily ? 150 : 30);
+      utility += Math.min(160, sf * 0.09);
+      if (isSupport) utility -= 160;
+      if (isStorage) utility -= 120;
+      if (preferSingleBuilding && primaryBuildingKey && room?.buildingKey !== primaryBuildingKey) utility -= 90;
+      return {
+        ...room,
+        sf,
+        typeKey,
+        family,
+        inType,
+        inFamily,
+        isSupport,
+        isStorage,
+        utility
+      };
+    })
+    .sort((a, b) => b.utility - a.utility)
+    .slice(0, 260);
+  if (!eligible.length) return null;
+
+  const makeReason = (row) => {
+    if (row?.inType) return `Strict-range rescue: type fit ${row.type}.`;
+    if (row?.inFamily) return `Strict-range rescue: family fit ${row.family}.`;
+    return "Strict-range rescue: SF balancing.";
+  };
+
+  const rng = createSeededRng((Number(seed) || Date.now()) + 913721);
+  let best = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < Math.max(300, Math.min(2400, Number(iterations) || 1400)); i += 1) {
+    const ordered = [...eligible].sort((a, b) => {
+      const aj = a.utility + ((rng() - 0.5) * 26);
+      const bj = b.utility + ((rng() - 0.5) * 26);
+      return bj - aj;
+    });
+    const selected = [];
+    const used = new Set();
+    let sumSf = 0;
+    for (const room of ordered) {
+      if (!room?.id || used.has(room.id)) continue;
+      if (selected.length >= maxCandidates) break;
+      if ((sumSf + room.sf) > maxSf) continue;
+      const beforeGap = sumSf < minSf ? (minSf - sumSf) : Math.abs(targetSf - sumSf);
+      const afterSum = sumSf + room.sf;
+      const afterGap = afterSum < minSf ? (minSf - afterSum) : Math.abs(targetSf - afterSum);
+      const fitGain = beforeGap - afterGap;
+      const includeScore = fitGain + (room.utility * 0.07) + ((rng() - 0.5) * 14);
+      const mustFill = sumSf < minSf && (minSf - sumSf) > 450;
+      if (includeScore > -10 || (mustFill && rng() > 0.33)) {
+        used.add(room.id);
+        selected.push({ ...room, rationale: makeReason(room) });
+        sumSf += room.sf;
+      }
+      if (sumSf >= minSf && sumSf <= maxSf) break;
+    }
+    if (!(sumSf >= minSf && sumSf <= maxSf)) continue;
+    const totals = buildCopilotScenarioTotals(selected);
+    const scoreObj = buildCopilotOptionScore({
+      candidates: selected,
+      totals,
+      targetSf,
+      minSf,
+      maxSf,
+      strictFit: true,
+      preferSingleBuilding,
+      typeTargets,
+      copilotPreferences: scoreOptions || {}
+    });
+    const score = Number(scoreObj?.score || Number.NEGATIVE_INFINITY);
+    if (score > bestScore) {
+      bestScore = score;
+      best = selected.map((row) => ({
+        roomId: row.roomId,
+        id: row.id,
+        revitId: row.revitId,
+        buildingKey: row.buildingKey,
+        buildingLabel: row.buildingLabel,
+        floorId: row.floorId,
+        floorName: row.floorName,
+        roomLabel: row.roomLabel,
+        type: row.type,
+        sf: row.sf,
+        rationale: row.rationale || "Strict-range rescue selection."
+      }));
+    }
+  }
+  return best;
+}
+
 function buildCopilotCandidates({
   rooms = [],
   targetSf = 0,
@@ -3399,6 +3537,130 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       allowSupportFallback: true,
       relaxSingleBuilding: true
     });
+  }
+
+  if (strictFit && countInRangeOptions() === 0) {
+    const byBuildingTotals = new Map();
+    rooms.forEach((room) => {
+      if (!room?.buildingKey) return;
+      if (!byBuildingTotals.has(room.buildingKey)) {
+        byBuildingTotals.set(room.buildingKey, { key: room.buildingKey, sf: 0, label: room.buildingLabel || room.buildingKey });
+      }
+      const row = byBuildingTotals.get(room.buildingKey);
+      row.sf += Number(room?.sf || 0) || 0;
+    });
+    const primaryBuildingKey = Array.from(byBuildingTotals.values())
+      .sort((a, b) => {
+        const aPenalty = (
+          (preferAcademicFit && hardAcademicAvoidSet.has(a?.key || "") ? 100000 : 0) +
+          (preferAcademicFit && lowFitSet.has(a?.key || "") ? 45000 : 0)
+        );
+        const bPenalty = (
+          (preferAcademicFit && hardAcademicAvoidSet.has(b?.key || "") ? 100000 : 0) +
+          (preferAcademicFit && lowFitSet.has(b?.key || "") ? 45000 : 0)
+        );
+        return (b.sf - bPenalty) - (a.sf - aPenalty);
+      })[0]?.key || "";
+
+    const rescueSelection = findStrictRangeRescueSelection({
+      rooms,
+      targetSf,
+      minSf,
+      maxSf,
+      maxCandidates: 30,
+      seed: seed + 7000003,
+      iterations: 2000,
+      typeTargets,
+      allowShopFallback,
+      allowAthleticsFallback,
+      allowSupportFallback: true,
+      preferSingleBuilding,
+      primaryBuildingKey,
+      scoreOptions: copilotPreferences
+    });
+    if (Array.isArray(rescueSelection) && rescueSelection.length) {
+      const signature = rescueSelection
+        .map((room) => room.id)
+        .filter(Boolean)
+        .sort()
+        .join("|");
+      if (signature && !signatures.has(signature)) {
+        signatures.add(signature);
+        const totals = buildCopilotScenarioTotals(rescueSelection);
+        const score = buildCopilotOptionScore({
+          candidates: rescueSelection,
+          totals,
+          targetSf,
+          minSf,
+          maxSf,
+          strictFit,
+          preferSingleBuilding,
+          typeTargets,
+          copilotPreferences
+        });
+        optionSeq += 1;
+        const selectedBuildings = Array.from(new Set(rescueSelection.map((room) => room.buildingLabel))).filter(Boolean);
+        const option = {
+          optionId: `option_${optionSeq}`,
+          label: `Option ${optionSeq}`,
+          title: `${context?.targetDepartment || context?.scenarioDepartment || "Department"} scenario option ${optionSeq}`,
+          score: score.score,
+          scoreBreakdown: score.breakdown,
+          buildingCount: selectedBuildings.length,
+          buildings: selectedBuildings,
+          fitSummary: {
+            targetSf: Math.round(targetSf),
+            minSf: Math.round(minSf),
+            maxSf: Math.round(maxSf),
+            totalSf: Math.round(totals.totalSF || 0),
+            sfGapPct: Number(score.breakdown?.sfGapPct || 0),
+            typeGapPct: Number(score.breakdown?.typeGapPct || 0),
+            inTargetRange: Boolean(score.breakdown?.inTargetRange)
+          },
+          scenarioTotals: totals,
+          baselineTotals: constraints?.baselineTotals || {
+            totalSF: Math.round(targetSf),
+            rooms: 0,
+            sfByType: []
+          },
+          assumptions: [
+            `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.`,
+            "Generated in repair pass: repair D: strict-range rescue.",
+            "Rescue search prioritized in-range SF combinations with type/family penalties still active."
+          ],
+          selectionCriteria: [
+            "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
+            "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+            ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : []),
+            "Strict-range rescue searched for in-band SF combinations when greedy strict passes failed."
+          ],
+          nextSteps: [
+            "Review adjacency and room-function impacts.",
+            "Apply selected option to Planning Scenario for visual validation.",
+            "Run scenario comparison and export summary for stakeholder review."
+          ],
+          recommendedCandidates: rescueSelection.map((room) => ({
+            roomId: room.roomId,
+            id: room.id,
+            revitId: room.revitId,
+            buildingLabel: room.buildingLabel,
+            floorId: room.floorId,
+            floorName: room.floorName,
+            roomLabel: room.roomLabel,
+            type: room.type,
+            sf: Math.round(Number(room.sf || 0) || 0),
+            rationale: room.rationale || "Strict-range rescue selection."
+          }))
+        };
+        option.whyThisOption = buildCopilotOptionNarrative({
+          option,
+          targetSf,
+          minSf,
+          maxSf
+        });
+        generatedOptions.push(option);
+      }
+    }
   }
 
   if (!generatedOptions.length) {

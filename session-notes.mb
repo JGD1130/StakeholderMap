@@ -993,3 +993,18 @@ Latest completed work (strict-fit stochastic repair pass inside candidate builde
 - Validation:
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
+
+Latest completed work (repair D strict-range rescue at copilot plan level)
+- Added a new plan-level strict-fit rescue path in `generateMoveScenarioCopilotPlan(...)`:
+  - If strict-fit passes A/B/C still produce 0 in-range options, copilot now runs:
+    - `repair D: strict-range rescue`
+  - This uses a multi-iteration combinational search (`findStrictRangeRescueSelection`) over eligible rooms to find an in-range SF combination rather than failing immediately.
+  - Rescue scoring still respects:
+    - assignable/type-family eligibility,
+    - support/storage penalties,
+    - single-building preference,
+    - final option scoring via existing `buildCopilotOptionScore(...)`.
+  - If found, rescue option is appended as a generated option and can satisfy strict mode.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
