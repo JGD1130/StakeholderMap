@@ -1868,15 +1868,26 @@ function toCopilotRoom(room) {
 
 function buildCopilotTypeTargetMap(constraints = {}) {
   const out = new Map();
+  const roomTypeCounts = new Map();
+  const roomTypes = Array.isArray(constraints?.baselineTotals?.roomTypes) ? constraints.baselineTotals.roomTypes : [];
+  roomTypes.forEach((row) => {
+    const type = normalizeCopilotText(row?.type);
+    const count = Number(row?.count || 0) || 0;
+    const key = normalizeCopilotTypeKey(type);
+    if (!key || count <= 0) return;
+    roomTypeCounts.set(key, (Number(roomTypeCounts.get(key) || 0) || 0) + count);
+  });
   const sfByType = Array.isArray(constraints?.baselineTotals?.sfByType) ? constraints.baselineTotals.sfByType : [];
   sfByType.forEach((row) => {
     const type = normalizeCopilotText(row?.type);
     const sf = Number(row?.sf || 0) || 0;
     if (!type || sf <= 0) return;
     if (isCopilotNonAssignableType(type)) return;
-    out.set(normalizeCopilotTypeKey(type), {
+    const key = normalizeCopilotTypeKey(type);
+    out.set(key, {
       type,
-      targetSf: sf
+      targetSf: sf,
+      targetCount: Number(roomTypeCounts.get(key) || 0) || 0
     });
   });
   return out;
@@ -2104,11 +2115,13 @@ function buildCopilotCandidates({
   let selectedSf = 0;
   const maxCandidates = 30;
   const targetByType = new Map();
+  const targetByTypeCount = new Map();
   const targetByFamily = new Map();
   typeTargets.forEach((row, key) => {
     const targetSf = Number(row?.targetSf || 0) || 0;
     if (!key || targetSf <= 0) return;
     targetByType.set(key, targetSf);
+    targetByTypeCount.set(key, Math.max(0, Number(row?.targetCount || 0) || 0));
     const family = getCopilotTypeFamily(row?.type || key);
     if (family && family !== "nonassignable") {
       targetByFamily.set(family, (targetByFamily.get(family) || 0) + targetSf);
@@ -2116,13 +2129,16 @@ function buildCopilotCandidates({
   });
   const targetTypeTotalSf = Array.from(targetByType.values()).reduce((sum, sf) => sum + sf, 0);
   const targetFamilyTotalSf = Array.from(targetByFamily.values()).reduce((sum, sf) => sum + sf, 0);
+  const useFamilyGap = Boolean(allowOffFamilyFallback && targetByFamily.size > 0);
   const actualByType = new Map();
+  const actualByTypeCount = new Map();
   const actualByFamily = new Map();
   const addActualTypeSf = (room) => {
     const key = normalizeCopilotTypeKey(room?.type || "");
     if (!key) return;
     const sf = Number(room?.sf || 0) || 0;
     actualByType.set(key, (Number(actualByType.get(key) || 0) || 0) + sf);
+    actualByTypeCount.set(key, (Number(actualByTypeCount.get(key) || 0) || 0) + 1);
     const family = getCopilotTypeFamily(room?.type || "");
     if (family && family !== "nonassignable") {
       actualByFamily.set(family, (Number(actualByFamily.get(family) || 0) || 0) + sf);
@@ -2237,12 +2253,12 @@ function buildCopilotCandidates({
     const sfGapAfter = Math.abs(targetSf - afterSf);
     const sfImprovement = sfGapBefore - sfGapAfter;
 
-    const typeGapBefore = targetByFamily.size > 0
+    const typeGapBefore = useFamilyGap
       ? computeFamilyGapSf(actualByFamily)
       : computeTypeGapSf(actualByType);
     const nextActualByType = cloneActualByTypeWithRoom(room);
     const nextActualByFamily = cloneActualByFamilyWithRoom(room);
-    const typeGapAfter = targetByFamily.size > 0
+    const typeGapAfter = useFamilyGap
       ? computeFamilyGapSf(nextActualByFamily)
       : computeTypeGapSf(nextActualByType);
     const typeImprovement = typeGapBefore - typeGapAfter;
@@ -2251,20 +2267,40 @@ function buildCopilotCandidates({
     const inBaselineTypeMix = typeKey && targetByType.has(typeKey);
     const familyKey = getCopilotTypeFamily(room?.type || "");
     const inBaselineFamilyMix = familyKey && targetByFamily.has(familyKey);
-    if (targetByFamily.size > 0 && !inBaselineFamilyMix && !allowOffFamilyFallback) {
+    if (!inBaselineTypeMix && !allowOffFamilyFallback) {
+      return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    }
+    if (useFamilyGap && !inBaselineFamilyMix) {
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     }
     const isExceptionType = isCopilotExceptionType(room?.type || "");
     const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 120 : 0;
+    const isSupportLike = familyKey === "support" || /(storage|service|support|telecom|audio|video|it|data|server)/i.test(String(room?.type || ""));
+    const currentTypeSf = Number(actualByType.get(typeKey) || 0) || 0;
+    const targetTypeSf = Number(targetByType.get(typeKey) || 0) || 0;
+    const overTypeSfAfter = (inBaselineTypeMix && targetTypeSf > 0)
+      ? Math.max(0, (currentTypeSf + roomSf) - targetTypeSf)
+      : 0;
+    const typeOverfillPenalty = overTypeSfAfter * (isSupportLike ? 1.4 : 0.5);
+    const targetTypeCount = Number(targetByTypeCount.get(typeKey) || 0) || 0;
+    const currentTypeCount = Number(actualByTypeCount.get(typeKey) || 0) || 0;
+    const projectedTypeCount = currentTypeCount + 1;
+    const countOverBy = targetTypeCount > 0 ? Math.max(0, projectedTypeCount - targetTypeCount) : 0;
+    const typeCountPenalty = countOverBy > 0 ? countOverBy * (isSupportLike ? 95 : 25) : 0;
 
     // Strongly discourage adding off-profile room types just to gain SF (fallback path only).
-    const offProfilePenalty = (targetByFamily.size > 0 && !inBaselineFamilyMix)
+    const offProfilePenalty = (useFamilyGap && !inBaselineFamilyMix)
       ? (roomSf * (allowOffFamilyFallback ? 1.1 : (isExceptionType ? 1.0 : 1.35)))
       : 0;
     // Penalize additions that worsen type fit.
     const typeWorsenPenalty = typeImprovement < 0 ? Math.abs(typeImprovement) * 1.25 : 0;
 
-    const utility = (sfImprovement + (typeImprovement * 1.35)) - buildingPenalty - offProfilePenalty - typeWorsenPenalty;
+    const utility = (sfImprovement + (typeImprovement * 1.35))
+      - buildingPenalty
+      - offProfilePenalty
+      - typeWorsenPenalty
+      - typeOverfillPenalty
+      - typeCountPenalty;
 
     let reason = "Added to improve total SF fit.";
     if (inBaselineTypeMix) {

@@ -811,3 +811,17 @@ Latest completed work (single-building spread regression fix for copilot options
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (planner copilot type-selection hardening)
+- Improved copilot room-type behavior so options feel more planner-like and less SF-only:
+  - Type-gap optimization now runs at exact type-level in normal pass (family-level only in explicit fallback pass).
+  - Added baseline room-count awareness by type from `baselineTotals.roomTypes`.
+  - Added over-selection penalties when a type is already over target SF and over target count.
+  - Added stronger over-selection penalties for support-like types (storage/service/telecom/audio/video/data/server) so they do not dominate candidate lists.
+- Result:
+  - Fewer repeated support/storage picks once baseline type need is met.
+  - Better emphasis on core baseline-aligned academic room types before support fillers.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
