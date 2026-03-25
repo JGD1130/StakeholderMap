@@ -1036,3 +1036,16 @@ Latest completed work (strict rescue fit-first fallback)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (deterministic strict-range fallback)
+- Added deterministic strict-range fallback in `ai-server/server.js`:
+  - New helper: `findStrictRangeDeterministicSelection(...)`.
+  - Triggered when stochastic + fit-first strict rescue still fail.
+  - Uses building-set-aware combinational search (single building first, then bounded pairs) with strict SF band and max-building cap preserved.
+  - Keeps the same guardrails for assignability/type/special-use exclusions and single-building preference.
+- Goal:
+  - Prevent false strict no-fit outcomes when valid in-range combinations exist under active guardrails.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

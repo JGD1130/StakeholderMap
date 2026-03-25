@@ -2466,6 +2466,194 @@ function buildCopilotComparisonSummary(best, runnerUp) {
   return out;
 }
 
+function findStrictRangeDeterministicSelection({
+  eligible = [],
+  targetSf = 0,
+  minSf = 0,
+  maxSf = Number.POSITIVE_INFINITY,
+  maxCandidates = 30,
+  preferSingleBuilding = false,
+  primaryBuildingKey = "",
+  maxBuildingCount = Number.POSITIVE_INFINITY,
+  typeTargets = new Map(),
+  scoreOptions = null
+} = {}) {
+  const rows = Array.isArray(eligible) ? eligible : [];
+  if (!rows.length) return null;
+
+  const byBuilding = new Map();
+  rows.forEach((row) => {
+    const key = normalizeLoose(row?.buildingKey || "");
+    if (!key) return;
+    if (!byBuilding.has(key)) {
+      byBuilding.set(key, { key, label: row?.buildingLabel || key, totalSf: 0, rows: [] });
+    }
+    const ref = byBuilding.get(key);
+    const sf = Number(row?.sf || 0) || 0;
+    ref.totalSf += sf;
+    ref.rows.push(row);
+  });
+  const buildingRows = Array.from(byBuilding.values()).sort((a, b) => {
+    const aGap = Math.abs((Number(a?.totalSf || 0) || 0) - targetSf);
+    const bGap = Math.abs((Number(b?.totalSf || 0) || 0) - targetSf);
+    return aGap - bGap;
+  });
+  if (!buildingRows.length) return null;
+
+  const buildSets = [];
+  const addSet = (keys = []) => {
+    const clean = Array.from(new Set((keys || []).map((k) => normalizeLoose(k)).filter(Boolean)));
+    if (!clean.length) return;
+    const sig = clean.slice().sort().join("|");
+    if (!sig) return;
+    if (buildSets.some((s) => s.sig === sig)) return;
+    buildSets.push({ sig, keys: clean });
+  };
+
+  if (preferSingleBuilding) {
+    const primary = normalizeLoose(primaryBuildingKey || "");
+    if (primary) addSet([primary]);
+    buildingRows.forEach((row) => addSet([row.key]));
+    if (Number.isFinite(maxBuildingCount) && maxBuildingCount >= 2) {
+      const topOthers = buildingRows
+        .map((row) => row.key)
+        .filter((k) => !primary || k !== primary)
+        .slice(0, 6);
+      topOthers.forEach((k) => addSet(primary ? [primary, k] : [k]));
+      if (!primary) {
+        for (let i = 0; i < Math.min(5, topOthers.length); i += 1) {
+          for (let j = i + 1; j < Math.min(6, topOthers.length); j += 1) {
+            addSet([topOthers[i], topOthers[j]]);
+          }
+        }
+      }
+    }
+  } else {
+    buildingRows.slice(0, 6).forEach((row) => addSet([row.key]));
+    if (Number.isFinite(maxBuildingCount) && maxBuildingCount >= 2) {
+      const top = buildingRows.slice(0, 6).map((row) => row.key);
+      for (let i = 0; i < top.length; i += 1) {
+        for (let j = i + 1; j < top.length; j += 1) {
+          addSet([top[i], top[j]]);
+        }
+      }
+    }
+  }
+
+  let best = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  const minSfInt = Math.max(0, Math.round(Number(minSf || 0) || 0));
+  const maxSfInt = Math.max(minSfInt, Math.round(Number(maxSf || 0) || 0));
+  const targetSfInt = Math.max(0, Math.round(Number(targetSf || 0) || 0));
+
+  for (const set of buildSets) {
+    const allowed = new Set(set.keys);
+    const candidates = rows
+      .filter((row) => allowed.has(normalizeLoose(row?.buildingKey || "")))
+      .sort((a, b) => (Number(b?.utility || 0) - Number(a?.utility || 0)))
+      .slice(0, 180)
+      .map((row) => ({
+        ...row,
+        sfInt: Math.max(1, Math.round(Number(row?.sf || 0) || 0))
+      }));
+    if (!candidates.length) continue;
+
+    let states = new Map();
+    states.set(0, { score: 0, count: 0, prev: null, room: null });
+    for (const room of candidates) {
+      const next = new Map(states);
+      for (const [sf, state] of states.entries()) {
+        const newSf = sf + room.sfInt;
+        if (newSf > maxSfInt) continue;
+        const newCount = Number(state?.count || 0) + 1;
+        if (newCount > maxCandidates) continue;
+        const roomBias = (Number(room?.utility || 0) * 0.1)
+          + (room?.inType ? 12 : (room?.inFamily ? 6 : 0))
+          - (room?.isSupport ? 10 : 0)
+          - (room?.isStorage ? 14 : 0);
+        const newScore = Number(state?.score || 0) + roomBias;
+        const current = next.get(newSf);
+        if (
+          !current ||
+          newScore > Number(current?.score || 0) ||
+          (newScore === Number(current?.score || 0) && newCount < Number(current?.count || 0))
+        ) {
+          next.set(newSf, { score: newScore, count: newCount, prev: state, room });
+        }
+      }
+      states = next;
+    }
+
+    let bestState = null;
+    let bestStateSf = 0;
+    let bestObjective = Number.NEGATIVE_INFINITY;
+    for (const [sf, state] of states.entries()) {
+      if (sf < minSfInt || sf > maxSfInt) continue;
+      if (!state?.room) continue;
+      const objective = Number(state?.score || 0) - (Math.abs(targetSfInt - sf) * 0.45);
+      if (objective > bestObjective) {
+        bestObjective = objective;
+        bestState = state;
+        bestStateSf = sf;
+      }
+    }
+    if (!bestState) continue;
+
+    const picked = [];
+    let cursor = bestState;
+    while (cursor) {
+      if (cursor.room) picked.push(cursor.room);
+      cursor = cursor.prev;
+    }
+    picked.reverse();
+    if (!picked.length) continue;
+    if (bestStateSf < minSfInt || bestStateSf > maxSfInt) continue;
+
+    const pickedBuildingCount = new Set(
+      picked.map((row) => normalizeLoose(row?.buildingKey || "")).filter(Boolean)
+    ).size;
+    if (
+      Number.isFinite(maxBuildingCount) &&
+      maxBuildingCount > 0 &&
+      pickedBuildingCount > maxBuildingCount
+    ) {
+      continue;
+    }
+
+    const totals = buildCopilotScenarioTotals(picked);
+    const scoreObj = buildCopilotOptionScore({
+      candidates: picked,
+      totals,
+      targetSf,
+      minSf,
+      maxSf,
+      strictFit: true,
+      preferSingleBuilding,
+      typeTargets,
+      copilotPreferences: scoreOptions || {}
+    });
+    const score = Number(scoreObj?.score || Number.NEGATIVE_INFINITY);
+    if (score > bestScore) {
+      bestScore = score;
+      best = picked.map((row) => ({
+        roomId: row.roomId,
+        id: row.id,
+        revitId: row.revitId,
+        buildingKey: row.buildingKey,
+        buildingLabel: row.buildingLabel,
+        floorId: row.floorId,
+        floorName: row.floorName,
+        roomLabel: row.roomLabel,
+        type: row.type,
+        sf: row.sf,
+        rationale: row.rationale || "Strict-range deterministic fallback selection."
+      }));
+    }
+  }
+
+  return best;
+}
+
 function findStrictRangeRescueSelection({
   rooms = [],
   targetSf = 0,
@@ -2699,6 +2887,23 @@ function findStrictRangeRescueSelection({
           rationale: row.rationale || "Strict-range rescue fallback selection."
         }));
       }
+    }
+  }
+  if (!best) {
+    const deterministic = findStrictRangeDeterministicSelection({
+      eligible,
+      targetSf,
+      minSf,
+      maxSf,
+      maxCandidates,
+      preferSingleBuilding,
+      primaryBuildingKey,
+      maxBuildingCount,
+      typeTargets,
+      scoreOptions
+    });
+    if (Array.isArray(deterministic) && deterministic.length) {
+      return deterministic;
     }
   }
   return best;
