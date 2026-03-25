@@ -1951,6 +1951,19 @@ function isCopilotStorageType(typeValue = "") {
   return /(storage|warehouse|record room|file room|stock room)/i.test(t);
 }
 
+function isCopilotPublicPerformanceType(typeValue = "") {
+  const t = normalizeCopilotText(typeValue).toLowerCase();
+  if (!t) return false;
+  const ficm = getCopilotFicmEntry(t);
+  if (ficm) {
+    const code = normalizeFicmCode(ficm?.code || "");
+    const label = String(ficm?.label || "").toLowerCase();
+    if (/^61/.test(code)) return true; // 610-619 public performance / assembly family
+    if (/public performance|assembly|auditorium|spectator seating|dressing room|stage/.test(label)) return true;
+  }
+  return /(public performance|assembly|auditorium|spectator seating|stage|dressing room)/i.test(t);
+}
+
 function isCopilotTelecomType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
@@ -2012,6 +2025,18 @@ function shouldAllowSupportByIntent(requestText = "", deptText = "") {
     return true;
   }
   if (/(facilit|maintenance|operations|physical plant|industrial|central services|warehouse|dining|food service|custodial|grounds)/i.test(dept)) {
+    return true;
+  }
+  return false;
+}
+
+function shouldAllowPublicPerformanceByIntent(requestText = "", deptText = "") {
+  const req = normalizeCopilotText(requestText).toLowerCase();
+  const dept = normalizeCopilotText(deptText).toLowerCase();
+  if (/(public performance|assembly|auditorium|theater|theatre|stage|recital|concert|performance venue)/i.test(req)) {
+    return true;
+  }
+  if (/(music|performing art|theater|theatre|dance|drama|speech|recital|choir|band)/i.test(dept)) {
     return true;
   }
   return false;
@@ -2452,8 +2477,10 @@ function findStrictRangeRescueSelection({
   typeTargets = new Map(),
   allowShopFallback = false,
   allowAthleticsFallback = false,
+  allowPublicPerformanceFallback = false,
   allowSupportFallback = false,
   preferSingleBuilding = false,
+  maxBuildingCount = Number.POSITIVE_INFINITY,
   primaryBuildingKey = "",
   scoreOptions = null
 } = {}) {
@@ -2470,6 +2497,7 @@ function findStrictRangeRescueSelection({
       if (isCopilotNonAssignableType(room?.type || "")) return false;
       if (isCopilotShopType(room?.type || "") && !allowShopFallback) return false;
       if (isCopilotAthleticsType(room?.type || "") && !allowAthleticsFallback) return false;
+      if (isCopilotPublicPerformanceType(room?.type || "") && !allowPublicPerformanceFallback) return false;
       const typeKey = normalizeCopilotTypeKey(room?.type || "");
       const family = getCopilotTypeFamily(room?.type || "");
       if (family === "support" && !allowSupportFallback) return false;
@@ -2496,6 +2524,7 @@ function findStrictRangeRescueSelection({
       if (isSupport) utility -= 160;
       if (isStorage) utility -= 120;
       if (preferSingleBuilding && primaryBuildingKey && room?.buildingKey !== primaryBuildingKey) utility -= 90;
+      if (isCopilotPublicPerformanceType(room?.type || "") && !allowPublicPerformanceFallback) utility -= 600;
       return {
         ...room,
         sf,
@@ -2536,11 +2565,22 @@ function findStrictRangeRescueSelection({
     });
     const selected = [];
     const used = new Set();
+    const usedBuildings = new Set();
     let sumSf = 0;
     for (const room of ordered) {
       if (!room?.id || used.has(room.id)) continue;
       if (selected.length >= maxCandidates) break;
       if ((sumSf + room.sf) > maxSf) continue;
+      const buildingKey = normalizeLoose(room?.buildingKey || "");
+      const addsBuilding = Boolean(buildingKey && !usedBuildings.has(buildingKey));
+      if (
+        Number.isFinite(maxBuildingCount) &&
+        maxBuildingCount > 0 &&
+        addsBuilding &&
+        usedBuildings.size >= maxBuildingCount
+      ) {
+        continue;
+      }
       const beforeGap = sumSf < minSf ? (minSf - sumSf) : Math.abs(targetSf - sumSf);
       const afterSum = sumSf + room.sf;
       const afterGap = afterSum < minSf ? (minSf - afterSum) : Math.abs(targetSf - afterSum);
@@ -2549,6 +2589,7 @@ function findStrictRangeRescueSelection({
       const mustFill = sumSf < minSf && (minSf - sumSf) > 450;
       if (includeScore > -10 || (mustFill && rng() > 0.33)) {
         used.add(room.id);
+        if (buildingKey) usedBuildings.add(buildingKey);
         selected.push({ ...room, rationale: makeReason(room) });
         sumSf += room.sf;
       }
@@ -2616,7 +2657,9 @@ function buildCopilotCandidates({
   allowOffFamilyFallback = false,
   allowShopFallback = false,
   allowAthleticsFallback = false,
+  allowPublicPerformanceFallback = false,
   allowSupportFallback = false,
+  maxBuildingCount = Number.POSITIVE_INFINITY,
   copilotPreferences = {},
   rng
 }) {
@@ -2776,6 +2819,7 @@ function buildCopilotCandidates({
     if (isCopilotNonAssignableType(room?.type || "")) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     if (isCopilotShopType(room?.type || "") && !allowShopFallback) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     if (isCopilotAthleticsType(room?.type || "") && !allowAthleticsFallback) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    if (isCopilotPublicPerformanceType(room?.type || "") && !allowPublicPerformanceFallback) return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     const afterSf = selectedSf + roomSf;
     if (strictFit && selectedSf >= minSf && afterSf > maxSf) {
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
@@ -2805,6 +2849,17 @@ function buildCopilotCandidates({
       return { utility: Number.NEGATIVE_INFINITY, reason: "" };
     }
     const isExceptionType = isCopilotExceptionType(room?.type || "");
+    const selectedBuildingKeys = new Set(selected.map((row) => normalizeLoose(row?.buildingKey || "")).filter(Boolean));
+    const candidateBuildingKey = normalizeLoose(room?.buildingKey || "");
+    const addsNewBuilding = Boolean(candidateBuildingKey && !selectedBuildingKeys.has(candidateBuildingKey));
+    if (
+      Number.isFinite(maxBuildingCount) &&
+      maxBuildingCount > 0 &&
+      addsNewBuilding &&
+      selectedBuildingKeys.size >= maxBuildingCount
+    ) {
+      return { utility: Number.NEGATIVE_INFINITY, reason: "" };
+    }
     const buildingPenalty = preferSingleBuilding && primaryBuildingKey && room.buildingKey !== primaryBuildingKey ? 260 : 0;
     const isSupportLike = familyKey === "support" || /(storage|service|support|telecom|audio|video|it|data|server)/i.test(String(room?.type || ""));
     const isStorageLike = isCopilotStorageType(room?.type || "");
@@ -2983,6 +3038,7 @@ function buildCopilotCandidates({
     if (isCopilotNonAssignableType(room?.type || "")) return Number.NEGATIVE_INFINITY;
     if (isCopilotShopType(room?.type || "") && !allowShopFallback) return Number.NEGATIVE_INFINITY;
     if (isCopilotAthleticsType(room?.type || "") && !allowAthleticsFallback) return Number.NEGATIVE_INFINITY;
+    if (isCopilotPublicPerformanceType(room?.type || "") && !allowPublicPerformanceFallback) return Number.NEGATIVE_INFINITY;
     const roomSf = Number(room?.sf || 0) || 0;
     if (roomSf <= 0) return Number.NEGATIVE_INFINITY;
     const typeKey = normalizeCopilotTypeKey(room?.type || "");
@@ -3023,7 +3079,7 @@ function buildCopilotCandidates({
       const used = new Set();
       let sumSf = 0;
 
-      while (sumSf < minSf && picked.length < maxCandidates) {
+    while (sumSf < minSf && picked.length < maxCandidates) {
         const remaining = viablePool.filter((room) => !used.has(room?.id));
         if (!remaining.length) break;
         const needSf = Math.max(0, minSf - sumSf);
@@ -3041,6 +3097,30 @@ function buildCopilotCandidates({
         if (!top.length) break;
         const pick = top[Math.floor(rng() * top.length)]?.room || top[0]?.room;
         if (!pick?.id) break;
+        const pickedBuildings = new Set(
+          picked
+            .map((row) => normalizeLoose(row?.buildingKey || ""))
+            .filter(Boolean)
+        );
+        const pickBuilding = normalizeLoose(pick?.buildingKey || "");
+        const pickAddsBuilding = Boolean(pickBuilding && !pickedBuildings.has(pickBuilding));
+        if (
+          Number.isFinite(maxBuildingCount) &&
+          maxBuildingCount > 0 &&
+          pickAddsBuilding &&
+          pickedBuildings.size >= maxBuildingCount
+        ) {
+          const fallback = top.find((row) => {
+            const b = normalizeLoose(row?.room?.buildingKey || "");
+            const adds = Boolean(b && !pickedBuildings.has(b));
+            return !adds || pickedBuildings.size < maxBuildingCount;
+          })?.room;
+          if (!fallback?.id) break;
+          used.add(fallback.id);
+          picked.push({ ...fallback, rationale: "Strict-fit stochastic repair selection." });
+          sumSf += Number(fallback?.sf || 0) || 0;
+          continue;
+        }
         used.add(pick.id);
         picked.push({ ...pick, rationale: "Strict-fit stochastic repair selection." });
         sumSf += Number(pick?.sf || 0) || 0;
@@ -3126,7 +3206,15 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const typeTargets = buildCopilotTypeTargetMap(constraints);
   const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
   const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
+  const allowPublicPerformanceTargeting = shouldAllowPublicPerformanceByIntent(requestText, scenarioDeptText);
   const allowSupportTargeting = shouldAllowSupportByIntent(requestText, scenarioDeptText);
+  const sourceHomeBuildingCountRaw = Number(constraints?.sourceHomeBuildingCount || 0);
+  const sourceHomeBuildingCount = Number.isFinite(sourceHomeBuildingCountRaw) && sourceHomeBuildingCountRaw > 0
+    ? sourceHomeBuildingCountRaw
+    : (preferSingleBuilding ? 1 : 2);
+  const maxPreferredBuildingCount = preferSingleBuilding
+    ? (sourceHomeBuildingCount <= 1 ? 2 : 3)
+    : Number.POSITIVE_INFINITY;
   const baselineNeedsTelecom = Array.from(typeTargets.values()).some((row) => isCopilotTelecomType(row?.type || ""));
   const baselineSupportTypeKeys = new Set(
     Array.from(typeTargets.entries())
@@ -3142,6 +3230,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   if (!allowAthleticsTargeting && typeTargets.size > 0) {
     Array.from(typeTargets.entries()).forEach(([key, row]) => {
       if (isCopilotAthleticsType(row?.type || key)) typeTargets.delete(key);
+    });
+  }
+  if (!allowPublicPerformanceTargeting && typeTargets.size > 0) {
+    Array.from(typeTargets.entries()).forEach(([key, row]) => {
+      if (isCopilotPublicPerformanceType(row?.type || key)) typeTargets.delete(key);
     });
   }
   const offlineSet = new Set((constraints?.offlineBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
@@ -3160,6 +3253,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     })
     .filter((room) => baselineNeedsTelecom || !isCopilotTelecomType(room?.type || ""))
     .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
+    .filter((room) => allowPublicPerformanceTargeting || !isCopilotPublicPerformanceType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
 
   const buildingSuitabilityByKey = new Map();
@@ -3201,6 +3295,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const signatures = new Set();
   const allowShopFallback = allowShopTargeting && Array.from(typeTargets.values()).some((row) => isCopilotShopType(row?.type || ""));
   const allowAthleticsFallback = allowAthleticsTargeting && Array.from(typeTargets.values()).some((row) => isCopilotAthleticsType(row?.type || ""));
+  const allowPublicPerformanceFallback = allowPublicPerformanceTargeting && Array.from(typeTargets.values()).some((row) => isCopilotPublicPerformanceType(row?.type || ""));
   const targetFamilySet = new Set(
     Array.from(typeTargets.values())
       .map((row) => getCopilotTypeFamily(row?.type || ""))
@@ -3216,6 +3311,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     if (!isCopilotExceptionType(room.type)) return false;
     if (isCopilotShopType(room.type) && !allowShopFallback) return false;
     if (isCopilotAthleticsType(room.type) && !allowAthleticsFallback) return false;
+    if (isCopilotPublicPerformanceType(room.type) && !allowPublicPerformanceFallback) return false;
     if (typeTargets.size <= 0) return true;
     if (typeTargets.has(room.typeKey)) return true;
     if (!allowOffFamilyFallback) return false;
@@ -3399,11 +3495,24 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowOffFamilyFallback,
         allowShopFallback,
         allowAthleticsFallback,
+        allowPublicPerformanceFallback,
         allowSupportFallback: (allowSupportTargeting || allowSupportFallback),
+        maxBuildingCount: maxPreferredBuildingCount,
         copilotPreferences,
         rng
       });
       if (!selected.length) continue;
+
+      const selectedBuildingKeysGuard = new Set(
+        selected.map((room) => normalizeLoose(room?.buildingKey || room?.buildingLabel || "")).filter(Boolean)
+      );
+      if (
+        Number.isFinite(maxPreferredBuildingCount) &&
+        maxPreferredBuildingCount > 0 &&
+        selectedBuildingKeysGuard.size > maxPreferredBuildingCount
+      ) {
+        continue;
+      }
 
       const signature = selected
         .map((room) => room.id)
@@ -3599,8 +3708,10 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       typeTargets,
       allowShopFallback,
       allowAthleticsFallback,
-      allowSupportFallback: true,
+      allowPublicPerformanceFallback,
+      allowSupportFallback: false,
       preferSingleBuilding,
+      maxBuildingCount: maxPreferredBuildingCount,
       primaryBuildingKey,
       scoreOptions: copilotPreferences
     });
@@ -3706,7 +3817,17 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         return total >= minSf && total <= maxSf;
       })
     : generatedOptions;
-  if (strictFit && !strictInRangeOptions.length) {
+  const strictInRangeWithBuildingCap = strictFit
+    ? strictInRangeOptions.filter((option) => {
+        const count = Number(option?.buildingCount || option?.scoreBreakdown?.buildingCount || 0) || 0;
+        if (!Number.isFinite(maxPreferredBuildingCount)) return true;
+        return count <= maxPreferredBuildingCount;
+      })
+    : strictInRangeOptions;
+  const effectiveStrictOptions = strictFit && strictInRangeWithBuildingCap.length
+    ? strictInRangeWithBuildingCap
+    : strictInRangeOptions;
+  if (strictFit && !effectiveStrictOptions.length) {
     const repairSummary = repairPassHistory
       .map((row) => `${row.label}: +${row.generated} options, ${row.inRange} in-range`)
       .join("; ");
@@ -3718,7 +3839,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}${Number.isFinite(reachableSf) ? ` Max reachable SF under current assignable filters (top 30 rooms): ${Math.round(reachableSf).toLocaleString()} SF.` : ""}`
     );
   }
-  const shortlistedOptions = strictInRangeOptions.slice(0, optionTargetCount);
+  const shortlistedOptions = effectiveStrictOptions.slice(0, optionTargetCount);
   shortlistedOptions.forEach((option, idx) => {
     option.optionId = `option_${idx + 1}`;
     option.label = `Option ${idx + 1}`;

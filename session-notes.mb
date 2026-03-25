@@ -1008,3 +1008,21 @@ Latest completed work (repair D strict-range rescue at copilot plan level)
 - Validation:
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
+
+Latest completed work (single-building cap + Public Performance guardrail)
+- Tightened copilot guardrails in `ai-server/server.js` for academic move scenarios:
+  - Added explicit Public Performance / Assembly exclusion unless user intent or department profile explicitly calls for it.
+  - Applied this guardrail across:
+    - baseline room normalization filters,
+    - type-target pruning,
+    - supplement-room eligibility,
+    - strict stochastic repair,
+    - strict-range rescue.
+- Added stronger building spread control for single-building preference:
+  - Derived `maxPreferredBuildingCount` from `constraints.sourceHomeBuildingCount` (single-home defaults to max 2).
+  - Enforced building-count cap inside candidate fill/stochastic repair and strict-range rescue.
+  - Added strict shortlist cap preference so strict in-range options that honor building cap are preferred.
+- Also set strict rescue support fallback to constrained mode (`allowSupportFallback: false`) to avoid support-heavy rescue drift.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
