@@ -1026,3 +1026,13 @@ Latest completed work (single-building cap + Public Performance guardrail)
 - Validation:
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
+
+Latest completed work (strict rescue fit-first fallback)
+- Extended strict rescue in `ai-server/server.js` (`findStrictRangeRescueSelection`) with a second-stage fit-first search:
+  - If utility-guided rescue fails to find an in-range option, copilot now runs a deeper SF-focused rescue pass.
+  - This fallback still respects assignability/type guardrails, public-performance exclusion, and building-count cap.
+  - Increased rescue search effort to reduce false no-fit outcomes when in-range combinations exist.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

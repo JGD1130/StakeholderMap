@@ -2557,7 +2557,7 @@ function findStrictRangeRescueSelection({
   const rng = createSeededRng((Number(seed) || Date.now()) + 913721);
   let best = null;
   let bestScore = Number.NEGATIVE_INFINITY;
-  for (let i = 0; i < Math.max(300, Math.min(2400, Number(iterations) || 1400)); i += 1) {
+  for (let i = 0; i < Math.max(600, Math.min(8000, Number(iterations) || 2200)); i += 1) {
     const ordered = [...eligible].sort((a, b) => {
       const aj = a.utility + ((rng() - 0.5) * 26);
       const bj = b.utility + ((rng() - 0.5) * 26);
@@ -2624,6 +2624,81 @@ function findStrictRangeRescueSelection({
         sf: row.sf,
         rationale: row.rationale || "Strict-range rescue selection."
       }));
+    }
+  }
+  // Fit-first fallback: if utility-guided search misses, run a larger SF-focused rescue
+  // while keeping assignability/type/building guardrails intact.
+  if (!best) {
+    const fallbackIterations = Math.max(2400, Math.min(18000, Math.round((Number(iterations) || 2200) * 3.2)));
+    for (let i = 0; i < fallbackIterations; i += 1) {
+      const ordered = [...eligible].sort((a, b) => {
+        const aGap = Math.abs((targetSf - (Number(a?.sf || 0) || 0)));
+        const bGap = Math.abs((targetSf - (Number(b?.sf || 0) || 0)));
+        return (aGap - bGap) + ((rng() - 0.5) * 22);
+      });
+      const selected = [];
+      const used = new Set();
+      const usedBuildings = new Set();
+      let sumSf = 0;
+
+      for (const room of ordered) {
+        if (!room?.id || used.has(room.id)) continue;
+        if (selected.length >= maxCandidates) break;
+        const roomSf = Number(room?.sf || 0) || 0;
+        if (!Number.isFinite(roomSf) || roomSf <= 0) continue;
+        if ((sumSf + roomSf) > maxSf) continue;
+        const buildingKey = normalizeLoose(room?.buildingKey || "");
+        const addsBuilding = Boolean(buildingKey && !usedBuildings.has(buildingKey));
+        if (
+          Number.isFinite(maxBuildingCount) &&
+          maxBuildingCount > 0 &&
+          addsBuilding &&
+          usedBuildings.size >= maxBuildingCount
+        ) {
+          continue;
+        }
+        const need = Math.max(0, minSf - sumSf);
+        const fitImprove = Math.abs(need) - Math.abs(need - roomSf);
+        const includeScore = fitImprove + ((rng() - 0.5) * 10);
+        if (includeScore >= -40 || (sumSf < minSf && rng() > 0.62)) {
+          used.add(room.id);
+          if (buildingKey) usedBuildings.add(buildingKey);
+          selected.push({ ...room, rationale: makeReason(room) });
+          sumSf += roomSf;
+        }
+        if (sumSf >= minSf && sumSf <= maxSf) break;
+      }
+
+      if (!(sumSf >= minSf && sumSf <= maxSf)) continue;
+      const totals = buildCopilotScenarioTotals(selected);
+      const scoreObj = buildCopilotOptionScore({
+        candidates: selected,
+        totals,
+        targetSf,
+        minSf,
+        maxSf,
+        strictFit: true,
+        preferSingleBuilding,
+        typeTargets,
+        copilotPreferences: scoreOptions || {}
+      });
+      const score = Number(scoreObj?.score || Number.NEGATIVE_INFINITY);
+      if (score > bestScore) {
+        bestScore = score;
+        best = selected.map((row) => ({
+          roomId: row.roomId,
+          id: row.id,
+          revitId: row.revitId,
+          buildingKey: row.buildingKey,
+          buildingLabel: row.buildingLabel,
+          floorId: row.floorId,
+          floorName: row.floorName,
+          roomLabel: row.roomLabel,
+          type: row.type,
+          sf: row.sf,
+          rationale: row.rationale || "Strict-range rescue fallback selection."
+        }));
+      }
     }
   }
   return best;
