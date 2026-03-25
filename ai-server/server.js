@@ -2463,7 +2463,7 @@ function findStrictRangeRescueSelection({
       .map((row) => getCopilotTypeFamily(row?.type || ""))
       .filter((f) => f && f !== "nonassignable")
   );
-  const eligible = (Array.isArray(rooms) ? rooms : [])
+  const buildEligible = (relaxTypeGuardrails = false) => (Array.isArray(rooms) ? rooms : [])
     .filter((room) => {
       const sf = Number(room?.sf || 0) || 0;
       if (sf <= 0) return false;
@@ -2473,9 +2473,11 @@ function findStrictRangeRescueSelection({
       const typeKey = normalizeCopilotTypeKey(room?.type || "");
       const family = getCopilotTypeFamily(room?.type || "");
       if (family === "support" && !allowSupportFallback) return false;
+      if (relaxTypeGuardrails) return true;
       if (targetTypeKeys.size > 0) {
         if (typeKey && targetTypeKeys.has(typeKey)) return true;
         if (targetFamilySet.size > 0 && family && targetFamilySet.has(family)) return true;
+        if (allowSupportFallback && family === "support") return true;
         return false;
       }
       return true;
@@ -2508,6 +2510,13 @@ function findStrictRangeRescueSelection({
     })
     .sort((a, b) => b.utility - a.utility)
     .slice(0, 260);
+  let eligible = buildEligible(false);
+  const maxFromEligible = eligible
+    .slice(0, Math.max(1, maxCandidates))
+    .reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
+  if ((!eligible.length || maxFromEligible < minSf) && allowSupportFallback) {
+    eligible = buildEligible(true);
+  }
   if (!eligible.length) return null;
 
   const makeReason = (row) => {
@@ -2577,6 +2586,22 @@ function findStrictRangeRescueSelection({
     }
   }
   return best;
+}
+
+function estimateStrictReachableSf({
+  rooms = [],
+  maxCandidates = 30
+} = {}) {
+  const pool = (Array.isArray(rooms) ? rooms : [])
+    .filter((room) => {
+      const sf = Number(room?.sf || 0) || 0;
+      if (sf <= 0) return false;
+      if (isCopilotNonAssignableType(room?.type || "")) return false;
+      return true;
+    })
+    .sort((a, b) => (Number(b?.sf || 0) || 0) - (Number(a?.sf || 0) || 0))
+    .slice(0, Math.max(1, Number(maxCandidates) || 30));
+  return pool.reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0);
 }
 
 function buildCopilotCandidates({
@@ -3540,6 +3565,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   }
 
   if (strictFit && countInRangeOptions() === 0) {
+    const before = generatedOptions.length;
     const byBuildingTotals = new Map();
     rooms.forEach((room) => {
       if (!room?.buildingKey) return;
@@ -3661,6 +3687,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         generatedOptions.push(option);
       }
     }
+    const after = generatedOptions.length;
+    repairPassHistory.push({
+      label: "repair D: strict-range rescue",
+      generated: Math.max(0, after - before),
+      inRange: strictFit ? countInRangeOptions() : after
+    });
   }
 
   if (!generatedOptions.length) {
@@ -3678,8 +3710,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     const repairSummary = repairPassHistory
       .map((row) => `${row.label}: +${row.generated} options, ${row.inRange} in-range`)
       .join("; ");
+    const reachableSf = estimateStrictReachableSf({
+      rooms,
+      maxCandidates: 30
+    });
     throw new Error(
-      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}`
+      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}${Number.isFinite(reachableSf) ? ` Max reachable SF under current assignable filters (top 30 rooms): ${Math.round(reachableSf).toLocaleString()} SF.` : ""}`
     );
   }
   const shortlistedOptions = strictInRangeOptions.slice(0, optionTargetCount);
