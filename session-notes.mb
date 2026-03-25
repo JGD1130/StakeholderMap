@@ -909,3 +909,16 @@ Latest completed work (planner copilot hard-constraint pass for academic move sc
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (strict-fit hard gate: out-of-range options are rejected)
+- Implemented a hard strict-fit gate in backend copilot option selection:
+  - In strict mode (`targetSfTolerance <= 0.05`), options are now filtered to only those within the strict SF range.
+  - If none are in-range, backend now returns a clear error:
+    - `No viable strict-fit options found within +/-X% of target SF (...)`
+  - This prevents presenting clearly invalid `Fit: Out of range` options as selectable strict-fit recommendations.
+- File changed:
+  - `ai-server/server.js`
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

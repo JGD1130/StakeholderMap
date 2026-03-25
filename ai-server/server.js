@@ -2870,7 +2870,18 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   }
 
   generatedOptions.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-  const shortlistedOptions = generatedOptions.slice(0, optionTargetCount);
+  const strictInRangeOptions = strictFit
+    ? generatedOptions.filter((option) => {
+        const total = Number(option?.scenarioTotals?.totalSF || 0) || 0;
+        return total >= minSf && total <= maxSf;
+      })
+    : generatedOptions;
+  if (strictFit && !strictInRangeOptions.length) {
+    throw new Error(
+      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF).`
+    );
+  }
+  const shortlistedOptions = strictInRangeOptions.slice(0, optionTargetCount);
   shortlistedOptions.forEach((option, idx) => {
     option.optionId = `option_${idx + 1}`;
     option.label = `Option ${idx + 1}`;
