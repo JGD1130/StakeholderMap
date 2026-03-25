@@ -2550,10 +2550,6 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const strictFit = Number(constraints?.targetSfTolerance || 0.1) <= 0.05;
   const tolerance = Math.max(0.03, Math.min(0.25, Number(constraints?.targetSfTolerance || 0.1) || 0.1));
   const singleBuildingBoost = Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) || 1);
-  const sfPriorityBoost = Math.max(1, Number(copilotPreferences?.sfPriorityBoost || 1) || 1);
-  const relaxUnderfillThreshold = preferSingleBuilding
-    ? (singleBuildingBoost >= 1.5 ? 0.72 : 0.78)
-    : (sfPriorityBoost >= 1.5 ? 0.8 : 0.85);
   const baselineTotalSf = Number(constraints?.baselineTotals?.totalSF || 0) || 0;
   const targetSf = baselineTotalSf > 0
     ? baselineTotalSf
@@ -2565,6 +2561,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
   const allowSupportTargeting = shouldAllowSupportByIntent(requestText, scenarioDeptText);
   const baselineNeedsTelecom = Array.from(typeTargets.values()).some((row) => isCopilotTelecomType(row?.type || ""));
+  const baselineSupportTypeKeys = new Set(
+    Array.from(typeTargets.entries())
+      .filter(([key, row]) => getCopilotTypeFamily(row?.type || key) === "support")
+      .map(([key]) => key)
+      .filter(Boolean)
+  );
   if (!allowShopTargeting && typeTargets.size > 0) {
     Array.from(typeTargets.entries()).forEach(([key, row]) => {
       if (isCopilotShopType(row?.type || key)) typeTargets.delete(key);
@@ -2573,14 +2575,6 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   if (!allowAthleticsTargeting && typeTargets.size > 0) {
     Array.from(typeTargets.entries()).forEach(([key, row]) => {
       if (isCopilotAthleticsType(row?.type || key)) typeTargets.delete(key);
-    });
-  }
-  if (!allowSupportTargeting && typeTargets.size > 0) {
-    Array.from(typeTargets.entries()).forEach(([key, row]) => {
-      const family = getCopilotTypeFamily(row?.type || key);
-      if (family === "support" || isCopilotStorageType(row?.type || key) || isCopilotTelecomType(row?.type || key)) {
-        typeTargets.delete(key);
-      }
     });
   }
   const offlineSet = new Set((constraints?.offlineBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
@@ -2592,7 +2586,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .map(toCopilotRoom)
     .filter(Boolean)
     .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
-    .filter((room) => allowSupportTargeting || getCopilotTypeFamily(room?.type || "") !== "support")
+    .filter((room) => {
+      if (allowSupportTargeting) return true;
+      if (getCopilotTypeFamily(room?.type || "") !== "support") return true;
+      return baselineSupportTypeKeys.has(room?.typeKey || normalizeCopilotTypeKey(room?.type || ""));
+    })
     .filter((room) => baselineNeedsTelecom || !isCopilotTelecomType(room?.type || ""))
     .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
     .filter((room) => !excludeSet.has(room.buildingKey));
@@ -2620,7 +2618,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       .filter((family) => family && family !== "nonassignable")
   );
   const attemptBudget = optionTargetCount * 4;
-  const maxOptionPool = optionTargetCount * 3;
+  const maxOptionPool = optionTargetCount * 5;
+  const repairPassHistory = [];
   let optionSeq = 0;
 
   const canUseSupplementRoom = (room, allowOffFamilyFallback = false) => {
@@ -2637,11 +2636,14 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
 
   const runGenerationPass = ({
     passSeedOffset = 0,
+    passLabel = "",
+    attemptScale = 1,
     allowOffFamilyFallback = false,
     relaxSingleBuilding = false,
     roomSource = rooms
   } = {}) => {
     const runRooms = Array.isArray(roomSource) && roomSource.length ? roomSource : rooms;
+    const runAttemptBudget = Math.max(2, Math.round(attemptBudget * Math.max(0.5, Number(attemptScale) || 1)));
     const runByBuilding = new Map();
     runRooms.forEach((room) => {
       if (!runByBuilding.has(room.buildingKey)) {
@@ -2673,7 +2675,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     });
     if (!runBuildingRows.length) return;
 
-    for (let attempt = 0; attempt < attemptBudget && generatedOptions.length < maxOptionPool; attempt += 1) {
+    for (let attempt = 0; attempt < runAttemptBudget && generatedOptions.length < maxOptionPool; attempt += 1) {
       const rng = createSeededRng(seed + passSeedOffset + (attempt * 31));
       const buildingBiasShift = Math.min(runBuildingRows.length - 1, attempt % Math.max(1, Math.min(3, runBuildingRows.length)));
       const weightedBuildings = [...runBuildingRows].sort((a, b) => {
@@ -2813,6 +2815,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         assumptions: [
           strictFit ? `Strict fit mode enforced at +/-${Math.round(tolerance * 100)}%.` : `Fit target set at +/-${Math.round(tolerance * 100)}%.`,
           preferSingleBuilding ? "Single-building preference is active." : "Multi-building options allowed.",
+          ...(passLabel ? [`Generated in repair pass: ${passLabel}.`] : []),
           ...(fallbackUsed ? ["Guardrail filtering was softened due to limited eligible inventory."] : []),
           ...(!allowShopTargeting ? ["Shop/maker spaces are excluded unless explicitly requested or discipline-aligned."] : []),
           ...(!allowAthleticsTargeting ? ["Athletics/gym/arena spaces are excluded unless explicitly requested or discipline-aligned."] : []),
@@ -2856,13 +2859,55 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     }
   };
 
-  runGenerationPass({ passSeedOffset: 0, allowOffFamilyFallback: false, relaxSingleBuilding: false });
-  const bestStrictSf = generatedOptions.reduce(
-    (max, option) => Math.max(max, Number(option?.scenarioTotals?.totalSF || 0) || 0),
-    0
-  );
-  if (targetSf > 0 && bestStrictSf < (targetSf * relaxUnderfillThreshold)) {
-    runGenerationPass({ passSeedOffset: 1000003, allowOffFamilyFallback: true, relaxSingleBuilding: true });
+  const countInRangeOptions = () => generatedOptions.reduce((count, option) => {
+    const total = Number(option?.scenarioTotals?.totalSF || 0) || 0;
+    if (total >= minSf && total <= maxSf) return count + 1;
+    return count;
+  }, 0);
+  const runRepairPass = (cfg = {}) => {
+    const before = generatedOptions.length;
+    runGenerationPass(cfg);
+    const after = generatedOptions.length;
+    repairPassHistory.push({
+      label: cfg?.passLabel || "pass",
+      generated: Math.max(0, after - before),
+      inRange: strictFit ? countInRangeOptions() : after
+    });
+  };
+
+  runRepairPass({
+    passLabel: "baseline strict core",
+    passSeedOffset: 0,
+    attemptScale: 1.25,
+    allowOffFamilyFallback: false,
+    relaxSingleBuilding: false
+  });
+  if (strictFit && countInRangeOptions() === 0) {
+    runRepairPass({
+      passLabel: "repair A: bounded two-building strict",
+      passSeedOffset: 500003,
+      attemptScale: 1.1,
+      allowOffFamilyFallback: false,
+      relaxSingleBuilding: true
+    });
+  }
+  if (strictFit && countInRangeOptions() === 0) {
+    runRepairPass({
+      passLabel: "repair B: type-family fallback strict",
+      passSeedOffset: 1000003,
+      attemptScale: 1.35,
+      allowOffFamilyFallback: true,
+      relaxSingleBuilding: true
+    });
+  }
+  if (!strictFit && generatedOptions.length < optionTargetCount) {
+    runRepairPass({
+      passLabel: "supplemental exploration",
+      passSeedOffset: 1500007,
+      attemptScale: 1.2,
+      allowOffFamilyFallback: true,
+      relaxSingleBuilding: true
+    });
   }
 
   if (!generatedOptions.length) {
@@ -2877,8 +2922,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       })
     : generatedOptions;
   if (strictFit && !strictInRangeOptions.length) {
+    const repairSummary = repairPassHistory
+      .map((row) => `${row.label}: +${row.generated} options, ${row.inRange} in-range`)
+      .join("; ");
     throw new Error(
-      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF).`
+      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}`
     );
   }
   const shortlistedOptions = strictInRangeOptions.slice(0, optionTargetCount);

@@ -922,3 +922,22 @@ Latest completed work (strict-fit hard gate: out-of-range options are rejected)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (agentic repair loop v1 + smarter strict support handling)
+- Reworked copilot strict-fit flow to behave as a repair loop instead of a single-shot generator:
+  - Added staged passes:
+    - `baseline strict core`
+    - `repair A: bounded two-building strict`
+    - `repair B: type-family fallback strict`
+  - In non-strict mode, added a supplemental exploration pass when option count is low.
+  - Strict-fit failure now reports which repair passes ran and how many in-range options each produced.
+- Fixed over-hard support filtering that was starving strict runs:
+  - In academic mode, support rooms are no longer globally removed.
+  - Support is allowed only when its type key exists in the baseline mix (plus existing caps/penalties).
+  - This preserves realistic baseline support needs while still suppressing support-heavy filler behavior.
+- Files changed:
+  - `ai-server/server.js`
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
