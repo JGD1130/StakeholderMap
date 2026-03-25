@@ -962,3 +962,24 @@ Latest completed work (master-plan suitability gate + stricter support/storage f
 - Validation:
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
+
+Latest completed work (FICM classifier integration + strict-fit recovery refinement)
+- Integrated FICM/NCES workbook classification into copilot backend (`ai-server/server.js`):
+  - Added loader for `ai-server/Docs/NU_FICM_NCES_CAT_TYPE.xlsx`.
+  - Parses category/type rows and builds normalized type index (by type text + code).
+  - Copilot family classification now checks FICM mapping first before keyword fallback.
+  - Non-assignable detection now honors FICM categories (`WWW/XXX/YYY/ZZZ/000`) where applicable.
+  - Athletics/telecom/storage detection now also uses FICM metadata when available.
+- Improved strict-fit selection behavior to reduce “no viable strict-fit options” dead-ends:
+  - Replaced hard support-blocking with high penalty (prevents solver deadlock while still discouraging support-first fill).
+  - Added stronger support type-count penalty when support type is not a baseline target type.
+  - Added support-room-count cap penalty to reduce many small scattered storage/support picks.
+  - Added new recovery pass:
+    - `repair C: constrained support fallback strict`
+    - only runs when strict-fit still has zero in-range options after earlier repair passes.
+- Result intent:
+  - Better type-family classification quality from a controlled taxonomy source (FICM).
+  - Stricter preference for assignable academic-fit rooms while preserving ability to produce strict-fit options.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.

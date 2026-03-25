@@ -1939,24 +1939,33 @@ function isCopilotShopType(typeValue = "") {
 function isCopilotAthleticsType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
+  if (getCopilotFicmFamily(t) === "athletics") return true;
   return /(athletic|athletics|gym|arena|fieldhouse|locker room|sports|intercollegiate)/i.test(t);
 }
 
 function isCopilotStorageType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
+  const ficm = getCopilotFicmEntry(t);
+  if (ficm && /storage|warehouse|stock|record|file/i.test(String(ficm?.label || ""))) return true;
   return /(storage|warehouse|record room|file room|stock room)/i.test(t);
 }
 
 function isCopilotTelecomType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
+  const ficm = getCopilotFicmEntry(t);
+  if (ficm) {
+    const code = normalizeFicmCode(ficm?.code || "");
+    if (/^71/.test(code) || /telecom|server|network|audio|video|data/i.test(String(ficm?.label || ""))) return true;
+  }
   return /(telecom|audio|video|server room|network|data center|it\/telecom)/i.test(t);
 }
 
 function isCopilotNonAssignableType(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return false;
+  if (getCopilotFicmFamily(t) === "nonassignable") return true;
   return /(corridor|circulation|vestibule|lobby|stair|elevator|restroom|toilet|mechanical area|mechanical room|electrical area|electrical room|utility room|janitor|custodial area|custodial storage|custodial closet|shaft|pipe chase|loading dock)/i
     .test(t);
 }
@@ -1964,6 +1973,8 @@ function isCopilotNonAssignableType(typeValue = "") {
 function getCopilotTypeFamily(typeValue = "") {
   const t = normalizeCopilotText(typeValue).toLowerCase();
   if (!t) return "other";
+  const ficmFamily = getCopilotFicmFamily(t);
+  if (ficmFamily) return ficmFamily;
   if (isCopilotNonAssignableType(t)) return "nonassignable";
   if (isCopilotAthleticsType(t)) return "athletics";
   if (/(office|workstation|admin|faculty|staff|suite|reception|conference|meeting|advising)/i.test(t)) return "office";
@@ -2009,8 +2020,16 @@ function shouldAllowSupportByIntent(requestText = "", deptText = "") {
 const MASTER_PLAN_BUILDING_PROFILE_FILE = process.env.MASTER_PLAN_BUILDING_PROFILE_FILE
   ? path.resolve(process.env.MASTER_PLAN_BUILDING_PROFILE_FILE)
   : path.join(AI_DOCS_DIR, "master-plan-building-profiles.json");
+const FICM_TYPE_MAP_FILE = process.env.FICM_TYPE_MAP_FILE
+  ? path.resolve(process.env.FICM_TYPE_MAP_FILE)
+  : path.join(AI_DOCS_DIR, "NU_FICM_NCES_CAT_TYPE.xlsx");
 let masterPlanBuildingProfilesLoaded = false;
 let masterPlanBuildingProfilesMap = new Map();
+let ficmTypeIndexLoaded = false;
+let ficmTypeIndex = {
+  byTypeKey: new Map(),
+  byCode: new Map()
+};
 
 function normalizeCopilotBuildingKey(value = "") {
   return normalizeLoose(normalizeCopilotText(value));
@@ -2080,6 +2099,145 @@ function resolveBuildingSuitabilityProfile(buildingLabel = "") {
     softAcademicAvoid: Boolean(profile.softAcademicAvoid || fallback.softAcademicAvoid),
     notes: profile.notes || ""
   };
+}
+
+function normalizeFicmCode(value = "") {
+  return normalizeCopilotText(value).toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function parseFicmTypeText(typeRaw = "") {
+  const text = normalizeCopilotText(typeRaw);
+  if (!text) return { code: "", label: "" };
+  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-–]?\s*(.+)$/);
+  if (match) {
+    return {
+      code: normalizeFicmCode(match[1]),
+      label: normalizeCopilotText(match[2] || "")
+    };
+  }
+  return { code: "", label: text };
+}
+
+function mapFicmCategoryToFamily(categoryValue = "", typeLabelValue = "", codeValue = "") {
+  const cat = normalizeFicmCode(categoryValue);
+  const label = normalizeCopilotText(typeLabelValue).toLowerCase();
+  const code = normalizeFicmCode(codeValue);
+  if (!cat) return null;
+  if (cat === "000") return "nonassignable";
+  if (cat === "100") return "classroom";
+  if (cat === "200") return "lab";
+  if (cat === "250") return /shop/.test(label) ? "shop" : "lab";
+  if (cat === "300") return "office";
+  if (cat === "400") return "specialized";
+  if (cat === "500") return "athletics";
+  if (cat === "600") return "specialized";
+  if (cat === "700") {
+    if (/shop/.test(label) || /^72/.test(code)) return "shop";
+    return "support";
+  }
+  if (cat === "800") return "specialized";
+  if (cat === "900") return "other";
+  if (cat === "WWW" || cat === "XXX" || cat === "YYY" || cat === "ZZZ") return "nonassignable";
+  return null;
+}
+
+function addFicmTypeIndexEntry(index, typeText, category, code, family) {
+  const key = normalizeCopilotTypeKey(typeText);
+  if (!key || !family) return;
+  if (!index.byTypeKey.has(key)) {
+    index.byTypeKey.set(key, {
+      family,
+      category,
+      code,
+      label: normalizeCopilotText(typeText)
+    });
+  }
+}
+
+function loadFicmTypeIndex() {
+  if (ficmTypeIndexLoaded) return ficmTypeIndex;
+  ficmTypeIndexLoaded = true;
+  ficmTypeIndex = { byTypeKey: new Map(), byCode: new Map() };
+  try {
+    if (!XLSX_API?.readFile || !XLSX_API?.utils?.sheet_to_json) return ficmTypeIndex;
+    if (!fs.existsSync(FICM_TYPE_MAP_FILE)) return ficmTypeIndex;
+    const workbook = XLSX_API.readFile(FICM_TYPE_MAP_FILE, { cellDates: false });
+    const sheetName = workbook?.SheetNames?.[0];
+    if (!sheetName) return ficmTypeIndex;
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return ficmTypeIndex;
+    const rows = XLSX_API.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    if (!Array.isArray(rows) || !rows.length) return ficmTypeIndex;
+    let categoryCol = 0;
+    let typeCol = 1;
+    let startIdx = 0;
+    for (let i = 0; i < Math.min(rows.length, 8); i += 1) {
+      const row = Array.isArray(rows[i]) ? rows[i] : [];
+      const lc = row.map((cell) => normalizeCopilotText(cell).toLowerCase());
+      const catIdx = lc.findIndex((v) => v === "category");
+      const typIdx = lc.findIndex((v) => v === "type");
+      if (catIdx >= 0 && typIdx >= 0) {
+        categoryCol = catIdx;
+        typeCol = typIdx;
+        startIdx = i + 1;
+        break;
+      }
+    }
+    for (let i = startIdx; i < rows.length; i += 1) {
+      const row = Array.isArray(rows[i]) ? rows[i] : [];
+      const categoryRaw = normalizeCopilotText(row[categoryCol] ?? "");
+      const typeRaw = normalizeCopilotText(row[typeCol] ?? "");
+      if (!categoryRaw || !typeRaw) continue;
+      if (/^category$/i.test(categoryRaw) || /^type$/i.test(typeRaw)) continue;
+      const category = normalizeFicmCode(categoryRaw);
+      const parsed = parseFicmTypeText(typeRaw);
+      const family = mapFicmCategoryToFamily(category, parsed.label || typeRaw, parsed.code);
+      if (!family) continue;
+      if (parsed.code && !ficmTypeIndex.byCode.has(parsed.code)) {
+        ficmTypeIndex.byCode.set(parsed.code, {
+          family,
+          category,
+          code: parsed.code,
+          label: parsed.label || typeRaw
+        });
+      }
+      addFicmTypeIndexEntry(ficmTypeIndex, typeRaw, category, parsed.code, family);
+      if (parsed.label) {
+        addFicmTypeIndexEntry(ficmTypeIndex, parsed.label, category, parsed.code, family);
+      }
+    }
+  } catch (err) {
+    console.warn("FICM type map load skipped:", err?.message || err);
+  }
+  return ficmTypeIndex;
+}
+
+function getCopilotFicmEntry(typeValue = "") {
+  const text = normalizeCopilotText(typeValue);
+  if (!text) return null;
+  const index = loadFicmTypeIndex();
+  const directKey = normalizeCopilotTypeKey(text);
+  if (directKey && index.byTypeKey.has(directKey)) return index.byTypeKey.get(directKey);
+  const parsed = parseFicmTypeText(text);
+  if (parsed.label) {
+    const labelKey = normalizeCopilotTypeKey(parsed.label);
+    if (labelKey && index.byTypeKey.has(labelKey)) return index.byTypeKey.get(labelKey);
+  }
+  if (parsed.code) {
+    const codeKey = normalizeFicmCode(parsed.code);
+    if (codeKey && index.byCode.has(codeKey)) return index.byCode.get(codeKey);
+  }
+  return null;
+}
+
+function getCopilotFicmFamily(typeValue = "") {
+  const entry = getCopilotFicmEntry(typeValue);
+  return entry?.family || null;
+}
+
+function hasCopilotFicmMappings() {
+  const idx = loadFicmTypeIndex();
+  return Boolean((idx?.byTypeKey?.size || 0) > 0);
 }
 
 function extractCopilotRoomSequence(value = "") {
@@ -2306,6 +2464,7 @@ function buildCopilotCandidates({
   const targetByType = new Map();
   const targetByTypeCount = new Map();
   const targetByFamily = new Map();
+  let targetSupportRoomCount = 0;
   typeTargets.forEach((row, key) => {
     const targetSf = Number(row?.targetSf || 0) || 0;
     if (!key || targetSf <= 0) return;
@@ -2314,6 +2473,9 @@ function buildCopilotCandidates({
     const family = getCopilotTypeFamily(row?.type || key);
     if (family && family !== "nonassignable") {
       targetByFamily.set(family, (targetByFamily.get(family) || 0) + targetSf);
+      if (family === "support") {
+        targetSupportRoomCount += Math.max(0, Number(row?.targetCount || 0) || 0);
+      }
     }
   });
   const targetTypeTotalSf = Array.from(targetByType.values()).reduce((sum, sf) => sum + sf, 0);
@@ -2501,7 +2663,10 @@ function buildCopilotCandidates({
     const currentTypeCount = Number(actualByTypeCount.get(typeKey) || 0) || 0;
     const projectedTypeCount = currentTypeCount + 1;
     const countOverBy = targetTypeCount > 0 ? Math.max(0, projectedTypeCount - targetTypeCount) : 0;
-    const typeCountPenalty = countOverBy > 0 ? countOverBy * (isSupportLike ? 220 : 28) : 0;
+    let typeCountPenalty = countOverBy > 0 ? countOverBy * (isSupportLike ? 220 : 28) : 0;
+    if (isSupportLike && targetTypeCount <= 0) {
+      typeCountPenalty += projectedTypeCount * 95;
+    }
     const supportCapPenalty = supportOverCapAfter * 2.2 * supportPenaltyBoost;
     const supportSubstitutionPenalty = (() => {
       if (!isSupportLike) return 0;
@@ -2511,16 +2676,23 @@ function buildCopilotCandidates({
       const storageWeight = isStorageLike ? 3.8 : 1.9;
       return roomSf * ratio * storageWeight;
     })();
-    const aggressiveSupportBlock = (
+    const aggressiveSupportPenalty = (
       !allowSupportFallback &&
       isSupportLike &&
       coreCandidateAvailable &&
       getCoreDeficitSf(actualByFamily) > 0 &&
       selectedSf < minSf
-    );
-    if (aggressiveSupportBlock) {
-      return { utility: Number.NEGATIVE_INFINITY, reason: "" };
-    }
+    ) ? (roomSf * 1.8 + 520) : 0;
+    const currentSupportRoomCount = selected.reduce((sum, row) => (
+      getCopilotTypeFamily(row?.type || "") === "support" ? sum + 1 : sum
+    ), 0);
+    const projectedSupportRoomCount = currentSupportRoomCount + (isSupportLike ? 1 : 0);
+    const supportRoomCountCap = targetSupportRoomCount > 0
+      ? (targetSupportRoomCount + 2)
+      : 3;
+    const supportRoomCountPenalty = isSupportLike
+      ? Math.max(0, projectedSupportRoomCount - supportRoomCountCap) * 180
+      : 0;
     const smallSupportPenalty = isSupportLike && roomSf < 220
       ? (260 + ((220 - roomSf) * 1.6))
       : 0;
@@ -2561,6 +2733,8 @@ function buildCopilotCandidates({
       - typeCountPenalty
       - supportCapPenalty
       - supportSubstitutionPenalty
+      - aggressiveSupportPenalty
+      - supportRoomCountPenalty
       - smallSupportPenalty
       - storageScatterPenalty
       - telecomPenalty
@@ -2763,6 +2937,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     passLabel = "",
     attemptScale = 1,
     allowOffFamilyFallback = false,
+    allowSupportFallback = false,
     relaxSingleBuilding = false,
     roomSource = rooms
   } = {}) => {
@@ -2933,7 +3108,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowOffFamilyFallback,
         allowShopFallback,
         allowAthleticsFallback,
-        allowSupportFallback: allowSupportTargeting,
+        allowSupportFallback: (allowSupportTargeting || allowSupportFallback),
         copilotPreferences,
         rng
       });
@@ -2996,6 +3171,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         selectionCriteria: [
           "Hard constraints checked before room selection (offline/low-fit exclusions where active).",
           "Non-assignable support spaces (for example corridor/mechanical) excluded from move candidates.",
+          ...(hasCopilotFicmMappings() ? ["FICM/NCES type mapping is applied to classify assignable vs non-assignable and family fit."] : []),
           ...(!allowSupportTargeting ? ["Support/storage/telecom spaces excluded for academic move-fit unless explicitly requested."] : []),
           ...(preferAcademicFit ? ["Academic-fit building ranking uses master-plan category hints (avoid facilities, athletics, student-life buildings by default)."] : []),
           "Type fit weighted highest against baseline room-type SF mix (family-level fallback only when needed).",
@@ -3053,6 +3229,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     passSeedOffset: 0,
     attemptScale: 1.25,
     allowOffFamilyFallback: false,
+    allowSupportFallback: false,
     relaxSingleBuilding: false
   });
   if (strictFit && countInRangeOptions() === 0) {
@@ -3061,6 +3238,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       passSeedOffset: 500003,
       attemptScale: 1.1,
       allowOffFamilyFallback: false,
+      allowSupportFallback: false,
       relaxSingleBuilding: true
     });
   }
@@ -3070,15 +3248,27 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       passSeedOffset: 1000003,
       attemptScale: 1.35,
       allowOffFamilyFallback: true,
+      allowSupportFallback: false,
+      relaxSingleBuilding: true
+    });
+  }
+  if (strictFit && countInRangeOptions() === 0) {
+    runRepairPass({
+      passLabel: "repair C: constrained support fallback strict",
+      passSeedOffset: 1500007,
+      attemptScale: 1.15,
+      allowOffFamilyFallback: true,
+      allowSupportFallback: true,
       relaxSingleBuilding: true
     });
   }
   if (!strictFit && generatedOptions.length < optionTargetCount) {
     runRepairPass({
       passLabel: "supplemental exploration",
-      passSeedOffset: 1500007,
+      passSeedOffset: 2000033,
       attemptScale: 1.2,
       allowOffFamilyFallback: true,
+      allowSupportFallback: true,
       relaxSingleBuilding: true
     });
   }
