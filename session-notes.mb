@@ -1176,3 +1176,13 @@ Latest completed work (shared planner learning phase 1)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Hotfix completed (shared planner policy permissions)
+- Fixed Firestore permission denial for shared copilot learning collections by updating `firestore.rules`.
+- Added explicit rules:
+  - `plannerCopilotPolicies`
+  - `plannerCopilotFeedback`
+- Deployed rules to project `stakeholder-map-a4bdc`:
+  - `npm.cmd exec --yes firebase-tools -- deploy --only firestore:rules --project stakeholder-map-a4bdc`
+- Expected result after refresh:
+  - No more `Missing or insufficient permissions` when loading/saving shared planner policy.
