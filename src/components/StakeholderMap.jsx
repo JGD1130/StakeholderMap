@@ -17305,8 +17305,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const processed = applyScenarioCandidateConstraints(option?.recommendedCandidates || []);
         return decorateCopilotOption(option, processed.candidates);
       });
+      const effectiveRejectedSignatures = forceRelaxed ? [] : (Array.isArray(priorRejectedSignatures) ? priorRejectedSignatures : []);
       const rejectedSignatureSet = new Set(
-        (Array.isArray(priorRejectedSignatures) ? priorRejectedSignatures : [])
+        effectiveRejectedSignatures
           .map((sig) => String(sig || '').trim())
           .filter(Boolean)
       );

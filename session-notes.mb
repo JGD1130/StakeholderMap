@@ -1190,6 +1190,7 @@ Hotfix completed (shared planner policy permissions)
 Hotfix completed (retry-relaxed no-option/500 handling)
 - Updated `src/components/StakeholderMap.jsx`:
   - On `Retry relaxed`, planner request now temporarily clears `copilotPreferences.rejectedSignatures` for that run only.
+  - On `Retry relaxed`, client-side option filtering also bypasses prior rejected signatures so fallback options are not hidden post-response.
   - Prevents dead-end loops where all generated options are blocked by prior rejections.
 - Updated `ai-server/server.js`:
   - `/create-move-scenario-copilot` now returns HTTP 422 (instead of 500) for expected planner no-option cases:
