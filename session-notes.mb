@@ -1285,3 +1285,12 @@ Demo prep completed (public map simplification for Hastings presentation)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Hotfix completed (public demo planning scenario mode flash)
+- Updated `src/components/StakeholderMap.jsx`:
+  - Fixed planning scenario reset guard so Demo Public mode is treated as an allowed planning-scenario context.
+  - Prevents immediate `setMoveScenarioMode(false)` + `clearScenario()` when public users toggle **Planning Scenario Mode ON**.
+- Result:
+  - Public `/hastings` planning scenario toggle now stays on and opens scenario behavior instead of flashing off.
+- Validation:
+  - `npm.cmd run build` passed.

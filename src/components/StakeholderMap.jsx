@@ -10678,11 +10678,12 @@ const StakeholderMap = ({
     resetScenarioModeState();
   }, [resetScenarioModeState]);
   useEffect(() => {
-    if (showFullMapfluenceControls) return;
+    const planningScenarioAllowed = showFullMapfluenceControls || isDemoPublicMode;
+    if (planningScenarioAllowed) return;
     if (!moveScenarioMode) return;
     setMoveScenarioMode(false);
     clearScenario();
-  }, [showFullMapfluenceControls, moveScenarioMode, clearScenario]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
