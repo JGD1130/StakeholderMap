@@ -24564,7 +24564,6 @@ useEffect(() => {
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
-              onOpenProgramTestFit={openProgramTestFitForBuilding}
               onClose={() => {
                 setIsBuildingPanelCollapsed(true);
                 setSelectedBuildingId(null);
@@ -24606,7 +24605,6 @@ useEffect(() => {
               onLoadFloorplan={loadSelectedFloor}
               onUnloadFloorplan={handleUnloadFloorplan}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
-              onOpenProgramTestFit={openProgramTestFitForFloor}
               colorMode={floorColorMode}
               onChangeColorMode={(mode) => {
                 setFloorColorMode(mode);
@@ -25167,7 +25165,6 @@ useEffect(() => {
         </div>
         )}
 
-        {!isDemoPublicMode && (
         <button
           className="btn secondary"
           style={{ width: '100%', marginTop: 6 }}
@@ -25286,7 +25283,6 @@ useEffect(() => {
         >
           Export Scenario (PDF)
         </button>
-        )}
       </div>
     )}
 

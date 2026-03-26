@@ -1294,3 +1294,14 @@ Hotfix completed (public demo planning scenario mode flash)
   - Public `/hastings` planning scenario toggle now stays on and opens scenario behavior instead of flashing off.
 - Validation:
   - `npm.cmd run build` passed.
+
+Demo polish completed (scenario PDF button + remove Program Test Fit)
+- Updated `src/components/StakeholderMap.jsx`:
+  - Added `Export Scenario (PDF)` visibility to the basic public Planning Scenario popup panel.
+  - Removed wiring for `Program Test Fit` from both building and floor space-data panels.
+- Result:
+  - Public demo scenario popup now includes PDF export.
+  - `Program Test Fit` button no longer appears in building/floor panels.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
