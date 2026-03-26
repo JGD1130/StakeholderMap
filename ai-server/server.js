@@ -2045,11 +2045,25 @@ function shouldAllowPublicPerformanceByIntent(requestText = "", deptText = "") {
 const MASTER_PLAN_BUILDING_PROFILE_FILE = process.env.MASTER_PLAN_BUILDING_PROFILE_FILE
   ? path.resolve(process.env.MASTER_PLAN_BUILDING_PROFILE_FILE)
   : path.join(AI_DOCS_DIR, "master-plan-building-profiles.json");
+const MASTER_PLAN_PROFILE_AUTODERIVE_ENABLED =
+  String(process.env.MASTER_PLAN_PROFILE_AUTODERIVE_ENABLED || "true").toLowerCase() !== "false";
+const MASTER_PLAN_PROFILE_AUTODERIVE_MODEL =
+  process.env.MASTER_PLAN_PROFILE_AUTODERIVE_MODEL ||
+  process.env.ASK_MAPFLUENCE_MODEL ||
+  process.env.OPENAI_ASK_MODEL ||
+  AI_MODEL;
+const MASTER_PLAN_PROFILE_AUTODERIVE_RETRY_MS = Math.max(
+  60_000,
+  Number(process.env.MASTER_PLAN_PROFILE_AUTODERIVE_RETRY_MS || (10 * 60 * 1000)) || (10 * 60 * 1000)
+);
 const FICM_TYPE_MAP_FILE = process.env.FICM_TYPE_MAP_FILE
   ? path.resolve(process.env.FICM_TYPE_MAP_FILE)
   : path.join(AI_DOCS_DIR, "NU_FICM_NCES_CAT_TYPE.xlsx");
 let masterPlanBuildingProfilesLoaded = false;
 let masterPlanBuildingProfilesMap = new Map();
+let masterPlanProfilesAutoDeriveAttemptKey = "";
+let masterPlanProfilesAutoDeriveAttemptAt = 0;
+let masterPlanProfilesAutoDeriveInFlight = null;
 let ficmTypeIndexLoaded = false;
 let ficmTypeIndex = {
   byTypeKey: new Map(),
@@ -2089,6 +2103,216 @@ function loadMasterPlanBuildingProfiles() {
     console.warn("Master plan building profile load skipped:", err?.message || err);
   }
   return masterPlanBuildingProfilesMap;
+}
+
+function invalidateMasterPlanBuildingProfilesCache() {
+  masterPlanBuildingProfilesLoaded = false;
+  masterPlanBuildingProfilesMap = new Map();
+}
+
+function normalizeMasterPlanProfileCategory(categoryRaw = "", buildingLabel = "") {
+  const category = normalizeCopilotText(categoryRaw).toLowerCase();
+  const allowed = new Set([
+    "academic",
+    "student-life",
+    "residential",
+    "athletics",
+    "facilities",
+    "mixed",
+    "unknown"
+  ]);
+  if (allowed.has(category)) return category;
+  return inferBuildingSuitabilityFromName(buildingLabel).category || "unknown";
+}
+
+function serializeMasterPlanProfileMap(profileMap = new Map()) {
+  return Array.from(profileMap.values())
+    .map((profile) => ({
+      name: normalizeCopilotText(profile?.name || ""),
+      category: normalizeMasterPlanProfileCategory(profile?.category || "", profile?.name || ""),
+      hardAcademicAvoid: Boolean(profile?.hardAcademicAvoid),
+      softAcademicAvoid: Boolean(profile?.softAcademicAvoid),
+      notes: normalizeCopilotText(profile?.notes || "")
+    }))
+    .filter((row) => row.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function persistMasterPlanProfiles(profileMap = new Map()) {
+  const payload = serializeMasterPlanProfileMap(profileMap);
+  await fsp.mkdir(path.dirname(MASTER_PLAN_BUILDING_PROFILE_FILE), { recursive: true });
+  await fsp.writeFile(MASTER_PLAN_BUILDING_PROFILE_FILE, JSON.stringify(payload, null, 2), "utf8");
+  invalidateMasterPlanBuildingProfilesCache();
+  loadMasterPlanBuildingProfiles();
+}
+
+function getMasterPlanDocCandidates(docs = []) {
+  const rows = Array.isArray(docs) ? docs : [];
+  const tagged = rows.filter((doc) => /master|facilit|plan|building|campus/i.test(String(doc?.name || "")));
+  return tagged.length ? tagged : rows;
+}
+
+async function ensureMasterPlanProfilesForBuildings(
+  buildingLabels = [],
+  { universityId = "" } = {}
+) {
+  const labels = uniqueStrings(
+    (Array.isArray(buildingLabels) ? buildingLabels : [])
+      .map((value) => normalizeCopilotText(value))
+      .filter(Boolean)
+  );
+  if (!labels.length) return loadMasterPlanBuildingProfiles();
+  if (!MASTER_PLAN_PROFILE_AUTODERIVE_ENABLED) return loadMasterPlanBuildingProfiles();
+  if (!AI_DOCS_ENABLED || !process.env.OPENAI_API_KEY) return loadMasterPlanBuildingProfiles();
+
+  const currentProfiles = loadMasterPlanBuildingProfiles();
+  const missingLabels = labels.filter((label) => !currentProfiles.has(normalizeCopilotBuildingKey(label)));
+  if (!missingLabels.length) return currentProfiles;
+
+  const docs = getMasterPlanDocCandidates(await listLocalAiDocs());
+  if (!docs.length) return currentProfiles;
+  const docsSignature = await buildDocsSignature(docs);
+  const attemptKey = `${docsSignature}|${missingLabels
+    .map((label) => normalizeCopilotBuildingKey(label))
+    .sort()
+    .join(",")}`;
+  const now = Date.now();
+  if (
+    masterPlanProfilesAutoDeriveAttemptKey === attemptKey &&
+    (now - masterPlanProfilesAutoDeriveAttemptAt) < MASTER_PLAN_PROFILE_AUTODERIVE_RETRY_MS
+  ) {
+    return loadMasterPlanBuildingProfiles();
+  }
+  if (masterPlanProfilesAutoDeriveInFlight) {
+    await masterPlanProfilesAutoDeriveInFlight.catch(() => {});
+    return loadMasterPlanBuildingProfiles();
+  }
+
+  masterPlanProfilesAutoDeriveAttemptKey = attemptKey;
+  masterPlanProfilesAutoDeriveAttemptAt = now;
+  masterPlanProfilesAutoDeriveInFlight = (async () => {
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        profiles: {
+          type: "array",
+          minItems: 0,
+          maxItems: Math.max(1, missingLabels.length),
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              category: {
+                type: "string",
+                enum: ["academic", "student-life", "residential", "athletics", "facilities", "mixed", "unknown"]
+              },
+              hardAcademicAvoid: { type: "boolean" },
+              softAcademicAvoid: { type: "boolean" },
+              notes: { type: "string" }
+            },
+            required: ["name", "category", "hardAcademicAvoid", "softAcademicAvoid", "notes"]
+          }
+        },
+        usedDocs: {
+          type: "array",
+          minItems: 0,
+          maxItems: 20,
+          items: { type: "string" }
+        }
+      },
+      required: ["profiles", "usedDocs"]
+    };
+
+    const promptPayload = {
+      task: "Classify each campus building for academic move-scenario suitability from attached campus documents.",
+      universityId: normalizeCopilotText(universityId),
+      buildingLabels: missingLabels,
+      policy: {
+        objective: "support deterministic planning guardrails",
+        highLevelRules: [
+          "Academic/teaching/research buildings should usually be category academic and not academic-avoid.",
+          "Facilities/service/maintenance buildings should be hardAcademicAvoid=true.",
+          "Athletics, residential, or student-life focused buildings should usually be softAcademicAvoid=true.",
+          "If evidence is weak, return category='unknown' and keep avoid flags conservative."
+        ]
+      }
+    };
+
+    const userContent = await buildUserContentWithAiDocs(promptPayload, {
+      warnLabel: "master-plan-profile-autoderive",
+      includeDocs: true
+    });
+
+    const resp = await client.responses.create({
+      model: MASTER_PLAN_PROFILE_AUTODERIVE_MODEL,
+      input: [
+        {
+          role: "system",
+          content:
+            "Use attached reference documents to classify buildings. Return strict JSON only. " +
+            "Do not invent buildings not in the provided buildingLabels list. " +
+            "Keep notes short and factual."
+        },
+        { role: "user", content: userContent }
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "master_plan_building_profiles",
+          schema,
+          strict: true
+        }
+      }
+    });
+
+    const parsed = JSON.parse(resp.output_text || "{}");
+    const incomingRows = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
+    if (!incomingRows.length) return;
+
+    const merged = new Map(loadMasterPlanBuildingProfiles());
+    let changed = false;
+    incomingRows.forEach((row) => {
+      const label = normalizeCopilotText(row?.name || "");
+      const key = normalizeCopilotBuildingKey(label);
+      if (!label || !key) return;
+      if (!missingLabels.some((v) => normalizeCopilotBuildingKey(v) === key) && !merged.has(key)) return;
+      const fallback = inferBuildingSuitabilityFromName(label);
+      const category = normalizeMasterPlanProfileCategory(row?.category || fallback.category, label);
+      const profile = {
+        name: label,
+        category,
+        hardAcademicAvoid: Boolean(row?.hardAcademicAvoid),
+        softAcademicAvoid: Boolean(row?.softAcademicAvoid),
+        notes: normalizeCopilotText(row?.notes || "").slice(0, 240)
+      };
+      const prev = merged.get(key);
+      const prevSig = JSON.stringify(prev || {});
+      const nextSig = JSON.stringify(profile);
+      if (prevSig !== nextSig) {
+        merged.set(key, profile);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      await persistMasterPlanProfiles(merged);
+      console.log(
+        `[planner] auto-derived ${incomingRows.length} building profile(s) from docs (${MASTER_PLAN_PROFILE_AUTODERIVE_MODEL}).`
+      );
+    }
+  })();
+
+  try {
+    await masterPlanProfilesAutoDeriveInFlight;
+  } catch (err) {
+    console.warn("Master plan profile auto-derive skipped:", err?.message || err);
+  } finally {
+    masterPlanProfilesAutoDeriveInFlight = null;
+  }
+
+  return loadMasterPlanBuildingProfiles();
 }
 
 function inferBuildingSuitabilityFromName(buildingLabel = "") {
@@ -4783,6 +5007,18 @@ app.post("/create-move-scenario-copilot", async (req, res) => {
     const { request, context, inventory, constraints } = req.body || {};
     if (!request || !String(request).trim()) {
       return res.status(400).json({ error: "Missing request" });
+    }
+    const candidateBuildingLabels = uniqueStrings(
+      (Array.isArray(inventory) ? inventory : [])
+        .map((row) => toCopilotRoom(row))
+        .filter(Boolean)
+        .map((row) => normalizeCopilotText(row?.buildingLabel || ""))
+        .filter(Boolean)
+    );
+    if (candidateBuildingLabels.length) {
+      await ensureMasterPlanProfilesForBuildings(candidateBuildingLabels, {
+        universityId: normalizeCopilotText(context?.universityId || context?.university || "")
+      });
     }
     const out = generateMoveScenarioCopilotPlan({ request, context, inventory, constraints });
     res.json(out);

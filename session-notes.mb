@@ -1141,3 +1141,12 @@ Follow-up tuning in same phase
   - Rejections tighten SF and building-spread penalties in subsequent runs.
   - Rejections also increase room-type gap penalty multiplier, so poor type alignment is penalized harder over time.
 - Added `forceOneBuildingIfFeasible` support from saved prefs so frontend feedback can enforce one-building-first when strict feasibility confirms it.
+
+Latest completed work (hybrid doc-derived building profiles for planner)
+- Added hybrid planning profile bootstrap so `Create planning scenario` can auto-derive missing building suitability profiles from attached docs (same doc pipeline style as Ask Mapfluence) and then use deterministic scoring.
+- New behavior in `ai-server/server.js`:
+  - If a requested building is missing from `Docs/master-plan-building-profiles.json`, server attempts one-time auto-derive from attached AI docs and persists merged results back into that JSON file.
+  - Added in-memory retry guard and cooldown to avoid repeated expensive derive attempts on the same missing-building/doc signature combo.
+  - Added profile cache invalidation + reload after persisted writes so scoring immediately uses the new profile data.
+- Copilot endpoint now calls auto-derive preflight before scoring:
+  - `/create-move-scenario-copilot` gathers building labels from inventory and triggers profile ensure step.
