@@ -65,6 +65,10 @@ const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
 const LOCAL_RENO_SCENARIO_STORAGE_PREFIX = 'mf-reno-scenarios';
 const ADMIN_COMBINED_PREFS_STORAGE_PREFIX = 'mf-admin-engagement-prefs';
 const COPILOT_PREFS_STORAGE_PREFIX = 'mf-copilot-prefs';
+const COPILOT_SHARED_POLICY_COLLECTION = 'plannerCopilotPolicies';
+const COPILOT_SHARED_FEEDBACK_COLLECTION = 'plannerCopilotFeedback';
+const COPILOT_MAX_REJECTED_SIGNATURES = 30;
+const COPILOT_MAX_FEEDBACK_HISTORY = 40;
 const COPILOT_FEEDBACK_REASON_OPTIONS = [
   { value: '', label: 'Feedback reason (optional)' },
   { value: 'too_many_buildings', label: 'Too many buildings' },
@@ -129,6 +133,211 @@ const saveCopilotPrefs = (storageKey, payload) => {
   } catch {
     return false;
   }
+};
+const normalizeCopilotDeptPrefs = (source = {}) => {
+  const base = (source && typeof source === 'object') ? source : {};
+  return {
+    singleBuildingBoost: Math.max(1, Number(base?.singleBuildingBoost || 1) || 1),
+    sfPriorityBoost: Math.max(1, Number(base?.sfPriorityBoost || 1) || 1),
+    supportPenaltyBoost: Math.max(1, Number(base?.supportPenaltyBoost || 1) || 1),
+    contiguityBoost: Math.max(1, Number(base?.contiguityBoost || 1) || 1),
+    maxSupportOverBaselinePct: Math.max(
+      0.015,
+      Math.min(0.12, Number(base?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
+    ),
+    explicitAcceptCount: Math.max(0, Number(base?.explicitAcceptCount || 0) || 0),
+    explicitRejectCount: Math.max(0, Number(base?.explicitRejectCount || 0) || 0),
+    forceOneBuildingIfFeasible: Boolean(base?.forceOneBuildingIfFeasible ?? true),
+    rejectedSignatures: Array.isArray(base?.rejectedSignatures)
+      ? base.rejectedSignatures
+          .map((v) => String(v || '').trim())
+          .filter(Boolean)
+          .slice(-COPILOT_MAX_REJECTED_SIGNATURES)
+      : [],
+    feedbackHistory: Array.isArray(base?.feedbackHistory)
+      ? base.feedbackHistory
+          .filter((v) => v && typeof v === 'object')
+          .slice(-COPILOT_MAX_FEEDBACK_HISTORY)
+      : [],
+    updatedAt: Number(base?.updatedAt || 0) || 0
+  };
+};
+const mergeCopilotDeptPrefs = (sharedPrefs = null, localPrefs = null) => {
+  const hasShared = Boolean(sharedPrefs && typeof sharedPrefs === 'object');
+  const hasLocal = Boolean(localPrefs && typeof localPrefs === 'object');
+  if (!hasShared && !hasLocal) return null;
+  const shared = normalizeCopilotDeptPrefs(hasShared ? sharedPrefs : {});
+  const local = normalizeCopilotDeptPrefs(hasLocal ? localPrefs : {});
+  const mergedHistory = [...(shared.feedbackHistory || []), ...(local.feedbackHistory || [])]
+    .filter((v) => v && typeof v === 'object')
+    .sort((a, b) => (Number(a?.ts || 0) - Number(b?.ts || 0)))
+    .slice(-COPILOT_MAX_FEEDBACK_HISTORY);
+  return normalizeCopilotDeptPrefs({
+    singleBuildingBoost: Math.max(shared.singleBuildingBoost, local.singleBuildingBoost),
+    sfPriorityBoost: Math.max(shared.sfPriorityBoost, local.sfPriorityBoost),
+    supportPenaltyBoost: Math.max(shared.supportPenaltyBoost, local.supportPenaltyBoost),
+    contiguityBoost: Math.max(shared.contiguityBoost, local.contiguityBoost),
+    maxSupportOverBaselinePct: Math.min(shared.maxSupportOverBaselinePct, local.maxSupportOverBaselinePct),
+    explicitAcceptCount: Math.max(shared.explicitAcceptCount, local.explicitAcceptCount),
+    explicitRejectCount: Math.max(shared.explicitRejectCount, local.explicitRejectCount),
+    forceOneBuildingIfFeasible: shared.forceOneBuildingIfFeasible || local.forceOneBuildingIfFeasible,
+    rejectedSignatures: Array.from(
+      new Set([...(shared.rejectedSignatures || []), ...(local.rejectedSignatures || [])])
+    ).slice(-COPILOT_MAX_REJECTED_SIGNATURES),
+    feedbackHistory: mergedHistory,
+    updatedAt: Math.max(Number(shared.updatedAt || 0) || 0, Number(local.updatedAt || 0) || 0)
+  });
+};
+const buildCopilotScenarioPreferencesPayload = (prefs = null) => {
+  const normalized = normalizeCopilotDeptPrefs(prefs || {});
+  return {
+    singleBuildingBoost: normalized.singleBuildingBoost,
+    sfPriorityBoost: normalized.sfPriorityBoost,
+    supportPenaltyBoost: normalized.supportPenaltyBoost,
+    contiguityBoost: normalized.contiguityBoost,
+    maxSupportOverBaselinePct: normalized.maxSupportOverBaselinePct,
+    explicitAcceptCount: normalized.explicitAcceptCount,
+    explicitRejectCount: normalized.explicitRejectCount,
+    rejectedSignatures: normalized.rejectedSignatures
+  };
+};
+const applyCopilotFeedbackToDeptPrefs = (
+  currentPrefs = {},
+  {
+    feedbackKind = 'accept',
+    feedbackReason = '',
+    optionId = '',
+    selectedOption = null
+  } = {}
+) => {
+  const normalizedKind = String(feedbackKind || '').trim().toLowerCase();
+  const reasonKey = String(feedbackReason || '').trim().toLowerCase();
+  const next = normalizeCopilotDeptPrefs(currentPrefs || {});
+  const optionBuildingCount = Math.max(
+    1,
+    Number(
+      selectedOption?.buildingCount ??
+      selectedOption?.scoreBreakdown?.buildingCount ??
+      (Array.isArray(selectedOption?.buildings) ? selectedOption.buildings.length : 1)
+    ) || 1
+  );
+  const optionSfGapPct = Number(
+    selectedOption?.fitSummary?.sfGapPct ??
+    selectedOption?.scoreBreakdown?.sfGapPct ??
+    0
+  ) || 0;
+  const optionTypeGapPct = Number(
+    selectedOption?.fitSummary?.typeGapPct ??
+    selectedOption?.scoreBreakdown?.typeGapPct ??
+    0
+  ) || 0;
+  const inTargetRange = Boolean(
+    selectedOption?.fitSummary?.inTargetRange ??
+    selectedOption?.scoreBreakdown?.inTargetRange
+  );
+  const selectedOptionSignature = (
+    buildCopilotCandidateSignature(selectedOption?.recommendedCandidates || []) ||
+    String(optionId || '').trim()
+  );
+  const inferredReasonKey = (() => {
+    if (reasonKey) return reasonKey;
+    if (normalizedKind !== 'reject') return '';
+    if (!inTargetRange || optionSfGapPct >= 12) return 'sf_off';
+    if (optionBuildingCount > 1) return 'too_many_buildings';
+    if (optionTypeGapPct >= 55) return 'room_type_mismatch';
+    return 'other';
+  })();
+
+  if (normalizedKind === 'accept') {
+    next.explicitAcceptCount += 1;
+    if (optionBuildingCount <= 1) {
+      next.singleBuildingBoost = Math.min(4, next.singleBuildingBoost + 0.35);
+    }
+    if (optionSfGapPct <= 6) {
+      next.sfPriorityBoost = Math.min(4, next.sfPriorityBoost + 0.12);
+    }
+    if (optionTypeGapPct <= 45) {
+      next.supportPenaltyBoost = Math.min(4, next.supportPenaltyBoost + 0.08);
+    }
+    if (inferredReasonKey === 'good_result') {
+      next.contiguityBoost = Math.min(4, next.contiguityBoost + 0.1);
+      next.forceOneBuildingIfFeasible = true;
+    }
+    if (selectedOptionSignature) {
+      next.rejectedSignatures = next.rejectedSignatures.filter((sig) => sig !== selectedOptionSignature);
+    }
+  } else if (normalizedKind === 'reject') {
+    next.explicitRejectCount += 1;
+    switch (inferredReasonKey) {
+      case 'too_many_buildings':
+        next.singleBuildingBoost = Math.min(4, next.singleBuildingBoost + 0.65);
+        next.forceOneBuildingIfFeasible = true;
+        break;
+      case 'sf_off':
+        next.sfPriorityBoost = Math.min(4, next.sfPriorityBoost + 0.75);
+        break;
+      case 'room_type_mismatch':
+        next.supportPenaltyBoost = Math.min(4, next.supportPenaltyBoost + 0.85);
+        next.maxSupportOverBaselinePct = Math.max(0.015, next.maxSupportOverBaselinePct - 0.01);
+        break;
+      case 'not_contiguous':
+        next.contiguityBoost = Math.min(4, next.contiguityBoost + 0.75);
+        break;
+      case 'bad_building_fit':
+        next.singleBuildingBoost = Math.min(4, next.singleBuildingBoost + 0.35);
+        next.contiguityBoost = Math.min(4, next.contiguityBoost + 0.3);
+        next.supportPenaltyBoost = Math.min(4, next.supportPenaltyBoost + 0.3);
+        break;
+      default:
+        next.sfPriorityBoost = Math.min(4, next.sfPriorityBoost + 0.25);
+        next.supportPenaltyBoost = Math.min(4, next.supportPenaltyBoost + 0.2);
+        break;
+    }
+    if (selectedOptionSignature) {
+      const nextRejected = [...next.rejectedSignatures, selectedOptionSignature];
+      next.rejectedSignatures = Array.from(new Set(nextRejected)).slice(-COPILOT_MAX_REJECTED_SIGNATURES);
+    }
+  }
+
+  const history = Array.isArray(next.feedbackHistory) ? [...next.feedbackHistory] : [];
+  history.push({
+    ts: Date.now(),
+    kind: normalizedKind,
+    reason: inferredReasonKey || '',
+    optionId: String(optionId || '').trim(),
+    signature: selectedOptionSignature || '',
+    buildingCount: optionBuildingCount,
+    sfGapPct: Number(optionSfGapPct.toFixed(2)),
+    typeGapPct: Number(optionTypeGapPct.toFixed(2))
+  });
+  next.feedbackHistory = history.slice(-COPILOT_MAX_FEEDBACK_HISTORY);
+  next.updatedAt = Date.now();
+
+  return {
+    nextPrefs: next,
+    inferredReasonKey,
+    selectedOptionSignature,
+    optionBuildingCount,
+    optionSfGapPct,
+    optionTypeGapPct,
+    inTargetRange
+  };
+};
+const toCopilotPolicyDocPayload = (prefs = {}, metadata = {}) => {
+  const normalized = normalizeCopilotDeptPrefs(prefs || {});
+  return {
+    singleBuildingBoost: normalized.singleBuildingBoost,
+    sfPriorityBoost: normalized.sfPriorityBoost,
+    supportPenaltyBoost: normalized.supportPenaltyBoost,
+    contiguityBoost: normalized.contiguityBoost,
+    maxSupportOverBaselinePct: normalized.maxSupportOverBaselinePct,
+    explicitAcceptCount: normalized.explicitAcceptCount,
+    explicitRejectCount: normalized.explicitRejectCount,
+    forceOneBuildingIfFeasible: normalized.forceOneBuildingIfFeasible,
+    rejectedSignatures: normalized.rejectedSignatures.slice(-COPILOT_MAX_REJECTED_SIGNATURES),
+    feedbackHistory: normalized.feedbackHistory.slice(-COPILOT_MAX_FEEDBACK_HISTORY),
+    ...metadata
+  };
 };
 const buildCopilotCandidateSignature = (rows = []) => {
   if (!Array.isArray(rows) || !rows.length) return '';
@@ -16687,38 +16896,45 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         scenarioPolicyNotes.push('Public performance/assembly spaces are hard excluded from this run.');
       }
       let priorRejectedSignatures = [];
+      const deptPrefKey = normalizeDashboardKey(inferredDept || scenarioAssignedDept || 'default') || 'default';
       try {
         const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
         const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
         const storedPrefs = loadCopilotPrefs(prefsStorageKey) || {};
-        const deptPrefKey = normalizeDashboardKey(inferredDept || scenarioAssignedDept || 'default');
-        const deptPrefs = (storedPrefs?.[deptPrefKey] && typeof storedPrefs[deptPrefKey] === 'object')
+        const localDeptPrefs = (storedPrefs?.[deptPrefKey] && typeof storedPrefs[deptPrefKey] === 'object')
           ? storedPrefs[deptPrefKey]
           : null;
+        let sharedDeptPrefs = null;
+        if (universityId) {
+          try {
+            const sharedPolicyRef = doc(
+              db,
+              'universities',
+              universityId,
+              COPILOT_SHARED_POLICY_COLLECTION,
+              deptPrefKey
+            );
+            const sharedPolicySnap = await getDoc(sharedPolicyRef);
+            if (sharedPolicySnap.exists()) {
+              const raw = sharedPolicySnap.data();
+              sharedDeptPrefs = raw && typeof raw === 'object' ? raw : null;
+            }
+          } catch (sharedErr) {
+            console.warn('Unable to load shared planner policy; continuing with local prefs.', sharedErr);
+          }
+        }
+        const deptPrefs = mergeCopilotDeptPrefs(sharedDeptPrefs, localDeptPrefs);
         if (deptPrefs) {
-          scenarioConstraints.copilotPreferences = {
-            singleBuildingBoost: Math.max(1, Number(deptPrefs?.singleBuildingBoost || 1) || 1),
-            sfPriorityBoost: Math.max(1, Number(deptPrefs?.sfPriorityBoost || 1) || 1),
-            supportPenaltyBoost: Math.max(1, Number(deptPrefs?.supportPenaltyBoost || 1) || 1),
-            contiguityBoost: Math.max(1, Number(deptPrefs?.contiguityBoost || 1) || 1),
-            maxSupportOverBaselinePct: Math.max(
-              0.015,
-              Math.min(0.12, Number(deptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
-            ),
-            explicitAcceptCount: Math.max(0, Number(deptPrefs?.explicitAcceptCount || 0) || 0),
-            explicitRejectCount: Math.max(0, Number(deptPrefs?.explicitRejectCount || 0) || 0),
-            rejectedSignatures: Array.isArray(deptPrefs?.rejectedSignatures)
-              ? deptPrefs.rejectedSignatures
-                  .map((v) => String(v || '').trim())
-                  .filter(Boolean)
-                  .slice(-30)
-              : []
-          };
+          scenarioConstraints.copilotPreferences = buildCopilotScenarioPreferencesPayload(deptPrefs);
           priorRejectedSignatures = [...(scenarioConstraints.copilotPreferences.rejectedSignatures || [])];
           if (deptPrefs?.forceOneBuildingIfFeasible != null) {
             scenarioConstraints.forceOneBuildingIfFeasible = Boolean(deptPrefs.forceOneBuildingIfFeasible);
           }
-          scenarioPolicyNotes.push('Applied planner feedback from prior scenario comparison (single-building, SF fit, support-type cap, contiguity).');
+          scenarioPolicyNotes.push(
+            sharedDeptPrefs
+              ? 'Applied shared + local planner feedback from prior scenario comparison (single-building, SF fit, support-type cap, contiguity).'
+              : 'Applied local planner feedback from prior scenario comparison (single-building, SF fit, support-type cap, contiguity).'
+          );
         }
       } catch {}
       const contiguityBoostByPreference = {
@@ -17740,130 +17956,25 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       return;
     }
     const prior = loadCopilotPrefs(prefsStorageKey) || {};
-    const currentDeptPrefs = deptKeys
-      .map((key) => (prior?.[key] && typeof prior[key] === 'object') ? prior[key] : null)
-      .find(Boolean) || {};
     const reasonKey = String(aiCopilotFeedbackReason || '').trim().toLowerCase();
-    const optionBuildingCount = Math.max(
-      1,
-      Number(
-        selectedOption?.buildingCount ??
-        selectedOption?.scoreBreakdown?.buildingCount ??
-        (Array.isArray(selectedOption?.buildings) ? selectedOption.buildings.length : 1)
-      ) || 1
-    );
-    const optionSfGapPct = Number(
-      selectedOption?.fitSummary?.sfGapPct ??
-      selectedOption?.scoreBreakdown?.sfGapPct ??
-      0
-    ) || 0;
-    const optionTypeGapPct = Number(
-      selectedOption?.fitSummary?.typeGapPct ??
-      selectedOption?.scoreBreakdown?.typeGapPct ??
-      0
-    ) || 0;
-    const inTargetRange = Boolean(
-      selectedOption?.fitSummary?.inTargetRange ??
-      selectedOption?.scoreBreakdown?.inTargetRange
-    );
-    const selectedOptionSignature = (
-      buildCopilotCandidateSignature(selectedOption?.recommendedCandidates || []) ||
-      String(selectedOptionId || '').trim()
-    );
-    const inferredReasonKey = (() => {
-      if (reasonKey) return reasonKey;
-      if (normalizedKind !== 'reject') return '';
-      if (!inTargetRange || optionSfGapPct >= 12) return 'sf_off';
-      if (optionBuildingCount > 1) return 'too_many_buildings';
-      if (optionTypeGapPct >= 55) return 'room_type_mismatch';
-      return 'other';
-    })();
-    const nextDeptPrefs = {
-      ...currentDeptPrefs,
-      singleBuildingBoost: Math.max(1, Number(currentDeptPrefs?.singleBuildingBoost || 1) || 1),
-      sfPriorityBoost: Math.max(1, Number(currentDeptPrefs?.sfPriorityBoost || 1) || 1),
-      supportPenaltyBoost: Math.max(1, Number(currentDeptPrefs?.supportPenaltyBoost || 1) || 1),
-      contiguityBoost: Math.max(1, Number(currentDeptPrefs?.contiguityBoost || 1) || 1),
-      maxSupportOverBaselinePct: Math.max(
-        0.015,
-        Math.min(0.12, Number(currentDeptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
-      ),
-      explicitAcceptCount: Math.max(0, Number(currentDeptPrefs?.explicitAcceptCount || 0) || 0),
-      explicitRejectCount: Math.max(0, Number(currentDeptPrefs?.explicitRejectCount || 0) || 0),
-      forceOneBuildingIfFeasible: Boolean(currentDeptPrefs?.forceOneBuildingIfFeasible ?? true),
-      rejectedSignatures: Array.isArray(currentDeptPrefs?.rejectedSignatures)
-        ? currentDeptPrefs.rejectedSignatures
-            .map((v) => String(v || '').trim())
-            .filter(Boolean)
-            .slice(-30)
-        : []
-    };
-    if (normalizedKind === 'accept') {
-      nextDeptPrefs.explicitAcceptCount += 1;
-      if (optionBuildingCount <= 1) {
-        nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.35);
+    const localUpdatesByDept = {};
+    let inferredReasonKey = '';
+    deptKeys.forEach((deptKey, idx) => {
+      const currentDeptPrefs = (prior?.[deptKey] && typeof prior[deptKey] === 'object') ? prior[deptKey] : {};
+      const nextFeedback = applyCopilotFeedbackToDeptPrefs(currentDeptPrefs, {
+        feedbackKind: normalizedKind,
+        feedbackReason: reasonKey,
+        optionId: selectedOptionId,
+        selectedOption
+      });
+      localUpdatesByDept[deptKey] = nextFeedback.nextPrefs;
+      if (idx === 0) {
+        inferredReasonKey = nextFeedback.inferredReasonKey || '';
       }
-      if (optionSfGapPct <= 6) {
-        nextDeptPrefs.sfPriorityBoost = Math.min(4, nextDeptPrefs.sfPriorityBoost + 0.12);
-      }
-      if (optionTypeGapPct <= 45) {
-        nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.08);
-      }
-      if (inferredReasonKey === 'good_result') {
-        nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.1);
-        nextDeptPrefs.forceOneBuildingIfFeasible = true;
-      }
-      if (selectedOptionSignature) {
-        nextDeptPrefs.rejectedSignatures = nextDeptPrefs.rejectedSignatures.filter((sig) => sig !== selectedOptionSignature);
-      }
-    } else {
-      nextDeptPrefs.explicitRejectCount += 1;
-      switch (inferredReasonKey) {
-        case 'too_many_buildings':
-          nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.65);
-          nextDeptPrefs.forceOneBuildingIfFeasible = true;
-          break;
-        case 'sf_off':
-          nextDeptPrefs.sfPriorityBoost = Math.min(4, nextDeptPrefs.sfPriorityBoost + 0.75);
-          break;
-        case 'room_type_mismatch':
-          nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.85);
-          nextDeptPrefs.maxSupportOverBaselinePct = Math.max(0.015, nextDeptPrefs.maxSupportOverBaselinePct - 0.01);
-          break;
-        case 'not_contiguous':
-          nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.75);
-          break;
-        case 'bad_building_fit':
-          nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.35);
-          nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.3);
-          nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.3);
-          break;
-        default:
-          nextDeptPrefs.sfPriorityBoost = Math.min(4, nextDeptPrefs.sfPriorityBoost + 0.25);
-          nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.2);
-          break;
-      }
-      if (selectedOptionSignature) {
-        const nextRejected = [...nextDeptPrefs.rejectedSignatures, selectedOptionSignature];
-        nextDeptPrefs.rejectedSignatures = Array.from(new Set(nextRejected)).slice(-30);
-      }
-    }
-    const history = Array.isArray(currentDeptPrefs?.feedbackHistory) ? [...currentDeptPrefs.feedbackHistory] : [];
-    history.push({
-      ts: Date.now(),
-      kind: normalizedKind,
-      reason: inferredReasonKey || '',
-      optionId: selectedOptionId || '',
-      signature: selectedOptionSignature || '',
-      buildingCount: optionBuildingCount,
-      sfGapPct: Number(optionSfGapPct.toFixed(2)),
-      typeGapPct: Number(optionTypeGapPct.toFixed(2))
     });
-    nextDeptPrefs.feedbackHistory = history.slice(-40);
-    nextDeptPrefs.updatedAt = Date.now();
     saveCopilotPrefs(prefsStorageKey, {
       ...prior,
-      ...Object.fromEntries(deptKeys.map((key) => [key, nextDeptPrefs])),
+      ...localUpdatesByDept,
       __global: {
         ...(prior?.__global && typeof prior.__global === 'object' ? prior.__global : {}),
         updatedAt: Date.now()
@@ -17874,7 +17985,78 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         ? 'Planner feedback saved (accepted). Next runs will reinforce this pattern.'
         : `Planner feedback saved (rejected${inferredReasonKey ? `: ${inferredReasonKey.replace(/_/g, ' ')}` : ''}). Next runs will rebalance scoring.`
     );
+    if (universityId) {
+      (async () => {
+        try {
+          const feedbackCollectionRef = collection(
+            db,
+            'universities',
+            universityId,
+            COPILOT_SHARED_FEEDBACK_COLLECTION
+          );
+          for (const deptKey of deptKeys) {
+            const policyRef = doc(
+              db,
+              'universities',
+              universityId,
+              COPILOT_SHARED_POLICY_COLLECTION,
+              deptKey
+            );
+            let sharedCurrent = {};
+            try {
+              const sharedSnap = await getDoc(policyRef);
+              if (sharedSnap.exists()) {
+                const raw = sharedSnap.data();
+                sharedCurrent = raw && typeof raw === 'object' ? raw : {};
+              }
+            } catch {}
+            const nextShared = applyCopilotFeedbackToDeptPrefs(sharedCurrent, {
+              feedbackKind: normalizedKind,
+              feedbackReason: reasonKey,
+              optionId: selectedOptionId,
+              selectedOption
+            });
+            await setDoc(
+              policyRef,
+              toCopilotPolicyDocPayload(nextShared.nextPrefs, {
+                deptKey,
+                updatedAt: serverTimestamp(),
+                updatedBy: userKey,
+                lastFeedbackKind: normalizedKind,
+                lastFeedbackReason: nextShared.inferredReasonKey || '',
+                lastFeedbackOptionId: selectedOptionId || '',
+                lastFeedbackAt: serverTimestamp()
+              }),
+              { merge: true }
+            );
+            await addDoc(feedbackCollectionRef, {
+              universityId,
+              deptKey,
+              kind: normalizedKind,
+              reason: nextShared.inferredReasonKey || '',
+              optionId: selectedOptionId || '',
+              signature: nextShared.selectedOptionSignature || '',
+              buildingCount: Number(nextShared.optionBuildingCount || 0) || 0,
+              sfGapPct: Number((Number(nextShared.optionSfGapPct || 0) || 0).toFixed(2)),
+              typeGapPct: Number((Number(nextShared.optionTypeGapPct || 0) || 0).toFixed(2)),
+              inTargetRange: Boolean(nextShared.inTargetRange),
+              createdBy: userKey,
+              createdAt: serverTimestamp()
+            });
+          }
+        } catch (sharedErr) {
+          console.warn('Shared planner feedback sync failed; local feedback remains saved.', sharedErr);
+          setAiCopilotFeedbackMessage((prev) => {
+            const priorMsg = String(prev || '').trim();
+            if (!priorMsg) return 'Planner feedback saved locally (shared sync unavailable).';
+            if (priorMsg.toLowerCase().includes('shared sync unavailable')) return priorMsg;
+            return `${priorMsg} Shared sync unavailable (local only).`;
+          });
+        }
+      })();
+    }
   }, [
+    db,
     aiCopilotFeedbackReason,
     aiCreateScenarioText,
     aiCreateScenarioResult,

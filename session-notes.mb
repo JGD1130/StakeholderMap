@@ -1150,3 +1150,29 @@ Latest completed work (hybrid doc-derived building profiles for planner)
   - Added profile cache invalidation + reload after persisted writes so scoring immediately uses the new profile data.
 - Copilot endpoint now calls auto-derive preflight before scoring:
   - `/create-move-scenario-copilot` gathers building labels from inventory and triggers profile ensure step.
+
+Latest completed work (planner feedback learning visibility hardening)
+- Strengthened reject feedback behavior in `src/components/StakeholderMap.jsx`:
+  - Reject now auto-infers a reason when none is chosen (for example, out-of-range SF -> `sf_off`) so scoring shifts are meaningful by default.
+  - Feedback now writes to all inferred department keys (AI scenario dept, selected dept, and request-inferred dept) to avoid key mismatch gaps.
+  - Added per-option `Reject this option` button so users can reject specific options directly without reselect friction.
+  - Stored rejected option signatures (`rejectedSignatures`) in copilot prefs and included them in next-run request constraints.
+- Updated server-side copilot in `ai-server/server.js`:
+  - Added blocked-signature filtering so previously rejected option room combinations are not re-proposed on subsequent runs for that department/user profile.
+
+Latest completed work (shared planner learning phase 1)
+- Added shared planner learning in `src/components/StakeholderMap.jsx` so copilot feedback now persists beyond local browser state.
+- New shared Firestore collections/paths used:
+  - Policy snapshot per department: `universities/{universityId}/plannerCopilotPolicies/{deptKey}`
+  - Feedback event log: `universities/{universityId}/plannerCopilotFeedback`
+- Scenario generation now reads shared policy snapshot and merges it with local prefs before scoring constraints are sent to the AI server.
+- Accept/reject feedback now:
+  - Updates local prefs (existing behavior kept),
+  - Writes shared policy snapshot updates per department key,
+  - Appends feedback events to shared Firestore log (kind, reason, SF/type gaps, signature, user, timestamp).
+- Shared sync failures are non-blocking:
+  - Local feedback still saves,
+  - UI message notes shared sync unavailable.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
