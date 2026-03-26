@@ -1202,3 +1202,14 @@ Hotfix completed (retry-relaxed no-option/500 handling)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Hotfix completed (first-attempt blocked-signature dead-end removal)
+- Updated `src/components/StakeholderMap.jsx` copilot post-processing:
+  - If all generated options are filtered out because they match prior rejected signatures, app no longer hard-fails.
+  - Instead, it surfaces the best blocked options and records a criteria note explaining why.
+- Result:
+  - First attempt now returns actionable options instead of forcing a dead-end retry flow.
+  - User can still reject with reason to continue learning.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

@@ -17314,13 +17314,18 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const copilotOptionsFiltered = rejectedSignatureSet.size
         ? copilotOptions.filter((option) => !rejectedSignatureSet.has(buildCopilotCandidateSignature(option?.recommendedCandidates || [])))
         : copilotOptions;
+      let copilotOptionsEffective = copilotOptionsFiltered;
+      let blockedOnlyFallbackUsed = false;
       if (rejectedSignatureSet.size && !copilotOptionsFiltered.length && copilotOptions.length) {
-        throw new Error('Planner Copilot generated only previously rejected options. Adjust controls or click Retry relaxed.');
+        // Keep first-run experience moving: if everything is blocked by prior rejects, surface
+        // closest options anyway and let user reject again with refined feedback.
+        copilotOptionsEffective = copilotOptions;
+        blockedOnlyFallbackUsed = true;
       }
       const selectedCopilotOptionId =
-        String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptionsFiltered?.[0]?.optionId || '').trim();
+        String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptionsEffective?.[0]?.optionId || '').trim();
       const selectedCopilotOption = selectedCopilotOptionId
-        ? (copilotOptionsFiltered.find((option) => String(option?.optionId || '') === selectedCopilotOptionId) || null)
+        ? (copilotOptionsEffective.find((option) => String(option?.optionId || '') === selectedCopilotOptionId) || null)
         : null;
       const effectiveRecommended = selectedCopilotOption?.recommendedCandidates?.length
         ? selectedCopilotOption.recommendedCandidates
@@ -17337,6 +17342,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const cleanedCriteria = Array.isArray(out?.selectionCriteria)
         ? out.selectionCriteria.filter((c) => !/baseline|total\s*sf|sf within/i.test(c || ''))
         : [];
+      if (blockedOnlyFallbackUsed) {
+        scenarioPolicyNotes.push('All generated options matched prior rejected signatures; surfaced best blocked options so you can re-evaluate or reject with updated feedback.');
+      }
       const nextResult = {
         ...out,
         baselineTotals: baselineTotals || out?.baselineTotals,
@@ -17344,14 +17352,14 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         selectionCriteria: [...baselineCriteria, ...fitCriteria, ...scenarioPolicyNotes, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
         recommendedCandidates: adjustedCandidates
       };
-      if (out?.copilot && copilotOptions.length) {
-        const copilotOptionsSorted = [...copilotOptionsFiltered].sort((a, b) => (Number(b?.score || 0) - Number(a?.score || 0)));
+      if (out?.copilot && copilotOptionsEffective.length) {
+        const copilotOptionsSorted = [...copilotOptionsEffective].sort((a, b) => (Number(b?.score || 0) - Number(a?.score || 0)));
         nextResult.copilot = {
           ...out.copilot,
-          selectedOptionId: selectedCopilotOptionId || out?.copilot?.recommendedOptionId || copilotOptionsFiltered?.[0]?.optionId || '',
-          recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptionsFiltered?.[0]?.optionId || '',
+          selectedOptionId: selectedCopilotOptionId || out?.copilot?.recommendedOptionId || copilotOptionsEffective?.[0]?.optionId || '',
+          recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptionsEffective?.[0]?.optionId || '',
           comparisonSummary: buildClientComparisonSummary(copilotOptionsSorted),
-          generatedOptions: copilotOptionsFiltered.map((option) => {
+          generatedOptions: copilotOptionsEffective.map((option) => {
             if (String(option?.optionId || '') === selectedCopilotOptionId) {
               return decorateCopilotOption(option, adjustedCandidates);
             }
