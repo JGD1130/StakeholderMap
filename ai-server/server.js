@@ -1866,6 +1866,24 @@ function toCopilotRoom(room) {
   };
 }
 
+function buildCopilotOptionSignature(candidates = []) {
+  if (!Array.isArray(candidates) || !candidates.length) return "";
+  const tokens = candidates
+    .map((room) => {
+      const idToken = normalizeCopilotText(room?.id || room?.roomId || room?.revitId || "");
+      if (idToken) return `id:${idToken.toLowerCase()}`;
+      const b = normalizeLoose(room?.buildingKey || room?.buildingLabel || room?.buildingName || room?.building || "");
+      const f = normalizeLoose(room?.floorId || room?.floorName || "");
+      const r = normalizeLoose(room?.roomLabel || room?.roomNumber || room?.number || "");
+      const t = normalizeCopilotTypeKey(room?.type || room?.roomType || "");
+      const sf = Math.round(Number(room?.sf || room?.area || room?.areaSF || 0) || 0);
+      return `fp:${b}|${f}|${r}|${t}|${sf}`;
+    })
+    .filter(Boolean)
+    .sort();
+  return tokens.join("|");
+}
+
 function buildCopilotTypeTargetMap(constraints = {}) {
   const out = new Map();
   const roomTypeCounts = new Map();
@@ -3987,6 +4005,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const seed = Number(context?.seed || Date.now()) >>> 0;
   const generatedOptions = [];
   const signatures = new Set();
+  const blockedSignatures = new Set(
+    (Array.isArray(copilotPreferences?.rejectedSignatures) ? copilotPreferences.rejectedSignatures : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  );
   const allowShopFallback = allowShopTargeting && Array.from(typeTargets.values()).some((row) => isCopilotShopType(row?.type || ""));
   const allowAthleticsFallback = allowAthleticsTargeting && Array.from(typeTargets.values()).some((row) => isCopilotAthleticsType(row?.type || ""));
   const allowPublicPerformanceFallback = allowPublicPerformanceTargeting && Array.from(typeTargets.values()).some((row) => isCopilotPublicPerformanceType(row?.type || ""));
@@ -4210,11 +4233,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         continue;
       }
 
-      const signature = selected
-        .map((room) => room.id)
-        .sort()
-        .join("|");
-      if (!signature || signatures.has(signature)) continue;
+      const signature = buildCopilotOptionSignature(selected);
+      if (!signature || signatures.has(signature) || blockedSignatures.has(signature)) continue;
       signatures.add(signature);
 
       const totals = buildCopilotScenarioTotals(selected);
@@ -4418,12 +4438,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       scoreOptions: copilotPreferences
     });
     if (Array.isArray(rescueSelection) && rescueSelection.length) {
-      const signature = rescueSelection
-        .map((room) => room.id)
-        .filter(Boolean)
-        .sort()
-        .join("|");
-      if (signature && !signatures.has(signature)) {
+      const signature = buildCopilotOptionSignature(rescueSelection);
+      if (signature && !signatures.has(signature) && !blockedSignatures.has(signature)) {
         signatures.add(signature);
         const totals = buildCopilotScenarioTotals(rescueSelection);
         const score = buildCopilotOptionScore({
@@ -4570,12 +4586,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       }
     });
     if (Array.isArray(rescueSelection) && rescueSelection.length) {
-      const signature = rescueSelection
-        .map((room) => room.id)
-        .filter(Boolean)
-        .sort()
-        .join("|");
-      if (signature && !signatures.has(signature)) {
+      const signature = buildCopilotOptionSignature(rescueSelection);
+      if (signature && !signatures.has(signature) && !blockedSignatures.has(signature)) {
         signatures.add(signature);
         const totals = buildCopilotScenarioTotals(rescueSelection);
         const score = buildCopilotOptionScore({

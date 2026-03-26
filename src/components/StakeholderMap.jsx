@@ -130,6 +130,23 @@ const saveCopilotPrefs = (storageKey, payload) => {
     return false;
   }
 };
+const buildCopilotCandidateSignature = (rows = []) => {
+  if (!Array.isArray(rows) || !rows.length) return '';
+  const tokens = rows
+    .map((row) => {
+      const idToken = String(row?.id || row?.roomId || row?.revitId || '').trim();
+      if (idToken) return `id:${idToken.toLowerCase()}`;
+      const b = normalizeDashboardKey(row?.buildingLabel || row?.buildingName || row?.building || '');
+      const f = normalizeRoomLookupKey(row?.floorId || row?.floorName || '');
+      const r = normalizeRoomLookupKey(row?.roomLabel || row?.number || row?.roomNumber || '');
+      const t = normalizeTypeMatch(row?.type || row?.roomType || '').replace(/\s+/g, '_');
+      const sf = Math.round(Number(row?.sf || row?.area || row?.areaSF || 0) || 0);
+      return `fp:${b}|${f}|${r}|${t}|${sf}`;
+    })
+    .filter(Boolean)
+    .sort();
+  return tokens.join('|');
+};
 const formatTechnicalFieldLabel = (value) => {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -16669,6 +16686,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (effectiveDisallowPublicPerformance) {
         scenarioPolicyNotes.push('Public performance/assembly spaces are hard excluded from this run.');
       }
+      let priorRejectedSignatures = [];
       try {
         const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
         const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
@@ -16688,8 +16706,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
               Math.min(0.12, Number(deptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
             ),
             explicitAcceptCount: Math.max(0, Number(deptPrefs?.explicitAcceptCount || 0) || 0),
-            explicitRejectCount: Math.max(0, Number(deptPrefs?.explicitRejectCount || 0) || 0)
+            explicitRejectCount: Math.max(0, Number(deptPrefs?.explicitRejectCount || 0) || 0),
+            rejectedSignatures: Array.isArray(deptPrefs?.rejectedSignatures)
+              ? deptPrefs.rejectedSignatures
+                  .map((v) => String(v || '').trim())
+                  .filter(Boolean)
+                  .slice(-30)
+              : []
           };
+          priorRejectedSignatures = [...(scenarioConstraints.copilotPreferences.rejectedSignatures || [])];
           if (deptPrefs?.forceOneBuildingIfFeasible != null) {
             scenarioConstraints.forceOneBuildingIfFeasible = Boolean(deptPrefs.forceOneBuildingIfFeasible);
           }
@@ -17057,10 +17082,21 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const processed = applyScenarioCandidateConstraints(option?.recommendedCandidates || []);
         return decorateCopilotOption(option, processed.candidates);
       });
+      const rejectedSignatureSet = new Set(
+        (Array.isArray(priorRejectedSignatures) ? priorRejectedSignatures : [])
+          .map((sig) => String(sig || '').trim())
+          .filter(Boolean)
+      );
+      const copilotOptionsFiltered = rejectedSignatureSet.size
+        ? copilotOptions.filter((option) => !rejectedSignatureSet.has(buildCopilotCandidateSignature(option?.recommendedCandidates || [])))
+        : copilotOptions;
+      if (rejectedSignatureSet.size && !copilotOptionsFiltered.length && copilotOptions.length) {
+        throw new Error('Planner Copilot generated only previously rejected options. Adjust controls or click Retry relaxed.');
+      }
       const selectedCopilotOptionId =
-        String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '').trim();
+        String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptionsFiltered?.[0]?.optionId || '').trim();
       const selectedCopilotOption = selectedCopilotOptionId
-        ? (copilotOptions.find((option) => String(option?.optionId || '') === selectedCopilotOptionId) || null)
+        ? (copilotOptionsFiltered.find((option) => String(option?.optionId || '') === selectedCopilotOptionId) || null)
         : null;
       const effectiveRecommended = selectedCopilotOption?.recommendedCandidates?.length
         ? selectedCopilotOption.recommendedCandidates
@@ -17085,13 +17121,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         recommendedCandidates: adjustedCandidates
       };
       if (out?.copilot && copilotOptions.length) {
-        const copilotOptionsSorted = [...copilotOptions].sort((a, b) => (Number(b?.score || 0) - Number(a?.score || 0)));
+        const copilotOptionsSorted = [...copilotOptionsFiltered].sort((a, b) => (Number(b?.score || 0) - Number(a?.score || 0)));
         nextResult.copilot = {
           ...out.copilot,
-          selectedOptionId: selectedCopilotOptionId || out?.copilot?.recommendedOptionId || copilotOptions?.[0]?.optionId || '',
-          recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptions?.[0]?.optionId || '',
+          selectedOptionId: selectedCopilotOptionId || out?.copilot?.recommendedOptionId || copilotOptionsFiltered?.[0]?.optionId || '',
+          recommendedOptionId: out?.copilot?.recommendedOptionId || selectedCopilotOptionId || copilotOptionsFiltered?.[0]?.optionId || '',
           comparisonSummary: buildClientComparisonSummary(copilotOptionsSorted),
-          generatedOptions: copilotOptions.map((option) => {
+          generatedOptions: copilotOptionsFiltered.map((option) => {
             if (String(option?.optionId || '') === selectedCopilotOptionId) {
               return decorateCopilotOption(option, adjustedCandidates);
             }
@@ -17665,10 +17701,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     });
   }, [campusRoomsLoaded, campusRooms, getBuildingFolderKey]);
 
-  const recordAiCopilotFeedback = useCallback((feedbackKind = 'accept') => {
+  const recordAiCopilotFeedback = useCallback((feedbackKind = 'accept', optionIdOverride = '') => {
     const normalizedKind = String(feedbackKind || '').trim().toLowerCase();
     if (normalizedKind !== 'accept' && normalizedKind !== 'reject') return;
     const selectedOptionId = String(
+      optionIdOverride ||
       aiCreateScenarioResult?.copilot?.selectedOptionId ||
       aiCreateScenarioResult?.copilot?.recommendedOptionId ||
       ''
@@ -17682,8 +17719,20 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setAiCopilotFeedbackMessage('Select a copilot option first, then save feedback.');
       return;
     }
-    const scenarioDeptKeyRaw = aiCreateScenarioResult?.scenarioDept || scenarioAssignedDept || 'default';
-    const deptKey = normalizeDashboardKey(scenarioDeptKeyRaw || 'default') || 'default';
+    const deptCandidates = getDeptCandidates((campusRoomsLoaded && Array.isArray(campusRooms)) ? campusRooms : []);
+    const inferredDeptFromPrompt = findDeptInText(String(aiCreateScenarioText || ''), deptCandidates) || '';
+    const deptKeys = Array.from(
+      new Set(
+        [
+          aiCreateScenarioResult?.scenarioDept,
+          scenarioAssignedDept,
+          inferredDeptFromPrompt
+        ]
+          .map((v) => normalizeDashboardKey(v || ''))
+          .filter(Boolean)
+      )
+    );
+    if (!deptKeys.length) deptKeys.push('default');
     const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
     const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
     if (!prefsStorageKey) {
@@ -17691,7 +17740,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       return;
     }
     const prior = loadCopilotPrefs(prefsStorageKey) || {};
-    const currentDeptPrefs = (prior?.[deptKey] && typeof prior[deptKey] === 'object') ? prior[deptKey] : {};
+    const currentDeptPrefs = deptKeys
+      .map((key) => (prior?.[key] && typeof prior[key] === 'object') ? prior[key] : null)
+      .find(Boolean) || {};
     const reasonKey = String(aiCopilotFeedbackReason || '').trim().toLowerCase();
     const optionBuildingCount = Math.max(
       1,
@@ -17711,6 +17762,22 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       selectedOption?.scoreBreakdown?.typeGapPct ??
       0
     ) || 0;
+    const inTargetRange = Boolean(
+      selectedOption?.fitSummary?.inTargetRange ??
+      selectedOption?.scoreBreakdown?.inTargetRange
+    );
+    const selectedOptionSignature = (
+      buildCopilotCandidateSignature(selectedOption?.recommendedCandidates || []) ||
+      String(selectedOptionId || '').trim()
+    );
+    const inferredReasonKey = (() => {
+      if (reasonKey) return reasonKey;
+      if (normalizedKind !== 'reject') return '';
+      if (!inTargetRange || optionSfGapPct >= 12) return 'sf_off';
+      if (optionBuildingCount > 1) return 'too_many_buildings';
+      if (optionTypeGapPct >= 55) return 'room_type_mismatch';
+      return 'other';
+    })();
     const nextDeptPrefs = {
       ...currentDeptPrefs,
       singleBuildingBoost: Math.max(1, Number(currentDeptPrefs?.singleBuildingBoost || 1) || 1),
@@ -17723,7 +17790,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       ),
       explicitAcceptCount: Math.max(0, Number(currentDeptPrefs?.explicitAcceptCount || 0) || 0),
       explicitRejectCount: Math.max(0, Number(currentDeptPrefs?.explicitRejectCount || 0) || 0),
-      forceOneBuildingIfFeasible: Boolean(currentDeptPrefs?.forceOneBuildingIfFeasible ?? true)
+      forceOneBuildingIfFeasible: Boolean(currentDeptPrefs?.forceOneBuildingIfFeasible ?? true),
+      rejectedSignatures: Array.isArray(currentDeptPrefs?.rejectedSignatures)
+        ? currentDeptPrefs.rejectedSignatures
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .slice(-30)
+        : []
     };
     if (normalizedKind === 'accept') {
       nextDeptPrefs.explicitAcceptCount += 1;
@@ -17736,13 +17809,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (optionTypeGapPct <= 45) {
         nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.08);
       }
-      if (reasonKey === 'good_result') {
+      if (inferredReasonKey === 'good_result') {
         nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.1);
         nextDeptPrefs.forceOneBuildingIfFeasible = true;
       }
+      if (selectedOptionSignature) {
+        nextDeptPrefs.rejectedSignatures = nextDeptPrefs.rejectedSignatures.filter((sig) => sig !== selectedOptionSignature);
+      }
     } else {
       nextDeptPrefs.explicitRejectCount += 1;
-      switch (reasonKey) {
+      switch (inferredReasonKey) {
         case 'too_many_buildings':
           nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.65);
           nextDeptPrefs.forceOneBuildingIfFeasible = true;
@@ -17767,13 +17843,18 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.2);
           break;
       }
+      if (selectedOptionSignature) {
+        const nextRejected = [...nextDeptPrefs.rejectedSignatures, selectedOptionSignature];
+        nextDeptPrefs.rejectedSignatures = Array.from(new Set(nextRejected)).slice(-30);
+      }
     }
     const history = Array.isArray(currentDeptPrefs?.feedbackHistory) ? [...currentDeptPrefs.feedbackHistory] : [];
     history.push({
       ts: Date.now(),
       kind: normalizedKind,
-      reason: reasonKey || '',
+      reason: inferredReasonKey || '',
       optionId: selectedOptionId || '',
+      signature: selectedOptionSignature || '',
       buildingCount: optionBuildingCount,
       sfGapPct: Number(optionSfGapPct.toFixed(2)),
       typeGapPct: Number(optionTypeGapPct.toFixed(2))
@@ -17782,7 +17863,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     nextDeptPrefs.updatedAt = Date.now();
     saveCopilotPrefs(prefsStorageKey, {
       ...prior,
-      [deptKey]: nextDeptPrefs,
+      ...Object.fromEntries(deptKeys.map((key) => [key, nextDeptPrefs])),
       __global: {
         ...(prior?.__global && typeof prior.__global === 'object' ? prior.__global : {}),
         updatedAt: Date.now()
@@ -17791,11 +17872,14 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setAiCopilotFeedbackMessage(
       normalizedKind === 'accept'
         ? 'Planner feedback saved (accepted). Next runs will reinforce this pattern.'
-        : `Planner feedback saved (rejected${reasonKey ? `: ${reasonKey.replace(/_/g, ' ')}` : ''}). Next runs will rebalance scoring.`
+        : `Planner feedback saved (rejected${inferredReasonKey ? `: ${inferredReasonKey.replace(/_/g, ' ')}` : ''}). Next runs will rebalance scoring.`
     );
   }, [
     aiCopilotFeedbackReason,
+    aiCreateScenarioText,
     aiCreateScenarioResult,
+    campusRoomsLoaded,
+    campusRooms,
     scenarioAssignedDept,
     universityId,
     authUser?.uid,
@@ -27586,13 +27670,21 @@ useEffect(() => {
                           <div style={{ fontWeight: 600 }}>
                             {option?.label || `Option ${idx + 1}`} {isSelected ? '(Selected)' : ''}
                           </div>
-                          <button
-                            className="btn"
-                            onClick={() => selectAiCopilotScenarioOption(optionId)}
-                            disabled={isSelected}
-                          >
-                            {isSelected ? 'Selected' : 'Use this option'}
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <button
+                              className="btn"
+                              onClick={() => recordAiCopilotFeedback('reject', optionId)}
+                            >
+                              Reject this option
+                            </button>
+                            <button
+                              className="btn"
+                              onClick={() => selectAiCopilotScenarioOption(optionId)}
+                              disabled={isSelected}
+                            >
+                              {isSelected ? 'Selected' : 'Use this option'}
+                            </button>
+                          </div>
                         </div>
                         <div style={{ marginTop: 4, fontSize: 12, color: '#444' }}>
                           {optionTotalSf.toLocaleString()} SF | {optionRooms.toLocaleString()} rooms | {optionBuildings.toLocaleString()} building{optionBuildings === 1 ? '' : 's'}
