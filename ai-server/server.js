@@ -3959,6 +3959,84 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   if (!rooms.length) {
     throw new Error("No eligible room inventory remained after scenario guardrails.");
   }
+  const blockFirstEnabled = true;
+  const targetFamilySetForBlocks = new Set(
+    Array.from(typeTargets.values())
+      .map((row) => getCopilotTypeFamily(row?.type || ""))
+      .filter((family) => family && family !== "nonassignable")
+  );
+  const floorBlockMap = new Map();
+  rooms.forEach((room) => {
+    const buildingKey = normalizeLoose(room?.buildingKey || "");
+    const floorKey = normalizeLoose(room?.floorId || room?.floorName || "");
+    if (!buildingKey || !floorKey) return;
+    const key = `${buildingKey}::${floorKey}`;
+    if (!floorBlockMap.has(key)) {
+      floorBlockMap.set(key, {
+        key,
+        buildingKey,
+        buildingLabel: room?.buildingLabel || "",
+        floorKey,
+        floorLabel: room?.floorName || room?.floorId || "",
+        rooms: [],
+        totalSf: 0,
+        coreSf: 0,
+        supportSf: 0,
+        families: new Set()
+      });
+    }
+    const block = floorBlockMap.get(key);
+    const sf = Number(room?.sf || 0) || 0;
+    const family = getCopilotTypeFamily(room?.type || "");
+    block.rooms.push(room);
+    block.totalSf += sf;
+    if (family === "support") block.supportSf += sf;
+    else block.coreSf += sf;
+    if (family && family !== "nonassignable") block.families.add(family);
+  });
+  const scoredBlocks = Array.from(floorBlockMap.values())
+    .filter((block) => (Array.isArray(block?.rooms) && block.rooms.length >= 3 && Number(block?.totalSf || 0) > 0))
+    .map((block) => {
+      const sfBasis = Number(block?.coreSf || 0) > 0 ? Number(block.coreSf || 0) : Number(block.totalSf || 0);
+      const sfGapPct = targetSf > 0 ? (Math.abs(targetSf - sfBasis) / targetSf) : 1;
+      const supportRatio = Number(block?.totalSf || 0) > 0 ? (Number(block?.supportSf || 0) / Number(block.totalSf || 1)) : 1;
+      const familyCoverage = targetFamilySetForBlocks.size
+        ? (Array.from(targetFamilySetForBlocks).filter((family) => block?.families?.has(family)).length / targetFamilySetForBlocks.size)
+        : 0.5;
+      const suitability = buildingSuitabilityByKey.get(block?.buildingKey || "") || {};
+      const fitPenalty = preferAcademicFit
+        ? (
+            (hardAcademicAvoidSet.has(block?.buildingKey || "") ? 250 : 0) +
+            (lowFitSet.has(block?.buildingKey || "") ? 80 : 0) +
+            (suitability?.softAcademicAvoid ? 25 : 0)
+          )
+        : 0;
+      const score = (sfGapPct * 100) + ((1 - familyCoverage) * 35) + (supportRatio * 22) + fitPenalty;
+      return {
+        ...block,
+        sfBasis,
+        sfGapPct,
+        supportRatio,
+        familyCoverage,
+        blockScore: score
+      };
+    })
+    .sort((a, b) => Number(a?.blockScore || Number.POSITIVE_INFINITY) - Number(b?.blockScore || Number.POSITIVE_INFINITY));
+  const preferredBlock = blockFirstEnabled ? (scoredBlocks[0] || null) : null;
+  const preferredBlockRooms = preferredBlock?.rooms || [];
+  const preferredBuildingRooms = preferredBlock?.buildingKey
+    ? rooms.filter((room) => normalizeLoose(room?.buildingKey || "") === preferredBlock.buildingKey)
+    : [];
+  const blockFirstAssumptionNotes = preferredBlock
+    ? [
+        `Block-first seed prioritized ${preferredBlock.buildingLabel || preferredBlock.buildingKey} ${preferredBlock.floorLabel || preferredBlock.floorKey} (${Math.round(Number(preferredBlock.totalSf || 0)).toLocaleString()} SF on block).`
+      ]
+    : [];
+  const blockFirstSelectionNotes = preferredBlock
+    ? [
+        "Block-first planner seeded candidates from the best-fit contiguous floor block, then expanded only as needed."
+      ]
+    : [];
   const strictOneBuildingFeasibility = (strictFit && preferSingleBuilding)
     ? buildStrictOneBuildingFeasibilityReport({
         rooms,
@@ -4352,8 +4430,25 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     attemptScale: 1.25,
     allowOffFamilyFallback: false,
     allowSupportFallback: false,
-    relaxSingleBuilding: false
+    relaxSingleBuilding: false,
+    roomSource: (preferredBlockRooms.length ? preferredBlockRooms : rooms)
   });
+  if (
+    strictFit &&
+    countInRangeOptions() === 0 &&
+    preferredBuildingRooms.length &&
+    preferredBuildingRooms.length > preferredBlockRooms.length
+  ) {
+    runRepairPass({
+      passLabel: "block expansion: preferred building strict",
+      passSeedOffset: 250001,
+      attemptScale: 1.1,
+      allowOffFamilyFallback: false,
+      allowSupportFallback: false,
+      relaxSingleBuilding: false,
+      roomSource: preferredBuildingRooms
+    });
+  }
   if (strictFit && countInRangeOptions() === 0) {
     runRepairPass({
       passLabel: "repair A: bounded two-building strict",
@@ -4977,6 +5072,13 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           ? "Single-building strict feasibility was confirmed before final ranking."
           : "Single-building strict feasibility was not achievable; bounded multi-building fallback was used."
       ])
+    }));
+  }
+  if (preferredBlock) {
+    shortlistedOptions = shortlistedOptions.map((option) => ({
+      ...option,
+      assumptions: appendUniqueLines(option?.assumptions || [], blockFirstAssumptionNotes),
+      selectionCriteria: appendUniqueLines(option?.selectionCriteria || [], blockFirstSelectionNotes)
     }));
   }
   shortlistedOptions.forEach((option, idx) => {
