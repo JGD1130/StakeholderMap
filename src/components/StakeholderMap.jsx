@@ -16731,10 +16731,23 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             floorCache,
             fetchGeoJSON
           });
-          sourceHomeBuildingCount = Object.keys(perBuilding || {}).length;
-          const baselineEntry = Object.entries(perBuilding || {}).sort(
+          const perBuildingEntries = Object.entries(perBuilding || {}).sort(
             (a, b) => (b[1]?.totalSF || 0) - (a[1]?.totalSF || 0) || (b[1]?.rooms || 0) - (a[1]?.rooms || 0)
-          )[0] || null;
+          );
+          const baselineEntry = perBuildingEntries[0] || null;
+          const campusTotalSf = Number(campusTotals?.totalSF || 0) || perBuildingEntries.reduce(
+            (sum, [, stats]) => sum + (Number(stats?.totalSF || 0) || 0),
+            0
+          );
+          // Treat tiny SF traces as secondary spillover so single-building departments
+          // still default to one-building planning behavior.
+          const majorHomeEntries = perBuildingEntries.filter(([, stats]) => {
+            const sf = Number(stats?.totalSF || 0) || 0;
+            if (sf <= 0) return false;
+            const share = campusTotalSf > 0 ? (sf / campusTotalSf) : 0;
+            return sf >= 1200 || share >= 0.18;
+          });
+          sourceHomeBuildingCount = majorHomeEntries.length || (perBuildingEntries.length ? 1 : 0);
           baselineTotals = baselineEntry ? baselineEntry[1] : campusTotals;
           baselineBuildingLabel = baselineEntry ? baselineEntry[0] : '';
           if (baselineTotals) {

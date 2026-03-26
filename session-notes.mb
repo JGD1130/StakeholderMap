@@ -1213,3 +1213,27 @@ Hotfix completed (first-attempt blocked-signature dead-end removal)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Hotfix completed (Block-First v2 for first-try whole-floor behavior)
+- Updated `ai-server/server.js`:
+  - Tightened default building spread for single-building scenarios:
+    - Source-home `<=1` now defaults to max preferred buildings = `1` (was `2`).
+    - Source-home `>1` now defaults to max preferred buildings = `2` (was `3`).
+  - Added new strict repair pass before multi-building expansion:
+    - `repair AB: single-building type-family strict`
+    - Uses preferred building room pool only, with family fallback enabled.
+  - Improved strict no-fit fallback ordering:
+    - Prefer existing one-building closest-fit options first.
+    - If needed, run `auto-relax 0` one-building fallback from preferred block building before broader relax passes.
+  - Updated closest-fit fallback helper to accept `roomSource`, and derive primary building from that source.
+- Updated `src/components/StakeholderMap.jsx`:
+  - Source-home building count now ignores tiny SF spillover across buildings by using a “major home building” threshold:
+    - building SF `>=1200` OR share `>=18%` of dept campus SF.
+  - Prevents one-building departments from being misclassified as multi-building.
+- Expected result:
+  - First copilot runs should bias much harder toward one-building, contiguous-floor style options.
+  - Multi-building fallback still exists when one-building strict fit is truly infeasible.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

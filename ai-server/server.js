@@ -3872,7 +3872,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     ? sourceHomeBuildingCountRaw
     : (preferSingleBuilding ? 1 : 2);
   let maxPreferredBuildingCount = preferSingleBuilding
-    ? (sourceHomeBuildingCount <= 1 ? 2 : 3)
+    ? (sourceHomeBuildingCount <= 1 ? 1 : 2)
     : Number.POSITIVE_INFINITY;
   if (hardMaxBuildings != null) {
     maxPreferredBuildingCount = Math.min(maxPreferredBuildingCount, hardMaxBuildings);
@@ -4431,7 +4431,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     allowOffFamilyFallback: false,
     allowSupportFallback: false,
     relaxSingleBuilding: false,
-    roomSource: (preferredBlockRooms.length ? preferredBlockRooms : rooms)
+      roomSource: (preferredBlockRooms.length ? preferredBlockRooms : rooms)
   });
   if (
     strictFit &&
@@ -4444,6 +4444,21 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       passSeedOffset: 250001,
       attemptScale: 1.1,
       allowOffFamilyFallback: false,
+      allowSupportFallback: false,
+      relaxSingleBuilding: false,
+      roomSource: preferredBuildingRooms
+    });
+  }
+  if (
+    strictFit &&
+    countInRangeOptions() === 0 &&
+    preferredBuildingRooms.length
+  ) {
+    runRepairPass({
+      passLabel: "repair AB: single-building type-family strict",
+      passSeedOffset: 375007,
+      attemptScale: 1.2,
+      allowOffFamilyFallback: true,
       allowSupportFallback: false,
       relaxSingleBuilding: false,
       roomSource: preferredBuildingRooms
@@ -4792,9 +4807,10 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       return Number(b?.score || 0) - Number(a?.score || 0);
     });
   };
-  const derivePrimaryBuildingKey = () => {
+  const derivePrimaryBuildingKey = (roomSource = rooms) => {
+    const sourceRows = Array.isArray(roomSource) && roomSource.length ? roomSource : rooms;
     const byBuildingTotals = new Map();
-    rooms.forEach((room) => {
+    sourceRows.forEach((room) => {
       if (!room?.buildingKey) return;
       if (!byBuildingTotals.has(room.buildingKey)) {
         byBuildingTotals.set(room.buildingKey, { key: room.buildingKey, sf: 0 });
@@ -4901,12 +4917,14 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     allowSupportFallbackOverride = false,
     allowPublicPerformanceFallbackOverride = allowPublicPerformanceFallback,
     preferSingleBuildingOverride = preferSingleBuilding,
+    roomSource = rooms,
     seedOffset = 0,
     extraAssumptions = []
   } = {}) => {
-    const primaryBuildingKey = derivePrimaryBuildingKey();
+    const fallbackRooms = Array.isArray(roomSource) && roomSource.length ? roomSource : rooms;
+    const primaryBuildingKey = derivePrimaryBuildingKey(fallbackRooms);
     const selection = buildCopilotCandidates({
-      rooms,
+      rooms: fallbackRooms,
       targetSf,
       minSf,
       maxSf,
@@ -4961,9 +4979,36 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   let optionsForShortlist = strictFit ? effectiveStrictOptions : generatedOptions;
   if (strictFit && !effectiveStrictOptions.length) {
     let fallbackPool = sortOptionsByClosestFit(generatedOptions);
+    if (preferSingleBuilding && fallbackPool.length) {
+      const singleBuildingOnly = fallbackPool.filter((option) => {
+        const count = Number(option?.buildingCount || option?.scoreBreakdown?.buildingCount || 0) || 0;
+        return count <= 1;
+      });
+      if (singleBuildingOnly.length) {
+        fallbackPool = singleBuildingOnly;
+      }
+    }
     const relaxNotes = [];
     if (fallbackPool.length) {
       relaxNotes.push("No in-range strict option found; returning closest-fit option under current hard controls.");
+    }
+    if (!fallbackPool.length && preferSingleBuilding && preferredBuildingRooms.length) {
+      const fallbackSingle = buildClosestFallbackOption({
+        label: "auto-relax 0: one-building closest-fit from preferred block building",
+        maxBuildingCountOverride: 1,
+        allowSupportFallbackOverride: false,
+        allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
+        preferSingleBuildingOverride: true,
+        roomSource: preferredBuildingRooms,
+        seedOffset: 20500007,
+        extraAssumptions: [
+          "Single-building floor-block fallback was attempted before multi-building relaxation."
+        ]
+      });
+      if (fallbackSingle) {
+        fallbackPool = [fallbackSingle];
+        relaxNotes.push("Auto-relax 0 applied: closest-fit one-building fallback from the preferred floor-block building.");
+      }
     }
     if (!fallbackPool.length) {
       const fallbackA = buildClosestFallbackOption({
