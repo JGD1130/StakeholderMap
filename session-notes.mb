@@ -1305,3 +1305,14 @@ Demo polish completed (scenario PDF button + remove Program Test Fit)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Demo maintenance mode update completed (public demo + right popout)
+- Updated `src/components/StakeholderMap.jsx`:
+  - Enabled `Maintenance` map view option in Demo Public mode (`/hastings`).
+  - Allowed maintenance issues to load in Demo Public mode (in addition to admin mode).
+  - Hid right rail (logos + campus dashboard) while Maintenance mode is active.
+  - Changed Maintenance Tracker panel to a fixed right-side popout (covers the right-rail area during maintenance view).
+  - Added route title/subtitle for demo maintenance context: **Demo Maintenance Tracker**.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

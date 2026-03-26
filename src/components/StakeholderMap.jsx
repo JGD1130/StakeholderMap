@@ -9412,7 +9412,7 @@ const StakeholderMap = ({
   const [mapView, setMapView] = useState(defaultMapView);
   const stakeholderWorkflowActive = engagementMode && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
-  const maintenanceWorkflowActive = showFullMapfluenceControls && mapView === MAP_VIEWS.MAINTENANCE;
+  const maintenanceWorkflowActive = (showFullMapfluenceControls || isDemoPublicMode) && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(true);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -9435,6 +9435,12 @@ const StakeholderMap = ({
         { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
       ];
     }
+    if (isDemoPublicMode) {
+      return [
+        { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
+        { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
+      ];
+    }
     if (isAdminCombinedMode) {
       return [
         { value: MAP_VIEWS.ASSESSMENT, label: 'Stakeholder' },
@@ -9445,7 +9451,7 @@ const StakeholderMap = ({
       return [{ value: MAP_VIEWS.TECHNICAL, label: 'Technical' }];
     }
     return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-  }, [showFullMapfluenceControls, isAdminCombinedMode, isTechnicalOnlyMode]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
@@ -9461,6 +9467,12 @@ const StakeholderMap = ({
       return {
         title: 'Admin Workspace',
         subtitle: 'Full Mapfluence editing, planning, and AI tools.'
+      };
+    }
+    if (isDemoPublicMode && mapView === MAP_VIEWS.MAINTENANCE) {
+      return {
+        title: 'Demo Maintenance Tracker',
+        subtitle: 'Maintenance issue reporting and tracking demo mode.'
       };
     }
     if (isAdminCombinedMode) {
@@ -9485,7 +9497,7 @@ const StakeholderMap = ({
       title: 'Demo Map',
       subtitle: 'Campus space visualization view.'
     };
-  }, [showFullMapfluenceControls, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE]);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
@@ -20965,7 +20977,7 @@ useEffect(() => {
 
         const shouldLoadConditions = mode === 'admin';
         const shouldLoadAssessments = mode === 'admin' || technicalMode;
-        const shouldLoadMaintenance = mode === 'admin';
+        const shouldLoadMaintenance = mode === 'admin' || isDemoPublicMode;
         if (!shouldLoadConditions && !shouldLoadAssessments && !shouldLoadMaintenance) {
           setBuildingConditions({});
           setBuildingAssessments({});
@@ -21041,7 +21053,7 @@ useEffect(() => {
         setMaintenanceIssues([]);
       }
     })();
-  }, [mode, engagementMode, technicalMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection, maintenanceIssuesCollection]);
+  }, [mode, engagementMode, technicalMode, isDemoPublicMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection, maintenanceIssuesCollection]);
 
 // Keep floorplan building input in sync with map selection (convenience)
 useEffect(() => {
@@ -24382,7 +24394,7 @@ useEffect(() => {
       </div>
     )}
 
-      {!presentationMode && (
+      {!presentationMode && !maintenanceWorkflowActive && (
       <div className="mf-right-rail">
         <div className="mf-right-logos">
           <div className="logo-box">
@@ -25515,11 +25527,19 @@ useEffect(() => {
             <div
               className="control-section"
               style={{
-                marginTop: 6,
+                position: 'fixed',
+                right: 20,
+                top: 96,
+                width: 360,
+                maxHeight: 'calc(100vh - 120px)',
+                overflowY: 'auto',
+                zIndex: 1200,
+                marginTop: 0,
                 border: '1px solid #d8e0ea',
                 borderRadius: 6,
                 padding: 6,
-                background: '#f8fbff'
+                background: '#f8fbff',
+                boxShadow: '0 14px 34px rgba(15, 23, 42, 0.25)'
               }}
             >
               <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Maintenance Tracker</h5>
