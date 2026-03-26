@@ -65,6 +65,16 @@ const LOCAL_PLANNING_SCENARIO_STORAGE_PREFIX = 'mf-planning-scenarios';
 const LOCAL_RENO_SCENARIO_STORAGE_PREFIX = 'mf-reno-scenarios';
 const ADMIN_COMBINED_PREFS_STORAGE_PREFIX = 'mf-admin-engagement-prefs';
 const COPILOT_PREFS_STORAGE_PREFIX = 'mf-copilot-prefs';
+const COPILOT_FEEDBACK_REASON_OPTIONS = [
+  { value: '', label: 'Feedback reason (optional)' },
+  { value: 'too_many_buildings', label: 'Too many buildings' },
+  { value: 'sf_off', label: 'Square footage off target' },
+  { value: 'room_type_mismatch', label: 'Room types mismatched' },
+  { value: 'not_contiguous', label: 'Rooms not contiguous' },
+  { value: 'bad_building_fit', label: 'Building fit is poor' },
+  { value: 'good_result', label: 'Good result' },
+  { value: 'other', label: 'Other' }
+];
 const PROGRAM_TEST_FIT_DEFAULT_SUPPORT_PCT = 20;
 const PROGRAM_TEST_FIT_DEFAULT_EFFICIENCY = 1.0;
 
@@ -9364,6 +9374,8 @@ const StakeholderMap = ({
   const [aiCopilotDisallowSupportStorage, setAiCopilotDisallowSupportStorage] = useState(true);
   const [aiCopilotDisallowPublicPerformance, setAiCopilotDisallowPublicPerformance] = useState(true);
   const [aiCopilotContiguityPreference, setAiCopilotContiguityPreference] = useState('medium');
+  const [aiCopilotFeedbackReason, setAiCopilotFeedbackReason] = useState('');
+  const [aiCopilotFeedbackMessage, setAiCopilotFeedbackMessage] = useState('');
   const [aiScenarioComparePending, setAiScenarioComparePending] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState('');
@@ -16400,6 +16412,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setAiCreateScenarioErr('');
     setAiCreateScenarioLoading(true);
     setAiCreateScenarioResult(null);
+    setAiCopilotFeedbackMessage('');
 
     try {
       if (aiStatus === 'down') throw new Error('AI server is offline.');
@@ -16673,8 +16686,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             maxSupportOverBaselinePct: Math.max(
               0.015,
               Math.min(0.12, Number(deptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
-            )
+            ),
+            explicitAcceptCount: Math.max(0, Number(deptPrefs?.explicitAcceptCount || 0) || 0),
+            explicitRejectCount: Math.max(0, Number(deptPrefs?.explicitRejectCount || 0) || 0)
           };
+          if (deptPrefs?.forceOneBuildingIfFeasible != null) {
+            scenarioConstraints.forceOneBuildingIfFeasible = Boolean(deptPrefs.forceOneBuildingIfFeasible);
+          }
           scenarioPolicyNotes.push('Applied planner feedback from prior scenario comparison (single-building, SF fit, support-type cap, contiguity).');
         }
       } catch {}
@@ -17622,6 +17640,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   const selectAiCopilotScenarioOption = useCallback((optionId) => {
     const targetId = String(optionId || '').trim();
     if (!targetId) return;
+    setAiCopilotFeedbackMessage('');
     setAiCreateScenarioResult((prev) => {
       if (!prev?.copilot?.generatedOptions?.length) return prev;
       const selected = prev.copilot.generatedOptions.find(
@@ -17645,6 +17664,143 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       };
     });
   }, [campusRoomsLoaded, campusRooms, getBuildingFolderKey]);
+
+  const recordAiCopilotFeedback = useCallback((feedbackKind = 'accept') => {
+    const normalizedKind = String(feedbackKind || '').trim().toLowerCase();
+    if (normalizedKind !== 'accept' && normalizedKind !== 'reject') return;
+    const selectedOptionId = String(
+      aiCreateScenarioResult?.copilot?.selectedOptionId ||
+      aiCreateScenarioResult?.copilot?.recommendedOptionId ||
+      ''
+    ).trim();
+    const selectedOption = Array.isArray(aiCreateScenarioResult?.copilot?.generatedOptions)
+      ? aiCreateScenarioResult.copilot.generatedOptions.find(
+          (option) => String(option?.optionId || '').trim() === selectedOptionId
+        )
+      : null;
+    if (!selectedOption) {
+      setAiCopilotFeedbackMessage('Select a copilot option first, then save feedback.');
+      return;
+    }
+    const scenarioDeptKeyRaw = aiCreateScenarioResult?.scenarioDept || scenarioAssignedDept || 'default';
+    const deptKey = normalizeDashboardKey(scenarioDeptKeyRaw || 'default') || 'default';
+    const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
+    const prefsStorageKey = buildCopilotPrefsStorageKey(universityId, userKey);
+    if (!prefsStorageKey) {
+      setAiCopilotFeedbackMessage('Unable to save feedback: missing planner context.');
+      return;
+    }
+    const prior = loadCopilotPrefs(prefsStorageKey) || {};
+    const currentDeptPrefs = (prior?.[deptKey] && typeof prior[deptKey] === 'object') ? prior[deptKey] : {};
+    const reasonKey = String(aiCopilotFeedbackReason || '').trim().toLowerCase();
+    const optionBuildingCount = Math.max(
+      1,
+      Number(
+        selectedOption?.buildingCount ??
+        selectedOption?.scoreBreakdown?.buildingCount ??
+        (Array.isArray(selectedOption?.buildings) ? selectedOption.buildings.length : 1)
+      ) || 1
+    );
+    const optionSfGapPct = Number(
+      selectedOption?.fitSummary?.sfGapPct ??
+      selectedOption?.scoreBreakdown?.sfGapPct ??
+      0
+    ) || 0;
+    const optionTypeGapPct = Number(
+      selectedOption?.fitSummary?.typeGapPct ??
+      selectedOption?.scoreBreakdown?.typeGapPct ??
+      0
+    ) || 0;
+    const nextDeptPrefs = {
+      ...currentDeptPrefs,
+      singleBuildingBoost: Math.max(1, Number(currentDeptPrefs?.singleBuildingBoost || 1) || 1),
+      sfPriorityBoost: Math.max(1, Number(currentDeptPrefs?.sfPriorityBoost || 1) || 1),
+      supportPenaltyBoost: Math.max(1, Number(currentDeptPrefs?.supportPenaltyBoost || 1) || 1),
+      contiguityBoost: Math.max(1, Number(currentDeptPrefs?.contiguityBoost || 1) || 1),
+      maxSupportOverBaselinePct: Math.max(
+        0.015,
+        Math.min(0.12, Number(currentDeptPrefs?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
+      ),
+      explicitAcceptCount: Math.max(0, Number(currentDeptPrefs?.explicitAcceptCount || 0) || 0),
+      explicitRejectCount: Math.max(0, Number(currentDeptPrefs?.explicitRejectCount || 0) || 0),
+      forceOneBuildingIfFeasible: Boolean(currentDeptPrefs?.forceOneBuildingIfFeasible ?? true)
+    };
+    if (normalizedKind === 'accept') {
+      nextDeptPrefs.explicitAcceptCount += 1;
+      if (optionBuildingCount <= 1) {
+        nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.35);
+      }
+      if (optionSfGapPct <= 6) {
+        nextDeptPrefs.sfPriorityBoost = Math.min(4, nextDeptPrefs.sfPriorityBoost + 0.12);
+      }
+      if (optionTypeGapPct <= 45) {
+        nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.08);
+      }
+      if (reasonKey === 'good_result') {
+        nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.1);
+        nextDeptPrefs.forceOneBuildingIfFeasible = true;
+      }
+    } else {
+      nextDeptPrefs.explicitRejectCount += 1;
+      switch (reasonKey) {
+        case 'too_many_buildings':
+          nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.65);
+          nextDeptPrefs.forceOneBuildingIfFeasible = true;
+          break;
+        case 'sf_off':
+          nextDeptPrefs.sfPriorityBoost = Math.min(4, nextDeptPrefs.sfPriorityBoost + 0.75);
+          break;
+        case 'room_type_mismatch':
+          nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.85);
+          nextDeptPrefs.maxSupportOverBaselinePct = Math.max(0.015, nextDeptPrefs.maxSupportOverBaselinePct - 0.01);
+          break;
+        case 'not_contiguous':
+          nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.75);
+          break;
+        case 'bad_building_fit':
+          nextDeptPrefs.singleBuildingBoost = Math.min(4, nextDeptPrefs.singleBuildingBoost + 0.35);
+          nextDeptPrefs.contiguityBoost = Math.min(4, nextDeptPrefs.contiguityBoost + 0.3);
+          nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.3);
+          break;
+        default:
+          nextDeptPrefs.sfPriorityBoost = Math.min(4, nextDeptPrefs.sfPriorityBoost + 0.25);
+          nextDeptPrefs.supportPenaltyBoost = Math.min(4, nextDeptPrefs.supportPenaltyBoost + 0.2);
+          break;
+      }
+    }
+    const history = Array.isArray(currentDeptPrefs?.feedbackHistory) ? [...currentDeptPrefs.feedbackHistory] : [];
+    history.push({
+      ts: Date.now(),
+      kind: normalizedKind,
+      reason: reasonKey || '',
+      optionId: selectedOptionId || '',
+      buildingCount: optionBuildingCount,
+      sfGapPct: Number(optionSfGapPct.toFixed(2)),
+      typeGapPct: Number(optionTypeGapPct.toFixed(2))
+    });
+    nextDeptPrefs.feedbackHistory = history.slice(-40);
+    nextDeptPrefs.updatedAt = Date.now();
+    saveCopilotPrefs(prefsStorageKey, {
+      ...prior,
+      [deptKey]: nextDeptPrefs,
+      __global: {
+        ...(prior?.__global && typeof prior.__global === 'object' ? prior.__global : {}),
+        updatedAt: Date.now()
+      }
+    });
+    setAiCopilotFeedbackMessage(
+      normalizedKind === 'accept'
+        ? 'Planner feedback saved (accepted). Next runs will reinforce this pattern.'
+        : `Planner feedback saved (rejected${reasonKey ? `: ${reasonKey.replace(/_/g, ' ')}` : ''}). Next runs will rebalance scoring.`
+    );
+  }, [
+    aiCopilotFeedbackReason,
+    aiCreateScenarioResult,
+    scenarioAssignedDept,
+    universityId,
+    authUser?.uid,
+    authUser?.email
+  ]);
 
   const applyAiMoveCandidatesToScenario = useCallback(async () => {
     const candidates = aiCreateScenarioResult?.recommendedCandidates || [];
@@ -27364,6 +27520,42 @@ useEffect(() => {
                     ))}
                   </ul>
                 ) : null}
+                <div
+                  style={{
+                    marginTop: 6,
+                    border: '1px solid #e1e4ea',
+                    borderRadius: 8,
+                    padding: 8,
+                    display: 'grid',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 12, color: '#444' }}>
+                    Planner feedback (used in future scoring)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center' }}>
+                    <select
+                      value={aiCopilotFeedbackReason}
+                      onChange={(e) => setAiCopilotFeedbackReason(e.target.value)}
+                      style={{ width: '100%', padding: 7, borderRadius: 8, border: '1px solid #d0d0d0', fontSize: 12 }}
+                    >
+                      {COPILOT_FEEDBACK_REASON_OPTIONS.map((opt) => (
+                        <option key={`copilot-feedback-${opt.value || 'blank'}`} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="btn" onClick={() => recordAiCopilotFeedback('accept')}>
+                      Accept selected
+                    </button>
+                    <button className="btn" onClick={() => recordAiCopilotFeedback('reject')}>
+                      Reject selected
+                    </button>
+                  </div>
+                  {aiCopilotFeedbackMessage ? (
+                    <div style={{ fontSize: 11, color: '#2f6f2f' }}>{aiCopilotFeedbackMessage}</div>
+                  ) : null}
+                </div>
                 <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
                   {aiCreateScenarioResult.copilot.generatedOptions.map((option, idx) => {
                     const optionId = String(option?.optionId || `option_${idx + 1}`);

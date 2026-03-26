@@ -2362,6 +2362,15 @@ function buildCopilotOptionScore({
   const sfPriorityBoost = Math.max(1, Number(copilotPreferences?.sfPriorityBoost || 1) || 1);
   const supportPenaltyBoost = Math.max(1, Number(copilotPreferences?.supportPenaltyBoost || 1) || 1);
   const contiguityBoost = Math.max(1, Number(copilotPreferences?.contiguityBoost || 1) || 1);
+  const explicitAcceptCount = Math.max(0, Number(copilotPreferences?.explicitAcceptCount || 0) || 0);
+  const explicitRejectCount = Math.max(0, Number(copilotPreferences?.explicitRejectCount || 0) || 0);
+  const feedbackTightening = Math.max(
+    1,
+    Math.min(
+      1.8,
+      1 + ((explicitRejectCount * 0.05) - (explicitAcceptCount * 0.015))
+    )
+  );
   const maxSupportOverBaselinePct = Math.max(
     0.01,
     Math.min(0.12, Number(copilotPreferences?.maxSupportOverBaselinePct ?? 0.03) || 0.03)
@@ -2385,9 +2394,10 @@ function buildCopilotOptionScore({
   const contiguity = computeCopilotContiguityPenalty(candidates);
   const contiguityPenalty = contiguity.penalty * contiguityBoost;
   const buildingSpreadPenalty = preferSingleBuilding
-    ? Math.max(0, buildingCount - 1) * (18 * singleBuildingBoost)
+    ? Math.max(0, buildingCount - 1) * (18 * singleBuildingBoost * feedbackTightening)
     : Math.max(0, buildingCount - 1) * 2;
-  let score = 100 - (sfGapPct * 72 * sfPriorityBoost) - (typeGapPct * 42) - buildingSpreadPenalty - supportPenalty - contiguityPenalty;
+  const typePenaltyMultiplier = 42 * Math.max(1, 1 + (explicitRejectCount * 0.02));
+  let score = 100 - (sfGapPct * 72 * sfPriorityBoost * feedbackTightening) - (typeGapPct * typePenaltyMultiplier) - buildingSpreadPenalty - supportPenalty - contiguityPenalty;
   score -= underfillRatio * 220;
   if (total >= minSf && total <= maxSf) score += 8;
   if (overUpper) score -= 24;
@@ -2464,6 +2474,121 @@ function buildCopilotComparisonSummary(best, runnerUp) {
   }
 
   return out;
+}
+
+function buildStrictOneBuildingFeasibilityReport({
+  rooms = [],
+  targetSf = 0,
+  minSf = 0,
+  maxSf = Number.POSITIVE_INFINITY,
+  maxCandidates = 30,
+  typeTargets = new Map(),
+  copilotPreferences = {}
+} = {}) {
+  const source = Array.isArray(rooms) ? rooms : [];
+  if (!source.length) return null;
+
+  const byBuilding = new Map();
+  source.forEach((room) => {
+    const key = normalizeLoose(room?.buildingKey || "");
+    if (!key) return;
+    if (!byBuilding.has(key)) {
+      byBuilding.set(key, {
+        buildingKey: key,
+        buildingLabel: room?.buildingLabel || key,
+        rooms: [],
+        totalAssignableSf: 0,
+        supportSf: 0,
+        publicPerformanceSf: 0
+      });
+    }
+    const row = byBuilding.get(key);
+    const sf = Number(room?.sf || 0) || 0;
+    row.rooms.push(room);
+    row.totalAssignableSf += sf;
+    if (getCopilotTypeFamily(room?.type || "") === "support") row.supportSf += sf;
+    if (isCopilotPublicPerformanceType(room?.type || "")) row.publicPerformanceSf += sf;
+  });
+  const buildingRows = Array.from(byBuilding.values());
+  if (!buildingRows.length) return null;
+
+  const reports = buildingRows.map((row) => {
+    const sortedBySf = [...(row.rooms || [])].sort((a, b) => (Number(b?.sf || 0) - Number(a?.sf || 0)));
+    const maxReachableSf = sortedBySf
+      .slice(0, Math.max(1, Number(maxCandidates || 30)))
+      .reduce((sum, room) => sum + (Number(room?.sf || 0) || 0), 0);
+    const deterministic = findStrictRangeDeterministicSelection({
+      eligible: row.rooms,
+      targetSf,
+      minSf,
+      maxSf,
+      maxCandidates,
+      preferSingleBuilding: true,
+      primaryBuildingKey: row.buildingKey,
+      maxBuildingCount: 1,
+      typeTargets,
+      scoreOptions: copilotPreferences
+    });
+    const strictReachableSf = Array.isArray(deterministic)
+      ? deterministic.reduce((sum, room) => sum + (Number(room?.sf || 0) || 0), 0)
+      : 0;
+    const strictPossible = Array.isArray(deterministic) && deterministic.length > 0 && strictReachableSf >= minSf && strictReachableSf <= maxSf;
+    const referenceSf = strictPossible ? strictReachableSf : maxReachableSf;
+    const sfShortfall = referenceSf < minSf ? (minSf - referenceSf) : 0;
+    const sfExcess = referenceSf > maxSf ? (referenceSf - maxSf) : 0;
+    return {
+      ...row,
+      roomCount: row.rooms.length,
+      maxReachableSf: Math.round(maxReachableSf),
+      strictReachableSf: Math.round(strictReachableSf),
+      strictPossible,
+      sfShortfall: Math.round(sfShortfall),
+      sfExcess: Math.round(sfExcess),
+      sfGapToTarget: Math.round(Math.abs(targetSf - referenceSf))
+    };
+  });
+
+  const sorted = reports.sort((a, b) => {
+    if (a.strictPossible !== b.strictPossible) return a.strictPossible ? -1 : 1;
+    if (a.strictPossible && b.strictPossible) return a.sfGapToTarget - b.sfGapToTarget;
+    if (a.sfShortfall !== b.sfShortfall) return a.sfShortfall - b.sfShortfall;
+    if (a.sfExcess !== b.sfExcess) return a.sfExcess - b.sfExcess;
+    return b.maxReachableSf - a.maxReachableSf;
+  });
+  const best = sorted[0] || null;
+  const inRangeCount = sorted.filter((row) => row.strictPossible).length;
+  return {
+    hasInRangeOption: inRangeCount > 0,
+    inRangeCount,
+    best,
+    reports: sorted.slice(0, 6)
+  };
+}
+
+function formatStrictOneBuildingBlockerText({
+  report = null,
+  minSf = 0,
+  maxSf = 0,
+  targetSf = 0,
+  disallowSupportStorage = false,
+  disallowPublicPerformance = false
+} = {}) {
+  if (!report?.best) {
+    return "Strict one-building feasibility check found no candidate buildings under current assignable filters.";
+  }
+  const best = report.best;
+  const bestReferenceSf = best.strictPossible ? best.strictReachableSf : best.maxReachableSf;
+  const sfDelta = Number(bestReferenceSf || 0) - Number(targetSf || 0);
+  const deltaText = sfDelta >= 0
+    ? `${Math.round(Math.abs(sfDelta)).toLocaleString()} SF over target`
+    : `${Math.round(Math.abs(sfDelta)).toLocaleString()} SF under target`;
+  const blockers = [];
+  if (best.sfShortfall > 0) blockers.push(`short by ${Math.round(best.sfShortfall).toLocaleString()} SF to reach the strict lower bound`);
+  if (best.sfExcess > 0) blockers.push(`exceeds strict upper bound by ${Math.round(best.sfExcess).toLocaleString()} SF`);
+  if (disallowSupportStorage) blockers.push("support/storage exclusions are active");
+  if (disallowPublicPerformance) blockers.push("public performance exclusion is active");
+  const blockerLine = blockers.length ? ` Main blockers: ${blockers.join("; ")}.` : "";
+  return `Strict one-building feasibility: best candidate ${best.buildingLabel} reaches ${Math.round(bestReferenceSf).toLocaleString()} SF (${deltaText}) against strict band ${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF.${blockerLine}`;
 }
 
 function findStrictRangeDeterministicSelection({
@@ -3486,6 +3611,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     copilotPreferences.contiguityBoost = contiguityBoostByPreference[contiguityPreference];
   }
   const strictFit = Number(constraints?.targetSfTolerance || 0.1) <= 0.05;
+  const forceOneBuildingIfFeasible = constraints?.forceOneBuildingIfFeasible !== false;
   const tolerance = Math.max(0.03, Math.min(0.25, Number(constraints?.targetSfTolerance || 0.1) || 0.1));
   const singleBuildingBoost = Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) || 1);
   const baselineTotalSf = Number(constraints?.baselineTotals?.totalSF || 0) || 0;
@@ -3541,10 +3667,12 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const excludeSet = new Set((context?.excludeBuildings || []).map((b) => normalizeLoose(b)).filter(Boolean));
 
   const sourceRooms = Array.isArray(inventory) ? inventory : [];
-  const normalizedRooms = sourceRooms
+  const normalizedAssignableRooms = sourceRooms
     .map(toCopilotRoom)
     .filter(Boolean)
     .filter((room) => !isCopilotNonAssignableType(room?.type || ""))
+    .filter((room) => !excludeSet.has(room.buildingKey));
+  const normalizedRooms = normalizedAssignableRooms
     .filter((room) => {
       if (disallowSupportStorage) {
         return getCopilotTypeFamily(room?.type || "") !== "support";
@@ -3555,8 +3683,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     })
     .filter((room) => baselineNeedsTelecom || !isCopilotTelecomType(room?.type || ""))
     .filter((room) => allowAthleticsTargeting || !isCopilotAthleticsType(room?.type || ""))
-    .filter((room) => allowPublicPerformanceTargeting || !isCopilotPublicPerformanceType(room?.type || ""))
-    .filter((room) => !excludeSet.has(room.buildingKey));
+    .filter((room) => allowPublicPerformanceTargeting || !isCopilotPublicPerformanceType(room?.type || ""));
 
   const buildingSuitabilityByKey = new Map();
   normalizedRooms.forEach((room) => {
@@ -3589,6 +3716,47 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const rooms = fallbackUsed ? fallbackPool : filteredRooms;
   if (!rooms.length) {
     throw new Error("No eligible room inventory remained after scenario guardrails.");
+  }
+  const strictOneBuildingFeasibility = (strictFit && preferSingleBuilding)
+    ? buildStrictOneBuildingFeasibilityReport({
+        rooms,
+        targetSf,
+        minSf,
+        maxSf,
+        maxCandidates: 30,
+        typeTargets,
+        copilotPreferences
+      })
+    : null;
+  const strictOneBuildingBlockerText = (strictFit && preferSingleBuilding && strictOneBuildingFeasibility)
+    ? formatStrictOneBuildingBlockerText({
+        report: strictOneBuildingFeasibility,
+        minSf,
+        maxSf,
+        targetSf,
+        disallowSupportStorage,
+        disallowPublicPerformance
+      })
+    : "";
+  if (
+    strictFit &&
+    preferSingleBuilding &&
+    hardMaxBuildings === 1 &&
+    strictOneBuildingFeasibility &&
+    !strictOneBuildingFeasibility.hasInRangeOption
+  ) {
+    throw new Error(
+      `No viable strict one-building option found within +/-${Math.round(tolerance * 100)}% (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${strictOneBuildingBlockerText}`
+    );
+  }
+  if (
+    strictFit &&
+    preferSingleBuilding &&
+    strictOneBuildingFeasibility?.hasInRangeOption &&
+    hardMaxBuildings == null &&
+    forceOneBuildingIfFeasible
+  ) {
+    maxPreferredBuildingCount = 1;
   }
 
   const optionTargetCount = Math.max(3, Math.min(5, Number(context?.copilotOptionCount || 4)));
@@ -4545,13 +4713,36 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       maxCandidates: 30
     });
     throw new Error(
-      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}${Number.isFinite(reachableSf) ? ` Max reachable SF under current assignable filters (top 30 rooms): ${Math.round(reachableSf).toLocaleString()} SF.` : ""}`
+      `No viable strict-fit options found within +/-${Math.round(tolerance * 100)}% of target SF (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${repairSummary ? `Repair passes tried: ${repairSummary}.` : ""}${Number.isFinite(reachableSf) ? ` Max reachable SF under current assignable filters (top 30 rooms): ${Math.round(reachableSf).toLocaleString()} SF.` : ""}${strictOneBuildingBlockerText ? ` ${strictOneBuildingBlockerText}` : ""}`
     );
   }
   if (!optionsForShortlist.length) {
     throw new Error("Planner Copilot could not generate a valid option from the provided inventory.");
   }
-  const shortlistedOptions = optionsForShortlist.slice(0, optionTargetCount);
+  let shortlistedOptions = optionsForShortlist.slice(0, optionTargetCount);
+  if (strictFit && preferSingleBuilding && strictOneBuildingFeasibility) {
+    const strictOneBuildingNotes = strictOneBuildingFeasibility.hasInRangeOption
+      ? [
+          `Strict one-building feasibility check passed (${strictOneBuildingFeasibility.inRangeCount} in-range single-building option${strictOneBuildingFeasibility.inRangeCount === 1 ? "" : "s"}).`,
+          forceOneBuildingIfFeasible
+            ? "Single-building strict options were prioritized before cross-building rescue."
+            : "Single-building strict options were feasible, but one-building forcing is disabled by planner preference."
+        ]
+      : [
+          "Strict one-building feasibility check failed under current controls.",
+          strictOneBuildingBlockerText,
+          `Cross-building search was allowed (up to ${Number.isFinite(maxPreferredBuildingCount) ? maxPreferredBuildingCount : "auto"} buildings) to recover strict-fit coverage.`
+        ];
+    shortlistedOptions = shortlistedOptions.map((option) => ({
+      ...option,
+      assumptions: appendUniqueLines(option?.assumptions || [], strictOneBuildingNotes),
+      selectionCriteria: appendUniqueLines(option?.selectionCriteria || [], [
+        strictOneBuildingFeasibility.hasInRangeOption
+          ? "Single-building strict feasibility was confirmed before final ranking."
+          : "Single-building strict feasibility was not achievable; bounded multi-building fallback was used."
+      ])
+    }));
+  }
   shortlistedOptions.forEach((option, idx) => {
     option.optionId = `option_${idx + 1}`;
     option.label = `Option ${idx + 1}`;

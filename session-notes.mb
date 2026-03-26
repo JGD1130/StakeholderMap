@@ -1118,3 +1118,26 @@ Latest completed work (explicit relaxed retry in planner modal)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (strict one-building feasibility + explicit planner feedback)
+- Added strict one-building feasibility diagnostics in `ai-server/server.js`:
+  - New helper `buildStrictOneBuildingFeasibilityReport(...)` evaluates whether any single building can satisfy strict in-band SF under current assignable filters.
+  - New helper `formatStrictOneBuildingBlockerText(...)` produces a readable blocker summary with best single-building candidate and SF shortfall/excess.
+  - If strict mode + hard `maxBuildings=1` is active and single-building is infeasible, copilot now returns an immediate clear blocker error instead of opaque retries.
+  - Strict no-fit errors now append the one-building blocker summary when available.
+  - When strict single-building is feasible and preference allows, scoring run is forced to prioritize one-building options before cross-building fallback.
+- Added explicit accept/reject feedback signals in `src/components/StakeholderMap.jsx`:
+  - New “Planner feedback (used in future scoring)” control in Planner Copilot results.
+  - Users can choose a reason and click `Accept selected` or `Reject selected`.
+  - Feedback is persisted in local storage copilot prefs (per university + user + department).
+  - Persisted feedback updates future scoring boosts (`singleBuildingBoost`, `sfPriorityBoost`, `supportPenaltyBoost`, `contiguityBoost`, support cap) and carries `forceOneBuildingIfFeasible`.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
+
+Follow-up tuning in same phase
+- Connected explicit feedback counters (`explicitAcceptCount`, `explicitRejectCount`) into copilot scoring in `ai-server/server.js`:
+  - Rejections tighten SF and building-spread penalties in subsequent runs.
+  - Rejections also increase room-type gap penalty multiplier, so poor type alignment is penalized harder over time.
+- Added `forceOneBuildingIfFeasible` support from saved prefs so frontend feedback can enforce one-building-first when strict feasibility confirms it.
