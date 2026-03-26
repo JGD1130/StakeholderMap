@@ -4918,6 +4918,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     allowPublicPerformanceFallbackOverride = allowPublicPerformanceFallback,
     preferSingleBuildingOverride = preferSingleBuilding,
     roomSource = rooms,
+    typeTargetsOverride = null,
     seedOffset = 0,
     extraAssumptions = []
   } = {}) => {
@@ -4930,7 +4931,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       maxSf,
       strictFit: false,
       preferSingleBuilding: Boolean(preferSingleBuildingOverride),
-      typeTargets,
+      typeTargets: typeTargetsOverride instanceof Map ? typeTargetsOverride : typeTargets,
       primaryBuildingKey,
       allowOffFamilyFallback: true,
       allowShopFallback,
@@ -4978,6 +4979,17 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     : strictInRangeOptions;
   let optionsForShortlist = strictFit ? effectiveStrictOptions : generatedOptions;
   if (strictFit && !effectiveStrictOptions.length) {
+    const MIN_STRICT_FALLBACK_COVERAGE_RATIO = 0.75;
+    const optionTotalSf = (option) => Number(option?.scenarioTotals?.totalSF || option?.fitSummary?.totalSf || 0) || 0;
+    const isStrictFallbackAcceptable = (option) => {
+      if (!strictFit) return true;
+      const total = optionTotalSf(option);
+      if (!Number.isFinite(total) || total <= 0) return false;
+      if (!Number.isFinite(minSf) || minSf <= 0) return true;
+      if (total >= minSf) return true;
+      return (total / minSf) >= MIN_STRICT_FALLBACK_COVERAGE_RATIO;
+    };
+    const formatSf = (value) => `${Math.round(Number(value || 0) || 0).toLocaleString()} SF`;
     let fallbackPool = sortOptionsByClosestFit(generatedOptions);
     if (preferSingleBuilding && fallbackPool.length) {
       const singleBuildingOnly = fallbackPool.filter((option) => {
@@ -4988,6 +5000,16 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         fallbackPool = singleBuildingOnly;
       }
     }
+    const bestExistingSfGap = Number(
+      fallbackPool?.[0]?.fitSummary?.sfGapPct ??
+      fallbackPool?.[0]?.scoreBreakdown?.sfGapPct ??
+      Number.POSITIVE_INFINITY
+    );
+    // Do not settle on very weak nearest-fit options; continue to stronger auto-relax passes.
+    if (Number.isFinite(bestExistingSfGap) && bestExistingSfGap > 28) {
+      fallbackPool = [];
+    }
+    fallbackPool = fallbackPool.filter((option) => isStrictFallbackAcceptable(option));
     const relaxNotes = [];
     if (fallbackPool.length) {
       relaxNotes.push("No in-range strict option found; returning closest-fit option under current hard controls.");
@@ -5000,14 +5022,17 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
         preferSingleBuildingOverride: true,
         roomSource: preferredBuildingRooms,
+        typeTargetsOverride: new Map(),
         seedOffset: 20500007,
         extraAssumptions: [
           "Single-building floor-block fallback was attempted before multi-building relaxation."
         ]
       });
-      if (fallbackSingle) {
+      if (fallbackSingle && isStrictFallbackAcceptable(fallbackSingle)) {
         fallbackPool = [fallbackSingle];
         relaxNotes.push("Auto-relax 0 applied: closest-fit one-building fallback from the preferred floor-block building.");
+      } else if (fallbackSingle) {
+        relaxNotes.push(`Auto-relax 0 skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackSingle))}).`);
       }
     }
     if (!fallbackPool.length) {
@@ -5017,11 +5042,14 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowSupportFallbackOverride: false,
         allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
         preferSingleBuildingOverride: preferSingleBuilding,
+        typeTargetsOverride: new Map(),
         seedOffset: 21000011
       });
-      if (fallbackA) {
+      if (fallbackA && isStrictFallbackAcceptable(fallbackA)) {
         fallbackPool = [fallbackA];
         relaxNotes.push("Auto-relax A applied: strict range disabled; kept current hard controls.");
+      } else if (fallbackA) {
+        relaxNotes.push(`Auto-relax A skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackA))}).`);
       }
     }
     if (!fallbackPool.length && hardMaxBuildings != null) {
@@ -5034,9 +5062,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         seedOffset: 22000021,
         extraAssumptions: [`Building cap relaxed by +1 (${hardMaxBuildings} -> ${hardMaxBuildings + 1}).`]
       });
-      if (fallbackB) {
+      if (fallbackB && isStrictFallbackAcceptable(fallbackB)) {
         fallbackPool = [fallbackB];
         relaxNotes.push(`Auto-relax B applied: building cap temporarily relaxed to ${hardMaxBuildings + 1}.`);
+      } else if (fallbackB) {
+        relaxNotes.push(`Auto-relax B skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackB))}).`);
       }
     }
     if (!fallbackPool.length && disallowSupportStorage) {
@@ -5049,9 +5079,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         seedOffset: 23000031,
         extraAssumptions: ["Support/storage hard exclusion relaxed in fallback to avoid no-solution dead-end."]
       });
-      if (fallbackC) {
+      if (fallbackC && isStrictFallbackAcceptable(fallbackC)) {
         fallbackPool = [fallbackC];
         relaxNotes.push("Auto-relax C applied: support/storage exclusion relaxed.");
+      } else if (fallbackC) {
+        relaxNotes.push(`Auto-relax C skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackC))}).`);
       }
     }
     if (!fallbackPool.length && disallowPublicPerformance) {
@@ -5064,9 +5096,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         seedOffset: 24000041,
         extraAssumptions: ["Public performance hard exclusion relaxed in fallback to avoid no-solution dead-end."]
       });
-      if (fallbackD) {
+      if (fallbackD && isStrictFallbackAcceptable(fallbackD)) {
         fallbackPool = [fallbackD];
         relaxNotes.push("Auto-relax D applied: public performance exclusion relaxed.");
+      } else if (fallbackD) {
+        relaxNotes.push(`Auto-relax D skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackD))}).`);
       }
     }
     if (fallbackPool.length) {

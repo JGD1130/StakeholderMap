@@ -16908,7 +16908,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (effectiveDisallowPublicPerformance) {
         scenarioPolicyNotes.push('Public performance/assembly spaces are hard excluded from this run.');
       }
-      let priorRejectedSignatures = [];
       const deptPrefKey = normalizeDashboardKey(inferredDept || scenarioAssignedDept || 'default') || 'default';
       try {
         const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
@@ -16939,7 +16938,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const deptPrefs = mergeCopilotDeptPrefs(sharedDeptPrefs, localDeptPrefs);
         if (deptPrefs) {
           scenarioConstraints.copilotPreferences = buildCopilotScenarioPreferencesPayload(deptPrefs);
-          priorRejectedSignatures = [...(scenarioConstraints.copilotPreferences.rejectedSignatures || [])];
           if (deptPrefs?.forceOneBuildingIfFeasible != null) {
             scenarioConstraints.forceOneBuildingIfFeasible = Boolean(deptPrefs.forceOneBuildingIfFeasible);
           }
@@ -17318,23 +17316,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const processed = applyScenarioCandidateConstraints(option?.recommendedCandidates || []);
         return decorateCopilotOption(option, processed.candidates);
       });
-      const effectiveRejectedSignatures = forceRelaxed ? [] : (Array.isArray(priorRejectedSignatures) ? priorRejectedSignatures : []);
-      const rejectedSignatureSet = new Set(
-        effectiveRejectedSignatures
-          .map((sig) => String(sig || '').trim())
-          .filter(Boolean)
-      );
-      const copilotOptionsFiltered = rejectedSignatureSet.size
-        ? copilotOptions.filter((option) => !rejectedSignatureSet.has(buildCopilotCandidateSignature(option?.recommendedCandidates || [])))
-        : copilotOptions;
-      let copilotOptionsEffective = copilotOptionsFiltered;
-      let blockedOnlyFallbackUsed = false;
-      if (rejectedSignatureSet.size && !copilotOptionsFiltered.length && copilotOptions.length) {
-        // Keep first-run experience moving: if everything is blocked by prior rejects, surface
-        // closest options anyway and let user reject again with refined feedback.
-        copilotOptionsEffective = copilotOptions;
-        blockedOnlyFallbackUsed = true;
-      }
+      // Server now owns rejected-signature filtering and fallback policy.
+      // Do not replay blocked options client-side, or we can appear to "not learn."
+      const copilotOptionsEffective = copilotOptions;
       const selectedCopilotOptionId =
         String(out?.copilot?.selectedOptionId || out?.copilot?.recommendedOptionId || copilotOptionsEffective?.[0]?.optionId || '').trim();
       const selectedCopilotOption = selectedCopilotOptionId
@@ -17355,9 +17339,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const cleanedCriteria = Array.isArray(out?.selectionCriteria)
         ? out.selectionCriteria.filter((c) => !/baseline|total\s*sf|sf within/i.test(c || ''))
         : [];
-      if (blockedOnlyFallbackUsed) {
-        scenarioPolicyNotes.push('All generated options matched prior rejected signatures; surfaced best blocked options so you can re-evaluate or reject with updated feedback.');
-      }
       const nextResult = {
         ...out,
         baselineTotals: baselineTotals || out?.baselineTotals,

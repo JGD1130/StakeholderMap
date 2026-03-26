@@ -1237,3 +1237,37 @@ Hotfix completed (Block-First v2 for first-try whole-floor behavior)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Hotfix completed (stop replaying rejected options + stronger strict fallback quality)
+- Updated `src/components/StakeholderMap.jsx`:
+  - Removed client-side rejected-signature re-filter/replay logic for copilot options.
+  - Client now trusts server-side rejected-signature filtering and fallback policy.
+  - Prevents “same rejected options resurfaced” behavior that looked like non-learning.
+- Updated `ai-server/server.js`:
+  - Added fallback quality gate: if closest strict fallback SF gap is too large (`>28%`), continue to stronger auto-relax passes instead of stopping early.
+  - Added `typeTargetsOverride` support in closest-fit fallback helper.
+  - Added one-building and general closest-fit fallback variants that use SF-first fallback mode (`typeTargetsOverride: new Map()`), while keeping non-assignable/support/public-performance guards active.
+  - Keeps first-result behavior focused on producing a materially usable SF match before returning options.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
+
+Hotfix completed (strict fallback minimum-quality gate)
+- Updated `ai-server/server.js` strict no-fit fallback flow:
+  - Added minimum strict fallback coverage guard to reject very low-coverage nearest-fit options.
+  - Strict fallback options now must cover at least 75% of strict min-SF to be returned.
+  - Applied gate to:
+    - existing generated fallback pool
+    - auto-relax 0 (one-building closest-fit)
+    - auto-relax A/B/C/D closest-fit passes
+  - Added explicit notes when an auto-relax fallback is skipped for low SF coverage.
+- Updated `src/components/StakeholderMap.jsx`:
+  - Removed unused local `priorRejectedSignatures` variable in copilot request path.
+- Expected result:
+  - Prevents unusable results like ultra-low SF options from surfacing as top planner choices.
+  - If no acceptable strict fallback exists, planner returns a clear no-fit message rather than a bad option.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.
