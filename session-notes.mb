@@ -1271,3 +1271,17 @@ Hotfix completed (strict fallback minimum-quality gate)
   - `node --check ai-server/server.js` passed.
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Demo prep completed (public map simplification for Hastings presentation)
+- Updated public route presentation in `src/components/StakeholderMap.jsx`:
+  - Renamed route header from **Public Map** to **Demo Map**.
+  - Kept Planning Scenario Mode available on public map, but switched public scenario panel to **basic mode**:
+    - kept: room selection summary + assign department (`Scenario Department` + `Commit`)
+    - removed from public demo panel: saved scenarios, scenario label, reno launcher, scenario view blend slider, layout edit tools (merge/remove/split/halve), scenario operations, compare scenario, scenario overrides, scenario impact, scenario PDF export
+- Updated dashboard wording in `src/components/SpaceDashboardPanel.jsx`:
+  - Renamed **Actual Classroom Utilization** to **Classroom Utilization**.
+- Removed strategic dashboard from public map:
+  - `SpaceDashboardPanel` now receives `strategic` props only in admin mode, so public demo map no longer shows **Strategic Space Dashboard**.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

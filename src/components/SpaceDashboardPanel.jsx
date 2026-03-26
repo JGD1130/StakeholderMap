@@ -490,7 +490,7 @@ export default function SpaceDashboardPanel({
           ) : null}
 
           <PanelCard style={{ marginTop: 6 }}>
-            <div className="mf-section-title">Actual Classroom Utilization</div>
+            <div className="mf-section-title">Classroom Utilization</div>
             {utilizationScopeLabel ? (
               <div style={{ fontSize: 10, color: '#667085', marginTop: -2, marginBottom: 4 }}>
                 {utilizationScopeLabel}

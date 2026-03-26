@@ -9402,6 +9402,7 @@ const StakeholderMap = ({
   const isAdminMode = mode === 'admin';
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode && !isAdminMode);
+  const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const showAuthAccessControls = isAdminMode;
@@ -9481,7 +9482,7 @@ const StakeholderMap = ({
       };
     }
     return {
-      title: 'Public Map',
+      title: 'Demo Map',
       subtitle: 'Campus space visualization view.'
     };
   }, [showFullMapfluenceControls, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE]);
@@ -24411,7 +24412,7 @@ useEffect(() => {
               utilizationScopeLabel={dashboardUtilizationLabel}
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
-              strategic={{
+              strategic={isAdminMode ? {
                 scenarioName: 'Baseline',
                 selectedYear: strategicSelectedYear,
                 onSelectedYearChange: setStrategicSelectedYear,
@@ -24426,7 +24427,7 @@ useEffect(() => {
                 yearRows: strategicYearRows,
                 selectedMetrics: strategicSelectedYearMetrics,
                 capacityMetrics: strategicCapacityMetrics
-              }}
+              } : null}
             />
           </div>
         )}
@@ -24789,63 +24790,67 @@ useEffect(() => {
           </button>
         </div>
 
-        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Saved Scenarios</div>
-          <select
-            className="mf-input"
-            value={selectedPlanningScenarioId}
-            onChange={(e) => setSelectedPlanningScenarioId(e.target.value)}
-            style={{ width: '100%', marginBottom: 6 }}
-          >
-            <option value="">{savedPlanningScenariosLoading ? 'Loading scenarios...' : 'Choose saved scenario...'}</option>
-            {visiblePlanningScenarios.map((entry) => (
-              <option key={entry.id} value={entry.id}>{entry.optionLabel}</option>
-            ))}
-          </select>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            <button className="btn secondary" onClick={handleLoadSavedPlanningScenario} disabled={!selectedPlanningScenarioId}>
-              Load
-            </button>
-            <button className="btn secondary" onClick={() => { void savePlanningScenario(); }}>
-              Save
-            </button>
+        {!isDemoPublicMode && (
+          <>
+            <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Saved Scenarios</div>
+              <select
+                className="mf-input"
+                value={selectedPlanningScenarioId}
+                onChange={(e) => setSelectedPlanningScenarioId(e.target.value)}
+                style={{ width: '100%', marginBottom: 6 }}
+              >
+                <option value="">{savedPlanningScenariosLoading ? 'Loading scenarios...' : 'Choose saved scenario...'}</option>
+                {visiblePlanningScenarios.map((entry) => (
+                  <option key={entry.id} value={entry.id}>{entry.optionLabel}</option>
+                ))}
+              </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <button className="btn secondary" onClick={handleLoadSavedPlanningScenario} disabled={!selectedPlanningScenarioId}>
+                  Load
+                </button>
+                <button className="btn secondary" onClick={() => { void savePlanningScenario(); }}>
+                  Save
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={renamePlanningScenario}
+                  disabled={!(activePlanningScenarioId || selectedPlanningScenarioId)}
+                >
+                  Rename
+                </button>
+                <button className="btn secondary" onClick={() => { void savePlanningScenario({ duplicate: true }); }}>
+                  Duplicate
+                </button>
+              </div>
+              {planningScenarioSaveMessage ? (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>{planningScenarioSaveMessage}</div>
+              ) : null}
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 2 }}>Scenario label (optional)</label>
+              <input
+                className="mf-input"
+                value={scenarioLabel}
+                onChange={(e) => setScenarioLabel(e.target.value)}
+                placeholder="e.g. Art Dept to Hurley - Option A"
+                style={{ width: '100%' }}
+              />
+            </div>
             <button
               className="btn secondary"
-              onClick={renamePlanningScenario}
-              disabled={!(activePlanningScenarioId || selectedPlanningScenarioId)}
+              style={{ width: '100%', marginBottom: 8 }}
+              onClick={handleLaunchRenoScenario}
+              disabled={scenarioSelection.size === 0}
+              title={scenarioSelection.size === 0 ? 'Select rooms first.' : 'Open Selected-Room Reno Scenario.'}
             >
-              Rename
+              {renoScenarioVisible ? 'Reno Scenario Open' : 'Launch Reno Scenario'}
             </button>
-            <button className="btn secondary" onClick={() => { void savePlanningScenario({ duplicate: true }); }}>
-              Duplicate
-            </button>
-          </div>
-          {planningScenarioSaveMessage ? (
-            <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>{planningScenarioSaveMessage}</div>
-          ) : null}
-        </div>
+          </>
+        )}
 
-        <div style={{ marginBottom: 8 }}>
-          <label style={{ display: 'block', fontSize: 12, marginBottom: 2 }}>Scenario label (optional)</label>
-          <input
-            className="mf-input"
-            value={scenarioLabel}
-            onChange={(e) => setScenarioLabel(e.target.value)}
-            placeholder="e.g. Art Dept to Hurley - Option A"
-            style={{ width: '100%' }}
-          />
-        </div>
-        <button
-          className="btn secondary"
-          style={{ width: '100%', marginBottom: 8 }}
-          onClick={handleLaunchRenoScenario}
-          disabled={scenarioSelection.size === 0}
-          title={scenarioSelection.size === 0 ? 'Select rooms first.' : 'Open Selected-Room Reno Scenario.'}
-        >
-          {renoScenarioVisible ? 'Reno Scenario Open' : 'Launch Reno Scenario'}
-        </button>
-
-        {moveScenarioMode && loadedSingleFloor ? (
+        {!isDemoPublicMode && moveScenarioMode && loadedSingleFloor ? (
           <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario View</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 8, alignItems: 'center' }}>
@@ -24877,7 +24882,8 @@ useEffect(() => {
           </div>
         </div>
 
-        <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
+        {!isDemoPublicMode && (
+          <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Layout Edit Mode</div>
           <div style={{ display: 'grid', gap: 6 }}>
             <button
@@ -24940,7 +24946,8 @@ useEffect(() => {
                   : ' Click the first boundary point to start split.')
               : ''}
           </div>
-        </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 2 }}>Rooms by Room Type Description</div>
@@ -24985,6 +24992,7 @@ useEffect(() => {
           </button>
         </div>
 
+        {!isDemoPublicMode && (
         <div style={{ marginTop: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>Scenario Operations</div>
           {scenarioOperations.length === 0 ? (
@@ -25043,7 +25051,9 @@ useEffect(() => {
             </div>
           )}
         </div>
+        )}
 
+        {!isDemoPublicMode && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
           <button
             className="btn primary"
@@ -25061,7 +25071,9 @@ useEffect(() => {
           </button>
           {aiScenarioErr ? <div style={{ color: 'crimson', fontSize: 12 }}>{aiScenarioErr}</div> : null}
         </div>
+        )}
 
+        {!isDemoPublicMode && (
         <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <button
             type="button"
@@ -25125,7 +25137,9 @@ useEffect(() => {
             </div>
           ) : null}
         </div>
+        )}
 
+        {!isDemoPublicMode && (
         <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <button
             type="button"
@@ -25150,7 +25164,9 @@ useEffect(() => {
             </div>
           ) : null}
         </div>
+        )}
 
+        {!isDemoPublicMode && (
         <button
           className="btn secondary"
           style={{ width: '100%', marginTop: 6 }}
@@ -25269,6 +25285,7 @@ useEffect(() => {
         >
           Export Scenario (PDF)
         </button>
+        )}
       </div>
     )}
 
