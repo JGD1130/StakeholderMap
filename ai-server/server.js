@@ -5137,8 +5137,11 @@ app.post("/create-move-scenario-copilot", async (req, res) => {
     const out = generateMoveScenarioCopilotPlan({ request, context, inventory, constraints });
     res.json(out);
   } catch (err) {
+    const message = String(err?.message || "AI create scenario copilot failed");
     console.error("AI create scenario copilot error:", err);
-    res.status(500).json({ error: err?.message || "AI create scenario copilot failed" });
+    const plannerInputIssue =
+      /no viable strict-fit options|could not generate a valid option|generated only previously rejected options/i.test(message);
+    res.status(plannerInputIssue ? 422 : 500).json({ error: message });
   }
 });
 

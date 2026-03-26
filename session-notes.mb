@@ -1186,3 +1186,18 @@ Hotfix completed (shared planner policy permissions)
   - `npm.cmd exec --yes firebase-tools -- deploy --only firestore:rules --project stakeholder-map-a4bdc`
 - Expected result after refresh:
   - No more `Missing or insufficient permissions` when loading/saving shared planner policy.
+
+Hotfix completed (retry-relaxed no-option/500 handling)
+- Updated `src/components/StakeholderMap.jsx`:
+  - On `Retry relaxed`, planner request now temporarily clears `copilotPreferences.rejectedSignatures` for that run only.
+  - Prevents dead-end loops where all generated options are blocked by prior rejections.
+- Updated `ai-server/server.js`:
+  - `/create-move-scenario-copilot` now returns HTTP 422 (instead of 500) for expected planner no-option cases:
+    - no viable strict-fit options
+    - no valid option generated
+    - only previously rejected options
+  - True unexpected failures still return 500.
+- Validation:
+  - `node --check ai-server/server.js` passed.
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed.

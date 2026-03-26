@@ -16949,6 +16949,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         ...(scenarioConstraints.copilotPreferences || {}),
         contiguityBoost: selectedContiguityBoost
       };
+      if (forceRelaxed && Array.isArray(scenarioConstraints?.copilotPreferences?.rejectedSignatures)) {
+        scenarioConstraints.copilotPreferences = {
+          ...scenarioConstraints.copilotPreferences,
+          rejectedSignatures: []
+        };
+        scenarioPolicyNotes.push('Relaxed retry temporarily ignores rejected-option signature blocks to avoid no-option dead ends.');
+      }
       scenarioPolicyNotes.push(
         selectedContiguityPreference === 'high'
           ? 'Contiguity preference: high (favor clustered, same-floor picks).'
