@@ -1328,3 +1328,15 @@ Latest completed work (demo maintenance legend + marker size reduction)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (demo maintenance panel sizing + legend simplification)
+- Updated Demo Maintenance Tracker popout sizing for better issue-card visibility:
+  - moved panel slightly higher and increased usable vertical length (`top: 88`, `maxHeight: calc(100vh - 96px)`).
+  - expanded filtered-issue list viewport height (`maxHeight: clamp(260px, 48vh, 620px)`) so selected issues show more fully.
+- Simplified `Priority Legend` presentation:
+  - removed separate `Marker` and `Building` columns.
+  - now shows one priority color key per level with note that markers/buildings use the same priority color scale.
+- Aligned maintenance building priority colors with the same priority palette used by maintenance issue markers.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

@@ -8837,14 +8837,10 @@ const maintenancePriorityColor = (priority) => {
 };
 const maintenanceBuildingPriorityColorForRank = (rank) => {
   const numericRank = Number(rank || 0);
-  if (numericRank >= 4) return '#ef4444';
-  if (numericRank >= 3) return '#f97316';
-  if (numericRank >= 2) return '#facc15';
-  return '#86efac';
-};
-const maintenanceBuildingPriorityColor = (priority) => {
-  const priorityRank = MAINTENANCE_PRIORITY_ORDER[normalizeMaintenancePriority(priority)] || 0;
-  return maintenanceBuildingPriorityColorForRank(priorityRank);
+  if (numericRank >= 4) return maintenancePriorityColor('critical');
+  if (numericRank >= 3) return maintenancePriorityColor('high');
+  if (numericRank >= 2) return maintenancePriorityColor('medium');
+  return maintenancePriorityColor('low');
 };
 const maintenanceStatusLabel = (status) => {
   const key = normalizeMaintenanceStatus(status);
@@ -25548,9 +25544,9 @@ useEffect(() => {
               style={{
                 position: 'fixed',
                 right: 20,
-                top: 96,
+                top: 88,
                 width: 360,
-                maxHeight: 'calc(100vh - 120px)',
+                maxHeight: 'calc(100vh - 96px)',
                 overflowY: 'auto',
                 zIndex: 1200,
                 marginTop: 0,
@@ -25618,44 +25614,34 @@ useEffect(() => {
                 <div style={{ fontSize: 11, color: '#334155', fontWeight: 700, marginBottom: 5 }}>
                   Priority Legend
                 </div>
+                <div style={{ fontSize: 10.2, color: '#667085', marginBottom: 4 }}>
+                  Same colors are used for issue markers and building highlights.
+                </div>
                 {['critical', 'high', 'medium', 'low'].map((priorityKey) => (
                   <div
                     key={`maintenance-legend-${priorityKey}`}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr auto auto',
-                      gap: 10,
+                      display: 'flex',
+                      justifyContent: 'space-between',
                       alignItems: 'center',
                       fontSize: 10.5,
-                      color: '#475467',
+                      color: '#1f2937',
                       marginTop: 2
                     }}
                   >
-                    <span style={{ fontWeight: 600, color: '#1f2937' }}>{maintenancePriorityLabel(priorityKey)}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                    <span style={{ fontWeight: 600 }}>{maintenancePriorityLabel(priorityKey)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                       <span
                         style={{
-                          width: 8,
-                          height: 8,
+                          width: 9,
+                          height: 9,
                           borderRadius: '50%',
                           background: maintenancePriorityColor(priorityKey),
                           border: '0.75px solid #ffffff',
                           boxShadow: `0 0 0 0.75px rgba(15,23,42,0.85), 0 0 3px ${convertHexWithAlpha(maintenancePriorityColor(priorityKey), 0.42)}`
                         }}
                       />
-                      Marker
-                    </span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-                      <span
-                        style={{
-                          width: 11,
-                          height: 8,
-                          borderRadius: 2,
-                          background: maintenanceBuildingPriorityColor(priorityKey),
-                          border: '1px solid rgba(15,23,42,0.2)'
-                        }}
-                      />
-                      Building
+                      Priority color
                     </span>
                   </div>
                 ))}
@@ -25728,7 +25714,7 @@ useEffect(() => {
                   border: '1px solid #dde5f0',
                   borderRadius: 6,
                   background: '#fff',
-                  maxHeight: 220,
+                  maxHeight: 'clamp(260px, 48vh, 620px)',
                   overflowY: 'auto',
                   padding: 6,
                   display: 'grid',
