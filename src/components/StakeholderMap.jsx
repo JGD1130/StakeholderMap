@@ -25544,9 +25544,9 @@ useEffect(() => {
               style={{
                 position: 'fixed',
                 right: 20,
-                top: 88,
-                width: 360,
-                maxHeight: 'calc(100vh - 96px)',
+                top: 72,
+                width: 400,
+                maxHeight: 'calc(100vh - 80px)',
                 overflowY: 'auto',
                 zIndex: 1200,
                 marginTop: 0,
@@ -25614,9 +25614,6 @@ useEffect(() => {
                 <div style={{ fontSize: 11, color: '#334155', fontWeight: 700, marginBottom: 5 }}>
                   Priority Legend
                 </div>
-                <div style={{ fontSize: 10.2, color: '#667085', marginBottom: 4 }}>
-                  Same colors are used for issue markers and building highlights.
-                </div>
                 {['critical', 'high', 'medium', 'low'].map((priorityKey) => (
                   <div
                     key={`maintenance-legend-${priorityKey}`}
@@ -25641,7 +25638,6 @@ useEffect(() => {
                           boxShadow: `0 0 0 0.75px rgba(15,23,42,0.85), 0 0 3px ${convertHexWithAlpha(maintenancePriorityColor(priorityKey), 0.42)}`
                         }}
                       />
-                      Priority color
                     </span>
                   </div>
                 ))}
@@ -25714,7 +25710,8 @@ useEffect(() => {
                   border: '1px solid #dde5f0',
                   borderRadius: 6,
                   background: '#fff',
-                  maxHeight: 'clamp(260px, 48vh, 620px)',
+                  minHeight: 280,
+                  maxHeight: 'clamp(320px, 58vh, 780px)',
                   overflowY: 'auto',
                   padding: 6,
                   display: 'grid',

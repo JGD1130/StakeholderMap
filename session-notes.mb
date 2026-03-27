@@ -1340,3 +1340,12 @@ Latest completed work (demo maintenance panel sizing + legend simplification)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Latest completed work (demo maintenance panel expansion follow-up)
+- Removed `Priority color` wording from legend rows in Demo Maintenance Tracker.
+- Expanded the Maintenance Tracker popout footprint for demo readability:
+  - increased panel size (`top: 72`, `width: 400`, `maxHeight: calc(100vh - 80px)`).
+  - expanded issue-list viewport (`minHeight: 280`, `maxHeight: clamp(320px, 58vh, 780px)`) to keep selected issue cards visible.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).
