@@ -1316,3 +1316,15 @@ Demo maintenance mode update completed (public demo + right popout)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed.
+
+Latest completed work (demo maintenance legend + marker size reduction)
+- Confirmed public demo maintenance flow remains intact:
+  - `Maintenance` map view in `/hastings` keeps the right-side popout tracker behavior.
+- Added `Priority Legend` block to the Maintenance Tracker panel:
+  - Shows color mapping for both issue markers and building polygons by priority (`Critical`, `High`, `Medium`, `Low`).
+  - Added default building swatch note for "No open issues".
+- Reduced maintenance issue marker size by 50% on map/floorplan while preserving priority color/ring visibility.
+- Refactored maintenance building recolor mapping to use shared priority-color helper so map recolor and legend stay consistent.
+- Validation:
+  - `npm.cmd run build` passed.
+  - `npm.cmd run smoke` passed (`24/24 checks`).

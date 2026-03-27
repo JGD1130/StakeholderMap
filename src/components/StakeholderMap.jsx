@@ -8835,6 +8835,17 @@ const maintenancePriorityColor = (priority) => {
       return '#22c55e';
   }
 };
+const maintenanceBuildingPriorityColorForRank = (rank) => {
+  const numericRank = Number(rank || 0);
+  if (numericRank >= 4) return '#ef4444';
+  if (numericRank >= 3) return '#f97316';
+  if (numericRank >= 2) return '#facc15';
+  return '#86efac';
+};
+const maintenanceBuildingPriorityColor = (priority) => {
+  const priorityRank = MAINTENANCE_PRIORITY_ORDER[normalizeMaintenancePriority(priority)] || 0;
+  return maintenanceBuildingPriorityColorForRank(priorityRank);
+};
 const maintenanceStatusLabel = (status) => {
   const key = normalizeMaintenanceStatus(status);
   if (key === 'in_progress') return 'In Progress';
@@ -9639,6 +9650,7 @@ const StakeholderMap = ({
   const [maintenanceShowIssueMarkers, setMaintenanceShowIssueMarkers] = useState(true);
   const [maintenanceShowArchived, setMaintenanceShowArchived] = useState(false);
   const [maintenanceSelectedIssueId, setMaintenanceSelectedIssueId] = useState('');
+  const [maintenanceFiltersFocused, setMaintenanceFiltersFocused] = useState(false);
   const [maintenanceStatusSavingId, setMaintenanceStatusSavingId] = useState('');
   const [maintenanceDeletePendingId, setMaintenanceDeletePendingId] = useState('');
   const [maintenanceContext, setMaintenanceContext] = useState(null);
@@ -21273,6 +21285,14 @@ const openMaintenanceIssueEditor = useCallback((issue = null) => {
   setMaintenanceIssueModalOpen(true);
 }, [resolveBuildingNameFromInput]);
 
+const resetMaintenanceIssueFocus = useCallback((message = 'Showing all issues across campus.') => {
+  setMaintenanceBuildingFilter('__all__');
+  setMaintenanceRoomSearch('');
+  setMaintenanceSelectedIssueId('');
+  setMaintenanceFiltersFocused(false);
+  if (message) setMaintenanceMessage(message);
+}, []);
+
 const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
   if (!mapRef.current || !lngLat) return;
   try {
@@ -21329,6 +21349,7 @@ const showMaintenanceActionPopup = useCallback((lngLat, context = null) => {
       setMaintenanceRoomSearch('');
     }
     setMaintenanceSelectedIssueId('');
+    setMaintenanceFiltersFocused(Boolean(buildingKey || context?.roomName || context?.roomId));
     setMaintenanceMessage('Issue filters focused to selected location.');
     popup.remove();
   });
@@ -22169,11 +22190,12 @@ useEffect(() => {
         const priorityKey = normalizeMaintenancePriority(m.priority);
         const isCritical = priorityKey === 'critical';
         const isHigh = priorityKey === 'high';
-        const markerSize = isCritical ? 18 : (isHigh ? 17 : 15);
+        const markerSizeBase = isCritical ? 18 : (isHigh ? 17 : 15);
+        const markerSize = markerSizeBase * 0.5;
         el.style.width = `${markerSize}px`;
         el.style.height = `${markerSize}px`;
-        el.style.border = '2px solid #ffffff';
-        el.style.boxShadow = `0 0 0 1.5px rgba(15,23,42,0.9), 0 0 9px ${convertHexWithAlpha(markerColor, 0.5)}`;
+        el.style.border = '0.75px solid #ffffff';
+        el.style.boxShadow = `0 0 0 0.75px rgba(15,23,42,0.85), 0 0 3px ${convertHexWithAlpha(markerColor, 0.42)}`;
         el.style.opacity = isCritical ? '1' : '0.95';
         if (normalizeMaintenanceStatus(m.status) === 'complete') {
           el.style.opacity = '0.45';
@@ -22234,10 +22256,7 @@ useEffect(() => {
     let hasEntries = false;
     maintenanceOpenByBuilding.forEach((value, rawKey) => {
       const rank = Number(value?.priorityRank || 0);
-      let color = '#86efac';
-      if (rank >= 4) color = '#ef4444';
-      else if (rank >= 3) color = '#f97316';
-      else if (rank >= 2) color = '#facc15';
+      const color = maintenanceBuildingPriorityColorForRank(rank);
       const candidateIds = new Set([
         ...getMaintenanceBuildingIdCandidates(value?.buildingId || rawKey, value?.buildingName || ''),
         ...getMaintenanceBuildingIdCandidates(rawKey, '')
@@ -25586,6 +25605,67 @@ useEffect(() => {
               </label>
               <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
                 Marker state: <b style={{ color: maintenanceShowIssueMarkers ? '#166534' : '#9a3412' }}>{maintenanceShowIssueMarkers ? 'ON' : 'OFF'}</b>
+              </div>
+              <div
+                style={{
+                  marginTop: 6,
+                  border: '1px solid #dde5f0',
+                  borderRadius: 6,
+                  background: '#ffffff',
+                  padding: '6px 7px'
+                }}
+              >
+                <div style={{ fontSize: 11, color: '#334155', fontWeight: 700, marginBottom: 5 }}>
+                  Priority Legend
+                </div>
+                {['critical', 'high', 'medium', 'low'].map((priorityKey) => (
+                  <div
+                    key={`maintenance-legend-${priorityKey}`}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto auto',
+                      gap: 10,
+                      alignItems: 'center',
+                      fontSize: 10.5,
+                      color: '#475467',
+                      marginTop: 2
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, color: '#1f2937' }}>{maintenancePriorityLabel(priorityKey)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          background: maintenancePriorityColor(priorityKey),
+                          border: '0.75px solid #ffffff',
+                          boxShadow: `0 0 0 0.75px rgba(15,23,42,0.85), 0 0 3px ${convertHexWithAlpha(maintenancePriorityColor(priorityKey), 0.42)}`
+                        }}
+                      />
+                      Marker
+                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                      <span
+                        style={{
+                          width: 11,
+                          height: 8,
+                          borderRadius: 2,
+                          background: maintenanceBuildingPriorityColor(priorityKey),
+                          border: '1px solid rgba(15,23,42,0.2)'
+                        }}
+                      />
+                      Building
+                    </span>
+                  </div>
+                ))}
+                <div style={{ marginTop: 4, fontSize: 10.3, color: '#667085', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>No open issues</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 11, height: 8, borderRadius: 2, background: '#e5e7eb', border: '1px solid rgba(15,23,42,0.15)' }} />
+                    Building default
+                  </span>
+                </div>
               </div>
               <label style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#334155' }}>
                 <input
