@@ -14526,6 +14526,10 @@ const StakeholderMap = ({
     const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
     return buildAdminCombinedPrefsStorageKey(universityId, userKey);
   }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
+  const roomEditCanWrite = useMemo(
+    () => Boolean(isAdminUser && (showFullMapfluenceControls || isDemoPublicMode)),
+    [isAdminUser, showFullMapfluenceControls, isDemoPublicMode]
+  );
 
   // Marker filters (admin)
   const [showStudentMarkers, setShowStudentMarkers] = useState(false);
@@ -18609,10 +18613,6 @@ const maintenanceCanWrite = useMemo(() => {
   const campusKey = canon(universityId);
   return Boolean(isAdminUser || campusKey === 'hastings' || campusKey === 'hastings-demo');
 }, [isAdminUser, universityId]);
-const roomEditCanWrite = useMemo(
-  () => Boolean(isAdminUser && (showFullMapfluenceControls || isDemoPublicMode)),
-  [isAdminUser, showFullMapfluenceControls, isDemoPublicMode]
-);
 const maintenanceIssueTypeOptions = useMemo(() => {
   const dynamic = new Set(MAINTENANCE_ISSUE_TYPES);
   (maintenanceIssues || []).forEach((issue) => {
