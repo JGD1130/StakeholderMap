@@ -10480,14 +10480,14 @@ const StakeholderMap = ({
     setAiCreateScenarioLoading(false);
     setAiCreateScenarioResult(null);
     setAiCreateScenarioErr('');
-    if (!roomEditCanWrite && (roomEditOpen || roomEditData || roomEditSelection.length)) {
+    if (!isDemoPublicMode && (roomEditOpen || roomEditData || roomEditSelection.length)) {
       setRoomEditOpen(false);
       setRoomEditData(null);
       clearRoomEditSelection();
     }
   }, [
     showFullMapfluenceControls,
-    roomEditCanWrite,
+    isDemoPublicMode,
     roomEditOpen,
     roomEditData,
     roomEditSelection.length,
