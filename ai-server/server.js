@@ -3855,6 +3855,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   const strictFit = Number(constraints?.targetSfTolerance || 0.1) <= 0.05;
   const forceOneBuildingIfFeasible = constraints?.forceOneBuildingIfFeasible !== false;
   const tolerance = Math.max(0.03, Math.min(0.25, Number(constraints?.targetSfTolerance || 0.1) || 0.1));
+  const practicalFloorFirstOnStrictMiss = Boolean(constraints?.practicalFloorFirstOnStrictMiss);
+  const practicalNearRangeTolerance = Math.max(
+    tolerance,
+    Math.min(0.2, Number(constraints?.practicalNearRangeTolerance || 0.12) || 0.12)
+  );
   const singleBuildingBoost = Math.max(1, Number(copilotPreferences?.singleBuildingBoost || 1) || 1);
   const baselineTotalSf = Number(constraints?.baselineTotals?.totalSF || 0) || 0;
   const targetSf = baselineTotalSf > 0
@@ -3862,6 +3867,8 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     : Math.max(1200, (inventory || []).slice(0, 12).reduce((sum, row) => sum + (Number(row?.sf || 0) || 0), 0));
   const minSf = Math.max(0, targetSf * (1 - tolerance));
   const maxSf = targetSf * (1 + tolerance);
+  const practicalMinSf = Math.max(0, targetSf * (1 - practicalNearRangeTolerance));
+  const practicalMaxSf = targetSf * (1 + practicalNearRangeTolerance);
   const typeTargets = buildCopilotTypeTargetMap(constraints);
   const allowShopTargeting = shouldAllowShopByIntent(requestText, scenarioDeptText);
   const allowAthleticsTargeting = shouldAllowAthleticsByIntent(requestText, scenarioDeptText);
@@ -5093,12 +5100,19 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       const maxFloorSf = Math.max(...Array.from(floorSfMap.values()));
       return maxFloorSf / total;
     };
+    const isPracticalNearRangeOption = (option) => {
+      if (!strictFit || !practicalFloorFirstOnStrictMiss) return false;
+      const total = optionTotalSf(option);
+      if (!Number.isFinite(total) || total <= 0) return false;
+      return total >= practicalMinSf && total <= practicalMaxSf;
+    };
     const isStrictFallbackAcceptable = (option) => {
       if (!strictFit) return true;
       const total = optionTotalSf(option);
       if (!Number.isFinite(total) || total <= 0) return false;
       if (!Number.isFinite(minSf) || minSf <= 0) return true;
       if (total >= minSf) return true;
+      if (isPracticalNearRangeOption(option)) return true;
       return (total / minSf) >= MIN_STRICT_FALLBACK_COVERAGE_RATIO;
     };
     const formatSf = (value) => `${Math.round(Number(value || 0) || 0).toLocaleString()} SF`;
@@ -5117,6 +5131,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     };
     const rankStrictFallbackOptions = (options = []) => (
       [...options].sort((a, b) => {
+        const practicalA = isPracticalNearRangeOption(a);
+        const practicalB = isPracticalNearRangeOption(b);
+        if (practicalA !== practicalB) {
+          return (practicalB ? 1 : 0) - (practicalA ? 1 : 0);
+        }
         const gapA = optionSfGapPct(a);
         const gapB = optionSfGapPct(b);
         const aGapFinite = Number.isFinite(gapA);
@@ -5367,8 +5386,19 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       const topFallback = rankedFallbacks[0] || null;
       const topGap = optionSfGapPct(topFallback);
       const topFloorShare = optionFloorConcentration(topFallback);
+      const topPracticalNearRange = isPracticalNearRangeOption(topFallback);
+      if (practicalFloorFirstOnStrictMiss) {
+        relaxNotes.push(
+          `Practical floor-first recovery enabled: when strict +/-${Math.round(tolerance * 100)}% is unavailable, near-range floor options up to +/-${Math.round(practicalNearRangeTolerance * 100)}% are preferred before emergency fallback.`
+        );
+      }
       if (Number.isFinite(topGap)) {
         relaxNotes.push(`Best fallback SF gap after relax passes: ${topGap.toFixed(1)}%.`);
+      }
+      if (topPracticalNearRange && Number.isFinite(topGap) && topGap > (tolerance * 100)) {
+        relaxNotes.push(
+          `Top fallback is outside strict +/-${Math.round(tolerance * 100)}% but inside practical near-range +/-${Math.round(practicalNearRangeTolerance * 100)}%.`
+        );
       }
       if (topFloorShare >= 0.7) {
         relaxNotes.push(
@@ -5385,6 +5415,9 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           option?.selectionCriteria || [],
           [
             "One or more closest-fit fallback passes were used because strict in-range options were unavailable.",
+            ...(practicalFloorFirstOnStrictMiss
+              ? [`Practical floor-first policy allows near-range recovery up to +/-${Math.round(practicalNearRangeTolerance * 100)}% before emergency fallback.`]
+              : []),
             "Returned option may be materially under target SF; treat as phased/partial relocation seed for planner refinement."
           ]
         )

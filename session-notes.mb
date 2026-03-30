@@ -13,6 +13,13 @@ Current Hastings map architecture target
 - Public stakeholder engagement: `/:universityId/engagement`.
 - Public technical assessment: `/:universityId/technical`.
 
+Latest completed work (2026-03-30 planner copilot practical floor-first recovery)
+- Added practical floor-first recovery controls to strict copilot runs.
+- Client now passes `practicalFloorFirstOnStrictMiss=true` and `practicalNearRangeTolerance=0.12` for strict copilot requests.
+- Server strict-fallback ranking now prefers near-range options inside the practical band (+/-12%) before emergency nearest-fit fallback when strict +/-5% options are unavailable.
+- Added explicit assumption/criteria notes in output so this fallback behavior is transparent to planners.
+- Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
+
 Latest completed work (2026-03-30 planner copilot hardening)
 - Hardened `Create planning scenario` copilot flow to avoid strict-fit dead-end failures.
 - Removed strict one-building hard-stop throw so one-building strict runs can still return closest options.

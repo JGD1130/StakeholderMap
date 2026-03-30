@@ -16927,6 +16927,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         offlineBuildings: offlineBuildingLabels,
         crossBuildingExceptionTypes: ['Classroom', 'Specialized space (shop, auditorium, performance, clinic; excludes athletics/gym/arena)']
       };
+      if (isCopilotPlanner && effectiveStrict) {
+        scenarioConstraints.practicalFloorFirstOnStrictMiss = true;
+        scenarioConstraints.practicalNearRangeTolerance = 0.12;
+        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict ±5% fails, near-range floor options up to ±12% are preferred before emergency fallback.');
+      }
       const maxBuildingsParsed = effectiveMaxBuildings === 'auto'
         ? null
         : Math.max(1, Math.round(Number(effectiveMaxBuildings) || 0));
