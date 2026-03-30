@@ -21,6 +21,14 @@ Latest completed work (2026-03-30 planner copilot hardening)
 - Relaxed retry now disables academic-fit low-fit pruning so fallback runs actually broaden inventory.
 - Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
 
+Latest completed work (2026-03-30 planner copilot floor-first strict tuning)
+- Tightened strict fallback guardrail so weak underfilled options are less likely to win (`~80%` minimum strict fallback coverage before emergency fallback).
+- Changed strict fallback selection to evaluate and rank multiple relax passes together instead of accepting the first weak nearest-fit option.
+- Added contiguous floor-block fallback pass to better target “entire floor or near-floor” outcomes when strict in-range options are unavailable.
+- Fixed relax-pass room sourcing so support/public relax passes can actually expand candidate inventory (previously still constrained by earlier filtering).
+- Added fallback ranking preference for floor concentration and logged best fallback SF-gap notes for transparency.
+- Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
+
 Latest completed work
 - Removed `/:universityId/admin/technical` route.
 - Kept technical routes in public shell and restored technical assessment loading there.

@@ -3928,7 +3928,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     .filter((room) => allowPublicPerformanceTargeting || !isCopilotPublicPerformanceType(room?.type || ""));
 
   const buildingSuitabilityByKey = new Map();
-  normalizedRooms.forEach((room) => {
+  normalizedAssignableRooms.forEach((room) => {
     if (!room?.buildingKey) return;
     if (buildingSuitabilityByKey.has(room.buildingKey)) return;
     buildingSuitabilityByKey.set(room.buildingKey, resolveBuildingSuitabilityProfile(room?.buildingLabel || ""));
@@ -3947,6 +3947,11 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   });
   const filteredSf = filteredRooms.reduce((sum, room) => sum + (Number(room?.sf || 0) || 0), 0);
   const fallbackPool = normalizedRooms.filter((room) => {
+    if (offlineSet.has(room.buildingKey)) return false;
+    if (preferAcademicFit && hardAcademicAvoidSet.has(room.buildingKey)) return false;
+    return true;
+  });
+  const fallbackRelaxedRooms = normalizedAssignableRooms.filter((room) => {
     if (offlineSet.has(room.buildingKey)) return false;
     if (preferAcademicFit && hardAcademicAvoidSet.has(room.buildingKey)) return false;
     return true;
@@ -4968,8 +4973,31 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     : strictInRangeOptions;
   let optionsForShortlist = strictFit ? effectiveStrictOptions : generatedOptions;
   if (strictFit && !effectiveStrictOptions.length) {
-    const MIN_STRICT_FALLBACK_COVERAGE_RATIO = 0.55;
+    const MIN_STRICT_FALLBACK_COVERAGE_RATIO = 0.8;
+    const STRONG_EXISTING_SF_GAP_PCT = 18;
     const optionTotalSf = (option) => Number(option?.scenarioTotals?.totalSF || option?.fitSummary?.totalSf || 0) || 0;
+    const optionSfGapPct = (option) => Number(
+      option?.fitSummary?.sfGapPct ??
+      option?.scoreBreakdown?.sfGapPct ??
+      Number.POSITIVE_INFINITY
+    );
+    const optionFloorConcentration = (option) => {
+      const rows = Array.isArray(option?.recommendedCandidates) ? option.recommendedCandidates : [];
+      if (!rows.length) return 0;
+      const floorSfMap = new Map();
+      let total = 0;
+      rows.forEach((row) => {
+        const sf = Number(row?.sf || 0) || 0;
+        if (sf <= 0) return;
+        const floorKey = normalizeLoose(`${row?.buildingLabel || ""}::${row?.floorId || row?.floorName || ""}`);
+        if (!floorKey) return;
+        floorSfMap.set(floorKey, (floorSfMap.get(floorKey) || 0) + sf);
+        total += sf;
+      });
+      if (!Number.isFinite(total) || total <= 0 || !floorSfMap.size) return 0;
+      const maxFloorSf = Math.max(...Array.from(floorSfMap.values()));
+      return maxFloorSf / total;
+    };
     const isStrictFallbackAcceptable = (option) => {
       if (!strictFit) return true;
       const total = optionTotalSf(option);
@@ -4979,6 +5007,45 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       return (total / minSf) >= MIN_STRICT_FALLBACK_COVERAGE_RATIO;
     };
     const formatSf = (value) => `${Math.round(Number(value || 0) || 0).toLocaleString()} SF`;
+    const buildFallbackSignature = (option) => {
+      const ids = (Array.isArray(option?.recommendedCandidates) ? option.recommendedCandidates : [])
+        .map((row) => String(row?.roomId || row?.id || row?.revitId || "").trim())
+        .filter(Boolean)
+        .sort();
+      if (ids.length) return ids.join("|");
+      const buildings = (Array.isArray(option?.buildings) ? option.buildings : [])
+        .map((row) => normalizeLoose(row))
+        .filter(Boolean)
+        .sort()
+        .join("|");
+      return `${buildings}::${Math.round(optionTotalSf(option))}`;
+    };
+    const rankStrictFallbackOptions = (options = []) => (
+      [...options].sort((a, b) => {
+        const gapA = optionSfGapPct(a);
+        const gapB = optionSfGapPct(b);
+        const aGapFinite = Number.isFinite(gapA);
+        const bGapFinite = Number.isFinite(gapB);
+        if (aGapFinite !== bGapFinite) return aGapFinite ? -1 : 1;
+        if (aGapFinite && bGapFinite && Math.abs(gapA - gapB) > 0.0001) {
+          return gapA - gapB;
+        }
+        const totalA = optionTotalSf(a);
+        const totalB = optionTotalSf(b);
+        const aBelowBand = Number.isFinite(minSf) && minSf > 0 && totalA < minSf ? 1 : 0;
+        const bBelowBand = Number.isFinite(minSf) && minSf > 0 && totalB < minSf ? 1 : 0;
+        if (aBelowBand !== bBelowBand) return aBelowBand - bBelowBand;
+        const floorConcA = optionFloorConcentration(a);
+        const floorConcB = optionFloorConcentration(b);
+        if (Math.abs(floorConcA - floorConcB) > 0.0001) return floorConcB - floorConcA;
+        const buildingsA = Number(a?.buildingCount || a?.scoreBreakdown?.buildingCount || 0) || 0;
+        const buildingsB = Number(b?.buildingCount || b?.scoreBreakdown?.buildingCount || 0) || 0;
+        if (preferSingleBuilding && buildingsA !== buildingsB) return buildingsA - buildingsB;
+        const scoreA = Number(a?.score || 0) || 0;
+        const scoreB = Number(b?.score || 0) || 0;
+        return scoreB - scoreA;
+      })
+    );
     let fallbackPool = sortOptionsByClosestFit(generatedOptions);
     if (preferSingleBuilding && fallbackPool.length) {
       const singleBuildingOnly = fallbackPool.filter((option) => {
@@ -4994,18 +5061,72 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       fallbackPool?.[0]?.scoreBreakdown?.sfGapPct ??
       Number.POSITIVE_INFINITY
     );
-    // Do not settle on very weak nearest-fit options; continue to stronger auto-relax passes.
-    if (Number.isFinite(bestExistingSfGap) && bestExistingSfGap > 45) {
-      fallbackPool = [];
-    }
     fallbackPool = fallbackPool.filter((option) => isStrictFallbackAcceptable(option));
+    const shouldEscalateBeyondExisting = (
+      !fallbackPool.length ||
+      !Number.isFinite(bestExistingSfGap) ||
+      bestExistingSfGap > STRONG_EXISTING_SF_GAP_PCT
+    );
     const relaxNotes = [];
+    const fallbackCandidates = [];
+    const fallbackSignatures = new Set();
+    const addFallbackCandidate = (
+      option,
+      successNote = "",
+      {
+        allowLowCoverage = false,
+        coverageLabel = "closest-fit fallback"
+      } = {}
+    ) => {
+      if (!option) return false;
+      const totalSf = optionTotalSf(option);
+      if (!Number.isFinite(totalSf) || totalSf <= 0) return false;
+      const accepted = allowLowCoverage || isStrictFallbackAcceptable(option);
+      if (!accepted) {
+        relaxNotes.push(`${coverageLabel} skipped: closest-fit coverage too low (${formatSf(totalSf)}).`);
+        return false;
+      }
+      const signature = buildFallbackSignature(option);
+      if (fallbackSignatures.has(signature)) return false;
+      fallbackSignatures.add(signature);
+      fallbackCandidates.push(option);
+      if (successNote) relaxNotes.push(successNote);
+      return true;
+    };
     if (fallbackPool.length) {
-      relaxNotes.push("No in-range strict option found; returning closest-fit option under current hard controls.");
+      fallbackPool.forEach((option) => addFallbackCandidate(option));
+      relaxNotes.push("No in-range strict option found; evaluating closest-fit fallbacks under current hard controls.");
     }
-    if (!fallbackPool.length && preferSingleBuilding && preferredBuildingRooms.length) {
+    const preferredBlockRelaxedRooms = preferredBlock?.buildingKey
+      ? fallbackRelaxedRooms.filter((room) => {
+          const bKey = normalizeLoose(room?.buildingKey || "");
+          const fKey = normalizeLoose(room?.floorId || room?.floorName || "");
+          return bKey === normalizeLoose(preferredBlock.buildingKey) && fKey === normalizeLoose(preferredBlock.floorKey || "");
+        })
+      : [];
+    if (shouldEscalateBeyondExisting && preferSingleBuilding && preferredBlockRelaxedRooms.length) {
+      const fallbackBlock = buildClosestFallbackOption({
+        label: "auto-relax 0: contiguous floor-block closest-fit",
+        maxBuildingCountOverride: 1,
+        allowSupportFallbackOverride: true,
+        allowPublicPerformanceFallbackOverride: true,
+        preferSingleBuildingOverride: true,
+        roomSource: preferredBlockRelaxedRooms,
+        typeTargetsOverride: new Map(),
+        seedOffset: 20300003,
+        extraAssumptions: [
+          "Contiguous full-floor block fallback was attempted first to preserve floor-level coherence."
+        ]
+      });
+      addFallbackCandidate(
+        fallbackBlock,
+        "Auto-relax 0 applied: contiguous floor-block fallback considered for near full-floor fit.",
+        { coverageLabel: "Auto-relax 0" }
+      );
+    }
+    if (shouldEscalateBeyondExisting && preferSingleBuilding && preferredBuildingRooms.length) {
       const fallbackSingle = buildClosestFallbackOption({
-        label: "auto-relax 0: one-building closest-fit from preferred block building",
+        label: "auto-relax 0b: one-building closest-fit from preferred block building",
         maxBuildingCountOverride: 1,
         allowSupportFallbackOverride: false,
         allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
@@ -5017,14 +5138,13 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
           "Single-building floor-block fallback was attempted before multi-building relaxation."
         ]
       });
-      if (fallbackSingle && isStrictFallbackAcceptable(fallbackSingle)) {
-        fallbackPool = [fallbackSingle];
-        relaxNotes.push("Auto-relax 0 applied: closest-fit one-building fallback from the preferred floor-block building.");
-      } else if (fallbackSingle) {
-        relaxNotes.push(`Auto-relax 0 skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackSingle))}).`);
-      }
+      addFallbackCandidate(
+        fallbackSingle,
+        "Auto-relax 0b applied: closest-fit one-building fallback from the preferred floor-block building.",
+        { coverageLabel: "Auto-relax 0b" }
+      );
     }
-    if (!fallbackPool.length) {
+    if (shouldEscalateBeyondExisting) {
       const fallbackA = buildClosestFallbackOption({
         label: "auto-relax A: closest-fit under current hard controls",
         maxBuildingCountOverride: maxPreferredBuildingCount,
@@ -5034,14 +5154,13 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         typeTargetsOverride: new Map(),
         seedOffset: 21000011
       });
-      if (fallbackA && isStrictFallbackAcceptable(fallbackA)) {
-        fallbackPool = [fallbackA];
-        relaxNotes.push("Auto-relax A applied: strict range disabled; kept current hard controls.");
-      } else if (fallbackA) {
-        relaxNotes.push(`Auto-relax A skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackA))}).`);
-      }
+      addFallbackCandidate(
+        fallbackA,
+        "Auto-relax A applied: strict range disabled; kept current hard controls.",
+        { coverageLabel: "Auto-relax A" }
+      );
     }
-    if (!fallbackPool.length && hardMaxBuildings != null) {
+    if (shouldEscalateBeyondExisting && hardMaxBuildings != null) {
       const fallbackB = buildClosestFallbackOption({
         label: `auto-relax B: closest-fit with building cap ${hardMaxBuildings + 1}`,
         maxBuildingCountOverride: hardMaxBuildings + 1,
@@ -5051,55 +5170,55 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         seedOffset: 22000021,
         extraAssumptions: [`Building cap relaxed by +1 (${hardMaxBuildings} -> ${hardMaxBuildings + 1}).`]
       });
-      if (fallbackB && isStrictFallbackAcceptable(fallbackB)) {
-        fallbackPool = [fallbackB];
-        relaxNotes.push(`Auto-relax B applied: building cap temporarily relaxed to ${hardMaxBuildings + 1}.`);
-      } else if (fallbackB) {
-        relaxNotes.push(`Auto-relax B skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackB))}).`);
-      }
+      addFallbackCandidate(
+        fallbackB,
+        `Auto-relax B applied: building cap temporarily relaxed to ${hardMaxBuildings + 1}.`,
+        { coverageLabel: "Auto-relax B" }
+      );
     }
-    if (!fallbackPool.length && disallowSupportStorage) {
+    if (shouldEscalateBeyondExisting && disallowSupportStorage) {
       const fallbackC = buildClosestFallbackOption({
         label: "auto-relax C: closest-fit with limited support fallback",
         maxBuildingCountOverride: hardMaxBuildings != null ? (hardMaxBuildings + 1) : maxPreferredBuildingCount,
         allowSupportFallbackOverride: true,
         allowPublicPerformanceFallbackOverride: !disallowPublicPerformance && allowPublicPerformanceFallback,
         preferSingleBuildingOverride: preferSingleBuilding,
+        roomSource: fallbackRelaxedRooms,
         seedOffset: 23000031,
         extraAssumptions: ["Support/storage hard exclusion relaxed in fallback to avoid no-solution dead-end."]
       });
-      if (fallbackC && isStrictFallbackAcceptable(fallbackC)) {
-        fallbackPool = [fallbackC];
-        relaxNotes.push("Auto-relax C applied: support/storage exclusion relaxed.");
-      } else if (fallbackC) {
-        relaxNotes.push(`Auto-relax C skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackC))}).`);
-      }
+      addFallbackCandidate(
+        fallbackC,
+        "Auto-relax C applied: support/storage exclusion relaxed.",
+        { coverageLabel: "Auto-relax C" }
+      );
     }
-    if (!fallbackPool.length && disallowPublicPerformance) {
+    if (shouldEscalateBeyondExisting && disallowPublicPerformance) {
       const fallbackD = buildClosestFallbackOption({
         label: "auto-relax D: closest-fit with public performance fallback",
         maxBuildingCountOverride: hardMaxBuildings != null ? (hardMaxBuildings + 1) : maxPreferredBuildingCount,
         allowSupportFallbackOverride: disallowSupportStorage ? false : allowSupportFallbackForRepairs,
         allowPublicPerformanceFallbackOverride: true,
         preferSingleBuildingOverride: preferSingleBuilding,
+        roomSource: fallbackRelaxedRooms,
         seedOffset: 24000041,
         extraAssumptions: ["Public performance hard exclusion relaxed in fallback to avoid no-solution dead-end."]
       });
-      if (fallbackD && isStrictFallbackAcceptable(fallbackD)) {
-        fallbackPool = [fallbackD];
-        relaxNotes.push("Auto-relax D applied: public performance exclusion relaxed.");
-      } else if (fallbackD) {
-        relaxNotes.push(`Auto-relax D skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackD))}).`);
-      }
+      addFallbackCandidate(
+        fallbackD,
+        "Auto-relax D applied: public performance exclusion relaxed.",
+        { coverageLabel: "Auto-relax D" }
+      );
     }
-    if (!fallbackPool.length) {
+    if (!fallbackCandidates.length) {
       const emergencyExisting = sortOptionsByClosestFit(generatedOptions)[0] || null;
-      if (emergencyExisting && optionTotalSf(emergencyExisting) > 0) {
-        fallbackPool = [emergencyExisting];
-        relaxNotes.push("Auto-relax E applied: severe closest-fit fallback returned to avoid no-option dead-end.");
-      }
+      addFallbackCandidate(
+        emergencyExisting,
+        "Auto-relax E applied: severe closest-fit fallback returned to avoid no-option dead-end.",
+        { allowLowCoverage: true }
+      );
     }
-    if (!fallbackPool.length) {
+    if (!fallbackCandidates.length) {
       const emergencyBuilt = buildClosestFallbackOption({
         label: "auto-relax F: emergency closest-fit fallback",
         maxBuildingCountOverride: Number.isFinite(maxPreferredBuildingCount)
@@ -5108,25 +5227,42 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         allowSupportFallbackOverride: true,
         allowPublicPerformanceFallbackOverride: true,
         preferSingleBuildingOverride: hardMaxBuildings === 1,
+        roomSource: fallbackRelaxedRooms,
         typeTargetsOverride: new Map(),
         seedOffset: 25000051,
         extraAssumptions: [
           "Emergency nearest-fit fallback was used after strict and repair passes failed to produce in-range options."
         ]
       });
-      if (emergencyBuilt && optionTotalSf(emergencyBuilt) > 0) {
-        fallbackPool = [emergencyBuilt];
-        relaxNotes.push("Auto-relax F applied: emergency nearest-fit fallback with broader type/building allowances.");
-      }
+      addFallbackCandidate(
+        emergencyBuilt,
+        "Auto-relax F applied: emergency nearest-fit fallback with broader type/building allowances.",
+        { allowLowCoverage: true }
+      );
     }
-    if (fallbackPool.length) {
-      optionsForShortlist = sortOptionsByClosestFit(fallbackPool).map((option) => ({
+    if (fallbackCandidates.length) {
+      const rankedFallbacks = rankStrictFallbackOptions(fallbackCandidates);
+      const topFallback = rankedFallbacks[0] || null;
+      const topGap = optionSfGapPct(topFallback);
+      const topFloorShare = optionFloorConcentration(topFallback);
+      if (Number.isFinite(topGap)) {
+        relaxNotes.push(`Best fallback SF gap after relax passes: ${topGap.toFixed(1)}%.`);
+      }
+      if (topFloorShare >= 0.7) {
+        relaxNotes.push(
+          `Best fallback keeps ${(topFloorShare * 100).toFixed(0)}% of selected SF on a single floor block (floor-first coherence).`
+        );
+      }
+      if (Number.isFinite(topGap) && topGap > STRONG_EXISTING_SF_GAP_PCT) {
+        relaxNotes.push("No near-range fallback met strict intent; returning best available closest-fit option for planner-led refinement.");
+      }
+      optionsForShortlist = rankedFallbacks.map((option) => ({
         ...option,
         assumptions: appendUniqueLines(option?.assumptions || [], relaxNotes),
         selectionCriteria: appendUniqueLines(
           option?.selectionCriteria || [],
           [
-            "Closest-fit fallback was used because strict in-range options were unavailable.",
+            "One or more closest-fit fallback passes were used because strict in-range options were unavailable.",
             "Returned option may be materially under target SF; treat as phased/partial relocation seed for planner refinement."
           ]
         )
