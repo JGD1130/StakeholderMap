@@ -14963,7 +14963,7 @@ const StakeholderMap = ({
 
   const saveRoomEdits = useCallback(
     async (edit) => {
-      if (mode !== 'admin' || !isAdminUser) return null;
+      if (!roomEditCanWrite) return null;
       if (!edit || !universityId) return null;
 
       const { buildingId, buildingName, floorName, revitId, roomId, roomLabel, roomNumber, roomGuid, properties = {} } = edit;
@@ -15307,7 +15307,7 @@ const StakeholderMap = ({
         return null;
       }
     },
-    [db, universityId, scheduleCampusRoomsRefresh, mode, isAdminUser]
+    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite]
   );
 
   // Initialize defaults on mount: first building + LEVEL_1 (or fallback)
@@ -18609,6 +18609,10 @@ const maintenanceCanWrite = useMemo(() => {
   const campusKey = canon(universityId);
   return Boolean(isAdminUser || campusKey === 'hastings' || campusKey === 'hastings-demo');
 }, [isAdminUser, universityId]);
+const roomEditCanWrite = useMemo(
+  () => Boolean(isAdminUser && (showFullMapfluenceControls || isDemoPublicMode)),
+  [isAdminUser, showFullMapfluenceControls, isDemoPublicMode]
+);
 const maintenanceIssueTypeOptions = useMemo(() => {
   const dynamic = new Set(MAINTENANCE_ISSUE_TYPES);
   (maintenanceIssues || []).forEach((issue) => {
@@ -21004,13 +21008,13 @@ useEffect(() => {
 
   // ---------- Load data (markers/assessments/conditions) ----------
   useEffect(() => {
-    if (mode === 'admin') return;
+    if (roomEditCanWrite) return;
     if (!roomEditOpen && !roomEditData && roomEditSelection.length === 0) return;
     setRoomEditOpen(false);
     setRoomEditData(null);
     setRoomEditSelection([]);
     roomEditSelectionRef.current = [];
-  }, [mode, roomEditOpen, roomEditData, roomEditSelection.length]);
+  }, [roomEditCanWrite, roomEditOpen, roomEditData, roomEditSelection.length]);
 
   useEffect(() => {
     (async () => {
@@ -23270,10 +23274,9 @@ useEffect(() => {
         return;
       }
 
-      const isAdmin = isAdminUser;
       const floorName = pp.Floor || derivedFloorDefault;
 
-      const canEditRoom = Boolean(mode === 'admin' && isAdmin && buildingId && floorName && revitId != null && universityId);
+      const canEditRoom = Boolean(roomEditCanWrite && buildingId && floorName && revitId != null && universityId);
       const roomId = canEditRoom ? rId(buildingId, floorName, revitId) : null;
       const editTarget = canEditRoom
         ? {
@@ -23606,7 +23609,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, isAdminUser, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
