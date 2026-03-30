@@ -17365,6 +17365,20 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const fitCriteria = (preferAcademicFit && lowFitBuildingLabels.length)
         ? ['Prefer academically compatible buildings; avoid service/maintenance-heavy buildings when viable.']
         : [];
+      const selectedOptionNarrative = [
+        ...(selectedCopilotOption?.assumptions || []),
+        ...(selectedCopilotOption?.selectionCriteria || []),
+        ...(selectedCopilotOption?.whyThisOption || []),
+        ...(out?.assumptions || []),
+        ...(out?.selectionCriteria || [])
+      ].join(' ').toLowerCase();
+      const optionRelaxedSupport = /support\/storage[^.]*relax|broader type\/building allowances|relaxed-family/i.test(selectedOptionNarrative);
+      const optionRelaxedPublic = /public performance[^.]*relax|broader type\/building allowances|relaxed-family/i.test(selectedOptionNarrative);
+      const scenarioPolicyNotesEffective = scenarioPolicyNotes.filter((line) => {
+        if (optionRelaxedSupport && /support\/storage-like spaces are hard excluded/i.test(line || '')) return false;
+        if (optionRelaxedPublic && /public performance\/assembly spaces are hard excluded/i.test(line || '')) return false;
+        return true;
+      });
       const cleanedCriteria = Array.isArray(out?.selectionCriteria)
         ? out.selectionCriteria.filter((c) => !/baseline|total\s*sf|sf within/i.test(c || ''))
         : [];
@@ -17372,7 +17386,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         ...out,
         baselineTotals: baselineTotals || out?.baselineTotals,
         scenarioTotals: selectedCopilotOption?.scenarioTotals || out?.scenarioTotals,
-        selectionCriteria: [...baselineCriteria, ...fitCriteria, ...scenarioPolicyNotes, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
+        selectionCriteria: [...baselineCriteria, ...fitCriteria, ...scenarioPolicyNotesEffective, ...(autoFillNote ? [autoFillNote] : []), ...cleanedCriteria],
         recommendedCandidates: adjustedCandidates
       };
       if (out?.copilot && copilotOptionsEffective.length) {

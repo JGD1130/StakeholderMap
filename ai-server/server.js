@@ -4949,6 +4949,101 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       rationaleFallback: "Closest-fit fallback selection."
     });
   };
+  const buildFloorBlockFallbackOptions = ({
+    label = "floor-first fallback",
+    roomSource = rooms,
+    maxOptions = 3,
+    extraAssumptions = []
+  } = {}) => {
+    const source = Array.isArray(roomSource) ? roomSource.filter(Boolean) : [];
+    if (!source.length) return [];
+    const blockMap = new Map();
+    source.forEach((room) => {
+      const buildingKey = normalizeLoose(room?.buildingKey || "");
+      const floorKey = normalizeLoose(room?.floorId || room?.floorName || "");
+      if (!buildingKey || !floorKey) return;
+      const key = `${buildingKey}::${floorKey}`;
+      if (!blockMap.has(key)) {
+        blockMap.set(key, {
+          key,
+          buildingKey,
+          buildingLabel: room?.buildingLabel || "",
+          floorKey,
+          floorLabel: room?.floorName || room?.floorId || "",
+          rooms: [],
+          totalSf: 0
+        });
+      }
+      const block = blockMap.get(key);
+      block.rooms.push(room);
+      block.totalSf += Number(room?.sf || 0) || 0;
+    });
+    const blocks = Array.from(blockMap.values())
+      .filter((block) => block?.rooms?.length >= 3 && Number(block?.totalSf || 0) >= 600)
+      .sort((a, b) => Math.abs(targetSf - a.totalSf) - Math.abs(targetSf - b.totalSf))
+      .slice(0, 12);
+    if (!blocks.length) return [];
+
+    const candidates = [];
+    blocks.forEach((block) => {
+      candidates.push({
+        key: `single::${block.key}`,
+        selection: block.rooms,
+        blockCount: 1
+      });
+    });
+    for (let i = 0; i < blocks.length; i += 1) {
+      for (let j = i + 1; j < blocks.length; j += 1) {
+        if (blocks[i].buildingKey !== blocks[j].buildingKey) continue;
+        const combined = [...blocks[i].rooms, ...blocks[j].rooms];
+        candidates.push({
+          key: `pair::${blocks[i].key}::${blocks[j].key}`,
+          selection: combined,
+          blockCount: 2
+        });
+      }
+    }
+
+    const options = [];
+    const signatures = new Set();
+    candidates.forEach((candidate) => {
+      const option = buildOptionFromSelection({
+        selection: candidate.selection,
+        passLabel: `${label}${candidate.blockCount > 1 ? " (two-floor blend)" : " (single floor block)"}`,
+        extraAssumptions: appendUniqueLines([
+          "Floor-first fallback evaluated contiguous floor-block candidates before scattered room-level fallback."
+        ], extraAssumptions),
+        extraSelectionCriteria: [
+          "Contiguous floor blocks were evaluated first to prioritize whole-floor or near-whole-floor outcomes."
+        ],
+        rationaleFallback: "Selected from contiguous floor-block fallback."
+      });
+      if (!option) return;
+      const sig = (option?.recommendedCandidates || [])
+        .map((row) => String(row?.roomId || row?.id || row?.revitId || "").trim())
+        .filter(Boolean)
+        .sort()
+        .join("|");
+      if (!sig || signatures.has(sig)) return;
+      signatures.add(sig);
+      options.push(option);
+    });
+    return options
+      .sort((a, b) => {
+        const gapA = Number(a?.fitSummary?.sfGapPct ?? Number.POSITIVE_INFINITY);
+        const gapB = Number(b?.fitSummary?.sfGapPct ?? Number.POSITIVE_INFINITY);
+        if (Number.isFinite(gapA) && Number.isFinite(gapB) && Math.abs(gapA - gapB) > 0.0001) {
+          return gapA - gapB;
+        }
+        const buildingsA = Number(a?.buildingCount || 0) || 0;
+        const buildingsB = Number(b?.buildingCount || 0) || 0;
+        if (buildingsA !== buildingsB) return buildingsA - buildingsB;
+        const scoreA = Number(a?.score || 0) || 0;
+        const scoreB = Number(b?.score || 0) || 0;
+        return scoreB - scoreA;
+      })
+      .slice(0, Math.max(1, Number(maxOptions || 3)));
+  };
 
   generatedOptions.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
   const strictInRangeOptions = strictFit
@@ -5096,6 +5191,33 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     if (fallbackPool.length) {
       fallbackPool.forEach((option) => addFallbackCandidate(option));
       relaxNotes.push("No in-range strict option found; evaluating closest-fit fallbacks under current hard controls.");
+    }
+    if (shouldEscalateBeyondExisting) {
+      const floorFirstStrictOptions = buildFloorBlockFallbackOptions({
+        label: "auto-relax FB1: floor-first contiguous block",
+        roomSource: rooms,
+        maxOptions: 3
+      });
+      floorFirstStrictOptions.forEach((option) => {
+        addFallbackCandidate(option, "", { coverageLabel: "Auto-relax FB1" });
+      });
+      if (floorFirstStrictOptions.length) {
+        relaxNotes.push("Auto-relax FB1 applied: evaluated contiguous floor-block options before room-level fallback.");
+      }
+      const floorFirstRelaxedOptions = buildFloorBlockFallbackOptions({
+        label: "auto-relax FB2: floor-first relaxed-family block",
+        roomSource: fallbackRelaxedRooms,
+        maxOptions: 3,
+        extraAssumptions: [
+          "Support/public family relax pass allowed floor-first block options to recover SF fit."
+        ]
+      });
+      floorFirstRelaxedOptions.forEach((option) => {
+        addFallbackCandidate(option, "", { coverageLabel: "Auto-relax FB2" });
+      });
+      if (floorFirstRelaxedOptions.length) {
+        relaxNotes.push("Auto-relax FB2 applied: evaluated floor blocks with broader type-family allowances.");
+      }
     }
     const preferredBlockRelaxedRooms = preferredBlock?.buildingKey
       ? fallbackRelaxedRooms.filter((room) => {

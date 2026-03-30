@@ -29,6 +29,12 @@ Latest completed work (2026-03-30 planner copilot floor-first strict tuning)
 - Added fallback ranking preference for floor concentration and logged best fallback SF-gap notes for transparency.
 - Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
 
+Latest completed work (2026-03-30 planner copilot floor-first fallback stage)
+- Added an explicit floor-first fallback generator (`buildFloorBlockFallbackOptions`) that builds candidates from contiguous floor blocks (single-floor and same-building two-floor blends) before scattered room-level fallback.
+- Integrated floor-first fallback passes in strict failure handling (`Auto-relax FB1` / `Auto-relax FB2`) so strict dead-end recovery can still surface whole-floor/near-floor options.
+- Updated client-side criteria display so local hard-exclusion notes are suppressed when selected fallback output indicates relaxed family allowances were used, reducing contradictory messaging.
+- Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
+
 Latest completed work
 - Removed `/:universityId/admin/technical` route.
 - Kept technical routes in public shell and restored technical assessment loading there.
