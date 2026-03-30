@@ -15091,9 +15091,21 @@ const StakeholderMap = ({
             }
           }
 
+          const patchTypeValue = properties.type || '';
+          const patchDeptValue = properties.department || '';
           const patchPayload = {
-            type: properties.type || '',
-            department: properties.department || '',
+            type: patchTypeValue,
+            Type: patchTypeValue,
+            RoomType: patchTypeValue,
+            'Room Type': patchTypeValue,
+            'Room Type Description': patchTypeValue,
+            RoomTypeDescription: patchTypeValue,
+            roomTypeDescription: patchTypeValue,
+            __roomType: patchTypeValue,
+            department: patchDeptValue,
+            Department: patchDeptValue,
+            NCES_Department: patchDeptValue,
+            __dept: patchDeptValue,
             occupant: allowOfficeFields ? (properties.occupant || '') : (properties.occupant ?? ''),
             occupancyStatus: allowOfficeFields ? (properties.occupancyStatus || '') : (properties.occupancyStatus ?? ''),
           comments: properties.comments || ''
@@ -23150,8 +23162,12 @@ useEffect(() => {
       let displayDept = initialDept;
       let displayAreaValue = Number.isFinite(resolvedArea) ? resolvedArea : null;
       let displayOccupant = initialOccupant;
+      let displaySeatCount = null;
       const categoryCode = getRoomCategoryCode(pp);
-      const seatCount = getSeatCount(pp);
+      const initialSeatCount = getSeatCount(pp);
+      if (Number.isFinite(initialSeatCount) && initialSeatCount > 0) {
+        displaySeatCount = initialSeatCount;
+      }
       const typeFlags = detectRoomTypeFlags(pp);
     const isOffice = isOfficeCategory(categoryCode) || typeFlags.isOfficeText;
     const isTeaching = isScheduledTeachingTypeLabel(initialRoomType) || isTeachingCategory(categoryCode) || typeFlags.isTeachingText;
@@ -23276,6 +23292,7 @@ useEffect(() => {
               department: displayDept || '',
               area: Number.isFinite(displayAreaValue) ? displayAreaValue : '',
               occupant: displayOccupant || '',
+              seatCount: Number.isFinite(displaySeatCount) ? displaySeatCount : '',
               occupancyStatus: initialOccupancyStatus || '',
               comments: initialComments || '',
               roomGuid: roomGuidValue || '',
@@ -23317,11 +23334,11 @@ useEffect(() => {
           : '';
 
         // Decide what to show in the "occupancy" row
-        const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
+        const hasSeatCount = Number.isFinite(displaySeatCount) && displaySeatCount > 0;
         const occupantTrimmed = (displayOccupant ?? '').toString().trim();
         const isClassroomType = isScheduledTeachingTypeLabel(displayRoomType || '');
 
-        const seatCountValue = hasSeatCount ? seatCount.toLocaleString() : '-';
+        const seatCountValue = hasSeatCount ? displaySeatCount.toLocaleString() : '-';
         const seatCountRowHtml = isClassroomType
           ? `<div><b>Seat Count:</b> ${seatCountValue}</div>`
           : '';
@@ -23459,6 +23476,7 @@ useEffect(() => {
           type: deriveSharedValue('type'),
           department: deriveSharedValue('department'),
           occupant: deriveSharedValue('occupant'),
+          seatCount: deriveSharedValue('seatCount'),
           occupancyStatus: deriveSharedValue('occupancyStatus'),
           comments: deriveSharedValue('comments'),
           area: deriveSharedValue('area')
@@ -23478,6 +23496,10 @@ useEffect(() => {
             if ('type' in payload) displayRoomType = payload.type;
             if ('department' in payload) displayDept = payload.department;
             if ('occupant' in payload) displayOccupant = payload.occupant;
+            if ('seatCount' in payload) {
+              const nextSeatCount = Number(payload.seatCount);
+              displaySeatCount = Number.isFinite(nextSeatCount) && nextSeatCount > 0 ? nextSeatCount : null;
+            }
           }
         });
         setRoomEditIncluded(new Set(targets.map((t) => t.roomId || String(t.revitId ?? ''))));
@@ -27311,7 +27333,8 @@ useEffect(() => {
                     const popupPayloadForTarget = {
                       type: propsForTarget.type ?? fallbackProps.type ?? '',
                       department: propsForTarget.department ?? fallbackProps.department ?? '',
-                      occupant: propsForTarget.occupant ?? fallbackProps.occupant ?? ''
+                      occupant: propsForTarget.occupant ?? fallbackProps.occupant ?? '',
+                      seatCount: propsForTarget.seatCount ?? fallbackProps.seatCount ?? null
                     };
                     const hasExactPopupMatch =
                       Boolean(activePopupRoomKey) &&
@@ -27337,6 +27360,11 @@ useEffect(() => {
                           feat.properties.type = propsForTarget.type ?? feat.properties.type;
                           feat.properties.Type = feat.properties.type;
                           feat.properties.RoomType = feat.properties.type;
+                          feat.properties['Room Type'] = feat.properties.type;
+                          feat.properties['Room Type Description'] = feat.properties.type;
+                          feat.properties.RoomTypeDescription = feat.properties.type;
+                          feat.properties.roomTypeDescription = feat.properties.type;
+                          feat.properties.__roomType = feat.properties.type;
                           if (editHasOfficeType) {
                             feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
                             feat.properties.occupant = feat.properties.Occupant;
