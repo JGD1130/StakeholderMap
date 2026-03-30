@@ -16668,6 +16668,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (aiStatus === 'down') throw new Error('AI server is offline.');
       const request = (aiCreateScenarioText || '').trim();
       if (!request) throw new Error('Enter a short request for the planning scenario.');
+      const isCopilotPlanner = aiCreateScenarioMode === 'copilot';
       const effectiveStrict = forceRelaxed ? false : aiCreateScenarioStrict;
       const effectiveMaxBuildings = forceRelaxed ? 'auto' : aiCopilotMaxBuildings;
       const effectiveDisallowSupportStorage = forceRelaxed ? false : aiCopilotDisallowSupportStorage;
@@ -16689,11 +16690,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
       let inventory = [];
       if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
-        inventory = buildInventoryFromRoomRows(campusRooms, 2000) || [];
+        inventory = buildInventoryFromRoomRows(campusRooms, isCopilotPlanner ? 5000 : 2000) || [];
       } else {
         try {
           const rows = await collectSpaceRows('__all__', '');
-          inventory = buildInventoryFromRoomRows(rows, 250) || [];
+          inventory = buildInventoryFromRoomRows(rows, isCopilotPlanner ? 1500 : 250) || [];
         } catch {}
       }
 
@@ -16781,12 +16782,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
       const inventoryTrimOptions = inferredBuilding
         ? { maxTotal: 260, maxPerBuilding: 260, maxPerType: 35 }
-        : { maxTotal: 220, maxPerBuilding: 90, maxPerType: 25 };
+        : (
+          isCopilotPlanner
+            ? { maxTotal: 1400, maxPerBuilding: 260, maxPerType: 80 }
+            : { maxTotal: 220, maxPerBuilding: 90, maxPerType: 25 }
+        );
       if (baselineTotals && inventory.length > inventoryTrimOptions.maxTotal) {
         inventory = selectScenarioInventoryByBaseline(inventory, baselineTotals, {
           maxTotal: inventoryTrimOptions.maxTotal,
-          minPerType: inferredBuilding ? 8 : 5,
-          maxPerType: inferredBuilding ? 45 : 35
+          minPerType: inferredBuilding ? 8 : (isCopilotPlanner ? 8 : 5),
+          maxPerType: inferredBuilding ? 45 : (isCopilotPlanner ? 90 : 35)
         });
       } else {
         inventory = shrinkMoveScenarioInventory(inventory, inventoryTrimOptions);

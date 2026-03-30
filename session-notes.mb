@@ -35,6 +35,13 @@ Latest completed work (2026-03-30 planner copilot floor-first fallback stage)
 - Updated client-side criteria display so local hard-exclusion notes are suppressed when selected fallback output indicates relaxed family allowances were used, reducing contradictory messaging.
 - Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
 
+Latest completed work (2026-03-30 planner copilot inventory bottleneck fix)
+- Confirmed with live inventory diagnostics that viable strict one-building fits can exist in full data while UI results still underfit.
+- Root cause: client-side copilot inventory downsampling/trim was too aggressive before server scoring.
+- Increased copilot-mode inventory caps and trim ceilings in `onCreateMoveScenario` (campus room intake, fallback row intake, maxTotal/maxPerBuilding/maxPerType, and baseline trim per-type limits) so solver sees enough candidate space.
+- Kept standard mode trim behavior unchanged.
+- Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
+
 Latest completed work
 - Removed `/:universityId/admin/technical` route.
 - Kept technical routes in public shell and restored technical assessment loading there.
