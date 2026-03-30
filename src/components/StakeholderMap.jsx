@@ -1066,8 +1066,8 @@ const resolveFirstBuildingInput = (values = [], getBuildingFolderKeyFn) => {
 
 function getDeptFromProps(props = {}) {
   return (
-    props.Department ||
     props.department ||
+    props.Department ||
     props.Dept ||
     props.NCES_Department ||
     props["NCES_Department"] ||
