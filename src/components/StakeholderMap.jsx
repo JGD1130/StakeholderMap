@@ -27235,6 +27235,9 @@ useEffect(() => {
                 if (!targets.length) return;
                 let savedCount = 0;
                 const multiEdit = targets.length > 1;
+                const activePopupRoomKey = roomEditData?.roomId || String(roomEditData?.revitId ?? '');
+                let popupRefreshPayload = null;
+                let popupRefreshMatchedExact = false;
                 const sharedProps = roomEditData.properties || {};
                 const mapRefCurrent = mapRef.current;
                 const src = getGeojsonSource(mapRefCurrent, FLOOR_SOURCE);
@@ -27304,6 +27307,23 @@ useEffect(() => {
                   });
                   if (saved) {
                     savedCount += 1;
+                    const targetRoomKey = tgt.roomId || String(tgt.revitId ?? '');
+                    const popupPayloadForTarget = {
+                      type: propsForTarget.type ?? fallbackProps.type ?? '',
+                      department: propsForTarget.department ?? fallbackProps.department ?? '',
+                      occupant: propsForTarget.occupant ?? fallbackProps.occupant ?? ''
+                    };
+                    const hasExactPopupMatch =
+                      Boolean(activePopupRoomKey) &&
+                      Boolean(targetRoomKey) &&
+                      targetRoomKey === activePopupRoomKey;
+                    if (
+                      !popupRefreshPayload ||
+                      (hasExactPopupMatch && !popupRefreshMatchedExact)
+                    ) {
+                      popupRefreshPayload = popupPayloadForTarget;
+                      popupRefreshMatchedExact = hasExactPopupMatch || popupRefreshMatchedExact;
+                    }
                     if (patchedFeatures.length) {
                       const fid = tgt.revitId ?? tgt.feature?.id ?? tgt.feature?.properties?.RevitId ?? null;
                       if (fid != null) {
@@ -27343,6 +27363,9 @@ useEffect(() => {
                       src.setData(updatedFc);
                     }
                   } catch {}
+                  if (popupRefreshPayload) {
+                    roomEditData.onApply?.(popupRefreshPayload);
+                  }
                   roomEditData.refreshPopup?.();
                   clearRoomEditSelection();
                   closeRoomEdit();
