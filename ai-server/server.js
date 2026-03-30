@@ -520,6 +520,7 @@ const AIRTABLE_OCCUPANT_FIELD = process.env.AIRTABLE_OCCUPANT_FIELD || "Occupant
 const AIRTABLE_DEPT_FIELD = process.env.AIRTABLE_DEPT_FIELD || "Department";
 const AIRTABLE_TYPE_FIELD = process.env.AIRTABLE_TYPE_FIELD || "Type";
 const AIRTABLE_COMMENTS_FIELD = process.env.AIRTABLE_COMMENTS_FIELD || "Comments";
+const AIRTABLE_SEAT_FIELD = process.env.AIRTABLE_SEAT_FIELD || "Seat Count";
 const AIRTABLE_FIELDS = process.env.AIRTABLE_FIELDS || "";
 const AIRTABLE_ROOM_TYPE_TABLE = process.env.AIRTABLE_ROOM_TYPE_TABLE || "";
 const AIRTABLE_ROOM_TYPE_PRIMARY_FIELD = process.env.AIRTABLE_ROOM_TYPE_PRIMARY_FIELD || "";
@@ -942,7 +943,7 @@ app.get("/api/rooms", async (req, res) => {
       ...parseEnvFieldList(process.env.AIRTABLE_OCCUPANT_FIELD),
       ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
       ...parseEnvFieldList(process.env.AIRTABLE_TYPE_FIELD),
-      ...parseEnvFieldList(process.env.AIRTABLE_SEAT_FIELD),
+      ...parseEnvFieldList(AIRTABLE_SEAT_FIELD),
       "Room ID",
       "RoomId",
       "Room ID Text",
@@ -1043,7 +1044,7 @@ app.get("/api/rooms", async (req, res) => {
         "Assignee"
       ]);
       const seatCount = pickFieldValue(f, [
-        process.env.AIRTABLE_SEAT_FIELD,
+        AIRTABLE_SEAT_FIELD,
         "Seat Count",
         "NCES_Seat Count",
         "SeatCount"
