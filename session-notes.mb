@@ -13,6 +13,14 @@ Current Hastings map architecture target
 - Public stakeholder engagement: `/:universityId/engagement`.
 - Public technical assessment: `/:universityId/technical`.
 
+Latest completed work (2026-03-30 planner copilot hardening)
+- Hardened `Create planning scenario` copilot flow to avoid strict-fit dead-end failures.
+- Removed strict one-building hard-stop throw so one-building strict runs can still return closest options.
+- Relaxed strict fallback acceptance and added emergency closest-fit fallback passes (with explicit under-target warnings) so strict mode returns a best-effort option instead of only erroring.
+- In `StakeholderMap`, strict dead-end errors now auto-trigger one relaxed retry.
+- Relaxed retry now disables academic-fit low-fit pruning so fallback runs actually broaden inventory.
+- Validation completed: `node --check ai-server/server.js` and `npm.cmd run build`.
+
 Latest completed work
 - Removed `/:universityId/admin/technical` route.
 - Kept technical routes in public shell and restored technical assessment loading there.

@@ -4061,17 +4061,6 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
   if (
     strictFit &&
     preferSingleBuilding &&
-    hardMaxBuildings === 1 &&
-    strictOneBuildingFeasibility &&
-    !strictOneBuildingFeasibility.hasInRangeOption
-  ) {
-    throw new Error(
-      `No viable strict one-building option found within +/-${Math.round(tolerance * 100)}% (${Math.round(minSf).toLocaleString()}-${Math.round(maxSf).toLocaleString()} SF). ${strictOneBuildingBlockerText}`
-    );
-  }
-  if (
-    strictFit &&
-    preferSingleBuilding &&
     strictOneBuildingFeasibility?.hasInRangeOption &&
     hardMaxBuildings == null &&
     forceOneBuildingIfFeasible
@@ -4979,7 +4968,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
     : strictInRangeOptions;
   let optionsForShortlist = strictFit ? effectiveStrictOptions : generatedOptions;
   if (strictFit && !effectiveStrictOptions.length) {
-    const MIN_STRICT_FALLBACK_COVERAGE_RATIO = 0.75;
+    const MIN_STRICT_FALLBACK_COVERAGE_RATIO = 0.55;
     const optionTotalSf = (option) => Number(option?.scenarioTotals?.totalSF || option?.fitSummary?.totalSf || 0) || 0;
     const isStrictFallbackAcceptable = (option) => {
       if (!strictFit) return true;
@@ -5006,7 +4995,7 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
       Number.POSITIVE_INFINITY
     );
     // Do not settle on very weak nearest-fit options; continue to stronger auto-relax passes.
-    if (Number.isFinite(bestExistingSfGap) && bestExistingSfGap > 28) {
+    if (Number.isFinite(bestExistingSfGap) && bestExistingSfGap > 45) {
       fallbackPool = [];
     }
     fallbackPool = fallbackPool.filter((option) => isStrictFallbackAcceptable(option));
@@ -5103,13 +5092,43 @@ function generateMoveScenarioCopilotPlan({ request, context, inventory, constrai
         relaxNotes.push(`Auto-relax D skipped: closest-fit coverage too low (${formatSf(optionTotalSf(fallbackD))}).`);
       }
     }
+    if (!fallbackPool.length) {
+      const emergencyExisting = sortOptionsByClosestFit(generatedOptions)[0] || null;
+      if (emergencyExisting && optionTotalSf(emergencyExisting) > 0) {
+        fallbackPool = [emergencyExisting];
+        relaxNotes.push("Auto-relax E applied: severe closest-fit fallback returned to avoid no-option dead-end.");
+      }
+    }
+    if (!fallbackPool.length) {
+      const emergencyBuilt = buildClosestFallbackOption({
+        label: "auto-relax F: emergency closest-fit fallback",
+        maxBuildingCountOverride: Number.isFinite(maxPreferredBuildingCount)
+          ? Math.max(2, maxPreferredBuildingCount)
+          : Number.POSITIVE_INFINITY,
+        allowSupportFallbackOverride: true,
+        allowPublicPerformanceFallbackOverride: true,
+        preferSingleBuildingOverride: hardMaxBuildings === 1,
+        typeTargetsOverride: new Map(),
+        seedOffset: 25000051,
+        extraAssumptions: [
+          "Emergency nearest-fit fallback was used after strict and repair passes failed to produce in-range options."
+        ]
+      });
+      if (emergencyBuilt && optionTotalSf(emergencyBuilt) > 0) {
+        fallbackPool = [emergencyBuilt];
+        relaxNotes.push("Auto-relax F applied: emergency nearest-fit fallback with broader type/building allowances.");
+      }
+    }
     if (fallbackPool.length) {
       optionsForShortlist = sortOptionsByClosestFit(fallbackPool).map((option) => ({
         ...option,
         assumptions: appendUniqueLines(option?.assumptions || [], relaxNotes),
         selectionCriteria: appendUniqueLines(
           option?.selectionCriteria || [],
-          ["Closest-fit fallback was used because strict in-range options were unavailable."]
+          [
+            "Closest-fit fallback was used because strict in-range options were unavailable.",
+            "Returned option may be materially under target SF; treat as phased/partial relocation seed for planner refinement."
+          ]
         )
       }));
     }

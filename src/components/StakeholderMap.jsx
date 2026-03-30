@@ -16657,6 +16657,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   }, [buildFloorUrl, ensureFloorsForBuilding, roomPatches]);
 
   const onCreateMoveScenario = useCallback(async (opts = {}) => {
+    const forceRelaxed = Boolean(opts?.forceRelaxed);
+    const autoRelaxed = Boolean(opts?.autoRelaxed);
     setAiCreateScenarioErr('');
     setAiCreateScenarioLoading(true);
     setAiCreateScenarioResult(null);
@@ -16666,7 +16668,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (aiStatus === 'down') throw new Error('AI server is offline.');
       const request = (aiCreateScenarioText || '').trim();
       if (!request) throw new Error('Enter a short request for the planning scenario.');
-      const forceRelaxed = Boolean(opts?.forceRelaxed);
       const effectiveStrict = forceRelaxed ? false : aiCreateScenarioStrict;
       const effectiveMaxBuildings = forceRelaxed ? 'auto' : aiCopilotMaxBuildings;
       const effectiveDisallowSupportStorage = forceRelaxed ? false : aiCopilotDisallowSupportStorage;
@@ -16793,9 +16794,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
       const scenarioPolicyNotes = [];
       if (forceRelaxed) {
-        scenarioPolicyNotes.push('User-triggered relax retry: strict fit off, hard excludes disabled, and building cap reset to Auto for this run.');
+        scenarioPolicyNotes.push(
+          autoRelaxed
+            ? 'Auto-relaxed retry: strict fit off, hard excludes disabled, and building cap reset to Auto for this run.'
+            : 'User-triggered relax retry: strict fit off, hard excludes disabled, and building cap reset to Auto for this run.'
+        );
       }
-      const preferAcademicFit = shouldPreferAcademicFitForScenario(inferredDept, baselineTotals);
+      const preferAcademicFit = forceRelaxed
+        ? false
+        : shouldPreferAcademicFitForScenario(inferredDept, baselineTotals);
       const preferSingleTargetBuilding = Boolean(inferredBuilding || (sourceHomeBuildingCount > 0 && sourceHomeBuildingCount <= 1));
       let inventoryBuildingProfiles = summarizeScenarioBuildingProfiles(inventory);
       let lowFitBuildingKeys = getScenarioLowFitBuildingKeys(inventoryBuildingProfiles, { preferAcademicFit });
@@ -17386,7 +17393,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setAiCreateScenarioResult(nextResult);
       setAiCreateScenarioOpen(false);
     } catch (e) {
-      setAiCreateScenarioErr(String(e?.message || e));
+      const errMessage = String(e?.message || e || '');
+      const shouldAutoRetryRelaxed = (
+        aiCreateScenarioMode === 'copilot' &&
+        !forceRelaxed &&
+        /no viable strict-fit options|no viable strict one-building option|could not generate a valid option|generated only previously rejected options/i.test(errMessage)
+      );
+      if (shouldAutoRetryRelaxed) {
+        return onCreateMoveScenario({ forceRelaxed: true, autoRelaxed: true });
+      }
+      setAiCreateScenarioErr(errMessage);
     } finally {
       setAiCreateScenarioLoading(false);
     }
