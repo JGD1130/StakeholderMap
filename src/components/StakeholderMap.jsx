@@ -9000,9 +9000,9 @@ const maintenancePriorityColor = (priority) => {
     case 'critical':
       return '#b91c1c';
     case 'high':
-      return '#dc2626';
+      return '#f97316';
     case 'medium':
-      return '#f59e0b';
+      return '#eab308';
     case 'low':
     default:
       return '#22c55e';
