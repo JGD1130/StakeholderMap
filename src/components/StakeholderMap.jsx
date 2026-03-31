@@ -15995,12 +15995,14 @@ useEffect(() => {
     if (!stats && !label && !keyDepts?.length) return;
     const lineHeight = 14;
     const textX = areaX + 6;
+    const textWidth = Math.max(40, areaWidth - 12);
     const textYStart = 24;
     const title = label || 'Totals';
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
-    doc.text(title, textX, textYStart);
-    let cursorY = textYStart + lineHeight;
+    const titleLines = doc.splitTextToSize(String(title), textWidth);
+    doc.text(titleLines, textX, textYStart);
+    let cursorY = textYStart + lineHeight * titleLines.length;
     doc.setFont(undefined, 'normal');
     if (stats) {
       const lines = [
@@ -16011,25 +16013,30 @@ useEffect(() => {
         stats.levels != null ? `Levels: ${stats.levels}` : null
       ].filter(Boolean);
       lines.forEach((line) => {
-        doc.text(line, textX, cursorY);
-        cursorY += lineHeight;
+        const wrapped = doc.splitTextToSize(String(line), textWidth);
+        doc.text(wrapped, textX, cursorY);
+        cursorY += lineHeight * wrapped.length;
       });
     }
     if (keyDepts?.length) {
       cursorY += lineHeight / 2;
       doc.setFont(undefined, 'bold');
-      doc.text(legendTitle, textX, cursorY);
-      cursorY += lineHeight;
+      const legendTitleLines = doc.splitTextToSize(String(legendTitle), textWidth);
+      doc.text(legendTitleLines, textX, cursorY);
+      cursorY += lineHeight * legendTitleLines.length;
       doc.setFont(undefined, 'normal');
       const boxSize = 10;
+      const legendTextX = areaX + 6 + boxSize + 4;
+      const legendTextWidth = Math.max(24, areaWidth - (legendTextX - areaX) - 4);
       keyDepts.slice(0, 8).forEach((dept) => {
         const color = dept.color || getDeptColor(dept.name);
         doc.setFillColor(color);
         doc.rect(areaX + 6, cursorY - 8, boxSize, boxSize, 'F');
         doc.setTextColor('#000');
         const labelText = dept.areaSf ? `${dept.name} (${Math.round(dept.areaSf).toLocaleString()} SF)` : dept.name;
-        doc.text(labelText, areaX + 6 + boxSize + 4, cursorY);
-        cursorY += lineHeight;
+        const wrapped = doc.splitTextToSize(String(labelText), legendTextWidth);
+        doc.text(wrapped, legendTextX, cursorY);
+        cursorY += lineHeight * wrapped.length;
       });
     }
   };
@@ -16050,7 +16057,22 @@ useEffect(() => {
       const legendTitle = options.legendTitle || 'Key Departments';
       const filenameBase = options.filenameBase || 'floorplan';
       const hasSummary = Boolean(stats || (keyDepts && keyDepts.length));
-      const summaryWidth = hasSummary ? 130 : 0;
+      const summaryProbeLines = [
+        summaryLabel || 'Totals',
+        stats?.totalSF != null ? `Total SF: ${Math.round(stats.totalSF).toLocaleString()}` : '',
+        stats?.rooms != null ? `Rooms: ${stats.rooms}` : '',
+        stats?.classroomSf != null ? `Classroom SF: ${Math.round(stats.classroomSf).toLocaleString()}` : '',
+        stats?.classroomCount != null ? `Classrooms: ${stats.classroomCount}` : '',
+        stats?.levels != null ? `Levels: ${stats.levels}` : '',
+        legendTitle,
+        ...(keyDepts || []).slice(0, 8).map((dept) =>
+          dept?.areaSf ? `${dept.name} (${Math.round(dept.areaSf).toLocaleString()} SF)` : String(dept?.name || '')
+        )
+      ].filter(Boolean);
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'normal');
+      const widestProbe = summaryProbeLines.reduce((max, text) => Math.max(max, doc.getTextWidth(String(text))), 0);
+      const summaryWidth = hasSummary ? Math.min(320, Math.max(180, Math.ceil(widestProbe) + 34)) : 0;
       const summaryAreaWidth = hasSummary ? summaryWidth - 12 : 0;
       pages.forEach((page, idx) => {
         const img = page?.img;
@@ -16564,35 +16586,82 @@ useEffect(() => {
   }, []);
 
 const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilterRaw = '') => {
-  const targetBuildings = buildingFilter && buildingFilter !== '__all__'
-    ? [buildingFilter]
-    : BUILDINGS_LIST.map((b) => b.name).filter(Boolean);
+  const includeAllBuildings = !buildingFilter || buildingFilter === '__all__';
+  const targetBuildings = includeAllBuildings
+    ? BUILDINGS_LIST.map((b) => b.name).filter(Boolean)
+    : [buildingFilter];
 
-    const deptFilter = deptFilterRaw.toLowerCase().trim();
-    const rows = [];
+  const targetBuildingKeys = includeAllBuildings
+    ? null
+    : new Set(targetBuildings.map((name) => normalizeDashboardKey(name)).filter(Boolean));
 
-    for (const buildingName of targetBuildings) {
-      if (!buildingName) continue;
-      const floors = await ensureFloorsForBuilding(buildingName);
-      if (!floors?.length) continue;
+  const deptFilter = deptFilterRaw.toLowerCase().trim();
+  const rows = [];
 
-      for (const fl of floors) {
-        const url = buildFloorUrl(buildingName, fl);
-        if (!url) continue;
-        let fc;
-        try {
-          const data = await fetchGeoJSON(url);
-          fc = toFeatureCollection(data);
-        } catch (err) {
-          console.warn('Space export: failed to load', url, err);
-          continue;
-        }
-        if (!fc?.features?.length) continue;
+  if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+    for (const row of campusRooms) {
+      const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
+      const buildingKey = normalizeDashboardKey(buildingName);
+      if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) continue;
 
-        for (const feat of fc.features) {
-          if (!featureLooksLikeRoom(feat)) continue;
-          const props = feat?.properties || {};
-          const revitId = feat?.id ?? props.RevitId ?? props.id;
+      const floorName = String(row?.floor ?? row?.floorName ?? row?.floorId ?? '').trim();
+      const revitId = row?.revitId ?? row?.RevitId ?? row?.id ?? null;
+      const roomIdKey = (buildingName && floorName && revitId != null) ? rId(buildingName, floorName, revitId) : null;
+      const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
+      const merged = patch ? { ...row, ...patch } : row;
+      const deptVal = String(getDeptFromProps(merged) || '').trim();
+      if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
+
+      const roomNum =
+        merged.roomNumber ??
+        merged.Number ??
+        merged.RoomNumber ??
+        merged.number ??
+        merged.Room ??
+        merged.roomId ??
+        '';
+      const typeVal = getRoomTypeLabelFromProps(merged) || merged.type || merged.Name || '';
+      const areaVal = resolveAreaSf(merged);
+      const seatCountVal = getSeatCount(merged);
+      const occupantVal = merged.occupant ?? merged.Occupant ?? '';
+      rows.push({
+        building: buildingName,
+        floor: floorName,
+        roomNumber: roomNum || '',
+        type: typeVal || '',
+        department: deptVal || '',
+        area: Number.isFinite(areaVal) ? areaVal : '',
+        seatCount: seatCountVal ?? '',
+        occupant: occupantVal || '',
+        roomId: roomIdKey || String(merged.roomId ?? merged.id ?? '') || '',
+        revitId: revitId ?? null
+      });
+    }
+    return rows;
+  }
+
+  for (const buildingName of targetBuildings) {
+    if (!buildingName) continue;
+    const floors = await ensureFloorsForBuilding(buildingName);
+    if (!floors?.length) continue;
+
+    for (const fl of floors) {
+      const url = buildFloorUrl(buildingName, fl);
+      if (!url) continue;
+      let fc;
+      try {
+        const data = await fetchGeoJSON(url);
+        fc = toFeatureCollection(data);
+      } catch (err) {
+        console.warn('Space export: failed to load', url, err);
+        continue;
+      }
+      if (!fc?.features?.length) continue;
+
+      for (const feat of fc.features) {
+        if (!featureLooksLikeRoom(feat)) continue;
+        const props = feat?.properties || {};
+        const revitId = feat?.id ?? props.RevitId ?? props.id;
         const roomIdKey = (buildingName && fl && revitId != null) ? rId(buildingName, fl, revitId) : null;
         const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
         const merged = patch ? { ...props, ...patch } : props;
@@ -16619,7 +16688,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
   }
   return rows;
-  }, [buildFloorUrl, ensureFloorsForBuilding, roomPatches]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches]);
 
   const buildMoveScenarioInventory = useCallback(async () => {
     const rows = await collectSpaceRows('__all__', '');
@@ -16628,9 +16697,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   }, [collectSpaceRows]);
 
   const collectSpaceSummaryRows = useCallback(async (buildingFilter = '__all__', deptFilterRaw = '') => {
-    const targetBuildings = buildingFilter && buildingFilter !== '__all__'
-      ? [buildingFilter]
-      : BUILDINGS_LIST.map((b) => b.name).filter(Boolean);
+    const includeAllBuildings = !buildingFilter || buildingFilter === '__all__';
+    const targetBuildings = includeAllBuildings
+      ? BUILDINGS_LIST.map((b) => b.name).filter(Boolean)
+      : [buildingFilter];
+    const targetBuildingKeys = includeAllBuildings
+      ? null
+      : new Set(targetBuildings.map((name) => normalizeDashboardKey(name)).filter(Boolean));
 
     const deptFilter = deptFilterRaw.toLowerCase().trim();
     const buildingRows = [];
@@ -16654,6 +16727,41 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         keyDepts: (summary.keyDepts || []).join('; ')
       };
     };
+
+    if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
+      const rowsInScope = (campusRooms || []).filter((row) => {
+        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
+        const buildingKey = normalizeDashboardKey(buildingName);
+        if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) return false;
+        const deptVal = String(getDeptFromProps(row) || '').trim();
+        if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) return false;
+        return true;
+      });
+
+      const rowsByBuilding = new Map();
+      rowsInScope.forEach((row) => {
+        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
+        if (!buildingName) return;
+        const list = rowsByBuilding.get(buildingName) || [];
+        list.push(row);
+        rowsByBuilding.set(buildingName, list);
+      });
+
+      Array.from(rowsByBuilding.entries()).forEach(([buildingName, rowsForBuilding]) => {
+        const summary = summarizeRoomRowsForPanels(rowsForBuilding);
+        const row = summary ? toSummaryRow(summary, buildingName) : null;
+        if (row && (row.rooms || row.totalSf)) {
+          buildingRows.push(row);
+        }
+      });
+
+      buildingRows.sort((a, b) => (Number(b.totalSf) || 0) - (Number(a.totalSf) || 0));
+      const campusSummary = summarizeRoomRowsForPanels(rowsInScope);
+      const campusRow = includeAllBuildings && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
+        ? toSummaryRow(campusSummary, 'Campus Total', 'campus')
+        : null;
+      return { campusRow, buildingRows };
+    }
 
     for (const buildingName of targetBuildings) {
       if (!buildingName) continue;
@@ -16696,13 +16804,12 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
 
     const campusSummary = finalizeCombinedSummary(campusAcc);
-    const includeCampusRow = !buildingFilter || buildingFilter === '__all__';
-    const campusRow = includeCampusRow && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
+    const campusRow = includeAllBuildings && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
       ? toSummaryRow(campusSummary, 'Campus Total', 'campus')
       : null;
 
     return { campusRow, buildingRows };
-  }, [buildFloorUrl, ensureFloorsForBuilding, roomPatches]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches]);
 
   const onCreateMoveScenario = useCallback(async (opts = {}) => {
     const forceRelaxed = Boolean(opts?.forceRelaxed);
