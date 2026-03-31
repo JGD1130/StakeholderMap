@@ -1546,6 +1546,12 @@ function buildFloorplanCanvas(fc, options = {}) {
         })
         .filter(Boolean)
     : [];
+  const selectedFillColor = options?.selectedFillColor || 'rgba(0, 200, 255, 0.35)';
+  const selectedOutlineColor = options?.selectedOutlineColor || '#00c8ff';
+  const selectedOutlineWidth = Number(options?.selectedOutlineWidth);
+  const selectedStrokeWidth = Number.isFinite(selectedOutlineWidth) && selectedOutlineWidth > 0
+    ? selectedOutlineWidth
+    : 4;
   const isSelectedByGeometry = (feature) => {
     if (!feature?.geometry || !selectedGeometryFeatures.length) return false;
     const roomFeature = { type: 'Feature', properties: {}, geometry: feature.geometry };
@@ -1687,12 +1693,12 @@ function buildFloorplanCanvas(fc, options = {}) {
       outline = '#202020';
     }
     if (isSelected) {
-      // Emphasize selection with a cyan fill + stroke for stronger PDF visibility.
+      // Emphasize selection in export using caller-provided highlight colors.
       if (kind === 'room') {
-        fill = 'rgba(0, 200, 255, 0.35)';
+        fill = selectedFillColor;
       }
-      outline = '#00c8ff';
-      outlineWidth = 4;
+      outline = selectedOutlineColor;
+      outlineWidth = selectedStrokeWidth;
     }
     const geom = feature?.geometry;
     if (!geom || !geom.coordinates) continue;
@@ -25493,11 +25499,15 @@ useEffect(() => {
                 currentFloorContextRef.current?.fc ||
                 null;
               const liveFloorFc = toFeatureCollection(floorSourceData) || currentFloorContextRef.current?.fc || null;
+              const scenarioDeptColor = getDeptColor(scenarioAssignedDept) || '#00c8ff';
               const imgData = generateFloorplanImageData({
                 ...(currentFloorContextRef.current || {}),
                 fc: liveFloorFc,
                 selectedIds: scenarioPdfRenderIds,
                 selectedGeometries: [],
+                selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.35),
+                selectedOutlineColor: scenarioDeptColor,
+                selectedOutlineWidth: 4,
                 solidFill: true,
                 labelOptions: { hideDrawing: true }
               });
@@ -26998,7 +27008,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {mode === 'admin' && (
+                  {(mode === 'admin' || isDemoPublicMode) && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -27014,12 +27024,12 @@ useEffect(() => {
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {mode === 'admin' && airtableRefreshMessage && (
+                {(mode === 'admin' || isDemoPublicMode) && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {mode === 'admin' && (
+                {(mode === 'admin' || isDemoPublicMode) && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
