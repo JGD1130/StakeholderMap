@@ -1289,21 +1289,86 @@ function getRoomCategoryCode(props = {}) {
 }
 
 function getSeatCount(props = {}) {
-  const raw =
-    props.seatCount ??
-    props.SeatCount ??
-    props['Seat Count'] ??
-    props.Seats ??
-    props.Capacity ??
-    props.rm_seats ??
-    props.SeatingCapacity ??
-    props['NCES_Seat Count'] ??
-    props['NCES_Seat_Count'] ??
-    props['NCES_Seat Count'] ??
-    props['NCES_SeatCount'] ??
-    null;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const parsePositiveNumber = (value) => {
+    if (value == null) return null;
+    if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const normalized = text.replace(/,/g, '');
+    const exact = Number(normalized);
+    if (Number.isFinite(exact) && exact > 0) return exact;
+    const match = normalized.match(/-?\d+(\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  const candidates = [
+    props.seatCount,
+    props.SeatCount,
+    props['Seat Count'],
+    props['Seat_Count'],
+    props.seat_count,
+    props.Seats,
+    props.Capacity,
+    props.capacity,
+    props['Room Capacity'],
+    props.roomCapacity,
+    props['Classroom Capacity'],
+    props.SeatingCapacity,
+    props.rm_seats,
+    props['NCES_Seat Count'],
+    props['NCES_Seat_Count'],
+    props['NCES_Seat Count'],
+    props['NCES_SeatCount'],
+    props['NCES Seat Count']
+  ];
+
+  for (const value of candidates) {
+    const parsed = parsePositiveNumber(value);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
+function getOccupantValue(props = {}) {
+  const normalizeStringValue = (value) => {
+    if (value == null) return '';
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => {
+          if (entry == null) return '';
+          if (typeof entry === 'object') {
+            return String(entry.name ?? entry.label ?? entry.value ?? '').trim();
+          }
+          return String(entry).trim();
+        })
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof value === 'object') {
+      return String(value.name ?? value.label ?? value.value ?? '').trim();
+    }
+    return String(value).trim();
+  };
+
+  const candidates = [
+    props.occupant,
+    props.Occupant,
+    props.occupantName,
+    props.OccupantName,
+    props['Occupant Name'],
+    props.occupant_name,
+    props.AssignedTo,
+    props['Assigned To'],
+    props.Assignee
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeStringValue(value);
+    if (normalized) return normalized;
+  }
+  return '';
 }
 
 function isOfficeCategory(categoryCode) {
@@ -8439,13 +8504,7 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
     props.Status ??
     ''
   ).toString().trim();
-  const occupant = (
-    props.occupant ??
-    props.Occupant ??
-    props.AssignedTo ??
-    props.Assignee ??
-    ''
-  ).toString().trim();
+  const occupant = getOccupantValue(props);
   const roomGuid = String(
     props.Revit_UniqueId ??
     props.RevitUniqueId ??
@@ -16623,7 +16682,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const typeVal = getRoomTypeLabelFromProps(merged) || merged.type || merged.Name || '';
       const areaVal = resolveAreaSf(merged);
       const seatCountVal = getSeatCount(merged);
-      const occupantVal = merged.occupant ?? merged.Occupant ?? '';
+      const occupantVal = getOccupantValue(merged);
       rows.push({
         building: buildingName,
         floor: floorName,
@@ -16671,7 +16730,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
         const areaVal = resolvePatchedArea(merged);
         const seatCountVal = getSeatCount(merged);
-        const occupantVal = merged.occupant ?? merged.Occupant ?? '';
+        const occupantVal = getOccupantValue(merged);
         rows.push({
           building: buildingName,
           floor: fl,
