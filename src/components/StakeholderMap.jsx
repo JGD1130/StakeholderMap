@@ -1094,6 +1094,105 @@ function getTypeFromProps(props = {}) {
   );
 }
 
+function normalizeOccupancyLegendLabel(props = {}) {
+  const raw =
+    props.occupancyStatus ??
+    props['Occupancy Status'] ??
+    props.OccupancyStatus ??
+    props.Occupancy ??
+    props.Vacancy ??
+    props.vacancy ??
+    props.Vacant ??
+    '';
+  const rawStr = String(raw ?? '').trim();
+  if (rawStr) {
+    const upper = rawStr.toUpperCase();
+    if (
+      upper.includes('VACANT') ||
+      upper.includes('UNOCCUPIED') ||
+      upper.includes('AVAILABLE') ||
+      upper.includes('UNASSIGNED')
+    ) {
+      return 'Vacant';
+    }
+    if (upper.includes('OCCUPIED')) return 'Occupied';
+    return 'Unknown';
+  }
+  const occ = (props.occupant ?? props.Occupant ?? '').toString().trim();
+  return occ ? 'Occupied' : 'Unknown';
+}
+
+function resolveLegendEntryForProps(props = {}, mode = 'department') {
+  const effectiveMode = String(mode || 'department').toLowerCase();
+  const typeName =
+    (props?.__roomType || getRoomTypeLabelFromProps(props) || props?.Name || '')
+      .toString()
+      .trim() || 'Unknown';
+  if (effectiveMode === 'type') {
+    return { name: typeName, color: colorForType(typeName) };
+  }
+  if (effectiveMode === 'occupancy') {
+    if (!isAllowedOfficeType(typeName)) return null;
+    const status = normalizeOccupancyLegendLabel(props);
+    return {
+      name: status,
+      color: status === 'Occupied' ? '#29b6f6' : (status === 'Vacant' ? '#ff7043' : '#e0e0e0')
+    };
+  }
+  if (effectiveMode === 'vacancy') {
+    if (!isAllowedOfficeType(typeName)) return null;
+    const status = normalizeOccupancyLegendLabel(props);
+    return {
+      name: status,
+      color: status === 'Vacant' ? '#ff7043' : '#cfd8dc'
+    };
+  }
+  const dept = getDeptFromProps(props) || 'Unspecified';
+  return { name: dept, color: getDeptColor(dept) || '#e6e6e6' };
+}
+
+function buildLegendItemsForFeatureCollection(fc, mode = 'department', options = {}) {
+  if (!fc?.features?.length) return [];
+  const includeIds = Boolean(options?.includeIds);
+  const sums = new Map();
+  const idsByKey = includeIds ? new Map() : null;
+
+  const normalizeId = (val) => {
+    if (Number.isFinite(val)) return val;
+    const asNum = Number(val);
+    return Number.isFinite(asNum) ? asNum : (val != null ? String(val) : null);
+  };
+
+  fc.features.forEach((feature) => {
+    if (!featureLooksLikeRoom(feature)) return;
+    const p = feature?.properties || {};
+    const areaVal = resolvePatchedArea(p);
+    if (!Number.isFinite(areaVal) || areaVal <= 0) return;
+    const legendEntry = resolveLegendEntryForProps(p, mode);
+    if (!legendEntry?.name) return;
+    const { name, color } = legendEntry;
+    const prev = sums.get(name) || { name, areaSf: 0, color };
+    prev.areaSf += areaVal;
+    prev.color = color;
+    sums.set(name, prev);
+    if (idsByKey) {
+      const fid = normalizeId(feature.id ?? p.RevitId ?? p.id);
+      if (fid != null) {
+        const list = idsByKey.get(name) || [];
+        list.push(fid);
+        idsByKey.set(name, list);
+      }
+    }
+  });
+
+  return Array.from(sums.values())
+    .map((item) => ({
+      ...item,
+      ids: idsByKey ? (idsByKey.get(item.name) || []) : undefined
+    }))
+    .sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+}
+
 function pickFirstDefined(props = {}, keys = []) {
   if (!props || !Array.isArray(keys)) return null;
   for (const key of keys) {
@@ -1351,7 +1450,13 @@ function buildFloorplanCanvas(fc, options = {}) {
     }
   };
   const normalizeDept = (props) => {
-    const dept = norm(props?.department ?? props?.Department ?? props?.Dept ?? '');
+    const dept = norm(
+      getDeptFromProps(props) ??
+      props?.NCES_Dept ??
+      props?.['NCES Dept'] ??
+      props?.['Department Owner Text'] ??
+      ''
+    );
     return dept || '';
   };
   const normalizeId = (val) => {
@@ -1459,22 +1564,23 @@ function buildFloorplanCanvas(fc, options = {}) {
     const baseDept = normalizeDept(props);
     const deptName = scenarioDept || baseDept;
     const typeName =
-      props?.__roomType ||
-      getRoomTypeLabelFromProps(props) ||
-      props?.Name ||
-      '';
-    const occupantVal = (props?.occupant ?? props?.Occupant ?? '').toString().trim();
+      (props?.__roomType || getRoomTypeLabelFromProps(props) || props?.Name || '')
+        .toString()
+        .trim() || 'Unknown';
     const colorMode = options?.colorMode || 'department';
 
     let baseColor = '#f7f7f7';
-    if (colorMode === 'type') {
-      baseColor = colorForType(typeName);
-    } else if (colorMode === 'occupancy') {
-      baseColor = occupantVal ? '#29b6f6' : '#e0e0e0';
-    } else if (colorMode === 'vacancy') {
-      baseColor = occupantVal ? '#29b6f6' : '#ff7043';
-    } else {
+    if (colorMode === 'department') {
       baseColor = deptName ? getDeptColor(deptName) : '#f7f7f7';
+    } else {
+      const legendEntry = resolveLegendEntryForProps(
+        {
+          ...props,
+          __roomType: typeName
+        },
+        colorMode
+      );
+      baseColor = legendEntry?.color || '#e6e6e6';
     }
 
     let fill = baseColor
@@ -5083,6 +5189,8 @@ function featureLooksLikeRoom(feature) {
   if (!feature) return false;
   const props = feature?.properties || {};
   if (isDrawingFeature(props)) return false;
+  const kindLabel = pickFirstDefined(props, ['Type', 'type', 'Layer', 'layer', 'Name', 'name']) ?? '';
+  if (String(kindLabel).toLowerCase().includes('drawing')) return false;
 
   const geomType = feature?.geometry?.type || '';
   if (geomType && !isPolygonGeometryType(geomType)) return false;
@@ -9785,89 +9893,7 @@ const StakeholderMap = ({
     const data = src._data || src.serialize?.()?.data || null;
     const fc = toFeatureCollection(data);
     if (!fc?.features?.length) return;
-    const sums = new Map();
-    const idsByKey = new Map();
-
-    const normalizeId = (val) => {
-      if (Number.isFinite(val)) return val;
-      const asNum = Number(val);
-      return Number.isFinite(asNum) ? asNum : String(val);
-    };
-
-    fc.features.forEach((f) => {
-      const p = f.properties || {};
-      const areaVal = resolvePatchedArea(p);
-      if (!Number.isFinite(areaVal) || areaVal <= 0) return;
-      const typeLabelRaw =
-        p.__roomType ??
-        p.NCES_Type ??
-        p.RoomType ??
-        p['Room Type'] ??
-        p.Type ??
-        p.type ??
-        p.Name ??
-        '';
-      const isOfficeType = isAllowedOfficeType(typeLabelRaw);
-      let key = '';
-      let color = '#e6e6e6';
-      const normalizeOccupancyLabel = (props = {}) => {
-        const raw =
-          props.occupancyStatus ??
-          props['Occupancy Status'] ??
-          props.OccupancyStatus ??
-          props.Occupancy ??
-          props.Vacancy ??
-          props.vacancy ??
-          props.Vacant ??
-          '';
-        const rawStr = String(raw ?? '').trim();
-        if (rawStr) {
-          const upper = rawStr.toUpperCase();
-          if (
-            upper.includes('VACANT') ||
-            upper.includes('UNOCCUPIED') ||
-            upper.includes('AVAILABLE') ||
-            upper.includes('UNASSIGNED')
-          ) {
-            return 'Vacant';
-          }
-          if (upper.includes('OCCUPIED')) return 'Occupied';
-          return 'Unknown';
-        }
-        const occ = (props.occupant ?? props.Occupant ?? '').toString().trim();
-        return occ ? 'Occupied' : 'Unknown';
-      };
-      if (mode === FLOOR_COLOR_MODES.TYPE) {
-        key = (p.__roomType || '').toString().trim() || 'Unknown';
-        color = colorForType(key);
-      } else if (mode === FLOOR_COLOR_MODES.OCCUPANCY) {
-        if (!isOfficeType) return;
-        key = normalizeOccupancyLabel(p);
-        color = key === 'Occupied' ? '#29b6f6' : (key === 'Vacant' ? '#ff7043' : '#cfd8dc');
-      } else if (mode === FLOOR_COLOR_MODES.VACANCY) {
-        if (!isOfficeType) return;
-        key = normalizeOccupancyLabel(p);
-        color = key === 'Vacant' ? '#ff7043' : '#cfd8dc';
-      } else {
-        key = getDeptFromProps(p) || 'Unspecified';
-        color = getDeptColor(key) || '#e6e6e6';
-      }
-      const prev = sums.get(key) || { name: key, areaSf: 0, color };
-      prev.areaSf += areaVal;
-      prev.color = color;
-      sums.set(key, prev);
-      const fid = normalizeId(f.id ?? p.RevitId ?? p.id);
-      if (fid != null) {
-        const list = idsByKey.get(key) || [];
-        list.push(fid);
-        idsByKey.set(key, list);
-      }
-    });
-
-    const items = Array.from(sums.values()).map((item) => ({
-      ...item,
-      ids: idsByKey.get(item.name) || []
-    })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+    const items = buildLegendItemsForFeatureCollection(fc, mode, { includeIds: true });
     setFloorLegendItems(items);
     setFloorLegendLookup(new Map(items.map((item) => [item.name, item.ids || []])));
   }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY]);
@@ -16455,7 +16481,10 @@ useEffect(() => {
     const label = `${activeBuildingName} - ${ctx.floorLabel || selectedFloor || ''}`.trim() || 'Floor';
     const cachedStats = ctx?.url ? floorStatsCache.current[ctx.url] : null;
     const statsForExport = floorStats ?? (cachedStats ? { ...cachedStats, floorLabel: ctx.floorLabel || selectedFloor } : null);
-    const floorLegend = floorLegendItems && floorLegendItems.length ? floorLegendItems : toKeyDeptList(statsForExport?.totalsByDept);
+    const computedLegend = buildLegendItemsForFeatureCollection(ctx.fc, floorColorMode, { includeIds: true });
+    const floorLegend = floorLegendItems && floorLegendItems.length
+      ? floorLegendItems
+      : (computedLegend.length ? computedLegend : toKeyDeptList(statsForExport?.totalsByDept));
     const legendTitle =
       {
         department: 'Key Departments',
@@ -16561,6 +16590,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         if (!fc?.features?.length) continue;
 
         for (const feat of fc.features) {
+          if (!featureLooksLikeRoom(feat)) continue;
           const props = feat?.properties || {};
           const revitId = feat?.id ?? props.RevitId ?? props.id;
         const roomIdKey = (buildingName && fl && revitId != null) ? rId(buildingName, fl, revitId) : null;
@@ -16568,7 +16598,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const merged = patch ? { ...props, ...patch } : props;
         const roomNum = merged.Number ?? merged.RoomNumber ?? merged.number ?? merged.Room ?? '';
         const typeVal = getRoomTypeLabelFromProps(merged) || merged.Name || '';
-        const deptVal = (merged.department ?? merged.Department ?? merged.Dept ?? '').toString().trim();
+        const deptVal = String(getDeptFromProps(merged) || '').trim();
         if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
         const areaVal = resolvePatchedArea(merged);
         const seatCountVal = getSeatCount(merged);
@@ -16645,12 +16675,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         if (!fc?.features?.length) continue;
 
         for (const feat of fc.features) {
+          if (!featureLooksLikeRoom(feat)) continue;
           const props = feat?.properties || {};
           const revitId = feat?.id ?? props.RevitId ?? props.id;
           const roomIdKey = (buildingName && fl && revitId != null) ? rId(buildingName, fl, revitId) : null;
           const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
           const merged = patch ? { ...props, ...patch } : props;
-          const deptVal = (merged.department ?? merged.Department ?? merged.Dept ?? '').toString().trim();
+          const deptVal = String(getDeptFromProps(merged) || '').trim();
           if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
           accumulateSummaryFromProps(buildingAcc, merged);
           accumulateSummaryFromProps(campusAcc, merged);
@@ -23708,12 +23739,23 @@ useEffect(() => {
       return;
     }
     const pages = [];
+    const legendSums = new Map();
+    const mergeLegendItems = (items = []) => {
+      items.forEach((item) => {
+        if (!item?.name) return;
+        const prev = legendSums.get(item.name) || { name: item.name, areaSf: 0, color: item.color || '#e6e6e6' };
+        prev.areaSf += Number(item.areaSf || 0) || 0;
+        prev.color = item.color || prev.color;
+        legendSums.set(item.name, prev);
+      });
+    };
     for (const floorId of availableFloors) {
       const url = buildFloorUrl(buildingKey, floorId);
       if (!url) continue;
       const data = await fetchGeoJSON(url);
-      const fc = toFeatureCollection(data);
+      const fc = applyRoomTypeLabel(toFeatureCollection(data));
       if (!fc?.features?.length) continue;
+      mergeLegendItems(buildLegendItemsForFeatureCollection(fc, floorColorMode));
       const img = generateFloorplanImageData({ fc, colorMode: floorColorMode, solidFill: true, labelOptions: { hideDrawing: true } });
       if (!img) continue;
       pages.push({ img, label: `${activeBuildingName} - ${floorId}` });
@@ -23722,7 +23764,10 @@ useEffect(() => {
       alert('No floorplans could be rendered for export.');
       return;
     }
-    const buildingKeyDepts = toKeyDeptList(buildingStats?.totalsByDept);
+    const modeLegend = Array.from(legendSums.values()).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+    const buildingKeyDepts = modeLegend.length
+      ? modeLegend
+      : toKeyDeptList(buildingStats?.totalsByDept);
     const statsForExport = {
       totalSF: buildingStats?.totalSf,
       rooms: buildingStats?.rooms,
@@ -23730,14 +23775,22 @@ useEffect(() => {
       classroomCount: buildingStats?.classroomCount,
       levels: availableFloors.length
     };
+    const legendTitle =
+      {
+        department: 'Key Departments',
+        type: 'Key Types',
+        occupancy: 'Occupancy',
+        vacancy: 'Vacancy'
+      }[floorColorMode] || 'Legend';
     const filenameBase = `${(activeBuildingName || buildingKey).replace(/\s+/g, '-').toLowerCase()}-floors`;
     exportFloorplanDocument(pages, {
       filenameBase,
       stats: statsForExport,
       keyDepts: buildingKeyDepts,
-      summaryLabel: `${activeBuildingName} Floors`
+      summaryLabel: `${activeBuildingName} Floors (${floorColorMode || 'department'})`,
+      legendTitle
     });
-  }, [availableFloors, activeBuildingName, buildFloorUrl, exportFloorplanDocument, selectedBuilding, selectedBuildingId]);
+  }, [availableFloors, activeBuildingName, buildFloorUrl, buildingStats, exportFloorplanDocument, floorColorMode, selectedBuilding, selectedBuildingId]);
 
   return (
   <div ref={mapPageRef} className="map-page-container">
