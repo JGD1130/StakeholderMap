@@ -772,6 +772,11 @@ function buildFieldEqualsClause(fields = [], values = []) {
   return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
 }
 
+function isAirtableInvalidFilterError(err) {
+  const msg = String(err?.message || err || "");
+  return /(INVALID_FILTER_BY_FORMULA|Unknown field names|formula for filtering records is invalid|invalid formula)/i.test(msg);
+}
+
 async function fetchAirtableTableRecords(tableName, { filterFormula, view } = {}) {
   const params = new URLSearchParams();
   if (view) params.set("view", view);
@@ -1059,12 +1064,30 @@ app.get("/api/rooms", async (req, res) => {
         ? uniqueStrings([...explicitFields, ...requiredFields])
         : null;
 
-    const records = await fetchAirtableAllRecords({
-      table,
-      view,
-      fields: requestFields && requestFields.length ? requestFields : null,
-      filterFormula: campusFilterFormula || null
-    });
+    let records;
+    try {
+      records = await fetchAirtableAllRecords({
+        table,
+        view,
+        fields: requestFields && requestFields.length ? requestFields : null,
+        filterFormula: campusFilterFormula || null
+      });
+    } catch (err) {
+      const canRetryWithoutFormula = Boolean(campusFilterFormula) && isAirtableInvalidFilterError(err);
+      if (!canRetryWithoutFormula) {
+        throw err;
+      }
+      console.warn(
+        "[api/rooms] campus filter formula failed; retrying without filterByFormula.",
+        { formula: campusFilterFormula, error: err?.message || String(err) }
+      );
+      records = await fetchAirtableAllRecords({
+        table,
+        view,
+        fields: requestFields && requestFields.length ? requestFields : null,
+        filterFormula: null
+      });
+    }
 
     const rooms = records.map((r) => {
       const f = r.fields || {};
