@@ -2779,7 +2779,9 @@ const DRAWING_ALIGN_POINT_LIMIT = 12000;
 const PUBLIC_BASE = (import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : '/';
 const assetUrl = (path) => `${PUBLIC_BASE}${path}`.replace(/\/{2,}/g, '/');
 const FLOORPLAN_MANIFEST_URL = assetUrl('floorplans/manifest.json');
+const BUILDING_RESOURCES_URL = assetUrl('Data/building-resources.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
+const DEMO_EDITING_ENABLED = String(import.meta.env.VITE_DEMO_EDITING_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_OVERLAY_LOGS = false;
 const ENABLE_DOOR_STAIR_OVERLAY = false;
 const ENABLE_WALLS_OVERLAY = false;
@@ -7849,6 +7851,190 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
+const normalizeBuildingResourceUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const withoutLeadingSlash = raw.replace(/^\/+/, '');
+  return assetUrl(withoutLeadingSlash);
+};
+const toFiniteNumberOrNull = (value) => {
+  const raw = typeof value === 'string'
+    ? value.replace(/[$,]/g, '').trim()
+    : value;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+};
+const normalizeConditionScoreMap = (rawMap) => {
+  if (!rawMap || typeof rawMap !== 'object') return null;
+  const out = {};
+  Object.entries(rawMap).forEach(([key, value]) => {
+    const metric = String(key || '').trim();
+    if (!metric) return;
+    const score = toFiniteNumberOrNull(value);
+    if (score == null || score <= 0) return;
+    out[metric] = score;
+  });
+  return Object.keys(out).length ? out : null;
+};
+const hasConditionAssessmentContent = (condition) => {
+  if (!condition) return false;
+  const hasScores = ['architecture', 'engineering', 'functionality']
+    .some((section) => condition?.[section] && Object.keys(condition[section]).length > 0);
+  return Boolean(
+    condition.averageScore != null ||
+    condition.notes ||
+    condition.sourceUrl ||
+    condition.scale ||
+    hasScores
+  );
+};
+const formatConditionMetricLabel = (rawMetric) => {
+  const key = String(rawMetric || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!key) return '';
+  return key.charAt(0).toUpperCase() + key.slice(1);
+};
+const formatConditionScore = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '';
+  return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '');
+};
+const normalizeResourceDoc = (rawDoc, index = 0) => {
+  if (!rawDoc) return null;
+  if (typeof rawDoc === 'string') {
+    const url = normalizeBuildingResourceUrl(rawDoc);
+    if (!url) return null;
+    return {
+      label: `Document ${index + 1}`,
+      description: '',
+      url
+    };
+  }
+  if (typeof rawDoc !== 'object') return null;
+  const url = normalizeBuildingResourceUrl(rawDoc.url || rawDoc.path || rawDoc.href || '');
+  if (!url) return null;
+  return {
+    label: String(rawDoc.label || rawDoc.name || rawDoc.title || `Document ${index + 1}`).trim() || `Document ${index + 1}`,
+    description: String(rawDoc.description || rawDoc.notes || '').trim(),
+    url
+  };
+};
+const normalizeBuildingResourceCatalog = (rawCatalog) => {
+  const out = { updatedAt: '', byBuildingKey: new Map() };
+  if (!rawCatalog) return out;
+  const rows = Array.isArray(rawCatalog?.buildings)
+    ? rawCatalog.buildings
+    : (Array.isArray(rawCatalog) ? rawCatalog : []);
+  out.updatedAt = String(rawCatalog?.updatedAt || rawCatalog?.lastUpdated || '').trim();
+  rows.forEach((row) => {
+    if (!row || typeof row !== 'object') return;
+    const deferredRaw = row.deferredMaintenance || row.deferred || row.maintenance || null;
+    const deferredItems = Array.isArray(deferredRaw?.items)
+      ? deferredRaw.items
+          .map((item) => {
+            if (item == null) return null;
+            if (typeof item === 'string') {
+              const label = item.trim();
+              return label ? { label, priority: '', cost: null } : null;
+            }
+            if (typeof item !== 'object') return null;
+            const label = String(item.label || item.name || item.issue || item.scope || '').trim();
+            if (!label) return null;
+            return {
+              label,
+              priority: String(item.priority || item.rank || '').trim(),
+              cost: toFiniteNumberOrNull(item.cost ?? item.amount ?? item.total)
+            };
+          })
+          .filter(Boolean)
+      : [];
+    const deferred = deferredRaw
+      ? {
+          summary: String(deferredRaw.summary || deferredRaw.description || deferredRaw.notes || '').trim(),
+          priority: String(deferredRaw.priority || deferredRaw.rank || '').trim(),
+          totalLow: toFiniteNumberOrNull(deferredRaw.totalLow ?? deferredRaw.low ?? deferredRaw.min),
+          totalHigh: toFiniteNumberOrNull(deferredRaw.totalHigh ?? deferredRaw.high ?? deferredRaw.max),
+          totalCost: toFiniteNumberOrNull(deferredRaw.totalCost ?? deferredRaw.total ?? deferredRaw.amount),
+          sourceLabel: String(deferredRaw.sourceLabel || deferredRaw.sourceName || 'Open source').trim() || 'Open source',
+          sourceUrl: normalizeBuildingResourceUrl(deferredRaw.sourceUrl || deferredRaw.source || deferredRaw.sheetUrl || deferredRaw.link),
+          updatedAt: String(deferredRaw.updatedAt || deferredRaw.lastUpdated || '').trim(),
+          items: deferredItems
+        }
+      : null;
+    const conditionRaw = row.conditionAssessment || row.assessment || row.condition || row.facilityCondition || null;
+    const condition = conditionRaw
+      ? {
+          averageScore: toFiniteNumberOrNull(
+            conditionRaw.averageScore ??
+            conditionRaw.avgScore ??
+            conditionRaw.average ??
+            conditionRaw.avg ??
+            conditionRaw.score
+          ),
+          scale: String(conditionRaw.scale || conditionRaw.scoreScale || '').trim(),
+          notes: String(conditionRaw.notes || conditionRaw.summary || conditionRaw.description || '').trim(),
+          architecture: normalizeConditionScoreMap(conditionRaw.architecture || conditionRaw.arch || conditionRaw.architectural),
+          engineering: normalizeConditionScoreMap(conditionRaw.engineering || conditionRaw.mep),
+          functionality: normalizeConditionScoreMap(conditionRaw.functionality || conditionRaw.functional || conditionRaw.program),
+          sourceLabel: String(conditionRaw.sourceLabel || conditionRaw.sourceName || 'Open source').trim() || 'Open source',
+          sourceUrl: normalizeBuildingResourceUrl(conditionRaw.sourceUrl || conditionRaw.source || conditionRaw.sheetUrl || conditionRaw.link),
+          updatedAt: String(conditionRaw.updatedAt || conditionRaw.lastUpdated || '').trim()
+        }
+      : null;
+    const remodelPdfsRaw =
+      row.remodelPdfs ||
+      row.scenarioPdfs ||
+      row.planningScenarios ||
+      row.planningDocs ||
+      row.documents ||
+      [];
+    const remodelPdfs = (Array.isArray(remodelPdfsRaw) ? remodelPdfsRaw : [remodelPdfsRaw])
+      .map((doc, idx) => normalizeResourceDoc(doc, idx))
+      .filter(Boolean);
+    const entry = {
+      building: String(row.building || row.buildingName || row.name || row.id || '').trim(),
+      deferredMaintenance: deferred,
+      conditionAssessment: condition,
+      remodelPdfs
+    };
+    const keyValues = [
+      row.building,
+      row.buildingName,
+      row.name,
+      row.id,
+      ...(Array.isArray(row.aliases) ? row.aliases : [])
+    ];
+    const keySet = new Set(
+      keyValues
+        .map((value) => normalizeDashboardKey(value))
+        .filter(Boolean)
+    );
+    keySet.forEach((key) => {
+      if (!out.byBuildingKey.has(key)) {
+        out.byBuildingKey.set(key, entry);
+      }
+    });
+  });
+  return out;
+};
+const formatDeferredCostSummary = (deferred, formatCurrency) => {
+  if (!deferred) return '';
+  const total = Number(deferred.totalCost);
+  if (Number.isFinite(total)) return formatCurrency(total);
+  const low = Number(deferred.totalLow);
+  const high = Number(deferred.totalHigh);
+  if (Number.isFinite(low) && Number.isFinite(high)) {
+    if (Math.abs(low - high) < 1) return formatCurrency(low);
+    return `${formatCurrency(low)} - ${formatCurrency(high)}`;
+  }
+  if (Number.isFinite(low)) return `From ${formatCurrency(low)}`;
+  if (Number.isFinite(high)) return `Up to ${formatCurrency(high)}`;
+  return '';
+};
 const normalizeMaintenanceBuildingFilterKey = (buildingIdValue, buildingNameValue = '') => {
   const idRaw = String(buildingIdValue || '').trim();
   const nameRaw = String(buildingNameValue || '').trim();
@@ -9578,8 +9764,10 @@ const StakeholderMap = ({
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode && !isAdminMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
+  const demoEditingEnabled = DEMO_EDITING_ENABLED;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const planningScenarioControlsEnabled = showFullMapfluenceControls || (isDemoPublicMode && demoEditingEnabled);
   const showAuthAccessControls = isAdminMode;
   const defaultMapView = isTechnicalOnlyMode
     ? MAP_VIEWS.TECHNICAL
@@ -9824,6 +10012,13 @@ const StakeholderMap = ({
   const [airtableRefreshPending, setAirtableRefreshPending] = useState(false);
   const [airtableRefreshMessage, setAirtableRefreshMessage] = useState('');
   const [airtableLastSyncedAt, setAirtableLastSyncedAt] = useState(null);
+  const [buildingResourcesCatalog, setBuildingResourcesCatalog] = useState(() => ({ updatedAt: '', byBuildingKey: new Map() }));
+  const [buildingResourceModal, setBuildingResourceModal] = useState({
+    open: false,
+    kind: 'deferred',
+    buildingName: '',
+    entry: null
+  });
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
@@ -10386,6 +10581,78 @@ const StakeholderMap = ({
     'Building';
   const activeBuildingId = selectedBuildingId || selectedBuilding || '';
   const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
+  const campusBuildingKeySet = useMemo(() => {
+    const keys = new Set();
+    const add = (value) => {
+      const key = normalizeDashboardKey(value);
+      if (key) keys.add(key);
+    };
+    (config?.buildings?.features || []).forEach((feature) => {
+      const props = feature?.properties || {};
+      add(props.id);
+      add(props.name);
+      add(props.Name);
+    });
+    return keys;
+  }, [config]);
+  const activeBuildingResourceEntry = useMemo(() => {
+    const lookup = buildingResourcesCatalog?.byBuildingKey;
+    if (!(lookup instanceof Map) || !lookup.size) return null;
+    const keys = [
+      activeBuildingName,
+      activeBuildingId,
+      selectedBuilding,
+      selectedBuildingId
+    ]
+      .map((value) => normalizeDashboardKey(value))
+      .filter(Boolean);
+    for (const key of keys) {
+      const hit = lookup.get(key);
+      if (hit) return hit;
+    }
+    return null;
+  }, [buildingResourcesCatalog, activeBuildingName, activeBuildingId, selectedBuilding, selectedBuildingId]);
+  const hasDeferredMaintenanceForActiveBuilding = useMemo(() => {
+    const deferred = activeBuildingResourceEntry?.deferredMaintenance;
+    const hasDeferred = Boolean(
+      deferred &&
+      (
+        deferred.summary ||
+        deferred.priority ||
+        deferred.sourceUrl ||
+        deferred.items?.length ||
+        deferred.totalCost != null ||
+        deferred.totalLow != null ||
+        deferred.totalHigh != null
+      )
+    );
+    const condition = activeBuildingResourceEntry?.conditionAssessment;
+    const hasCondition = hasConditionAssessmentContent(condition);
+    return hasDeferred || hasCondition;
+  }, [activeBuildingResourceEntry]);
+  const hasRemodelPdfsForActiveBuilding = Boolean(activeBuildingResourceEntry?.remodelPdfs?.length);
+  const openBuildingResourceModal = useCallback((kind) => {
+    if (!activeBuildingResourceEntry) return;
+    const normalizedKind = kind === 'remodel' ? 'remodel' : 'deferred';
+    setBuildingResourceModal({
+      open: true,
+      kind: normalizedKind,
+      buildingName: activeBuildingName || activeBuildingId || selectedBuilding || selectedBuildingId || 'Building',
+      entry: activeBuildingResourceEntry
+    });
+  }, [activeBuildingResourceEntry, activeBuildingName, activeBuildingId, selectedBuilding, selectedBuildingId]);
+  const closeBuildingResourceModal = useCallback(() => {
+    setBuildingResourceModal((prev) => ({ ...prev, open: false }));
+  }, []);
+  const formatMaintenanceCurrency = useCallback((value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '';
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+    } catch {
+      return `$${Math.round(num).toLocaleString()}`;
+    }
+  }, []);
   const openProgramTestFitForBuilding = useCallback(() => {
     const availableSf = Number(buildingStats?.totalSf || 0) || 0;
     if (!availableSf) {
@@ -10566,7 +10833,7 @@ const StakeholderMap = ({
     setAiCreateScenarioLoading(false);
     setAiCreateScenarioResult(null);
     setAiCreateScenarioErr('');
-    if (!isDemoPublicMode && (roomEditOpen || roomEditData || roomEditSelection.length)) {
+    if (!(isDemoPublicMode && demoEditingEnabled) && (roomEditOpen || roomEditData || roomEditSelection.length)) {
       setRoomEditOpen(false);
       setRoomEditData(null);
       clearRoomEditSelection();
@@ -10574,6 +10841,7 @@ const StakeholderMap = ({
   }, [
     showFullMapfluenceControls,
     isDemoPublicMode,
+    demoEditingEnabled,
     roomEditOpen,
     roomEditData,
     roomEditSelection.length,
@@ -10785,12 +11053,11 @@ const StakeholderMap = ({
     resetScenarioModeState();
   }, [resetScenarioModeState]);
   useEffect(() => {
-    const planningScenarioAllowed = showFullMapfluenceControls || isDemoPublicMode;
-    if (planningScenarioAllowed) return;
+    if (planningScenarioControlsEnabled) return;
     if (!moveScenarioMode) return;
     setMoveScenarioMode(false);
     clearScenario();
-  }, [showFullMapfluenceControls, isDemoPublicMode, moveScenarioMode, clearScenario]);
+  }, [planningScenarioControlsEnabled, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
@@ -14614,8 +14881,8 @@ const StakeholderMap = ({
     return buildAdminCombinedPrefsStorageKey(universityId, userKey);
   }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
   const roomEditCanWrite = useMemo(
-    () => Boolean(isAdminUser && (showFullMapfluenceControls || isDemoPublicMode)),
-    [isAdminUser, showFullMapfluenceControls, isDemoPublicMode]
+    () => Boolean(isAdminUser && (showFullMapfluenceControls || (isDemoPublicMode && demoEditingEnabled))),
+    [isAdminUser, showFullMapfluenceControls, isDemoPublicMode, demoEditingEnabled]
   );
 
   // Marker filters (admin)
@@ -15011,21 +15278,48 @@ const StakeholderMap = ({
       });
   }, [buildLegendForMode, engagementMode, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
 
+  const buildRoomsApiPath = useCallback(() => {
+    const params = new URLSearchParams();
+    const campusId = String(universityId || '').trim();
+    const campusLabel = String(floorplanCampus || '').trim();
+    if (campusId) params.set('campus', campusId);
+    if (campusLabel) params.set('floorplanCampus', campusLabel);
+    const query = params.toString();
+    return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
+  }, [universityId, floorplanCampus]);
+  const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
+    if (!Array.isArray(rooms)) return [];
+    if (!campusBuildingKeySet.size) return rooms;
+    const scoped = rooms.filter((room) => {
+      const roomKeys = [
+        room?.building,
+        room?.buildingName,
+        room?.buildingLabel,
+        room?.buildingId
+      ]
+        .map((value) => normalizeDashboardKey(value))
+        .filter(Boolean);
+      if (!roomKeys.length) return false;
+      return roomKeys.some((key) => campusBuildingKeySet.has(key));
+    });
+    return scoped.length ? scoped : rooms;
+  }, [campusBuildingKeySet]);
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
-      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
+      const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
       let data = null;
       try {
         data = await res.json();
       } catch {}
       if (res.ok && data?.ok && Array.isArray(data.rooms)) {
-        setAirtableRooms(data.rooms);
+        const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
+        setAirtableRooms(scopedRooms);
         setAirtableLastSyncedAt(new Date());
         return true;
       }
     } catch {}
     return false;
-  }, []);
+  }, [buildRoomsApiPath, filterRoomsToConfiguredCampus]);
 
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
@@ -18809,9 +19103,8 @@ const scopedEngagementHeatmapData = useMemo(() => ({
     })
 }), [scopedEngagementMarkers]);
 const maintenanceCanWrite = useMemo(() => {
-  const campusKey = canon(universityId);
-  return Boolean(isAdminUser || campusKey === 'hastings' || campusKey === 'hastings-demo');
-}, [isAdminUser, universityId]);
+  return Boolean(isAdminUser && (showFullMapfluenceControls || (isDemoPublicMode && demoEditingEnabled)));
+}, [isAdminUser, showFullMapfluenceControls, isDemoPublicMode, demoEditingEnabled]);
 const maintenanceIssueTypeOptions = useMemo(() => {
   const dynamic = new Set(MAINTENANCE_ISSUE_TYPES);
   (maintenanceIssues || []).forEach((issue) => {
@@ -20264,6 +20557,23 @@ useEffect(() => {
     })();
   }, [universityId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rawCatalog = await fetchJSON(BUILDING_RESOURCES_URL);
+        if (cancelled) return;
+        const normalized = normalizeBuildingResourceCatalog(rawCatalog);
+        setBuildingResourcesCatalog(normalized);
+      } catch {
+        if (!cancelled) {
+          setBuildingResourcesCatalog({ updatedAt: '', byBuildingKey: new Map() });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [universityId]);
+
   // ---------- Load floor manifest when building changes ----------
   useEffect(() => {
     let cancelled = false;
@@ -20310,7 +20620,7 @@ useEffect(() => {
       setDashboardError(null);
       setDashboardTitle('Campus Summary');
       try {
-        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
+        const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
         let data = null;
         try {
           data = await res.json();
@@ -20320,11 +20630,12 @@ useEffect(() => {
           throw new Error(msg);
         }
         if (data?.ok && Array.isArray(data.rooms)) {
+          const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
           if (!cancelled) {
-            setAirtableRooms(data.rooms);
+            setAirtableRooms(scopedRooms);
             setAirtableLastSyncedAt(new Date());
           }
-          if (data.rooms.some(hasDashboardRoomArea)) {
+          if (scopedRooms.some(hasDashboardRoomArea)) {
             return;
           }
         }
@@ -20354,7 +20665,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId]);
+  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus]);
 
   useEffect(() => {
     const intervalMs = 30 * 60 * 1000;
@@ -24444,6 +24755,265 @@ useEffect(() => {
         </div>
       </div>
     )}
+    {buildingResourceModal.open && buildingResourceModal.entry && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10005,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.36)'
+        }}
+      >
+        <div
+          className="mf-ai-modal-panel"
+          style={{
+            width: 'min(640px, 94vw)',
+            maxHeight: '86vh',
+            overflowY: 'auto',
+            padding: 14
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              {buildingResourceModal.kind === 'remodel' ? 'Planning / Remodel Docs' : 'Deferred Maintenance + Condition'}
+              <div style={{ marginTop: 2, fontSize: 12, color: '#475467', fontWeight: 500 }}>
+                {buildingResourceModal.buildingName || activeBuildingName}
+              </div>
+            </div>
+            <button className="btn" onClick={closeBuildingResourceModal}>Close</button>
+          </div>
+          {buildingResourceModal.kind === 'remodel' ? (
+            (() => {
+              const docs = Array.isArray(buildingResourceModal.entry?.remodelPdfs)
+                ? buildingResourceModal.entry.remodelPdfs
+                : [];
+              return (
+                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                  {!docs.length ? (
+                    <div style={{ fontSize: 12, color: '#667085' }}>
+                      No planning/remodel documents linked for this building yet.
+                    </div>
+                  ) : (
+                    docs.map((doc, idx) => (
+                      <div
+                        key={`resource-doc-${idx}`}
+                        style={{
+                          display: 'grid',
+                          gap: 4,
+                          padding: 10,
+                          border: '1px solid #e4e7ec',
+                          borderRadius: 8,
+                          background: '#fcfcfd'
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{doc.label || `Document ${idx + 1}`}</div>
+                        {doc.description ? (
+                          <div style={{ fontSize: 12, color: '#475467' }}>{doc.description}</div>
+                        ) : null}
+                        <div>
+                          <a href={doc.url} target="_blank" rel="noreferrer">
+                            Open file
+                          </a>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })()
+          ) : (
+            (() => {
+              const deferred = buildingResourceModal.entry?.deferredMaintenance || null;
+              const condition = buildingResourceModal.entry?.conditionAssessment || null;
+              const costSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
+              const hasDeferredContent = Boolean(
+                deferred &&
+                (
+                  deferred.summary ||
+                  deferred.priority ||
+                  deferred.items?.length ||
+                  deferred.sourceUrl ||
+                  costSummary
+                )
+              );
+              const hasConditionContent = hasConditionAssessmentContent(condition);
+              const hasContent = hasDeferredContent || hasConditionContent;
+              const conditionSections = [
+                { label: 'Architecture', scores: condition?.architecture || null },
+                { label: 'Engineering', scores: condition?.engineering || null },
+                { label: 'Functionality', scores: condition?.functionality || null }
+              ].filter((section) => section.scores && Object.keys(section.scores).length > 0);
+              return (
+                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                  {!hasContent ? (
+                    <div style={{ fontSize: 12, color: '#667085' }}>
+                      No deferred maintenance or condition details linked for this building yet.
+                    </div>
+                  ) : (
+                    <>
+                      {hasDeferredContent ? (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gap: 8,
+                            border: '1px solid #e4e7ec',
+                            borderRadius: 8,
+                            padding: 10,
+                            background: '#fcfcfd'
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>Deferred Maintenance</div>
+                          {deferred.summary ? (
+                            <div style={{ fontSize: 13 }}>
+                              <b>Summary:</b> {deferred.summary}
+                            </div>
+                          ) : null}
+                          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
+                            {deferred.priority ? <div><b>Priority:</b> {deferred.priority}</div> : null}
+                            {costSummary ? <div><b>Estimated Cost:</b> {costSummary}</div> : null}
+                            {deferred.updatedAt ? <div><b>Updated:</b> {deferred.updatedAt}</div> : null}
+                          </div>
+                          {Array.isArray(deferred.items) && deferred.items.length > 0 ? (
+                            <div style={{ marginTop: 2 }}>
+                              <div style={{ fontWeight: 600, marginBottom: 4 }}>Top Items</div>
+                              <div style={{ display: 'grid', gap: 4 }}>
+                                {deferred.items.slice(0, 8).map((item, idx) => (
+                                  <div
+                                    key={`deferred-item-${idx}`}
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: '1fr auto',
+                                      gap: 8,
+                                      alignItems: 'center',
+                                      padding: '6px 8px',
+                                      border: '1px solid #eaecf0',
+                                      borderRadius: 6,
+                                      background: '#f8fafc',
+                                      fontSize: 12
+                                    }}
+                                  >
+                                    <div>
+                                      {item.label}
+                                      {item.priority ? (
+                                        <span style={{ marginLeft: 8, color: '#475467' }}>({item.priority})</span>
+                                      ) : null}
+                                    </div>
+                                    <div>
+                                      {Number.isFinite(Number(item.cost)) ? formatMaintenanceCurrency(item.cost) : ''}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {deferred.sourceUrl ? (
+                            <div>
+                              <a href={deferred.sourceUrl} target="_blank" rel="noreferrer">
+                                {deferred.sourceLabel || 'Open source file'}
+                              </a>
+                            </div>
+                          ) : (
+                            deferred.sourceLabel ? (
+                              <div style={{ fontSize: 12, color: '#475467' }}>
+                                Source: {deferred.sourceLabel}
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      ) : null}
+                      {hasConditionContent ? (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gap: 8,
+                            border: '1px solid #dbe7ff',
+                            borderRadius: 8,
+                            padding: 10,
+                            background: '#f8fbff'
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>Condition Assessment</div>
+                          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
+                            {condition.averageScore != null ? (
+                              <div>
+                                <b>Average Score:</b> {formatConditionScore(condition.averageScore)}
+                                {condition.scale ? (
+                                  <span style={{ color: '#475467' }}> ({condition.scale})</span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {condition.updatedAt ? <div><b>Updated:</b> {condition.updatedAt}</div> : null}
+                          </div>
+                          {condition.notes ? (
+                            <div style={{ fontSize: 13 }}>
+                              <b>Notes:</b> {condition.notes}
+                            </div>
+                          ) : null}
+                          {conditionSections.length ? (
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              {conditionSections.map((section) => (
+                                <div
+                                  key={`condition-section-${section.label}`}
+                                  style={{
+                                    border: '1px solid #e4e7ec',
+                                    borderRadius: 6,
+                                    padding: 8,
+                                    background: '#ffffff'
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>{section.label}</div>
+                                  <div style={{ display: 'grid', gap: 3 }}>
+                                    {Object.entries(section.scores).map(([metric, score]) => (
+                                      <div
+                                        key={`${section.label}-${metric}`}
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr auto',
+                                          gap: 8,
+                                          alignItems: 'center',
+                                          fontSize: 12
+                                        }}
+                                      >
+                                        <span>{formatConditionMetricLabel(metric)}</span>
+                                        <b>{formatConditionScore(score)}</b>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          {condition.sourceUrl ? (
+                            <div>
+                              <a href={condition.sourceUrl} target="_blank" rel="noreferrer">
+                                {condition.sourceLabel || 'Open source file'}
+                              </a>
+                            </div>
+                          ) : (
+                            condition.sourceLabel ? (
+                              <div style={{ fontSize: 12, color: '#475467' }}>
+                                Source: {condition.sourceLabel}
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          )}
+          {buildingResourcesCatalog?.updatedAt ? (
+            <div style={{ marginTop: 10, fontSize: 11, color: '#667085' }}>
+              Resource file updated: {buildingResourcesCatalog.updatedAt}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )}
     {maintenanceIssueModalOpen && maintenanceIssueDraft && (
       <div
         style={{
@@ -24877,6 +25447,10 @@ useEffect(() => {
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onOpenDeferredMaintenance={() => openBuildingResourceModal('deferred')}
+              deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
+              onOpenRemodelScenarios={() => openBuildingResourceModal('remodel')}
+              remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               onClose={() => {
                 setIsBuildingPanelCollapsed(true);
                 setSelectedBuildingId(null);
@@ -24918,6 +25492,10 @@ useEffect(() => {
               onLoadFloorplan={loadSelectedFloor}
               onUnloadFloorplan={handleUnloadFloorplan}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onOpenDeferredMaintenance={() => openBuildingResourceModal('deferred')}
+              deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
+              onOpenRemodelScenarios={() => openBuildingResourceModal('remodel')}
+              remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               colorMode={floorColorMode}
               onChangeColorMode={(mode) => {
                 setFloorColorMode(mode);
@@ -24951,7 +25529,7 @@ useEffect(() => {
               explainDisabled={aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
-              onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
+              onToggleMoveScenarioMode={planningScenarioControlsEnabled ? handleToggleMoveScenarioMode : undefined}
               rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
               moveActive={mode === 'admin' && floorAdjustMode === 'move'}
               rotateValue={mode === 'admin' ? floorRotateValue : 0}
@@ -26934,7 +27512,7 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {!engagementMode && !technicalMode && (
+                {!engagementMode && !technicalMode && planningScenarioControlsEnabled && (
                   <div style={{ marginTop: 8 }}>
                     <button
                       className="mf-btn"

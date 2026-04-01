@@ -15,6 +15,10 @@ export default function BuildingPanel({
   onExportPDF,
   onExportCSV,
   onOpenProgramTestFit,
+  onOpenDeferredMaintenance,
+  deferredMaintenanceAvailable = false,
+  onOpenRemodelScenarios,
+  remodelScenariosAvailable = false,
   onExplainBuilding,
   explainBuildingLoading = false,
   explainBuildingDisabled = false,
@@ -148,6 +152,26 @@ export default function BuildingPanel({
         <button className="btn" onClick={onExportCSV}>Export CSV</button>
         {onOpenProgramTestFit ? (
           <button className="btn" onClick={onOpenProgramTestFit}>Program Test Fit</button>
+        ) : null}
+        {onOpenDeferredMaintenance ? (
+          <button
+            className="btn"
+            onClick={onOpenDeferredMaintenance}
+            disabled={!deferredMaintenanceAvailable}
+            title={deferredMaintenanceAvailable ? 'View deferred maintenance and condition details for this building.' : 'No deferred maintenance or condition details linked for this building yet.'}
+          >
+            Deferred + Condition
+          </button>
+        ) : null}
+        {onOpenRemodelScenarios ? (
+          <button
+            className="btn"
+            onClick={onOpenRemodelScenarios}
+            disabled={!remodelScenariosAvailable}
+            title={remodelScenariosAvailable ? 'View planning/remodel documents for this building.' : 'No planning/remodel documents linked for this building yet.'}
+          >
+            Planning Docs
+          </button>
         ) : null}
         <button
           className="btn"
