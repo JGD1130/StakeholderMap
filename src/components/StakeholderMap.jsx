@@ -1078,6 +1078,11 @@ function getDeptFromProps(props = {}) {
 
 function getTypeFromProps(props = {}) {
   return (
+    props.__roomType ||
+    props.NCES_Type_Desc ||
+    props["NCES_Type_Desc"] ||
+    props["NCES Type Description"] ||
+    props["NCES Type Description Short"] ||
     props["Room Type Description"] ||
     props.RoomTypeDescription ||
     props.roomTypeDescription ||
@@ -1385,17 +1390,7 @@ function isTeachingCategory(categoryCode) {
 }
 
 function detectRoomTypeFlags(props = {}) {
-  const rawType = pickFirstDefined(props, [
-    'RoomType',
-    'roomType',
-    'Name',
-    'type',
-    'RoomTypeName',
-    'NCES_Type Description_Sh',
-    'NCES_Type Description',
-    'NCES Type Description',
-    'NCES_Type Description_Short'
-  ]) ?? '';
+  const rawType = getTypeFromProps(props) || '';
   const normed = String(rawType).toLowerCase();
   const isOfficeText = normed.includes('office');
   const isTeachingText = normed.includes('classroom') || normed.includes('lab') || normed.includes('studio');
