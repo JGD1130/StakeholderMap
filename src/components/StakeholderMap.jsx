@@ -10667,6 +10667,156 @@ const StakeholderMap = ({
       return `$${Math.round(num).toLocaleString()}`;
     }
   }, []);
+  const onExportBuildingResourcePdf = useCallback(() => {
+    if (!buildingResourceModal?.entry) return;
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 24;
+      const maxWidth = pageWidth - margin * 2;
+      const lineHeight = 14;
+      let y = margin;
+
+      const ensureSpace = (required = lineHeight) => {
+        if (y + required <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+      const addWrapped = (text, options = {}) => {
+        const value = String(text ?? '').trim();
+        if (!value) return;
+        const fontStyle = options.fontStyle || 'normal';
+        const fontSize = options.fontSize || 11;
+        doc.setFont(undefined, fontStyle);
+        doc.setFontSize(fontSize);
+        const lines = doc.splitTextToSize(value, maxWidth);
+        lines.forEach((line) => {
+          ensureSpace(lineHeight);
+          doc.text(line, margin, y);
+          y += lineHeight;
+        });
+      };
+      const addSpacer = (height = 8) => {
+        ensureSpace(height);
+        y += height;
+      };
+
+      const buildingName = String(
+        buildingResourceModal?.buildingName ||
+        activeBuildingName ||
+        'Building'
+      ).trim() || 'Building';
+      const isRemodel = buildingResourceModal?.kind === 'remodel';
+      const title = isRemodel ? 'Planning / Remodel Docs' : 'Deferred Maintenance + Condition';
+
+      addWrapped(title, { fontStyle: 'bold', fontSize: 15 });
+      addSpacer(2);
+      addWrapped(buildingName, { fontStyle: 'bold', fontSize: 12 });
+      addSpacer(8);
+
+      if (isRemodel) {
+        const docs = Array.isArray(buildingResourceModal?.entry?.remodelPdfs)
+          ? buildingResourceModal.entry.remodelPdfs
+          : [];
+        if (!docs.length) {
+          addWrapped('No planning/remodel documents are currently linked for this building.');
+        } else {
+          docs.forEach((item, idx) => {
+            addWrapped(`${idx + 1}. ${String(item?.label || `Document ${idx + 1}`).trim()}`, { fontStyle: 'bold' });
+            if (item?.description) addWrapped(String(item.description));
+            if (item?.url) addWrapped(String(item.url), { fontSize: 10 });
+            addSpacer(4);
+          });
+        }
+      } else {
+        const deferred = buildingResourceModal?.entry?.deferredMaintenance || null;
+        const condition = buildingResourceModal?.entry?.conditionAssessment || null;
+        const deferredSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
+        const hasDeferred = Boolean(
+          deferred &&
+          (
+            deferred.summary ||
+            deferred.priority ||
+            deferred.items?.length ||
+            deferred.sourceUrl ||
+            deferred.sourceLabel ||
+            deferredSummary
+          )
+        );
+        const hasCondition = hasConditionAssessmentContent(condition);
+
+        if (!hasDeferred && !hasCondition) {
+          addWrapped('No deferred maintenance or condition data is currently linked for this building.');
+        }
+
+        if (hasDeferred) {
+          addWrapped('Deferred Maintenance', { fontStyle: 'bold' });
+          if (deferred?.summary) addWrapped(`Summary: ${deferred.summary}`);
+          if (deferred?.priority) addWrapped(`Priority: ${deferred.priority}`);
+          if (deferredSummary) addWrapped(`Estimated Cost: ${deferredSummary}`);
+          if (Array.isArray(deferred?.items) && deferred.items.length) {
+            addSpacer(2);
+            addWrapped('Top Items:', { fontStyle: 'bold', fontSize: 10 });
+            deferred.items.slice(0, 12).forEach((item) => {
+              const costText = Number.isFinite(Number(item?.cost))
+                ? formatMaintenanceCurrency(item.cost)
+                : '';
+              const priText = item?.priority ? ` (${item.priority})` : '';
+              addWrapped(`- ${String(item?.label || '').trim()}${priText}${costText ? `: ${costText}` : ''}`, { fontSize: 10 });
+            });
+          }
+          if (deferred?.sourceLabel || deferred?.sourceUrl) {
+            addSpacer(2);
+            if (deferred?.sourceLabel) addWrapped(`Source: ${deferred.sourceLabel}`, { fontSize: 10 });
+            if (deferred?.sourceUrl) addWrapped(String(deferred.sourceUrl), { fontSize: 10 });
+          }
+          addSpacer(6);
+        }
+
+        if (hasCondition) {
+          addWrapped('Condition Assessment', { fontStyle: 'bold' });
+          if (condition?.averageScore != null) {
+            const scoreText = formatConditionScore(condition.averageScore);
+            const scaleText = condition?.scale ? ` (${condition.scale})` : '';
+            addWrapped(`Average Score: ${scoreText}${scaleText}`);
+          }
+          if (condition?.notes) addWrapped(`Notes: ${condition.notes}`);
+          const sections = [
+            { label: 'Architecture', scores: condition?.architecture || null },
+            { label: 'Engineering', scores: condition?.engineering || null },
+            { label: 'Functionality', scores: condition?.functionality || null }
+          ];
+          sections.forEach((section) => {
+            if (!section.scores || !Object.keys(section.scores).length) return;
+            addSpacer(2);
+            addWrapped(section.label, { fontStyle: 'bold', fontSize: 10 });
+            Object.entries(section.scores).forEach(([metric, score]) => {
+              addWrapped(
+                `- ${formatConditionMetricLabel(metric)}: ${formatConditionScore(score)}`,
+                { fontSize: 10 }
+              );
+            });
+          });
+          if (condition?.sourceLabel || condition?.sourceUrl) {
+            addSpacer(2);
+            if (condition?.sourceLabel) addWrapped(`Source: ${condition.sourceLabel}`, { fontSize: 10 });
+            if (condition?.sourceUrl) addWrapped(String(condition.sourceUrl), { fontSize: 10 });
+          }
+        }
+      }
+
+      const fileName = `${title}-${buildingName}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80) || 'building-resource';
+      doc.save(`${fileName}.pdf`);
+    } catch (err) {
+      console.error('Building resource PDF export failed', err);
+      alert('PDF export failed - see console for details.');
+    }
+  }, [buildingResourceModal, activeBuildingName, formatMaintenanceCurrency]);
   const openProgramTestFitForBuilding = useCallback(() => {
     const availableSf = Number(buildingStats?.totalSf || 0) || 0;
     if (!availableSf) {
@@ -24954,7 +25104,12 @@ useEffect(() => {
                 {buildingResourceModal.buildingName || activeBuildingName}
               </div>
             </div>
-            <button className="btn" onClick={closeBuildingResourceModal}>Close</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {buildingResourceModal.kind === 'deferred' ? (
+                <button className="btn" onClick={onExportBuildingResourcePdf}>Export PDF</button>
+              ) : null}
+              <button className="btn" onClick={closeBuildingResourceModal}>Close</button>
+            </div>
           </div>
           {buildingResourceModal.kind === 'remodel' ? (
             (() => {
@@ -25045,7 +25200,6 @@ useEffect(() => {
                           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
                             {deferred.priority ? <div><b>Priority:</b> {deferred.priority}</div> : null}
                             {costSummary ? <div><b>Estimated Cost:</b> {costSummary}</div> : null}
-                            {deferred.updatedAt ? <div><b>Updated:</b> {deferred.updatedAt}</div> : null}
                           </div>
                           {Array.isArray(deferred.items) && deferred.items.length > 0 ? (
                             <div style={{ marginTop: 2 }}>
@@ -25116,7 +25270,6 @@ useEffect(() => {
                                 ) : null}
                               </div>
                             ) : null}
-                            {condition.updatedAt ? <div><b>Updated:</b> {condition.updatedAt}</div> : null}
                           </div>
                           {condition.notes ? (
                             <div style={{ fontSize: 13 }}>
@@ -25178,11 +25331,6 @@ useEffect(() => {
               );
             })()
           )}
-          {buildingResourcesCatalog?.updatedAt ? (
-            <div style={{ marginTop: 10, fontSize: 11, color: '#667085' }}>
-              Resource file updated: {buildingResourcesCatalog.updatedAt}
-            </div>
-          ) : null}
         </div>
       </div>
     )}
