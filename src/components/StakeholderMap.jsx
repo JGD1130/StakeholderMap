@@ -15287,8 +15287,15 @@ const StakeholderMap = ({
     const query = params.toString();
     return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
   }, [universityId, floorplanCampus]);
+  const hasCampusScopedRoomsQuery = useMemo(() => (
+    Boolean(String(universityId || '').trim()) ||
+    Boolean(String(floorplanCampus || '').trim())
+  ), [universityId, floorplanCampus]);
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms)) return [];
+    // If the API request is already campus-scoped, trust server-side scoping
+    // and avoid dropping valid rows due to building-name alias drift.
+    if (hasCampusScopedRoomsQuery) return rooms;
     if (!campusBuildingKeySet.size) return rooms;
     const scoped = rooms.filter((room) => {
       const roomKeys = [
@@ -15303,7 +15310,7 @@ const StakeholderMap = ({
       return roomKeys.some((key) => campusBuildingKeySet.has(key));
     });
     return scoped.length ? scoped : rooms;
-  }, [campusBuildingKeySet]);
+  }, [campusBuildingKeySet, hasCampusScopedRoomsQuery]);
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
       const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
