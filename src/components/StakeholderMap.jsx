@@ -27901,7 +27901,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {(mode === 'admin' || isDemoPublicMode) && (
+                  {mode === 'admin' && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
