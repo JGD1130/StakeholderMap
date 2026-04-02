@@ -8279,6 +8279,20 @@ const isClassroomCountQuery = (question = '') => {
   if (!/\bclassroom(s)?\b/.test(text)) return false;
   return /\bhow many\b|\bcount\b|\bnumber of\b/.test(text);
 };
+const isPlanningDocsQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!text) return false;
+  const hasDocIntent = /\b(show|open|view|see|list|display|pull|give)\b/.test(text);
+  const hasPlanningTerms = /\b(planning|remodel|renovation|reno|scenario|master plan)\b/.test(text);
+  const hasDocTerms = /\b(doc|docs|document|documents|pdf|image|images|jpeg|jpg|png|plan|plans)\b/.test(text);
+  return (hasDocIntent && hasPlanningTerms) || (hasPlanningTerms && hasDocTerms);
+};
+const isImageResourceUrl = (urlValue = '') => {
+  const raw = String(urlValue || '').trim();
+  if (!raw) return false;
+  const normalized = raw.split('?')[0].split('#')[0].toLowerCase();
+  return /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(normalized);
+};
 const isRoomVacantForListing = (room) => {
   const status = String(
     room?.occupancyStatus ??
@@ -18179,6 +18193,97 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
         return;
       }
+      if (isPlanningDocsQuery(q)) {
+        const resourceLookup = buildingResourcesCatalog?.byBuildingKey;
+        const lookupIsMap = resourceLookup instanceof Map;
+        const targetCandidates = [
+          inferredBuilding,
+          selectedBuilding,
+          selectedBuildingId,
+          (activeBuildingName && !/^building$/i.test(String(activeBuildingName).trim()) ? activeBuildingName : '')
+        ]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+
+        let matchedLabel = '';
+        let matchedEntry = null;
+        if (lookupIsMap) {
+          for (const candidate of targetCandidates) {
+            const key = normalizeDashboardKey(candidate);
+            if (!key) continue;
+            const hit = resourceLookup.get(key);
+            if (!hit) continue;
+            matchedLabel = candidate;
+            matchedEntry = hit;
+            break;
+          }
+        }
+
+        const docs = Array.isArray(matchedEntry?.remodelPdfs)
+          ? matchedEntry.remodelPdfs.filter((doc) => String(doc?.url || '').trim())
+          : [];
+        if (matchedEntry && docs.length) {
+          const displayBuilding =
+            String(
+              matchedEntry?.building ||
+              resolveBuildingNameFromInput(matchedLabel) ||
+              matchedLabel ||
+              activeBuildingName ||
+              'this building'
+            ).trim() || 'this building';
+          const media = docs.slice(0, 12).map((doc, idx) => ({
+            label: String(doc?.label || `Planning document ${idx + 1}`).trim() || `Planning document ${idx + 1}`,
+            description: String(doc?.description || '').trim(),
+            url: String(doc?.url || '').trim(),
+            mediaType: isImageResourceUrl(doc?.url) ? 'image' : 'document'
+          }));
+          setAskResult({
+            answer: `Here are the planning docs for ${displayBuilding}.`,
+            bullets: [
+              `${media.length.toLocaleString()} linked planning document${media.length === 1 ? '' : 's'} found.`,
+              'Click any preview or "Open file" link to view full-size.'
+            ],
+            resultType: 'none',
+            columns: [],
+            rows: [],
+            media,
+            dataUsed: ['building-resources.json'],
+            missingData: []
+          });
+          return;
+        }
+
+        const availableWithDocs = lookupIsMap
+          ? Array.from(new Set(
+              Array.from(resourceLookup.values())
+                .filter((entry) => Array.isArray(entry?.remodelPdfs) && entry.remodelPdfs.length > 0)
+                .map((entry) => String(entry?.building || '').trim())
+                .filter(Boolean)
+            ))
+          : [];
+        const requestedBuilding = String(
+          resolveBuildingNameFromInput(inferredBuilding || '') ||
+          inferredBuilding ||
+          selectedBuilding ||
+          selectedBuildingId ||
+          ''
+        ).trim();
+        setAskResult({
+          answer: requestedBuilding
+            ? `I could not find linked planning docs for ${requestedBuilding} yet.`
+            : 'Tell me which building you want, and I will show its planning docs.',
+          bullets: availableWithDocs.length
+            ? [`Buildings with linked planning docs: ${availableWithDocs.slice(0, 12).join(', ')}`]
+            : ['No planning docs are linked yet in building-resources.json.'],
+          resultType: 'none',
+          columns: [],
+          rows: [],
+          media: [],
+          dataUsed: ['building-resources.json'],
+          missingData: requestedBuilding ? ['Planning docs for requested building'] : ['Building name']
+        });
+        return;
+      }
       const isLocationQuery =
         /\bwhere\s+(is|are)\b|\blocation of\b|\bwhere\b.*\b(located|location)\b|\bwhich building\b|\bwhat building\b/i.test(q);
       const keywordMatches = (() => {
@@ -18318,6 +18423,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     dashboardMetrics,
     loadedSingleFloor,
     askMapfluence,
+    buildingResourcesCatalog,
     resolveBuildingNameFromInput,
     collectSpaceRows
   ]);
@@ -24727,6 +24833,65 @@ useEffect(() => {
             <ul style={{ margin: '6px 0 10px 18px', padding: 0 }}>
               {askResult.bullets.map((b, i) => <li key={i}>{b}</li>)}
             </ul>
+          ) : null}
+          {Array.isArray(askResult.media) && askResult.media.length ? (
+            <div
+              style={{
+                marginTop: 10,
+                display: 'grid',
+                gap: 10,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))'
+              }}
+            >
+              {askResult.media.map((item, idx) => {
+                const label = String(item?.label || `Planning document ${idx + 1}`).trim() || `Planning document ${idx + 1}`;
+                const description = String(item?.description || '').trim();
+                const url = String(item?.url || '').trim();
+                const isImage = isImageResourceUrl(url);
+                return (
+                  <div
+                    key={`ask-media-${idx}`}
+                    style={{
+                      border: '1px solid #e4e7ec',
+                      borderRadius: 8,
+                      background: '#fcfcfd',
+                      padding: 10,
+                      display: 'grid',
+                      gap: 6
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                    {description ? (
+                      <div style={{ fontSize: 12, color: '#475467' }}>{description}</div>
+                    ) : null}
+                    {isImage ? (
+                      <a href={url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+                        <img
+                          src={url}
+                          alt={label}
+                          loading="lazy"
+                          style={{
+                            width: '100%',
+                            maxHeight: 180,
+                            objectFit: 'cover',
+                            borderRadius: 6,
+                            border: '1px solid #eaecf0',
+                            background: '#ffffff'
+                          }}
+                        />
+                      </a>
+                    ) : null}
+                    {url ? (
+                      <div>
+                        <a href={url} target="_blank" rel="noreferrer">
+                          Open file
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : null}
 
           {askResult.resultType === 'table' && askResult.columns?.length && askResult.rows?.length ? (
