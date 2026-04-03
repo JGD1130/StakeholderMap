@@ -3955,23 +3955,53 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
 }
 
 
+const normalizeMapboxPublicToken = (value) => {
+  const token = String(value || '').trim();
+  return /^pk\./i.test(token) ? token : '';
+};
+
+const MAPBOX_ENV_PUBLIC_TOKEN = normalizeMapboxPublicToken(
+  import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
+);
+
+const buildTokenlessFallbackStyle = () => ({
+  version: 8,
+  sources: {
+    'osm-raster-tiles': {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '(c) OpenStreetMap contributors'
+    }
+  },
+  layers: [
+    {
+      id: 'osm-raster-tiles',
+      type: 'raster',
+      source: 'osm-raster-tiles',
+      minzoom: 0,
+      maxzoom: 22
+    }
+  ]
+});
+
 const resolveRuntimeMapboxToken = () => {
+  if (MAPBOX_ENV_PUBLIC_TOKEN) return MAPBOX_ENV_PUBLIC_TOKEN;
   if (typeof window === 'undefined') return '';
-  const winToken = String(window.__MAPBOX_PUBLIC_TOKEN__ ?? '').trim();
+  const winToken = normalizeMapboxPublicToken(window.__MAPBOX_PUBLIC_TOKEN__);
   if (winToken) return winToken;
   try {
-    const stored = String(window.localStorage?.getItem('MAPBOX_PUBLIC_TOKEN') ?? '').trim();
+    const stored = normalizeMapboxPublicToken(window.localStorage?.getItem('MAPBOX_PUBLIC_TOKEN'));
     if (stored) return stored;
   } catch {}
   return '';
 };
 
-// Runtime-only token resolution to avoid embedding tokens into built JS bundles.
+// Resolve token once at module load (env/runtime/local override chain).
 mapboxgl.accessToken = resolveRuntimeMapboxToken();
 
 // Optional sanity-check
 console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
-
 
 // --- Floor layer IDs (keep consistent) ---
 const FLOOR_SOURCE = 'floor-source';
@@ -9904,16 +9934,6 @@ const StakeholderMap = ({
     } catch {}
     setShowEngagementHelp(false);
   }, []);
-  const [mapboxTokenRequired, setMapboxTokenRequired] = useState(false);
-  const [mapboxTokenDraft, setMapboxTokenDraft] = useState('');
-  const [mapboxTokenErr, setMapboxTokenErr] = useState('');
-  useEffect(() => {
-    if (!mapboxTokenRequired || mapboxTokenDraft) return;
-    try {
-      const stored = String(window.localStorage?.getItem('MAPBOX_PUBLIC_TOKEN') ?? '').trim();
-      if (stored) setMapboxTokenDraft(stored);
-    } catch {}
-  }, [mapboxTokenRequired, mapboxTokenDraft]);
   useEffect(() => {
     const target = mapContainerRef.current;
     if (!target) return () => {};
@@ -18702,21 +18722,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     alert(`Copied ${rows.length.toLocaleString()} rows to clipboard (CSV).`);
   }, [askResult]);
 
-  const onSaveMapboxToken = useCallback(() => {
-    const token = String(mapboxTokenDraft || '').trim();
-    if (!/^pk\./i.test(token)) {
-      setMapboxTokenErr('Enter a valid Mapbox public token (starts with pk.).');
-      return;
-    }
-    try {
-      window.localStorage.setItem('MAPBOX_PUBLIC_TOKEN', token);
-    } catch {}
-    mapboxgl.accessToken = token;
-    setMapboxTokenErr('');
-    setMapboxTokenRequired(false);
-    window.location.reload();
-  }, [mapboxTokenDraft]);
-
   useEffect(() => {
     const pending = pendingScenarioLoadRef.current;
     if (!pending) return;
@@ -21645,12 +21650,11 @@ useEffect(() => {
     const configuredStyle = (config && config.style) || 'mapbox://styles/mapbox/streets-v12';
     const requiresMapboxToken = typeof configuredStyle === 'string' && /^mapbox:\/\//i.test(configuredStyle);
     const hasMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
-    if (requiresMapboxToken && !hasMapboxToken) {
-      setMapboxTokenRequired(true);
-      return;
+    const tokenlessFallback = requiresMapboxToken && !hasMapboxToken;
+    const styleUrl = tokenlessFallback ? buildTokenlessFallbackStyle() : configuredStyle;
+    if (tokenlessFallback) {
+      console.warn('Mapbox public token missing. Falling back to OpenStreetMap basemap.');
     }
-    setMapboxTokenRequired(false);
-    const styleUrl = configuredStyle;
     const initialCenter = config?.initialCenter || [-98.3739, 40.5939];
     const initialZoom = config?.initialZoom ?? 16;
 
@@ -21678,7 +21682,7 @@ useEffect(() => {
     mapInstance.on('error', (evt) => {
       const message = String(evt?.error?.message || '');
       if (/access token/i.test(message)) {
-        setMapboxTokenRequired(true);
+        console.warn('Mapbox access token error:', message || evt?.error);
       }
     });
 
@@ -24542,62 +24546,6 @@ useEffect(() => {
         <div ref={mapContainerRef} className="map-container" />
       </div>
     </div>
-
-    {mapboxTokenRequired && (
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 10010,
-          display: 'grid',
-          placeItems: 'center',
-          background: 'rgba(0,0,0,0.45)'
-        }}
-      >
-        <div
-          className="mf-ai-modal-panel"
-          style={{
-            width: 'min(560px, 92vw)',
-            padding: 16
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: 16 }}>Mapbox Token Required</div>
-          <div style={{ marginTop: 8, fontSize: 13, color: '#333' }}>
-            Enter a Mapbox public token (`pk...`) once for this browser to load the map.
-          </div>
-          <input
-            value={mapboxTokenDraft}
-            onChange={(e) => {
-              setMapboxTokenDraft(e.target.value);
-              if (mapboxTokenErr) setMapboxTokenErr('');
-            }}
-            placeholder="pk.eyJ..."
-            style={{
-              width: '100%',
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 8,
-              border: '1px solid #d0d0d0'
-            }}
-          />
-          {mapboxTokenErr ? (
-            <div style={{ marginTop: 8, color: 'crimson', fontSize: 12 }}>{mapboxTokenErr}</div>
-          ) : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-            <button
-              className="btn"
-              onClick={() => {
-                try { window.localStorage.removeItem('MAPBOX_PUBLIC_TOKEN'); } catch {}
-                setMapboxTokenDraft('');
-              }}
-            >
-              Clear
-            </button>
-            <button className="btn primary" onClick={onSaveMapboxToken}>Save & Reload</button>
-          </div>
-        </div>
-      </div>
-    )}
 
     {programTestFitOpen && programTestFitTarget && (
       <div
@@ -29424,20 +29372,3 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
