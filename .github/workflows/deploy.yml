@@ -35,8 +35,15 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm install
+      - name: Validate Mapbox public token secret
+        env:
+          VITE_MAPBOX_PUBLIC_TOKEN: ${{ secrets.VITE_MAPBOX_PUBLIC_TOKEN }}
+        run: |
+          node -e "const t=(process.env.VITE_MAPBOX_PUBLIC_TOKEN||'' ).trim(); console.log('Mapbox token present:', t.length > 0); console.log('Mapbox token length:', t.length); if(!/^pk\./i.test(t)){ console.error('VITE_MAPBOX_PUBLIC_TOKEN is missing or invalid. It must start with pk.'); process.exit(1); }"
       - name: Build
         run: npm run build
+        env:
+          VITE_MAPBOX_PUBLIC_TOKEN: ${{ secrets.VITE_MAPBOX_PUBLIC_TOKEN }}
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
@@ -57,3 +64,4 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
         
+
