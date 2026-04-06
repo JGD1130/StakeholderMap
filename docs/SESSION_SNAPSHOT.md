@@ -1,6 +1,6 @@
 # Session Snapshot
 
-Last updated: 2026-03-17
+Last updated: 2026-04-03
 
 ## Session continuity note
 
@@ -12,6 +12,12 @@ Last updated: 2026-03-17
 - Workflow preference: Codex should commit and push completed fixes to `main` after changes until the user says otherwise.
 
 ## Latest session note
+
+- 2026-04-06: Critical Hastings demo outage root-caused and recovered. New first-time users in fresh browser profiles (Firefox/Edge/Incognito) saw blank map with Mapbox token length: 0 and access-token errors. Root causes were missing valid runtime public token plus one malformed inline token attempt (pk is not defined due to missing quotes). Confirmed that GitHub secret value fields are intentionally blank after save (expected), and repo URL case mattered (JGD1130/StakeholderMap). Recovery that worked: add correctly quoted runtime token assignment in index.html (window.__MAPBOX_PUBLIC_TOKEN__ = 'pk....';) and redeploy, then cache-bust test (?v=...). Added durable cross-browser go-live checklist for Chrome Incognito, Firefox Private, and Edge InPrivate. Local hardening prepared in workspace: stricter token parsing in StakeholderMap.jsx and build-time token validation step in deploy workflow (pending commit/deploy if needed).
+
+- 2026-04-03: Mapbox token prompt troubleshooting follow-up. Confirmed new-user browsers were still seeing a token-required modal in StakeholderMap.jsx despite tokenless fallback logic. Removed the in-browser token modal flow (mapboxTokenRequired state, token save handler, and modal render block) and kept tokenless fallback behavior so map init now falls back to OpenStreetMap when no Mapbox public token is present. Access-token map errors now log warnings instead of prompting for a token. Validation in this shell remains limited because Node.js/npm are not installed, so npm run build could not be executed here.
+- 2026-04-03: Crash recovery + continuity hardening. Reconstructed last durable checkpoint from local reflog/session artifacts, confirmed latest functional checkpoint around March 31, and resumed docs completion work without git/node binaries available in the shell. Added concrete Hastings demo URL (https://jgd1130.github.io/StakeholderMap/hastings) and resolved support/contact placeholders in pilot-facing docs so they are ready to send. Validation in this environment is limited to file-level verification because build/test tools are currently unavailable in PATH.
+- 2026-04-02: Added Hastings pilot operations docs package: quick guide, feedback intake + triage template, deploy safety + rollback playbook, and follow-up email template for pilot participant communication.
 
 - 2026-03-30: Fifth Planner Copilot refinement to address user feedback that strict mode still "looks the same" and does not feel agentic. Added explicit practical floor-first recovery controls to copilot strict runs: client now sends `practicalFloorFirstOnStrictMiss=true` with `practicalNearRangeTolerance=0.12`, and server fallback ranking now prioritizes near-range options inside the practical band (+/-12%) before emergency nearest-fit options when strict +/-5% cannot be met. Added explanatory notes in returned assumptions/criteria to make this behavior visible. Validation: `node --check ai-server/server.js` passed and `npm.cmd run build` passed.
 - 2026-03-30: Fourth Planner Copilot fix targeted user-reported “no learning / still same underfit option.” Root cause identified: client-side pre-AI inventory downsampling was too aggressive for copilot mode (campus inventory cut to small subsets), causing solver to miss viable strict-fit one-building candidates that exist in full data. Increased copilot inventory intake and trim ceilings substantially in `onCreateMoveScenario` (campus load cap, fallback rows cap, and trim options/max per type) while keeping standard mode trims unchanged. Validation: `node --check ai-server/server.js` passed and `npm.cmd run build` passed.
@@ -100,3 +106,4 @@ Last updated: 2026-03-17
   - what changed
   - what still needs testing
   - any known regressions or open questions
+

@@ -13,6 +13,14 @@ Current Hastings map architecture target
 - Public stakeholder engagement: `/:universityId/engagement`.
 - Public technical assessment: `/:universityId/technical`.
 
+Latest completed work (2026-04-03 mapbox token prompt removal)
+- Reopened troubleshooting for new-user browsers being asked for a Mapbox token.
+- Confirmed StakeholderMap.jsx still had a browser token modal path even with tokenless fallback present.
+- Removed token modal state, save handler, and modal UI so users are no longer prompted to enter a token in-browser.
+- Preserved tokenless map init fallback to OpenStreetMap when no public token is available.
+- Changed map access-token error path to warning logs only (no blocking prompt).
+- Environment note: Node.js/npm are not installed in this shell, so local build validation could not run in-session.
+
 Latest completed work (2026-03-30 planner copilot practical floor-first recovery)
 - Added practical floor-first recovery controls to strict copilot runs.
 - Client now passes `practicalFloorFirstOnStrictMiss=true` and `practicalNearRangeTolerance=0.12` for strict copilot requests.
@@ -1385,3 +1393,38 @@ Latest completed work (demo maintenance panel expansion follow-up)
 - Validation:
   - `npm.cmd run build` passed.
   - `npm.cmd run smoke` passed (`24/24 checks`).
+
+Critical incident resolved (2026-04-06): first-time users seeing blank map on Hastings demo
+- Impact:
+  - New users in Firefox/Edge/Incognito were seeing a blank map and token errors.
+  - Existing Chrome sessions sometimes worked due to prior local browser state.
+- Primary symptom logs:
+  - Mapbox token length: 0
+  - Mapbox access token error: A valid Mapbox access token is required...
+  - Uncaught ReferenceError: pk is not defined (when token script was added without quotes)
+- Root cause chain:
+  - Runtime token resolution depends on valid pk. token from env/runtime/local storage.
+  - Fresh browser profiles had no local token.
+  - A temporary HTML token injection was initially malformed (missing string quotes), causing pk is not defined and token length remained 0.
+- Recovery that worked:
+  - Added token via GitHub web edit in index.html with correct JS string syntax:
+    - window.__MAPBOX_PUBLIC_TOKEN__ = 'pk....';
+  - Verified map render recovery after deploy cache-bust (?v=...).
+- Important operator notes:
+  - GitHub Actions secret edit page intentionally shows blank value after save; this is normal.
+  - Repo URL is case-sensitive: correct repo is JGD1130/StakeholderMap (not stakeholder-map).
+  - Token must be public Mapbox token (pk...), not secret token (sk...).
+- Cross-browser go-live checklist (use for all demos):
+  1) Test in Chrome Incognito, Firefox Private, and Edge InPrivate.
+  2) Confirm console does NOT show Mapbox token length: 0.
+  3) Confirm map tiles render at https://jgd1130.github.io/StakeholderMap/hastings.
+  4) Use cache-bust query param after deploy (?v=8 or newer).
+
+Local hardening prepared in workspace (pending commit/deploy if desired):
+- src/components/StakeholderMap.jsx
+  - Hardened token normalizer to recover from common formatting mistakes:
+    - quoted tokens
+    - VITE_MAPBOX_PUBLIC_TOKEN=pk... format
+    - extraction of pk... token substring
+- .github/workflows/deploy.yml
+  - Added build-time token validation step that fails when token is missing/invalid (pk. check).
