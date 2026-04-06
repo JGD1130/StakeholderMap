@@ -10074,6 +10074,11 @@ const StakeholderMap = ({
   const [airtableRefreshPending, setAirtableRefreshPending] = useState(false);
   const [airtableRefreshMessage, setAirtableRefreshMessage] = useState('');
   const [airtableLastSyncedAt, setAirtableLastSyncedAt] = useState(null);
+  const [airtableScopeCheck, setAirtableScopeCheck] = useState(() => ({
+    level: 'info',
+    label: 'Not checked',
+    detail: 'Run Refresh Airtable Data to validate scope.'
+  }));
   const [buildingResourcesCatalog, setBuildingResourcesCatalog] = useState(() => ({ updatedAt: '', byBuildingKey: new Map() }));
   const [buildingResourceModal, setBuildingResourceModal] = useState({
     open: false,
@@ -15575,6 +15580,31 @@ const StakeholderMap = ({
     campusBuildingKeySet,
     floorplansEnabled
   ]);
+  const recordAirtableScopeCheck = useCallback((sourceLabel, rawRooms = [], scopedRooms = []) => {
+    const rawCount = Array.isArray(rawRooms) ? rawRooms.length : 0;
+    const scopedCount = Array.isArray(scopedRooms) ? scopedRooms.length : 0;
+    let level = 'ok';
+    let label = 'Scope OK';
+
+    if (rawCount <= 0) {
+      level = 'warn';
+      label = 'No Airtable rows';
+    } else if (floorplansEnabled && scopedCount < rawCount) {
+      level = 'warn';
+      label = 'Rows filtered';
+    } else if (!floorplansEnabled && scopedCount <= 0) {
+      level = 'warn';
+      label = 'No scoped rows';
+    }
+
+    const detail = `${sourceLabel}: ${scopedCount}/${rawCount} rows`;
+    const payload = { level, label, detail };
+    setAirtableScopeCheck(payload);
+    const log = `[Instance Check] ${String(universityId || 'unknown')}: ${label} - ${detail}`;
+    if (level === 'ok') console.info(log);
+    else console.warn(log);
+  }, [floorplansEnabled, universityId]);
+
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
       const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
@@ -15586,11 +15616,17 @@ const StakeholderMap = ({
         const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
         setAirtableRooms(scopedRooms);
         setAirtableLastSyncedAt(new Date());
+        recordAirtableScopeCheck('Manual refresh', data.rooms, scopedRooms);
         return true;
       }
     } catch {}
+    setAirtableScopeCheck({
+      level: 'warn',
+      label: 'Refresh failed',
+      detail: 'Airtable sync failed before scope validation.'
+    });
     return false;
-  }, [buildRoomsApiPath, filterRoomsToConfiguredCampus]);
+  }, [buildRoomsApiPath, filterRoomsToConfiguredCampus, recordAirtableScopeCheck]);
 
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
@@ -20987,6 +21023,7 @@ useEffect(() => {
           if (!cancelled) {
             setAirtableRooms(scopedRooms);
             setAirtableLastSyncedAt(new Date());
+            recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
           }
           if (scopedRooms.some(hasDashboardRoomArea)) {
             return;
@@ -21034,7 +21071,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle, floorplansEnabled]);
+  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle, floorplansEnabled, recordAirtableScopeCheck]);
   useEffect(() => {
     const intervalMs = 30 * 60 * 1000;
     const id = setInterval(() => {
@@ -28016,6 +28053,11 @@ useEffect(() => {
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
+                  </div>
+                )}
+                {(mode === 'admin' || isDemoPublicMode) && (
+                  <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
+                    Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
                 )}
               </div>
