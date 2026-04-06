@@ -9681,10 +9681,6 @@ const StakeholderMap = ({
         .map((value) => canon(value || ''))
         .filter((value) => value && value !== 'na');
 
-      if (explicitCampusKeys.length) {
-        return explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
-      }
-
       const roomBuildingKey = normalizeDashboardKey(
         room.building ??
           room.buildingName ??
@@ -9693,9 +9689,20 @@ const StakeholderMap = ({
           room['Building Name'] ??
           ''
       );
-      if (roomBuildingKey && configuredDashboardBuildingKeys.size) {
-        return configuredDashboardBuildingKeys.has(roomBuildingKey);
+      const hasConfiguredBuildings = configuredDashboardBuildingKeys.size > 0;
+      const buildingInScope = (roomBuildingKey && hasConfiguredBuildings)
+        ? configuredDashboardBuildingKeys.has(roomBuildingKey)
+        : null;
+
+      if (explicitCampusKeys.length) {
+        const campusMatch = explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
+        if (campusMatch) return true;
+        // If campus tags are noisy/inconsistent, trust known in-scope building labels.
+        if (buildingInScope !== null) return buildingInScope;
+        return false;
       }
+
+      if (buildingInScope !== null) return buildingInScope;
 
       return floorplansEnabled;
     });
@@ -10574,6 +10581,7 @@ const StakeholderMap = ({
     return null;
   }, []);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
+    if (!floorplansEnabled) return null;
     const normalizedFloorId = normalizeFloorIdValue(floorId);
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
@@ -10589,8 +10597,9 @@ const StakeholderMap = ({
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(normalizedFloorId);
     return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
-  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus]);
+  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
+    if (!floorplansEnabled) return [];
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return [];
     const cached = getAvailableFloors(folderKey);
@@ -10608,7 +10617,7 @@ const StakeholderMap = ({
     availableFloorsByBuildingRef.current.set(folderKey, floors);
     availableFloorUrlsByBuildingRef.current.set(folderKey, urlMap);
     return floors;
-  }, [getBuildingFolderKey, getAvailableFloors, floorplanCampus]);
+  }, [getBuildingFolderKey, getAvailableFloors, floorplanCampus, floorplansEnabled]);
   const [loadedFloors, setLoadedFloors] = useState([]);
   const [loadedSingleFloor, setLoadedSingleFloor] = useState(false);
   const loadedFloorsRef = useRef([]);
