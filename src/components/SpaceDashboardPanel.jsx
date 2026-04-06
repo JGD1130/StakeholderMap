@@ -435,7 +435,10 @@ export default function SpaceDashboardPanel({
   utilizationScopeLabel,
   heatmapOn,
   onToggleHeatmap,
-  strategic
+  strategic,
+  spaceContextTitle = 'Campus Space Context',
+  showUtilizationSection = true,
+  showStrategicSection = true
 }) {
   const [strategicOpen, setStrategicOpen] = React.useState(false);
   React.useEffect(() => {
@@ -462,7 +465,7 @@ export default function SpaceDashboardPanel({
         >
           {metrics ? (
             <PanelCard>
-              <div className="mf-section-title">Campus Space Context</div>
+              <div className="mf-section-title">{spaceContextTitle}</div>
               <div
                 style={{
                   display: 'grid',
@@ -489,37 +492,39 @@ export default function SpaceDashboardPanel({
             </PanelCard>
           ) : null}
 
-          <PanelCard style={{ marginTop: 6 }}>
-            <div className="mf-section-title">Classroom Utilization</div>
-            {utilizationScopeLabel ? (
-              <div style={{ fontSize: 10, color: '#667085', marginTop: -2, marginBottom: 4 }}>
-                {utilizationScopeLabel}
-              </div>
-            ) : null}
-            {showUtilization ? (
-              <>
-                <UtilizationBars
-                  timePct={utilization.timeUtilization}
-                  seatPct={utilization.seatUtilization}
-                  compact
-                />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(heatmapOn)}
-                    onChange={(event) => onToggleHeatmap?.(event.target.checked)}
+          {showUtilizationSection ? (
+            <PanelCard style={{ marginTop: 6 }}>
+              <div className="mf-section-title">Classroom Utilization</div>
+              {utilizationScopeLabel ? (
+                <div style={{ fontSize: 10, color: '#667085', marginTop: -2, marginBottom: 4 }}>
+                  {utilizationScopeLabel}
+                </div>
+              ) : null}
+              {showUtilization ? (
+                <>
+                  <UtilizationBars
+                    timePct={utilization.timeUtilization}
+                    seatPct={utilization.seatUtilization}
+                    compact
                   />
-                  Classroom Utilization Heat Map
-                </label>
-              </>
-            ) : (
-              <div style={{ fontSize: 11, color: '#667085' }}>
-                No classroom utilization data.
-              </div>
-            )}
-          </PanelCard>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(heatmapOn)}
+                      onChange={(event) => onToggleHeatmap?.(event.target.checked)}
+                    />
+                    Classroom Utilization Heat Map
+                  </label>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#667085' }}>
+                  No classroom utilization data.
+                </div>
+              )}
+            </PanelCard>
+          ) : null}
 
-          {strategic ? (
+          {showStrategicSection && strategic ? (
             <CollapsibleSection
               title="Strategic Space Dashboard"
               open={strategicOpen}
@@ -545,3 +550,4 @@ export default function SpaceDashboardPanel({
     </div>
   );
 }
+

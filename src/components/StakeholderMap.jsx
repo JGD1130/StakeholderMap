@@ -9606,9 +9606,24 @@ const StakeholderMap = ({
   const [buildingConditions, setBuildingConditions] = useState({});
   const [buildingAssessments, setBuildingAssessments] = useState({});
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
-  const [selectedBuilding, setSelectedBuilding] = useState(BUILDINGS_LIST[0]?.name || '');
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
+  const normalizedUniversityId = String(canon(universityId || config?.universityId || '') || '').trim().toLowerCase();
+  const isSarpyCountyInstance =
+    normalizedUniversityId === 'sarpy-county' ||
+    normalizedUniversityId === 'sarpy' ||
+    normalizedUniversityId === 'sarpy-ne';
+  const floorplansEnabled = Boolean(config?.enableFloorplans ?? !isSarpyCountyInstance);
+  const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
+  const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
+  const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
+  const showStrategicDashboard = !isSarpyCountyInstance;
+  const universityLogoFile = String(
+    config?.logos?.university || (isSarpyCountyInstance ? 'SarpyCounty_logo.png' : 'HC_image.png')
+  ).trim() || 'HC_image.png';
+  const universityLogoAlt = isSarpyCountyInstance ? 'Sarpy County' : (universityName || 'University');
+  const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
+  const [selectedBuilding, setSelectedBuilding] = useState(() => (floorplansEnabled ? (BUILDINGS_LIST[0]?.name || '') : ''));
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
   // ---- Map view modes ----
   const MAP_VIEWS = {
@@ -9830,7 +9845,7 @@ const StakeholderMap = ({
   const [askErr, setAskErr] = useState('');
   const [askResult, setAskResult] = useState(null);
   const [dashboardMetrics, setDashboardMetrics] = useState(null);
-  const [dashboardTitle, setDashboardTitle] = useState('Campus Summary');
+  const [dashboardTitle, setDashboardTitle] = useState(defaultDashboardTitle);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState(null);
   const [maintenanceIssues, setMaintenanceIssues] = useState([]);
@@ -15436,13 +15451,14 @@ const StakeholderMap = ({
 
   // Initialize defaults on mount: first building + LEVEL_1 (or fallback)
 useEffect(() => {
+  if (!floorplansEnabled) return;
   if (selectedBuilding) return;
   if (!BUILDINGS_LIST.length) return;
 
   const first = BUILDINGS_LIST[0].name;
   setSelectedBuilding(first);
   setSelectedFloor('LEVEL_1');
-}, []);
+}, [selectedBuilding, floorplansEnabled]);
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
@@ -20291,6 +20307,10 @@ useEffect(() => {
     };
 
     (async () => {
+      if (!floorplansEnabled) {
+        clearFloors();
+        return;
+      }
       const folderKey =
         resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
         resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
@@ -20319,14 +20339,14 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [selectedBuildingId, selectedBuilding, getBuildingFolderKey, floorplanCampus]);
+  }, [selectedBuildingId, selectedBuilding, getBuildingFolderKey, floorplanCampus, floorplansEnabled]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setDashboardLoading(true);
       setDashboardError(null);
-      setDashboardTitle('Campus Summary');
+      setDashboardTitle(defaultDashboardTitle);
       try {
         const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
         let data = null;
@@ -20372,7 +20392,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId]);
+  }, [universityId, defaultDashboardTitle]);
 
   useEffect(() => {
     const intervalMs = 30 * 60 * 1000;
@@ -20932,9 +20952,9 @@ useEffect(() => {
     const floorLabel = norm(floorStats?.floorLabel || currentFloorContextRef.current?.floorLabel || selectedFloor || '');
     const hasBuilding = Boolean(hasBuildingScope && buildingLabel);
     const hasFloor = Boolean(loadedSingleFloor && buildingLabel && floorLabel);
-    const nextTitle = hasFloor
+    const nextTitle = (hasFloor && !isSarpyCountyInstance)
       ? `${buildingLabel} ${floorLabel} Summary`
-      : (hasBuilding ? `${buildingLabel} Summary` : 'Campus Summary');
+      : ((hasBuilding && !isSarpyCountyInstance) ? `${buildingLabel} Summary` : defaultDashboardTitle);
     setDashboardTitle(nextTitle);
     try {
       const metrics = computeSpaceDashboard(dashboardRoomFeatures);
@@ -20950,7 +20970,9 @@ useEffect(() => {
     selectedBuilding,
     loadedSingleFloor,
     selectedFloor,
-    floorStats
+    floorStats,
+    defaultDashboardTitle,
+    isSarpyCountyInstance
   ]);
 
   useEffect(() => {
@@ -21170,9 +21192,22 @@ useEffect(() => {
               Number.isFinite(maxX) &&
               Number.isFinite(maxY)
             ) {
+              const rawFitPadding = config?.boundaryFitPadding;
+              const fitPadding = Number.isFinite(rawFitPadding)
+                ? Number(rawFitPadding)
+                : (rawFitPadding && typeof rawFitPadding === 'object'
+                    ? {
+                        top: Number.isFinite(rawFitPadding.top) ? Number(rawFitPadding.top) : 40,
+                        right: Number.isFinite(rawFitPadding.right) ? Number(rawFitPadding.right) : 40,
+                        bottom: Number.isFinite(rawFitPadding.bottom) ? Number(rawFitPadding.bottom) : 40,
+                        left: Number.isFinite(rawFitPadding.left) ? Number(rawFitPadding.left) : 40
+                      }
+                    : 40);
+              const boundaryFitMaxZoom = Number(config?.boundaryFitMaxZoom);
               mapInstance.fitBounds([[minX, minY], [maxX, maxY]], {
-                padding: 40,
-                duration: 0
+                padding: fitPadding,
+                duration: 0,
+                ...(Number.isFinite(boundaryFitMaxZoom) ? { maxZoom: boundaryFitMaxZoom } : {})
               });
             }
           }
@@ -24662,15 +24697,15 @@ useEffect(() => {
           <div className="logo-box">
             <img
               className="mf-logo mf-logo--hc"
-              src={assetUrl('HC_image.png')}
-              alt="Hastings College"
+              src={assetUrl(universityLogoFile)}
+              alt={universityLogoAlt}
             />
           </div>
           <div className="logo-box">
             <div className="mapfluence-title">MAPFLUENCE</div>
             <img
               className="mf-logo mf-logo--mapfluence"
-              src={assetUrl('Clark_Enersen_Logo.png')}
+              src={assetUrl(partnerLogoFile)}
               alt="Clark & Enersen Logo"
             />
           </div>
@@ -24687,7 +24722,10 @@ useEffect(() => {
               utilizationScopeLabel={dashboardUtilizationLabel}
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
-              strategic={isAdminMode ? {
+              spaceContextTitle={dashboardSpaceContextTitle}
+              showUtilizationSection={showClassroomUtilizationDashboard}
+              showStrategicSection={showStrategicDashboard}
+              strategic={isAdminMode && showStrategicDashboard ? {
                 scenarioName: 'Baseline',
                 selectedYear: strategicSelectedYear,
                 onSelectedYearChange: setStrategicSelectedYear,
@@ -26790,7 +26828,7 @@ useEffect(() => {
             </div>
           )}
 
-              {(!isAdminCombinedMode || stakeholderWorkflowActive) && (
+              {floorplansEnabled && (!isAdminCombinedMode || stakeholderWorkflowActive) && (
               <div
                 className="floorplans-section"
                 style={{
@@ -28487,3 +28525,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
