@@ -2,11 +2,25 @@
   "universityId": "sarpy-county",
   "universityName": "Sarpy County, NE",
   "enableDrawingEntry": true,
+  "enableFloorplans": false,
   "floorplanCampus": "SarpyCounty",
   "style": "mapbox://styles/mapbox/streets-v12",
+  "initialCenter": [-96.0804, 41.1367],
+  "initialZoom": 11.2,
   "lng": -96.0804,
   "lat": 41.1367,
   "zoom": 12.8,
   "pitch": 39,
-  "bearing": 0
+  "bearing": 0,
+  "boundaryFitPadding": {
+    "top": 70,
+    "right": 320,
+    "bottom": 70,
+    "left": 300
+  },
+  "boundaryFitMaxZoom": 10.8,
+  "logos": {
+    "university": "SarpyCounty_logo.png",
+    "clarkEnersen": "Clark_Enersen_Logo.png"
+  }
 }
