@@ -9805,9 +9805,10 @@ const StakeholderMap = ({
   const activeUniversityName = universityName || universityId || 'Campus';
   const normalizedUniversityId = String(canon(universityId || config?.universityId || '') || '').trim().toLowerCase();
   const isSarpyCountyInstance =
-    normalizedUniversityId === 'sarpy-county' ||
+    normalizedUniversityId === 'sarpy_county' ||
     normalizedUniversityId === 'sarpy' ||
-    normalizedUniversityId === 'sarpy-ne';
+    normalizedUniversityId === 'sarpy_ne' ||
+    normalizedUniversityId === 'sarpycounty';
   const floorplansEnabled = Boolean(config?.enableFloorplans ?? !isSarpyCountyInstance);
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
@@ -9820,6 +9821,88 @@ const StakeholderMap = ({
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState(() => (floorplansEnabled ? (BUILDINGS_LIST[0]?.name || '') : ''));
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
+  const floorplanBuildingOptions = useMemo(
+    () => (floorplansEnabled ? BUILDINGS_LIST : []),
+    [floorplansEnabled]
+  );
+  const configuredDashboardBuildingKeys = useMemo(() => {
+    const out = new Set();
+    (config?.buildings?.features || []).forEach((feature) => {
+      const props = feature?.properties || {};
+      [
+        props.id,
+        props.name,
+        props.Name,
+        props.BUILDING,
+        props.Building,
+        props.building
+      ].forEach((raw) => {
+        const key = normalizeDashboardKey(raw);
+        if (key) out.add(key);
+      });
+    });
+    return out;
+  }, [config]);
+  const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
+    if (!Array.isArray(rooms) || !rooms.length) return [];
+
+    const allowedCampusKeys = new Set(
+      [
+        universityId,
+        config?.universityId,
+        floorplanCampus,
+        universityName,
+        activeUniversityName
+      ]
+        .map((value) => canon(value || ''))
+        .filter((value) => value && value !== 'na')
+    );
+
+    return rooms.filter((room) => {
+      if (!room || typeof room !== 'object') return false;
+
+      const explicitCampusKeys = [
+        room.campus,
+        room.campusId,
+        room.campus_id,
+        room.universityId,
+        room.university_id,
+        room.university,
+        room.tenant,
+        room.tenantId,
+        room.organization,
+        room.org
+      ]
+        .map((value) => canon(value || ''))
+        .filter((value) => value && value !== 'na');
+
+      if (explicitCampusKeys.length) {
+        return explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
+      }
+
+      const roomBuildingKey = normalizeDashboardKey(
+        room.building ??
+          room.buildingName ??
+          room.Building ??
+          room.BuildingName ??
+          room['Building Name'] ??
+          ''
+      );
+      if (roomBuildingKey && configuredDashboardBuildingKeys.size) {
+        return configuredDashboardBuildingKeys.has(roomBuildingKey);
+      }
+
+      return floorplansEnabled;
+    });
+  }, [
+    universityId,
+    config,
+    floorplanCampus,
+    universityName,
+    activeUniversityName,
+    configuredDashboardBuildingKeys,
+    floorplansEnabled
+  ]);
   // ---- Map view modes ----
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
@@ -20934,9 +21017,25 @@ useEffect(() => {
           if (scopedRooms.some(hasDashboardRoomArea)) {
             return;
           }
+          if (!floorplansEnabled) {
+            if (!cancelled) {
+              setCampusRooms(scopedRooms);
+              setCampusRoomsLoaded(true);
+              setDashboardError(null);
+            }
+            return;
+          }
         }
         throw new Error('Rooms payload missing or invalid');
       } catch (err) {
+        if (!floorplansEnabled) {
+          if (!cancelled) {
+            setCampusRooms([]);
+            setCampusRoomsLoaded(true);
+            setDashboardError(null);
+          }
+          return;
+        }
         try {
           let manifest = dashboardManifestRef.current;
           if (!manifest) {
@@ -20961,7 +21060,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle]);
+  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle, floorplansEnabled]);
   useEffect(() => {
     const intervalMs = 30 * 60 * 1000;
     const id = setInterval(() => {
@@ -21420,7 +21519,20 @@ useEffect(() => {
   }, [universityId, strategicEnrollmentTouched]);
 
   useEffect(() => {
-    if (!airtableRooms.length) return;
+    if (!airtableRooms.length) {
+      if (!floorplansEnabled) {
+        setCampusRooms([]);
+        setCampusRoomsLoaded(true);
+        setDashboardError(null);
+      }
+      return;
+    }
+    if (!floorplansEnabled) {
+      setCampusRooms(airtableRooms);
+      setCampusRoomsLoaded(true);
+      setDashboardError(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       let merged = null;
@@ -21511,7 +21623,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms]);
+  }, [airtableRooms, floorplansEnabled]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
@@ -27720,7 +27832,7 @@ useEffect(() => {
             </div>
           )}
 
-              {floorplansEnabled && (!isAdminCombinedMode || stakeholderWorkflowActive) && (
+              {(!isAdminCombinedMode || stakeholderWorkflowActive) && (
               <div
                 className="floorplans-section"
                 style={{
@@ -27761,7 +27873,7 @@ useEffect(() => {
                           setEngagementScopeMode('floor');
                           if (!loadedSingleFloor) void handleLoadFloorplan();
                         }}
-                        disabled={!availableFloors.length}
+                        disabled={!availableFloors.length || !floorplanBuildingOptions.length}
                       >
                         Floorplan
                       </button>
@@ -27772,14 +27884,19 @@ useEffect(() => {
                     id="fp-building"
                     style={{ width: '100%' }}
                     value={selectedBuilding}
+                    disabled={!floorplanBuildingOptions.length}
                     onChange={(e) => {
                       const newBldg = e.target.value;
                       setSelectedBuilding(newBldg);
                     }}
                   >
-                    {BUILDINGS_LIST.map((b) => (
-                      <option key={b.name} value={b.name}>{b.name}</option>
-                    ))}
+                    {floorplanBuildingOptions.length ? (
+                      floorplanBuildingOptions.map((b) => (
+                        <option key={b.name} value={b.name}>{b.name}</option>
+                      ))
+                    ) : (
+                      <option value="">No floorplans available</option>
+                    )}
                   </select>
 
                   <select
@@ -27801,7 +27918,7 @@ useEffect(() => {
                       if (engagementMode) setEngagementScopeMode('floor');
                       handleLoadFloorplan();
                     }}
-                    disabled={!availableFloors.length}
+                    disabled={!availableFloors.length || !floorplanBuildingOptions.length}
                   >
                     Load
                   </button>
@@ -27823,6 +27940,11 @@ useEffect(() => {
                   >
                     Center
                   </button>
+                  {!floorplanBuildingOptions.length && (
+                    <div style={{ fontSize: 11, color: '#555', textAlign: 'center' }}>
+                      Floorplans will appear here after Sarpy floor data is added.
+                    </div>
+                  )}
                 </div>
 
                 {!engagementMode && !technicalMode && planningScenarioControlsEnabled && (
