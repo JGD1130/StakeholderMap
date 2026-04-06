@@ -15504,6 +15504,10 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
+    // For floorplan-enabled campuses (Hastings), the rooms API is already campus-scoped.
+    // Avoid additional client-side filtering that can undercount valid Airtable rows.
+    if (floorplansEnabled) return rooms;
+
     const allowedCampusKeys = new Set(
       [
         universityId,
