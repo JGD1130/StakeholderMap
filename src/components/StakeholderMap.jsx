@@ -9825,84 +9825,6 @@ const StakeholderMap = ({
     () => (floorplansEnabled ? BUILDINGS_LIST : []),
     [floorplansEnabled]
   );
-  const configuredDashboardBuildingKeys = useMemo(() => {
-    const out = new Set();
-    (config?.buildings?.features || []).forEach((feature) => {
-      const props = feature?.properties || {};
-      [
-        props.id,
-        props.name,
-        props.Name,
-        props.BUILDING,
-        props.Building,
-        props.building
-      ].forEach((raw) => {
-        const key = normalizeDashboardKey(raw);
-        if (key) out.add(key);
-      });
-    });
-    return out;
-  }, [config]);
-  const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
-    if (!Array.isArray(rooms) || !rooms.length) return [];
-
-    const allowedCampusKeys = new Set(
-      [
-        universityId,
-        config?.universityId,
-        floorplanCampus,
-        universityName,
-        activeUniversityName
-      ]
-        .map((value) => canon(value || ''))
-        .filter((value) => value && value !== 'na')
-    );
-
-    return rooms.filter((room) => {
-      if (!room || typeof room !== 'object') return false;
-
-      const explicitCampusKeys = [
-        room.campus,
-        room.campusId,
-        room.campus_id,
-        room.universityId,
-        room.university_id,
-        room.university,
-        room.tenant,
-        room.tenantId,
-        room.organization,
-        room.org
-      ]
-        .map((value) => canon(value || ''))
-        .filter((value) => value && value !== 'na');
-
-      if (explicitCampusKeys.length) {
-        return explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
-      }
-
-      const roomBuildingKey = normalizeDashboardKey(
-        room.building ??
-          room.buildingName ??
-          room.Building ??
-          room.BuildingName ??
-          room['Building Name'] ??
-          ''
-      );
-      if (roomBuildingKey && configuredDashboardBuildingKeys.size) {
-        return configuredDashboardBuildingKeys.has(roomBuildingKey);
-      }
-
-      return floorplansEnabled;
-    });
-  }, [
-    universityId,
-    config,
-    floorplanCampus,
-    universityName,
-    activeUniversityName,
-    configuredDashboardBuildingKeys,
-    floorplansEnabled
-  ]);
   // ---- Map view modes ----
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
@@ -15577,17 +15499,43 @@ const StakeholderMap = ({
     const query = params.toString();
     return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
   }, [universityId, floorplanCampus]);
-  const hasCampusScopedRoomsQuery = useMemo(() => (
-    Boolean(String(universityId || '').trim()) ||
-    Boolean(String(floorplanCampus || '').trim())
-  ), [universityId, floorplanCampus]);
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
-    if (!Array.isArray(rooms)) return [];
-    // If the API request is already campus-scoped, trust server-side scoping
-    // and avoid dropping valid rows due to building-name alias drift.
-    if (hasCampusScopedRoomsQuery) return rooms;
-    if (!campusBuildingKeySet.size) return rooms;
+    if (!Array.isArray(rooms) || !rooms.length) return [];
+
+    const allowedCampusKeys = new Set(
+      [
+        universityId,
+        config?.universityId,
+        floorplanCampus,
+        universityName,
+        activeUniversityName
+      ]
+        .map((value) => canon(value || ''))
+        .filter((value) => value && value !== 'na')
+    );
+
     const scoped = rooms.filter((room) => {
+      if (!room || typeof room !== 'object') return false;
+
+      const explicitCampusKeys = [
+        room.campus,
+        room.campusId,
+        room.campus_id,
+        room.universityId,
+        room.university_id,
+        room.university,
+        room.tenant,
+        room.tenantId,
+        room.organization,
+        room.org
+      ]
+        .map((value) => canon(value || ''))
+        .filter((value) => value && value !== 'na');
+
+      if (explicitCampusKeys.length) {
+        return explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
+      }
+
       const roomKeys = [
         room?.building,
         room?.buildingName,
@@ -15596,11 +15544,24 @@ const StakeholderMap = ({
       ]
         .map((value) => normalizeDashboardKey(value))
         .filter(Boolean);
-      if (!roomKeys.length) return false;
-      return roomKeys.some((key) => campusBuildingKeySet.has(key));
+      if (roomKeys.length && campusBuildingKeySet.size) {
+        return roomKeys.some((key) => campusBuildingKeySet.has(key));
+      }
+
+      return floorplansEnabled;
     });
-    return scoped.length ? scoped : rooms;
-  }, [campusBuildingKeySet, hasCampusScopedRoomsQuery]);
+
+    if (scoped.length) return scoped;
+    return floorplansEnabled ? rooms : [];
+  }, [
+    universityId,
+    config,
+    floorplanCampus,
+    universityName,
+    activeUniversityName,
+    campusBuildingKeySet,
+    floorplansEnabled
+  ]);
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
       const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
