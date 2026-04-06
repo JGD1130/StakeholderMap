@@ -3956,12 +3956,20 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
 
 
 const normalizeMapboxPublicToken = (value) => {
-  const token = String(value || '').trim();
-  return /^pk\./i.test(token) ? token : '';
+  let token = String(value || '').trim();
+  if (!token) return '';
+
+  // Accept common paste mistakes from env/secrets (quoted value or KEY=value forms).
+  token = token.replace(/^['\"]|['\"]$/g, '');
+  token = token.replace(/^(?:VITE_)?MAPBOX_PUBLIC_TOKEN\s*=\s*/i, '').trim();
+  token = token.replace(/^['\"]|['\"]$/g, '').trim();
+
+  const match = token.match(/pk\.[^\s'\"]+/i);
+  return match ? match[0] : '';
 };
 
 const MAPBOX_ENV_PUBLIC_TOKEN = normalizeMapboxPublicToken(
-  import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
+  import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || import.meta.env.VITE_MAPBOX_TOKEN || ''
 );
 
 const buildTokenlessFallbackStyle = () => ({
@@ -9901,10 +9909,10 @@ const StakeholderMap = ({
       };
     }
     return {
-      title: 'Demo Map',
+      title: `${activeUniversityName} Map`,
       subtitle: 'Campus space visualization view.'
     };
-  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
