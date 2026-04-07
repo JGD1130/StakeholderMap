@@ -4035,6 +4035,10 @@ const DOORS_SOURCE = "doors-source";
 const STAIRS_SOURCE = "stairs-source";
 const DOORS_LAYER = "doors-layer";
 const STAIRS_LAYER = "stairs-layer";
+const LOW_ZOOM_BUILDING_MARKER_SOURCE_ID = 'buildings-lowzoom-markers';
+const LOW_ZOOM_BUILDING_MARKER_LAYER_ID = 'buildings-lowzoom-markers';
+const LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID = 'buildings-lowzoom-markers-ring';
+const DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM = 13.2;
 
 // Cache to avoid double-loading sources
 const floorCache = new Map();
@@ -5171,6 +5175,55 @@ function toFeatureCollection(anyGeo) {
     return { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: anyGeo, properties: {} }] };
   }
   return null;
+}
+
+function buildLowZoomBuildingMarkerFC(buildingsGeoJson) {
+  const fc = toFeatureCollection(buildingsGeoJson);
+  const markerFeatures = [];
+
+  (fc?.features || []).forEach((feature, idx) => {
+    const geomType = feature?.geometry?.type;
+    if (!geomType) return;
+
+    let coords = null;
+    try {
+      if (geomType === 'Point' && Array.isArray(feature?.geometry?.coordinates)) {
+        coords = feature.geometry.coordinates;
+      } else {
+        coords = turf.centroid(feature)?.geometry?.coordinates || null;
+      }
+    } catch {
+      try {
+        const bounds = turf.bbox(feature);
+        if (Array.isArray(bounds) && bounds.length === 4) {
+          const minX = Number(bounds[0]);
+          const minY = Number(bounds[1]);
+          const maxX = Number(bounds[2]);
+          const maxY = Number(bounds[3]);
+          if ([minX, minY, maxX, maxY].every((v) => Number.isFinite(v))) {
+            coords = [(minX + maxX) / 2, (minY + maxY) / 2];
+          }
+        }
+      } catch {}
+    }
+
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    const lng = Number(coords[0]);
+    const lat = Number(coords[1]);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+    const props = feature?.properties || {};
+    const id = String(props.id ?? props.ID ?? props.name ?? props.Name ?? `building_${idx + 1}`);
+    const name = String(props.name ?? props.Name ?? props.id ?? props.ID ?? `Building ${idx + 1}`).trim() || `Building ${idx + 1}`;
+
+    markerFeatures.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lng, lat] },
+      properties: { id, name }
+    });
+  });
+
+  return { type: 'FeatureCollection', features: markerFeatures };
 }
 
 function cloneGeoJsonValue(value) {
@@ -9810,6 +9863,16 @@ const StakeholderMap = ({
     normalizedUniversityId === 'sarpy_ne' ||
     normalizedUniversityId === 'sarpycounty';
   const floorplansEnabled = Boolean(config?.enableFloorplans ?? !isSarpyCountyInstance);
+  const lowZoomBuildingMarkersEnabled = Boolean(config?.enableLowZoomBuildingMarkers ?? isSarpyCountyInstance);
+  const lowZoomBuildingMarkerMaxZoom = Number.isFinite(Number(config?.lowZoomBuildingMarkerMaxZoom))
+    ? Number(config.lowZoomBuildingMarkerMaxZoom)
+    : DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM;
+  const lowZoomBuildingMarkersFC = useMemo(
+    () => (lowZoomBuildingMarkersEnabled
+      ? buildLowZoomBuildingMarkerFC(config?.buildings)
+      : { type: 'FeatureCollection', features: [] }),
+    [lowZoomBuildingMarkersEnabled, config?.buildings]
+  );
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
@@ -22723,6 +22786,50 @@ useEffect(() => {
     }
   }
 
+  if (lowZoomBuildingMarkersEnabled) {
+    const markerFC = lowZoomBuildingMarkersFC || { type: 'FeatureCollection', features: [] };
+    const markerSource = map.getSource(LOW_ZOOM_BUILDING_MARKER_SOURCE_ID);
+    if (!markerSource) {
+      map.addSource(LOW_ZOOM_BUILDING_MARKER_SOURCE_ID, { type: 'geojson', data: markerFC });
+    } else {
+      try { markerSource.setData(markerFC); } catch {}
+    }
+
+    if (!map.getLayer(LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID)) {
+      map.addLayer({
+        id: LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID,
+        type: 'circle',
+        source: LOW_ZOOM_BUILDING_MARKER_SOURCE_ID,
+        maxzoom: lowZoomBuildingMarkerMaxZoom,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 6, 10, 8, 12, 10],
+          'circle-color': 'rgba(29,78,216,0.14)',
+          'circle-stroke-color': 'rgba(29,78,216,0.55)',
+          'circle-stroke-width': 1.2
+        }
+      }, 'buildings-labels');
+    }
+
+    if (!map.getLayer(LOW_ZOOM_BUILDING_MARKER_LAYER_ID)) {
+      map.addLayer({
+        id: LOW_ZOOM_BUILDING_MARKER_LAYER_ID,
+        type: 'circle',
+        source: LOW_ZOOM_BUILDING_MARKER_SOURCE_ID,
+        maxzoom: lowZoomBuildingMarkerMaxZoom,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 2.4, 10, 3.2, 12, 4.2],
+          'circle-color': '#1d4ed8',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1
+        }
+      }, 'buildings-labels');
+    }
+  } else {
+    try { if (map.getLayer(LOW_ZOOM_BUILDING_MARKER_LAYER_ID)) map.removeLayer(LOW_ZOOM_BUILDING_MARKER_LAYER_ID); } catch {}
+    try { if (map.getLayer(LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID)) map.removeLayer(LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID); } catch {}
+    try { if (map.getSource(LOW_ZOOM_BUILDING_MARKER_SOURCE_ID)) map.removeSource(LOW_ZOOM_BUILDING_MARKER_SOURCE_ID); } catch {}
+  }
+
   // Boundary
   if (config.boundary && !map.getSource('boundary')) {
     const boundaryFC = toFeatureCollection(config.boundary);
@@ -22739,7 +22846,7 @@ useEffect(() => {
     }
   }
   // Outdoor polygons disabled
-  }, [mapLoaded, config]);
+  }, [mapLoaded, config, lowZoomBuildingMarkersEnabled, lowZoomBuildingMarkersFC, lowZoomBuildingMarkerMaxZoom]);
 
 
 // --- Ensure buildings source/layers and dedicated click are bound ---
