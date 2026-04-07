@@ -22164,7 +22164,6 @@ const exportMaintenanceIssuesCsv = useCallback(() => {
 
 // ---------- Base layers + Outdoor polygons ----------
 useEffect(() => {
-  if (engagementMode) return;
   if (!mapLoaded || !mapRef.current || !config) return;
   const map = mapRef.current;
 
@@ -22275,7 +22274,7 @@ useEffect(() => {
         source: LOW_ZOOM_BUILDING_MARKER_SOURCE_ID,
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 6, 10, 8, 12, 10],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 10, 12, 12, 15],
           'circle-color': 'rgba(220,38,38,0.20)',
           'circle-stroke-color': 'rgba(185,28,28,0.75)',
           'circle-stroke-width': 1.2
@@ -22290,7 +22289,7 @@ useEffect(() => {
         source: LOW_ZOOM_BUILDING_MARKER_SOURCE_ID,
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3.2, 10, 4.2, 12, 5.4],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4.8, 10, 6.3, 12, 8.1],
           'circle-color': '#dc2626',
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.2
@@ -28883,6 +28882,8 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 
 
 
