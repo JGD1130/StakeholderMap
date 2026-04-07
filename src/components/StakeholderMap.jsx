@@ -9791,7 +9791,7 @@ const StakeholderMap = ({
   };
   const isAdminMode = mode === 'admin';
   const isAdminCombinedMode = isAdminMode && engagementMode;
-  const isTechnicalOnlyMode = Boolean(technicalMode && !isAdminMode);
+  const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
@@ -28883,5 +28883,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 

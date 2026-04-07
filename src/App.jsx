@@ -57,6 +57,7 @@ function App() {
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
         <Route path="/:universityId/admin/engagement" element={<UniversityMapLoader engagementMode />} />
+        <Route path="/:universityId/admin/technical" element={<UniversityMapLoader technicalMode />} />
         <Route path="/:universityId/engagement" element={<UniversityMapLoader engagementMode />} />
         <Route path="/:universityId/technical" element={<UniversityMapLoader technicalMode />} />
         <Route path="/:universityId/:persona" element={<UniversityMapLoader />} />
@@ -69,3 +70,4 @@ function App() {
 }
 
 export default App;
+
