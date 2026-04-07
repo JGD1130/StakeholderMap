@@ -9897,7 +9897,7 @@ const StakeholderMap = ({
   };
   const isAdminMode = mode === 'admin';
   const isAdminCombinedMode = isAdminMode && engagementMode;
-  const isTechnicalOnlyMode = Boolean(technicalMode && !isAdminMode);
+  const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const demoEditingEnabled = DEMO_EDITING_ENABLED;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
@@ -29734,5 +29734,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
