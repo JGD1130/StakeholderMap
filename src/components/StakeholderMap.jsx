@@ -22190,9 +22190,9 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': 'rgba(0,0,0,0.35)',
-        'line-width': 1.6,
-        'line-opacity': 0.8
+        'line-color': '#000000',
+        'line-width': 3,
+        'line-opacity': 0.95
       }
     });
 
@@ -22339,6 +22339,17 @@ useEffect(() => {
         'fill-extrusion-color': withNoFloorplanOverride(defaultBuildingColor),
         'fill-extrusion-height': 15,
         'fill-extrusion-opacity': 0.7
+      }
+    });
+
+    map.addLayer({
+      id: 'buildings-outline-base',
+      type: 'line',
+      source: 'buildings',
+      paint: {
+        'line-color': '#000000',
+        'line-width': 3,
+        'line-opacity': 0.95
       }
     });
 
@@ -28872,4 +28883,5 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
