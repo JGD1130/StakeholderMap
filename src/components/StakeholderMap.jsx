@@ -22803,8 +22803,8 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 6, 10, 8, 12, 10],
-          'circle-color': 'rgba(29,78,216,0.14)',
-          'circle-stroke-color': 'rgba(29,78,216,0.55)',
+          'circle-color': 'rgba(220,38,38,0.20)',
+          'circle-stroke-color': 'rgba(185,28,28,0.75)',
           'circle-stroke-width': 1.2
         }
       }, 'buildings-labels');
@@ -22817,10 +22817,10 @@ useEffect(() => {
         source: LOW_ZOOM_BUILDING_MARKER_SOURCE_ID,
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 2.4, 10, 3.2, 12, 4.2],
-          'circle-color': '#1d4ed8',
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3.2, 10, 4.2, 12, 5.4],
+          'circle-color': '#dc2626',
           'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 1
+          'circle-stroke-width': 1.2
         }
       }, 'buildings-labels');
     }
@@ -22991,11 +22991,67 @@ useEffect(() => {
     }
   };
 
+  const onLowZoomMarkerClick = (e) => {
+    if (!map) return;
+    const markerFeature = e?.features?.[0] || null;
+    if (!markerFeature) return;
+
+    const markerId = String(markerFeature?.properties?.id || '').trim();
+    const markerName = String(markerFeature?.properties?.name || '').trim();
+    const buildingFeatures = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+    const buildingFeature =
+      matchBuildingFeature(buildingFeatures, markerId) ||
+      matchBuildingFeature(buildingFeatures, markerName) ||
+      buildingFeatures.find((candidate) => String(candidate?.properties?.id || '').trim() === markerId) ||
+      null;
+    if (!buildingFeature) return;
+
+    const featureId = String(buildingFeature?.properties?.id || markerId).trim();
+    if (!featureId) return;
+
+    const resolvedName = String(
+      buildingFeature?.properties?.name ||
+      buildingFeature?.properties?.Name ||
+      resolveBuildingNameFromInput(featureId) ||
+      markerName ||
+      featureId
+    ).trim();
+
+    selectedBuildingFeatureRef.current = buildingFeature;
+    setSelectedBuildingId(featureId);
+    selectedBuildingIdRef.current = featureId;
+    if (resolvedName) setSelectedBuilding(resolvedName);
+
+    try {
+      if (previousSelectedBuildingId.current) {
+        map.setFeatureState({ source: 'buildings', id: previousSelectedBuildingId.current }, { selected: false });
+      }
+      map.setFeatureState({ source: 'buildings', id: featureId }, { selected: true });
+      previousSelectedBuildingId.current = featureId;
+    } catch {}
+
+    try {
+      const bbox = turf.bbox(buildingFeature);
+      if (Array.isArray(bbox) && bbox.length === 4 && bbox.every((value) => Number.isFinite(value))) {
+        map.fitBounds(
+          [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+          { padding: 80, duration: 650, maxZoom: 18.5 }
+        );
+      }
+    } catch {}
+  };
+
   // Bind once
   if (!map.__mf_building_click_bound) {
     map.on('click', 'buildings-fill', onBuildingClick);
     map.__mf_building_click_bound = true;
   }
+  if (!map.__mf_lowzoom_marker_click_bound && lowZoomBuildingMarkersEnabled) {
+    try { map.on('click', LOW_ZOOM_BUILDING_MARKER_LAYER_ID, onLowZoomMarkerClick); } catch {}
+    try { map.on('click', LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID, onLowZoomMarkerClick); } catch {}
+    map.__mf_lowzoom_marker_click_bound = true;
+  }
+
 
   // Cleanup (in case style reloads or component unmounts)
   return () => {
@@ -23004,9 +23060,14 @@ useEffect(() => {
         map.off('click', 'buildings-fill', onBuildingClick);
         map.__mf_building_click_bound = false;
       }
+      if (map.__mf_lowzoom_marker_click_bound) {
+        try { map.off('click', LOW_ZOOM_BUILDING_MARKER_LAYER_ID, onLowZoomMarkerClick); } catch {}
+        try { map.off('click', LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID, onLowZoomMarkerClick); } catch {}
+        map.__mf_lowzoom_marker_click_bound = false;
+      }
     } catch {}
   };
-}, [engagementMode, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup, resolveBuildingNameFromInput]);
+}, [engagementMode, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup, resolveBuildingNameFromInput, lowZoomBuildingMarkersEnabled]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
