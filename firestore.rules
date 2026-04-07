@@ -15,28 +15,32 @@ service cloud.firestore {
         && get(roleDoc(universityId)).data.role == 'admin';
     }
 
+    function isOpenPilotCampus(universityId) {
+      return universityId == 'hastings'
+        || universityId == 'hastings-demo'
+        || universityId == 'sarpy-county'
+        || universityId == 'sarpy'
+        || universityId == 'sarpy-ne';
+    }
+
     function canCreateEngagementMarker(universityId) {
       return isUniversityAdmin(universityId)
-        || universityId == 'hastings'
-        || universityId == 'hastings-demo';
+        || isOpenPilotCampus(universityId);
     }
 
     function canWriteTechnicalAssessment(universityId) {
       return isUniversityAdmin(universityId)
-        || universityId == 'hastings'
-        || universityId == 'hastings-demo';
+        || isOpenPilotCampus(universityId);
     }
 
     function canWriteMaintenanceIssue(universityId) {
       return isUniversityAdmin(universityId)
-        || universityId == 'hastings'
-        || universityId == 'hastings-demo';
+        || isOpenPilotCampus(universityId);
     }
 
     function canWritePlannerCopilot(universityId) {
       return isUniversityAdmin(universityId)
-        || universityId == 'hastings'
-        || universityId == 'hastings-demo';
+        || isOpenPilotCampus(universityId);
     }
 
     match /moves/{docId} {
@@ -121,3 +125,4 @@ service cloud.firestore {
     }
   }
 }
+

@@ -19550,6 +19550,18 @@ const scopedEngagementHeatmapData = useMemo(() => ({
       };
     })
 }), [scopedEngagementMarkers]);
+const campusKey = canon(universityId);
+const canCreateEngagementMarker = useMemo(() => {
+  return Boolean(
+    isAdminUser
+      || campusKey === 'hastings'
+      || campusKey === 'hastings_demo'
+      || campusKey === 'sarpy_county'
+      || campusKey === 'sarpy'
+      || campusKey === 'sarpy_ne'
+      || campusKey === 'sarpycounty'
+  );
+}, [isAdminUser, campusKey]);
 const maintenanceCanWrite = useMemo(() => {
   return Boolean(isAdminUser && (showFullMapfluenceControls || (isDemoPublicMode && demoEditingEnabled)));
 }, [isAdminUser, showFullMapfluenceControls, isDemoPublicMode, demoEditingEnabled]);
@@ -23679,7 +23691,7 @@ useEffect(() => {
     const onEngagementClick = (e) => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
       const canDropMarker = mode === 'admin'
-        ? (isAdminUser && stakeholderWorkflowActive && !isTechnicalPanelOpen)
+        ? (canCreateEngagementMarker && stakeholderWorkflowActive && !isTechnicalPanelOpen)
         : mapView === MAP_VIEWS.SPACE_DATA;
       if (!canDropMarker) return;
       const isFloorplanStakeholderScope = isEngagementFloorScope && loadedSingleFloor;
@@ -23725,7 +23737,7 @@ useEffect(() => {
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [engagementMode, mode, mapLoaded, mapView, stakeholderWorkflowActive, isAdminCombinedMode, stakeholderConditionModeOn, isTechnicalPanelOpen, isAdminUser, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
+  }, [engagementMode, mode, mapLoaded, mapView, stakeholderWorkflowActive, isAdminCombinedMode, stakeholderConditionModeOn, isTechnicalPanelOpen, canCreateEngagementMarker, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -27596,9 +27608,9 @@ useEffect(() => {
             <div className="legend" style={{ marginTop: 6 }}>
               <h4>Legend</h4>
               <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-                {isAdminCombinedMode && !isAdminUser && (
+                {isAdminCombinedMode && !canCreateEngagementMarker && (
                   <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 8px' }}>
-                    Signed out read-only: sign in as campus admin to add markers in this admin route.
+                    Read-only: sign in as campus admin to add markers in this admin route.
                   </div>
                 )}
                 <button className="btn" onClick={() => setEngagementHeatmapOn((prev) => !prev)}>
@@ -29733,6 +29745,8 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 
 
 
