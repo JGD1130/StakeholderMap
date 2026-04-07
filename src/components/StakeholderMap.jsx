@@ -9495,6 +9495,15 @@ const ENGAGEMENT_MARKER_TYPES = {
   'I do not feel safe in this space': '#1d4ed8',
   'Just leave a comment': '#9ca3af'
 };
+const ENGAGEMENT_MARKER_TYPES_SARPY = {
+  'This area supports productive work': '#ef4444',
+  'This area works well for collaboration/meetings': '#fb923c',
+  'I would use this area more if it were improved': '#fde047',
+  'I rarely or never use this area': '#7AFEB1',
+  'This area feels outdated or inefficient': '#67e8f9',
+  'This area has safety or accessibility concerns': '#1d4ed8',
+  'General comment': '#9ca3af'
+};
 const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
 const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
@@ -9580,14 +9589,14 @@ const buildRoomSentimentGradientFeatureCollection = (fc, colorByRoomId) => {
 const getEngagementHeatCategory = (markerType) => {
   const text = String(markerType || '').trim().toLowerCase();
   if (!text) return 'comment';
-  if (/just leave a ?comment|leave a comment about this space/.test(text)) return 'comment';
-  if (/do not feel safe|unsafe/.test(text)) return 'unsafe';
+  if (/general comment|just leave a ?comment|leave a comment about this space/.test(text)) return 'comment';
+  if (/do not feel safe|unsafe|safety|accessibility.*concern|concern.*accessibility|concern.*safety/.test(text)) return 'unsafe';
   if (/rarely|never/.test(text)) return 'rarely';
-  if (/outdated|run-down|run down/.test(text)) return 'outdated';
+  if (/outdated|run-down|run down|inefficient/.test(text)) return 'outdated';
   if (/furniture.*uncomfortable|layout.*not functional|lighting|temperature|technology.*inadequate|unreliable|privacy/.test(text)) return 'outdated';
-  if (/needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|improv/.test(text)) return 'improve';
-  if (/go[- ]to hang ?out|hang ?out/.test(text)) return 'hangout';
-  if (/go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively/.test(text)) return 'study';
+  if (/needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|would use this area more if it were improved|improv/.test(text)) return 'improve';
+  if (/go[- ]to hang ?out|hang ?out|collaboration|meeting/.test(text)) return 'hangout';
+  if (/go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively|productive work|focus work|individual work/.test(text)) return 'study';
   return 'comment';
 };
 const getEngagementHeatWeight = (markerType) =>
@@ -20861,10 +20870,10 @@ useEffect(() => {
 }, [engagementRoomSentimentOn, loadedSingleFloor, isEngagementFloorScope]);
 
   const markerTypes = useMemo(() => {
-    if (engagementMode) return ENGAGEMENT_MARKER_TYPES;
+    if (engagementMode) return (isSarpyCountyInstance ? ENGAGEMENT_MARKER_TYPES_SARPY : ENGAGEMENT_MARKER_TYPES);
     if (mode === 'admin') return { ...surveyConfigs.student, ...surveyConfigs.staff };
     return surveyConfigs[persona] || surveyConfigs.default;
-  }, [persona, mode, engagementMode]);
+  }, [persona, mode, engagementMode, isSarpyCountyInstance]);
   const engagementMarkerTypeColors = useMemo(() => {
     const out = {};
     Object.keys(markerTypes || {}).forEach((label) => {
