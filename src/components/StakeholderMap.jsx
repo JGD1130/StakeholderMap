@@ -9525,11 +9525,11 @@ const utilizationColorForPercent = (value) => {
   return '#ef4444';
 };
 const ENGAGEMENT_HEAT_CATEGORY_STYLE = {
-  study: { color: '#ef4444', heatValue: 1.0, rgb: '255,56,56', haloRgb: '255,230,210' },
-  hangout: { color: '#fb923c', heatValue: 0.95, rgb: '255,142,44', haloRgb: '255,234,204' },
-  improve: { color: '#fde047', heatValue: 0.9, rgb: '255,230,88', haloRgb: '255,247,214' },
-  outdated: { color: '#67e8f9', heatValue: 0.8, rgb: '78,228,250', haloRgb: '190,246,255' },
-  rarely: { color: '#7AFEB1', heatValue: 0.9, rgb: '122,254,177', haloRgb: '204,255,229' },
+  study: { color: '#ef4444', heatValue: 1.03, rgb: '255,56,56', haloRgb: '255,230,210' },
+  hangout: { color: '#fb923c', heatValue: 1.03, rgb: '255,142,44', haloRgb: '255,234,204' },
+  improve: { color: '#fde047', heatValue: 1.03, rgb: '255,230,88', haloRgb: '255,247,214' },
+  outdated: { color: '#67e8f9', heatValue: 1.03, rgb: '78,228,250', haloRgb: '190,246,255' },
+  rarely: { color: '#7AFEB1', heatValue: 1.03, rgb: '122,254,177', haloRgb: '204,255,229' },
   unsafe: { color: '#1d4ed8', heatValue: 1.03, rgb: '30,78,216', haloRgb: '142,181,255' },
   comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '125,250,255' }
 };
@@ -9716,18 +9716,12 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
 ]);
 const buildEngagementCategoryWeightExpr = (category) => {
   const base = ['coalesce', ['get', 'weight'], 0];
-  if (category === 'unsafe') return ['*', base, 1.08];
-  if (category === 'rarely') return ['*', ['max', base, 0.92], 1.08];
-  if (category === 'outdated') return ['*', base, 0.88];
-  if (category === 'improve') return ['*', base, 0.88];
-  if (category === 'hangout') return ['*', base, 1.02];
-  if (category === 'study') return ['*', base, 1.12];
-  return ['*', base, 1.0];
+  return ['*', base, 1.08];
 };
 const buildEngagementRarelyHaloWeightExpr = () => ([
   '*',
-  ['max', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0.92],
-  0.94
+  ENGAGEMENT_HEAT_WEIGHT_EXPR,
+  0.98
 ]);
 const buildEngagementRarelyHaloColorExpr = () => ([
   'interpolate',
@@ -9742,13 +9736,13 @@ const buildEngagementRarelyHaloColorExpr = () => ([
 ]);
 const buildEngagementRarelyHaloRadiusExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 16, 18, 25, 20, 36, 22, 48]
-    : ['interpolate', ['linear'], ['zoom'], 10, 26, 12, 40, 14, 56, 16, 74, 18, 94, 20, 116]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 18, 18, 28, 20, 40, 22, 54]
+    : ['interpolate', ['linear'], ['zoom'], 10, 28, 12, 42, 14, 58, 16, 78, 18, 98, 20, 120]
 );
 const buildEngagementRarelyHaloIntensityExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 1.02, 18, 1.12, 20, 1.22, 22, 1.30]
-    : ['interpolate', ['linear'], ['zoom'], 10, 0.90, 13, 1.00, 15, 1.10, 17, 1.18, 19, 1.24]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 1.04, 18, 1.14, 20, 1.24, 22, 1.32]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.90, 13, 1.00, 15, 1.10, 17, 1.18, 19, 1.26]
 );
 const buildEngagementRarelyHaloOpacityExpr = (floorScoped = false) => (
   floorScoped
@@ -9758,24 +9752,17 @@ const buildEngagementRarelyHaloOpacityExpr = (floorScoped = false) => (
 const buildEngagementWarmHaloWeightExpr = () => ([
   '*',
   ENGAGEMENT_HEAT_WEIGHT_EXPR,
-  [
-    'match',
-    ['coalesce', ['get', 'heatCategory'], ''],
-    'study', 1.12,
-    'hangout', 1.00,
-    'improve', 0.74,
-    1.0
-  ]
+  0.98
 ]);
 const buildEngagementWarmHaloIntensityExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 1.02, 18, 1.14, 20, 1.24, 22, 1.32]
-    : ['interpolate', ['linear'], ['zoom'], 10, 0.86, 13, 0.96, 15, 1.06, 17, 1.16, 19, 1.24]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 1.04, 18, 1.14, 20, 1.24, 22, 1.32]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.90, 13, 1.00, 15, 1.10, 17, 1.18, 19, 1.26]
 );
 const buildEngagementWarmHaloRadiusExpr = (floorScoped = false) => (
   floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 20, 18, 30, 20, 44, 22, 60]
-    : ['interpolate', ['linear'], ['zoom'], 10, 34, 12, 52, 14, 74, 16, 98, 18, 124, 20, 152]
+    ? ['interpolate', ['linear'], ['zoom'], 16, 18, 18, 28, 20, 40, 22, 54]
+    : ['interpolate', ['linear'], ['zoom'], 10, 28, 12, 42, 14, 58, 16, 78, 18, 98, 20, 120]
 );
 const buildEngagementWarmHaloOpacityExpr = (floorScoped = false) => (
   floorScoped
@@ -9799,45 +9786,15 @@ const buildEngagementCoolHaloOpacityExpr = (floorScoped = false) => (
 );
 const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
   if (floorScoped) {
-    if (category === 'unsafe') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 7, 18, 11, 20, 16, 22, 22];
-    }
-    if (category === 'rarely' || category === 'outdated') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 8, 18, 12, 20, 18, 22, 24];
-    }
-    if (category === 'improve') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 11, 18, 16, 20, 22, 22, 30];
-    }
-    return ['interpolate', ['linear'], ['zoom'], 16, 11, 18, 18, 20, 24, 22, 34];
+    return ['interpolate', ['linear'], ['zoom'], 16, 7, 18, 11, 20, 16, 22, 22];
   }
-  if (category === 'unsafe') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 13, 12, 18, 14, 26, 16, 36, 18, 46, 20, 56];
-  }
-  if (category === 'rarely' || category === 'outdated') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 22, 14, 30, 16, 40, 18, 52, 20, 64];
-  }
-  if (category === 'improve') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 18, 12, 28, 14, 40, 16, 54, 18, 70, 20, 86];
-  }
-  return ['interpolate', ['linear'], ['zoom'], 10, 20, 12, 30, 14, 44, 16, 58, 18, 76, 20, 94];
+  return ['interpolate', ['linear'], ['zoom'], 10, 13, 12, 18, 14, 26, 16, 36, 18, 46, 20, 56];
 };
 const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => {
   if (floorScoped) {
-    if (category === 'unsafe') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 1.24, 18, 1.34, 20, 1.44, 22, 1.56];
-    }
-    if (category === 'rarely' || category === 'outdated') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 1.16, 18, 1.26, 20, 1.36, 22, 1.48];
-    }
-    return ['interpolate', ['linear'], ['zoom'], 16, 1.14, 18, 1.24, 20, 1.34, 22, 1.46];
+    return ['interpolate', ['linear'], ['zoom'], 16, 1.24, 18, 1.34, 20, 1.44, 22, 1.56];
   }
-  if (category === 'unsafe') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 1.12, 13, 1.22, 15, 1.32, 17, 1.44, 19, 1.54];
-  }
-  if (category === 'rarely' || category === 'outdated') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 1.00, 13, 1.10, 15, 1.20, 17, 1.30, 19, 1.38];
-  }
-  return ['interpolate', ['linear'], ['zoom'], 10, 0.98, 13, 1.08, 15, 1.18, 17, 1.30, 19, 1.40];
+  return ['interpolate', ['linear'], ['zoom'], 10, 1.12, 13, 1.22, 15, 1.32, 17, 1.44, 19, 1.54];
 };
 const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
   if (floorScoped) {
@@ -29823,6 +29780,8 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 
 
 
