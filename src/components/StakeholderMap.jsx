@@ -8719,11 +8719,41 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
     const floorKey = normalizeDashboardKey(
       floor ?? props.Floor ?? props.floor ?? ''
     );
+    const floorTokens = normalizeFloorTokens(
+      floor ?? props.Floor ?? props.floor ?? ''
+    );
     if (roomIdKey && buildingKey && floorKey) {
       room = lookup.byComposite.get(`${buildingKey}|${floorKey}|${roomIdKey}`) || null;
     }
     if (!room && roomIdKey && buildingKey) {
       room = lookup.byBuildingRoom?.get(`${buildingKey}|${roomIdKey}`) || null;
+    }
+    if (!room && roomIdKey && buildingKey) {
+      const key = `${buildingKey}|${roomIdKey}`;
+      const candidates = lookup.byBuildingRoomList?.get(key) || [];
+      if (candidates.length === 1) {
+        room = candidates[0];
+      } else if (candidates.length > 1) {
+        const floorScoped = floorTokens.length
+          ? candidates.filter((candidate) =>
+              floorMatchesTokens(
+                candidate?.floor ?? candidate?.floorName ?? candidate?.floorId ?? '',
+                floorTokens
+              )
+            )
+          : candidates;
+        const ranked = floorScoped.length ? floorScoped : candidates;
+        room =
+          ranked.find((candidate) => {
+            const seatCount = Number(
+              candidate?.seatCount ?? candidate?.SeatCount ?? candidate?.['Seat Count'] ?? 0
+            );
+            return Number.isFinite(seatCount) && seatCount > 0;
+          }) || ranked[0] || null;
+      }
+    }
+    if (!room && roomIdKey) {
+      room = lookup.byRoomId?.get(roomIdKey) || null;
     }
   }
   if (!room) return null;
@@ -22226,13 +22256,12 @@ useEffect(() => {
   const resolvedBuilding = selectedBuildingId || selectedBuilding;
   if (!resolvedBuilding || !selectedFloor || !universityId) return;
 
-  const canonicalUniversityId = canon(universityId);
   const canonicalBuildingId = bId(resolvedBuilding);
   const canonicalFloorId = fId(selectedFloor);
 
   const roomsCol = collection(
     db,
-    'universities', canonicalUniversityId,
+    'universities', universityId,
     'buildings', canonicalBuildingId,
     'floors', canonicalFloorId,
     'rooms'
