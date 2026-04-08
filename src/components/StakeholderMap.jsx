@@ -4914,7 +4914,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         const rid = rId(buildingId, floor, revitId);
         const patch = roomPatches.get(rid);
         if (patch) {
-          mergedProps = mergePatch(mergedProps, patch);
+          mergedProps = mergeRoomDbPatch(mergedProps, patch);
         }
       }
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
@@ -7935,6 +7935,32 @@ const FLOORPLAN_FIT_PADDING = 8;   // tighter frame around floor
 const FLOORPLAN_SCALE = 1.0;       // auto-fit handles size; keep neutral here
 
 const mergePatch = (props, patch) => ({ ...props, ...patch });
+const ROOM_PATCH_PROTECTED_KEYS = new Set([
+  'type',
+  'Type',
+  'RoomType',
+  'RoomTypeDescription',
+  'roomTypeDescription',
+  'Room Type',
+  'Room Type Description',
+  'department',
+  'Department',
+  'NCES_Department',
+  '__roomType',
+  '__dept'
+]);
+const mergeRoomDbPatch = (props = {}, patch = {}) => {
+  if (!patch || typeof patch !== 'object') return props;
+  const next = { ...(props || {}) };
+  Object.entries(patch).forEach(([key, value]) => {
+    if (ROOM_PATCH_PROTECTED_KEYS.has(key)) {
+      const blank = value == null || (typeof value === 'string' && !String(value).trim());
+      if (blank) return;
+    }
+    next[key] = value;
+  });
+  return next;
+};
 
 const normalizeDashboardKey = (value) => {
   const raw = String(value ?? '').trim();
@@ -21860,7 +21886,7 @@ useEffect(() => {
         const rid = revitId != null ? rId(buildingKey, floorKey, revitId) : null;
         const patch = rid ? roomPatches.get(rid) || null : null;
         if (patch) {
-          mergedProps = mergePatch(mergedProps, patch);
+          mergedProps = mergeRoomDbPatch(mergedProps, patch);
           didPatch = true;
         }
       }
@@ -23248,9 +23274,17 @@ useEffect(() => {
       } else {
         map.addSource(ENGAGEMENT_HEAT_SOURCE_ID, { type: 'geojson', data: scopedEngagementHeatmapData });
       }
-      const beforeId = map.getLayer('boundary-layer')
-        ? 'boundary-layer'
-        : (map.getLayer('buildings-labels') ? 'buildings-labels' : undefined);
+      const beforeId = loadedSingleFloor
+        ? (map.getLayer(FLOOR_ROOM_LABEL_LAYER)
+            ? FLOOR_ROOM_LABEL_LAYER
+            : (map.getLayer(FLOOR_LINE_ID) ? FLOOR_LINE_ID : undefined))
+        : (map.getLayer('boundary-layer')
+            ? 'boundary-layer'
+            : (map.getLayer('buildings-labels') ? 'buildings-labels' : undefined));
+      const moveHeatLayer = (layerId) => {
+        if (!beforeId || !map.getLayer(layerId)) return;
+        try { map.moveLayer(layerId, beforeId); } catch {}
+      };
       // Keep floor-style color/halo/transparency in both modes, but use larger
       // campus spread radii when no single floor is loaded so points do not look like dots.
       const floorStyleProfile = true;
@@ -23373,6 +23407,12 @@ useEffect(() => {
         map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
         setMapLayerVisibility(map, layerId, engagementHeatmapOn);
       });
+      [
+        ENGAGEMENT_HEAT_LAYER_ID,
+        ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID,
+        ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID,
+        ...ENGAGEMENT_HEAT_LAYER_DEFS.map((entry) => entry.layerId)
+      ].forEach((layerId) => moveHeatLayer(layerId));
     } catch (err) {
       console.warn('Engagement heatmap update failed', err);
     }
@@ -25984,7 +26024,7 @@ useEffect(() => {
 
     {(mode === 'admin' || technicalMode) && (
       <>
-        {mode === 'admin' && stakeholderWorkflowActive && stakeholderConditionModeOn && selectedBuildingId && !isTechnicalPanelOpen && panelAnchor && (
+        {mode === 'admin' && stakeholderWorkflowActive && stakeholderConditionModeOn && selectedBuildingId && !isTechnicalPanelOpen && panelAnchor && !isAdminCombinedMode && !engagementMode && (
           <div
             className="floating-panel"
             style={{
