@@ -9683,13 +9683,12 @@ const buildEngagementCategoryHeatColorExpr = (category) => {
     ['linear'],
     ['heatmap-density'],
     0, 'rgba(0,0,0,0)',
-    0.03, 'rgba(255,255,255,0.05)',
-    0.10, 'rgba(255,255,255,0.14)',
-    0.22, `rgba(${haloRgb},0.26)`,
-    0.36, `rgba(${haloRgb},0.42)`,
-    0.54, `rgba(${coreRgb},0.74)`,
-    0.76, `rgba(${coreRgb},0.93)`,
-    1, `rgba(${coreRgb},1.0)`
+    0.03, `rgba(${haloRgb},0.12)`,
+    0.10, `rgba(${haloRgb},0.24)`,
+    0.20, `rgba(${coreRgb},0.58)`,
+    0.36, `rgba(${coreRgb},0.82)`,
+    0.62, `rgba(${coreRgb},0.93)`,
+    1, `rgba(${coreRgb},0.995)`
   ];
 };
 const buildEngagementThermalWarmHaloColorExpr = () => ([
@@ -29780,6 +29779,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
