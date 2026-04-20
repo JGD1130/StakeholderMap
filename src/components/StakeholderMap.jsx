@@ -9891,6 +9891,8 @@ const StakeholderMap = ({
     normalizedUniversityId === 'sarpy' ||
     normalizedUniversityId === 'sarpy_ne' ||
     normalizedUniversityId === 'sarpycounty';
+  const sarpyBuildingOutlineBaseColor = isSarpyCountyInstance ? '#f97316' : '#000000';
+  const sarpyBuildingOutlineSelectedColor = isSarpyCountyInstance ? '#fb923c' : '#1d4ed8';
   const floorplansEnabled = Boolean(config?.enableFloorplans ?? !isSarpyCountyInstance);
   const lowZoomBuildingMarkersEnabled = Boolean(config?.enableLowZoomBuildingMarkers ?? isSarpyCountyInstance);
   const lowZoomBuildingMarkerMaxZoom = Number.isFinite(Number(config?.lowZoomBuildingMarkerMaxZoom))
@@ -22810,7 +22812,7 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#000000',
+        'line-color': sarpyBuildingOutlineBaseColor,
         'line-width': 3,
         'line-opacity': 0.95
       }
@@ -22821,7 +22823,7 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#1d4ed8',
+        'line-color': sarpyBuildingOutlineSelectedColor,
         'line-width': 2.6,
         'line-opacity': [
           'case',
@@ -22967,7 +22969,7 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#000000',
+        'line-color': sarpyBuildingOutlineBaseColor,
         'line-width': 3,
         'line-opacity': 0.95
       }
@@ -22978,7 +22980,7 @@ useEffect(() => {
       type: 'line',
       source: 'buildings',
       paint: {
-        'line-color': '#1d4ed8',
+        'line-color': sarpyBuildingOutlineSelectedColor,
         'line-width': 2.2,
         'line-opacity': [
           'case',
@@ -29854,6 +29856,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
