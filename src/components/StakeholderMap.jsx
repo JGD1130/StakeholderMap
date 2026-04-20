@@ -9819,6 +9819,8 @@ const setMapLayerVisibility = (map, layerId, visible) => {
     map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
   } catch {}
 };
+const SATELLITE_BASEMAP_SOURCE_ID = 'mf-satellite-basemap-source';
+const SATELLITE_BASEMAP_LAYER_ID = 'mf-satellite-basemap-layer';
 const parseFirestoreTimestampMs = (value) => {
   if (!value) return 0;
   if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
@@ -9869,6 +9871,12 @@ const StakeholderMap = ({
   const maintenanceActionPopupRef = useRef(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
+  const BASEMAP_VIEWS = {
+    STREETS: 'streets',
+    SATELLITE: 'satellite'
+  };
+  const hasRuntimeMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
+  const [basemapView, setBasemapView] = useState(BASEMAP_VIEWS.STREETS);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(mode === 'admin'); // Paths feature removed
   const [markers, setMarkers] = useState([]); // Paths feature removed
@@ -9973,6 +9981,7 @@ const StakeholderMap = ({
   }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
+  const showBasemapSelector = hasRuntimeMapboxToken;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
@@ -22043,6 +22052,59 @@ useEffect(() => {
   };
 }, [config]);
 
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !showBasemapSelector) return;
+    const map = mapRef.current;
+
+    const ensureSatelliteLayer = () => {
+      try {
+        if (!map.getSource(SATELLITE_BASEMAP_SOURCE_ID)) {
+          map.addSource(SATELLITE_BASEMAP_SOURCE_ID, {
+            type: 'raster',
+            url: 'mapbox://mapbox.satellite',
+            tileSize: 256
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to add satellite basemap source:', err);
+        return;
+      }
+
+      try {
+        if (!map.getLayer(SATELLITE_BASEMAP_LAYER_ID)) {
+          const firstSymbolLayer = map
+            .getStyle()
+            ?.layers?.find((layerDef) => layerDef?.type === 'symbol');
+          map.addLayer(
+            {
+              id: SATELLITE_BASEMAP_LAYER_ID,
+              type: 'raster',
+              source: SATELLITE_BASEMAP_SOURCE_ID,
+              layout: { visibility: 'none' },
+              paint: { 'raster-opacity': 1 }
+            },
+            firstSymbolLayer?.id || undefined
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to add satellite basemap layer:', err);
+      }
+    };
+
+    const applyBasemapView = () => {
+      ensureSatelliteLayer();
+      setMapLayerVisibility(map, SATELLITE_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SATELLITE);
+    };
+
+    applyBasemapView();
+    map.on('style.load', applyBasemapView);
+    return () => {
+      try {
+        map.off('style.load', applyBasemapView);
+      } catch {}
+    };
+  }, [mapLoaded, basemapView, showBasemapSelector, BASEMAP_VIEWS.SATELLITE]);
+
 
   // ---------- Load data (markers/assessments/conditions) ----------
   useEffect(() => {
@@ -27065,6 +27127,19 @@ useEffect(() => {
               </select>
             </div>
           )}
+          {showBasemapSelector && (
+            <div className="control-section theme-selector" style={{ marginTop: 6 }}>
+              <label htmlFor="basemap-select" style={{ marginRight: 8 }}>Basemap:</label>
+              <select
+                id="basemap-select"
+                value={basemapView}
+                onChange={(e) => setBasemapView(e.target.value)}
+              >
+                <option value={BASEMAP_VIEWS.STREETS}>Map</option>
+                <option value={BASEMAP_VIEWS.SATELLITE}>Satellite</option>
+              </select>
+            </div>
+          )}
 
           {maintenanceWorkflowActive && (
             <div
@@ -29779,6 +29854,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
