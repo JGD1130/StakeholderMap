@@ -1563,11 +1563,21 @@ function buildFloorplanCanvas(fc, options = {}) {
     ? roomOutlineWidth
     : 2.2;
   const isSelectedByGeometry = (feature) => {
-    if (!feature?.geometry || !selectedGeometryFeatures.length) return false;
+    const roomGeomType = feature?.geometry?.type;
+    if ((roomGeomType !== 'Polygon' && roomGeomType !== 'MultiPolygon') || !selectedGeometryFeatures.length) return false;
     const roomFeature = { type: 'Feature', properties: {}, geometry: feature.geometry };
+    let roomArea = 0;
+    try {
+      roomArea = Math.max(0, Number(turf.area(roomFeature) || 0));
+    } catch {}
     for (const selectedFeature of selectedGeometryFeatures) {
       try {
-        if (turf.booleanIntersects(roomFeature, selectedFeature)) return true;
+        const selectedGeomType = selectedFeature?.geometry?.type;
+        if (selectedGeomType !== 'Polygon' && selectedGeomType !== 'MultiPolygon') continue;
+        const intersection = turf.intersect(turf.featureCollection([roomFeature, selectedFeature]));
+        const intersectionArea = Math.max(0, Number(intersection ? turf.area(intersection) : 0));
+        if (intersectionArea <= 1e-8) continue;
+        if (roomArea <= 1e-8 || (intersectionArea / roomArea) >= 0.01) return true;
       } catch {}
     }
     return false;
@@ -14322,13 +14332,15 @@ const StakeholderMap = ({
         null;
       const liveFloorFc = toFeatureCollection(floorSourceData) || currentFloorContextRef.current?.fc || null;
       const scenarioFloorFcForPdf = buildScenarioPdfFloorFeatureCollection(liveFloorFc) || liveFloorFc;
+      const scenarioDeptColor = getDeptColor(scenarioAssignedDept) || '#ff2ea8';
       const imageData = generateFloorplanImageData({
         ...(currentFloorContextRef.current || {}),
         fc: scenarioFloorFcForPdf,
         selectedIds: scenarioPdfRenderIds,
         selectedGeometries: scenarioPdfRenderGeometries,
-        selectedFillColor: null,
-        selectedOutlineWidth: 2,
+        selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.88),
+        selectedOutlineColor: scenarioDeptColor,
+        selectedOutlineWidth: 2.2,
         roomOutlineWidth: 1,
         solidFill: true,
         hideLinework: true,
@@ -14433,7 +14445,8 @@ const StakeholderMap = ({
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
-    selectedFloor
+    selectedFloor,
+    scenarioAssignedDept
   ]);
 
   const handleExportScenario = useCallback(async () => {
@@ -26009,9 +26022,9 @@ useEffect(() => {
                 fc: scenarioFloorFcForPdf,
                 selectedIds: scenarioPdfRenderIds,
                 selectedGeometries: scenarioPdfRenderGeometries,
-                selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.92),
+                selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.88),
                 selectedOutlineColor: scenarioDeptColor,
-                selectedOutlineWidth: 2,
+                selectedOutlineWidth: 2.2,
                 roomOutlineWidth: 1,
                 solidFill: true,
                 hideLinework: true,
