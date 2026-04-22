@@ -13844,6 +13844,53 @@ const StakeholderMap = ({
     return Array.from(ids);
   }, [effectiveScenarioSelectedRooms]);
 
+  const scenarioPdfRenderGeometries = useMemo(() => {
+    return effectiveScenarioSelectedRooms
+      .map((room) => {
+        const roomId = String(room?.roomId || room?.scenarioRoomId || room?.revitId || '').trim();
+        if (!roomId) return null;
+        const geometry = resolveScenarioRoomGeometry(roomId, room);
+        if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return null;
+        return {
+          type: 'Feature',
+          properties: {},
+          geometry: cloneGeoJsonValue(geometry)
+        };
+      })
+      .filter(Boolean);
+  }, [effectiveScenarioSelectedRooms, resolveScenarioRoomGeometry]);
+
+  const buildScenarioPdfFloorFeatureCollection = useCallback((floorFeatureCollection = null) => {
+    const liveFc = toFeatureCollection(floorFeatureCollection) || currentFloorContextRef.current?.fc || null;
+    if (!moveScenarioMode || !loadedSingleFloor) return liveFc;
+    const baseCandidate = toFeatureCollection(cloneGeoJsonValue(scenarioFloorBaseFcRef.current));
+    const baseFc = baseCandidate?.features?.length ? baseCandidate : liveFc;
+    if (!baseFc?.features?.length) return liveFc;
+
+    let nextFeatures = baseFc.features.map((feature) => applyScenarioOverrideToFeature(feature));
+    if (scenarioMergeState.activeCount) {
+      nextFeatures = nextFeatures.filter((feature) => {
+        const mergeEntry = resolveScenarioMergeForFeature(feature);
+        return !(mergeEntry?.hideSourceGeometry);
+      });
+      if (scenarioSyntheticFloorFeatures.length) {
+        nextFeatures = [...nextFeatures, ...scenarioSyntheticFloorFeatures];
+      }
+    }
+
+    return {
+      ...baseFc,
+      features: nextFeatures
+    };
+  }, [
+    moveScenarioMode,
+    loadedSingleFloor,
+    scenarioMergeState,
+    scenarioSyntheticFloorFeatures,
+    applyScenarioOverrideToFeature,
+    resolveScenarioMergeForFeature
+  ]);
+
   const scenarioSelectionSeatSummary = useMemo(() => {
     let baseSeats = 0;
     let scenarioSeats = 0;
@@ -14268,11 +14315,12 @@ const StakeholderMap = ({
         currentFloorContextRef.current?.fc ||
         null;
       const liveFloorFc = toFeatureCollection(floorSourceData) || currentFloorContextRef.current?.fc || null;
+      const scenarioFloorFcForPdf = buildScenarioPdfFloorFeatureCollection(liveFloorFc) || liveFloorFc;
       const imageData = generateFloorplanImageData({
         ...(currentFloorContextRef.current || {}),
-        fc: liveFloorFc,
+        fc: scenarioFloorFcForPdf,
         selectedIds: scenarioPdfRenderIds,
-        selectedGeometries: [],
+        selectedGeometries: scenarioPdfRenderGeometries,
         solidFill: true,
         labelOptions: { hideDrawing: true }
       });
@@ -14370,6 +14418,8 @@ const StakeholderMap = ({
     renoConceptualDisclaimer,
     scenarioSelection,
     scenarioPdfRenderIds,
+    scenarioPdfRenderGeometries,
+    buildScenarioPdfFloorFeatureCollection,
     activeBuildingName,
     selectedBuilding,
     selectedBuildingId,
@@ -25942,12 +25992,13 @@ useEffect(() => {
                 currentFloorContextRef.current?.fc ||
                 null;
               const liveFloorFc = toFeatureCollection(floorSourceData) || currentFloorContextRef.current?.fc || null;
+              const scenarioFloorFcForPdf = buildScenarioPdfFloorFeatureCollection(liveFloorFc) || liveFloorFc;
               const scenarioDeptColor = getDeptColor(scenarioAssignedDept) || '#00c8ff';
               const imgData = generateFloorplanImageData({
                 ...(currentFloorContextRef.current || {}),
-                fc: liveFloorFc,
+                fc: scenarioFloorFcForPdf,
                 selectedIds: scenarioPdfRenderIds,
-                selectedGeometries: [],
+                selectedGeometries: scenarioPdfRenderGeometries,
                 selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.35),
                 selectedOutlineColor: scenarioDeptColor,
                 selectedOutlineWidth: 4,
@@ -29002,15 +29053,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
-
-
-
-
-
-
 
 
 
