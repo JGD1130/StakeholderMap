@@ -13860,7 +13860,7 @@ const StakeholderMap = ({
       .filter(Boolean);
   }, [effectiveScenarioSelectedRooms, resolveScenarioRoomGeometry]);
 
-  const buildScenarioPdfFloorFeatureCollection = useCallback((floorFeatureCollection = null) => {
+  const buildScenarioPdfFloorFeatureCollection = (floorFeatureCollection = null) => {
     const liveFc = toFeatureCollection(floorFeatureCollection) || currentFloorContextRef.current?.fc || null;
     if (!moveScenarioMode || !loadedSingleFloor) return liveFc;
     const baseCandidate = toFeatureCollection(cloneGeoJsonValue(scenarioFloorBaseFcRef.current));
@@ -13882,14 +13882,7 @@ const StakeholderMap = ({
       ...baseFc,
       features: nextFeatures
     };
-  }, [
-    moveScenarioMode,
-    loadedSingleFloor,
-    scenarioMergeState,
-    scenarioSyntheticFloorFeatures,
-    applyScenarioOverrideToFeature,
-    resolveScenarioMergeForFeature
-  ]);
+  };
 
   const scenarioSelectionSeatSummary = useMemo(() => {
     let baseSeats = 0;
