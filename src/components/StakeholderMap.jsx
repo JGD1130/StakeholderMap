@@ -1573,6 +1573,7 @@ function buildFloorplanCanvas(fc, options = {}) {
     return false;
   };
   const solidFill = options?.solidFill === true;
+  const hideLinework = options?.hideLinework === true;
   const labelOptions = options?.labelOptions || {};
   const labelsEnabled = labelOptions.enabled !== false;
   const hideDrawingLabel = labelOptions.hideDrawing === true;
@@ -1726,11 +1727,13 @@ function buildFloorplanCanvas(fc, options = {}) {
       } else if (geomType === 'MultiPolygon') {
         geomCoords.forEach((poly) => drawGeom(poly, 'Polygon'));
       } else if (geomType === 'LineString') {
+        if (hideLinework) return;
         ctx.strokeStyle = outline;
         ctx.lineWidth = kind === 'door' ? 2 : 1.5;
         drawLine(geomCoords);
         ctx.stroke();
       } else if (geomType === 'MultiLineString') {
+        if (hideLinework) return;
         geomCoords.forEach((line) => drawGeom(line, 'LineString'));
       }
     };
@@ -14325,9 +14328,10 @@ const StakeholderMap = ({
         selectedIds: scenarioPdfRenderIds,
         selectedGeometries: scenarioPdfRenderGeometries,
         selectedFillColor: null,
-        selectedOutlineWidth: 2.4,
-        roomOutlineWidth: 1.35,
-        solidFill: false,
+        selectedOutlineWidth: 2,
+        roomOutlineWidth: 1,
+        solidFill: true,
+        hideLinework: true,
         labelOptions: { hideDrawing: true }
       });
       if (imageData) {
@@ -26005,11 +26009,12 @@ useEffect(() => {
                 fc: scenarioFloorFcForPdf,
                 selectedIds: scenarioPdfRenderIds,
                 selectedGeometries: scenarioPdfRenderGeometries,
-                selectedFillColor: null,
+                selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.92),
                 selectedOutlineColor: scenarioDeptColor,
-                selectedOutlineWidth: 2.4,
-                roomOutlineWidth: 1.35,
-                solidFill: false,
+                selectedOutlineWidth: 2,
+                roomOutlineWidth: 1,
+                solidFill: true,
+                hideLinework: true,
                 labelOptions: { hideDrawing: true }
               });
               let imageAdded = false;
