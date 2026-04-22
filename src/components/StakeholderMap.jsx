@@ -1546,22 +1546,12 @@ function buildFloorplanCanvas(fc, options = {}) {
         })
         .filter(Boolean)
     : [];
-  const hasCustomSelectedFillColor = Object.prototype.hasOwnProperty.call(
-    options || {},
-    'selectedFillColor'
-  );
-  const selectedFillColor = hasCustomSelectedFillColor
-    ? options?.selectedFillColor
-    : 'rgba(0, 200, 255, 0.35)';
+  const selectedFillColor = options?.selectedFillColor || 'rgba(0, 200, 255, 0.35)';
   const selectedOutlineColor = options?.selectedOutlineColor || '#00c8ff';
   const selectedOutlineWidth = Number(options?.selectedOutlineWidth);
   const selectedStrokeWidth = Number.isFinite(selectedOutlineWidth) && selectedOutlineWidth > 0
     ? selectedOutlineWidth
     : 4;
-  const roomOutlineWidth = Number(options?.roomOutlineWidth);
-  const roomStrokeWidth = Number.isFinite(roomOutlineWidth) && roomOutlineWidth > 0
-    ? roomOutlineWidth
-    : 2.2;
   const isSelectedByGeometry = (feature) => {
     if (!feature?.geometry || !selectedGeometryFeatures.length) return false;
     const roomFeature = { type: 'Feature', properties: {}, geometry: feature.geometry };
@@ -1668,7 +1658,7 @@ function buildFloorplanCanvas(fc, options = {}) {
       ? convertHexWithAlpha(baseColor, solidFill ? 1 : (scenarioDept ? 0.9 : 0.4))
       : '#f7f7f7';
     let outline = '#2b2b2b';
-    let outlineWidth = kind === 'room' ? roomStrokeWidth : 1.5;
+    let outlineWidth = kind === 'room' ? 2.2 : 1.5;
     const fidCandidates = [
       feature?.id,
       props?.__scenarioRoomId,
@@ -1704,7 +1694,7 @@ function buildFloorplanCanvas(fc, options = {}) {
     }
     if (isSelected) {
       // Emphasize selection in export using caller-provided highlight colors.
-      if (kind === 'room' && selectedFillColor != null) {
+      if (kind === 'room') {
         fill = selectedFillColor;
       }
       outline = selectedOutlineColor;
@@ -14331,10 +14321,7 @@ const StakeholderMap = ({
         fc: scenarioFloorFcForPdf,
         selectedIds: scenarioPdfRenderIds,
         selectedGeometries: scenarioPdfRenderGeometries,
-        selectedFillColor: null,
-        selectedOutlineWidth: 2.4,
-        roomOutlineWidth: 1.35,
-        solidFill: false,
+        solidFill: true,
         labelOptions: { hideDrawing: true }
       });
       if (imageData) {
@@ -26012,11 +25999,10 @@ useEffect(() => {
                 fc: scenarioFloorFcForPdf,
                 selectedIds: scenarioPdfRenderIds,
                 selectedGeometries: scenarioPdfRenderGeometries,
-                selectedFillColor: null,
+                selectedFillColor: convertHexWithAlpha(scenarioDeptColor, 0.35),
                 selectedOutlineColor: scenarioDeptColor,
-                selectedOutlineWidth: 2.4,
-                roomOutlineWidth: 1.35,
-                solidFill: false,
+                selectedOutlineWidth: 4,
+                solidFill: true,
                 labelOptions: { hideDrawing: true }
               });
               let imageAdded = false;
@@ -29067,3 +29053,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
+
