@@ -1,6 +1,6 @@
 # Session Snapshot
 
-Last updated: 2026-04-03
+Last updated: 2026-04-23
 
 ## Session continuity note
 
@@ -13,6 +13,7 @@ Last updated: 2026-04-03
 
 ## Latest session note
 
+- 2026-04-23: Multi-track stability + demo readiness pass. Added satellite-vs-map basemap toggle and Sarpy-only orange building outlines for visibility. Resolved a blank-map runtime regression (ReferenceError: Cannot access 'T9' before initialization) and restored map load after rebuild/redeploy verification (Mapbox token present during test). Iterated Planning and Reno PDF exports to better match in-app scenario appearance by removing merged-room internal wall artifacts and switching to consistent filled selected-room highlighting while reducing bleed into adjacent non-selected spaces (hallway/south room issue). Restored pyRevit GeoJSON exporter after machine reinstall: fixed extension folder typo (pushbotton -> pushbutton), patched Revit API compatibility for ElementId (IntegerValue/Value handling), and set OGR2OGR_PATH to C:\Users\jdohrman\AppData\Local\Programs\OSGeo4W\bin\ogr2ogr.exe. Export now produces usable per-level GeoJSON with both room polygons and drawing polylines in one file for Mapfluence load. Next: run full dummy-university demo pipeline from intern Revit model before Monday all-staff demo.
 - 2026-04-06: Critical Hastings demo outage root-caused and recovered. New first-time users in fresh browser profiles (Firefox/Edge/Incognito) saw blank map with Mapbox token length: 0 and access-token errors. Root causes were missing valid runtime public token plus one malformed inline token attempt (pk is not defined due to missing quotes). Confirmed that GitHub secret value fields are intentionally blank after save (expected), and repo URL case mattered (JGD1130/StakeholderMap). Recovery that worked: add correctly quoted runtime token assignment in index.html (window.__MAPBOX_PUBLIC_TOKEN__ = 'pk....';) and redeploy, then cache-bust test (?v=...). Added durable cross-browser go-live checklist for Chrome Incognito, Firefox Private, and Edge InPrivate. Local hardening prepared in workspace: stricter token parsing in StakeholderMap.jsx and build-time token validation step in deploy workflow (pending commit/deploy if needed).
 
 - 2026-04-03: Mapbox token prompt troubleshooting follow-up. Confirmed new-user browsers were still seeing a token-required modal in StakeholderMap.jsx despite tokenless fallback logic. Removed the in-browser token modal flow (mapboxTokenRequired state, token save handler, and modal render block) and kept tokenless fallback behavior so map init now falls back to OpenStreetMap when no Mapbox public token is present. Access-token map errors now log warnings instead of prompting for a token. Validation in this shell remains limited because Node.js/npm are not installed, so npm run build could not be executed here.
@@ -106,4 +107,7 @@ Last updated: 2026-04-03
   - what changed
   - what still needs testing
   - any known regressions or open questions
+
+
+
 

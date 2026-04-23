@@ -1,7 +1,23 @@
 
+Hastings Combined admin map:           https://jgd1130.github.io/StakeholderMap/hastings/admin/engagement
+Hastings Technical-only public map:    https://jgd1130.github.io/StakeholderMap/hastings/technical
+Hastings Stakeholder-only public map:  https://jgd1130.github.io/StakeholderMap/hastings/engagement
+Hastings Full Mapfluence admin map:    https://jgd1130.github.io/StakeholderMap/hastings/admin
+
+Sarpy admin = https://jgd1130.github.io/StakeholderMap/sarpy-county/admin
+Sarpy Engagement Public = https://jgd1130.github.io/StakeholderMap/sarpy-county/engagement
+Sarpy Technical Public = https://jgd1130.github.io/StakeholderMap/sarpy-county/technical
+Sarpy Engagement Admin = https://jgd1130.github.io/StakeholderMap/sarpy-county/admin/engagement
+Sarpy Technical Admin = https://jgd1130.github.io/StakeholderMap/sarpy-county/admin/technical
+
+
 GitHub url to share with users = https://jgd1130.github.io/StakeholderMap
 
 node node_modules/vite/bin/vite.js
+
+git --version
+node --version
+npm --version
 
 cd "C:\Users\jdohrman\Documents\stakeholder-map"
 cd "C:\Users\jdohrman\Documents\stakeholder-map\ai-server"
@@ -493,3 +509,95 @@ const StakeholderMap = ({ config, universityId, mode = 'public' }) => {
 };
 
 export default StakeholderMap;
+=== Session Notes (2026-04-06) ===
+Hastings/Sarpy Airtable isolation guardrails:
+- Sarpy route: /sarpy-county/* uses floorplans disabled by default.
+- Hastings route: /hastings/* keeps floorplans enabled and uses API-scoped Airtable rows.
+- Do not change shared Airtable scope/filter logic without testing BOTH instances.
+
+New built-in sanity check in UI:
+- Location: left panel > Space Data Export > below "Last synced".
+- Label: "Instance check" with status + row counts.
+- Scope check logic:
+  - Hastings/floorplans enabled: expect no client-side row loss (scoped/raw should match).
+  - Sarpy/floorplans disabled: row filtering is allowed, but 0 scoped rows warns.
+
+Quick regression after each Sarpy deploy (60 seconds):
+1) Open /hastings/admin
+2) Click "Refresh Airtable Data"
+3) Verify TOTAL SF and department totals are plausible
+4) Verify "Instance check" shows Scope OK
+5) Open /sarpy-county/admin and verify map + dashboard still load
+
+=== Session Notes (2026-04-08) ===
+User preference: Sarpy changes should be scoped by default.
+- Default rule: when user requests a Sarpy change, implement as Sarpy-only unless user explicitly says to make it global.
+- Global changes are allowed, but only when user clearly specifies global intent.
+- Protect active Hastings users from disruption by default.
+
+Implementation guardrails (Sarpy-only by default):
+- Prefer tenant/config scoping first:
+  - `isSarpyCountyInstance` checks in `src/components/StakeholderMap.jsx`
+  - Sarpy-only settings in `src/Configs/SarpyCounty.json`
+- Avoid unguarded edits to shared map styling/logic that impact all URLs.
+- Before push, do quick Hastings smoke checks when Sarpy work touched shared files.
+
+Quick deploy workflow (GitHub Pages app deploy):
+1) Commit only intended files on working branch.
+2) `git fetch origin main`
+3) `git worktree add <temp-worktree> origin/main`
+4) `git -C <temp-worktree> cherry-pick <commit-hash>`
+5) `npm.cmd run build` in temp worktree
+6) `git -C <temp-worktree> push origin HEAD:main`
+7) `git worktree remove --force <temp-worktree>`
+8) Verify remote head: `git ls-remote --heads origin main`
+
+Firestore rules deploy (separate from GitHub Pages):
+- App code deploy to GitHub Pages does NOT deploy Firebase rules.
+- To deploy rules explicitly:
+  - `npx.cmd firebase-tools deploy --only firestore:rules`
+- Use `npx.cmd` in PowerShell environments where `npx.ps1` execution policy blocks scripts.
+
+Post-deploy smoke checklist (default):
+- Sarpy:
+  1) `/sarpy-county/admin`
+  2) `/sarpy-county/admin/engagement`
+  3) `/sarpy-county/admin/technical`
+- Hastings:
+  1) `/hastings/admin`
+  2) `/hastings/engagement`
+  3) `/hastings/technical`
+- Hard refresh (`Ctrl+F5`) after deploy when validating UI changes.
+
+=== Session Notes (2026-04-23) ===
+Sarpy map UX updates:
+- Added basemap toggle support so users can switch between standard map and satellite imagery.
+- Updated Sarpy building outlines to orange for stronger visibility.
+- Sarpy scoping rule honored: orange-outline change was kept Sarpy-only.
+
+Planning/Reno PDF export cleanup:
+- Fixed merged-room export behavior so internal wall/divider line artifacts no longer render inside merged scenario rooms.
+- Aligned Planning and Reno export highlighting to use consistent filled selected-room emphasis (not outline-only).
+- Reduced over-highlighting spillover so non-selected hallway/adjacent rooms are not incorrectly highlighted in scenario exports.
+
+Map load incident and recovery:
+- Encountered runtime blank-map error after refactor/deploy: ReferenceError: Cannot access 'T9' before initialization.
+- Rolled forward with corrected build/deploy path and restored map rendering.
+- Confirmed Mapbox token was present during validation (token length: 90 logged in browser console).
+
+pyRevit GeoJSON exporter recovery (post-reinstall):
+- Restored pyRevit extension location under user profile:
+  - C:\Users\jdohrman\AppData\Roaming\pyRevit\extensions\Mapfluence.extension\Mapfluence.tab\Export.panel\GeoJSON Export.pushbutton\script.py
+- Fixed pushbutton folder typo from pushbotton to pushbutton.
+- Patched script for Revit API compatibility:
+  - Replaced direct ElementId.IntegerValue assumptions with a helper supporting both .IntegerValue and .Value.
+- Patched OGR2OGR_PATH to local install:
+  - C:\Users\jdohrman\AppData\Local\Programs\OSGeo4W\bin\ogr2ogr.exe
+- Result after patching:
+  - Successful floor exports for BASEMENT / LEVEL 1 / LEVEL 2.
+  - Export includes both room polygons (data features) and architectural linework polylines in the same GeoJSON output.
+
+Current demo plan:
+- Build a "dummy" Mapfluence from the intern-created Revit floor to demo conversion workflow for a prospective university (no current space DB / CAD-Revit baseline).
+- Use this as a full dry run of exporter + import pipeline before the Monday all-staff demo.
+
