@@ -9395,8 +9395,10 @@ const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
 const ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID = 'engagement-heat-rarely-halo-layer';
-// Keep category-specific heat colors clean (disable blended thermal haze overlay).
-const ENGAGEMENT_USE_THERMAL_HALO = false;
+const ENGAGEMENT_HEAT_STYLE = {
+  PRESENTATION: 'presentation',
+  ANALYTIC: 'analytic'
+};
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
@@ -9489,9 +9491,23 @@ const engagementColorForType = (markerType) =>
   ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.color || '#9ca3af';
 const isCoolEngagementCategory = (category) =>
   category === 'outdated' || category === 'rarely' || category === 'unsafe';
-const buildEngagementCategoryHeatColorExpr = (category) => {
+const buildEngagementCategoryHeatColorExpr = (category, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
   const coreRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.rgb || '156,163,175';
   const haloRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.haloRgb || coreRgb;
+  if (heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION) {
+    return [
+      'interpolate',
+      ['linear'],
+      ['heatmap-density'],
+      0, 'rgba(0,0,0,0)',
+      0.02, `rgba(${haloRgb},0.12)`,
+      0.08, `rgba(${haloRgb},0.28)`,
+      0.18, `rgba(${coreRgb},0.62)`,
+      0.35, `rgba(${coreRgb},0.84)`,
+      0.65, `rgba(${coreRgb},0.95)`,
+      1, `rgba(${coreRgb},1)`
+    ];
+  }
   return [
     'interpolate',
     ['linear'],
@@ -9527,9 +9543,9 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
   0.70, 'rgba(59,130,246,0.78)',
   1, 'rgba(30,64,175,0.90)'
 ]);
-const buildEngagementCategoryWeightExpr = (category) => {
+const buildEngagementCategoryWeightExpr = (category, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
   const base = ['coalesce', ['get', 'weight'], 0];
-  return ['*', base, 1.08];
+  return ['*', base, heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION ? 1.16 : 1.08];
 };
 const buildEngagementRarelyHaloWeightExpr = () => ([
   '*',
@@ -9597,19 +9613,49 @@ const buildEngagementCoolHaloOpacityExpr = (floorScoped = false) => (
     ? ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.88, 20, 0.94, 22, 0.97]
     : ['interpolate', ['linear'], ['zoom'], 10, 0.62, 13, 0.68, 16, 0.74, 19, 0.80]
 );
-const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
+const buildEngagementCategoryRadiusExpr = (category, floorScoped = false, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
+  if (heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION) {
+    if (floorScoped) {
+      return ['interpolate', ['linear'], ['zoom'], 16, 10, 18, 16, 20, 24, 22, 32];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 22, 14, 32, 16, 44, 18, 58, 20, 74];
+  }
   if (floorScoped) {
     return ['interpolate', ['linear'], ['zoom'], 16, 6, 18, 9, 20, 13, 22, 18];
   }
   return ['interpolate', ['linear'], ['zoom'], 10, 10, 12, 14, 14, 20, 16, 28, 18, 36, 20, 44];
 };
-const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => {
+const buildEngagementCategoryIntensityExpr = (category, floorScoped = false, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
+  if (heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION) {
+    if (floorScoped) {
+      return ['interpolate', ['linear'], ['zoom'], 16, 1.26, 18, 1.38, 20, 1.50, 22, 1.62];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 10, 1.10, 13, 1.24, 15, 1.36, 17, 1.48, 19, 1.58];
+  }
   if (floorScoped) {
     return ['interpolate', ['linear'], ['zoom'], 16, 1.00, 18, 1.08, 20, 1.16, 22, 1.24];
   }
   return ['interpolate', ['linear'], ['zoom'], 10, 0.92, 13, 1.00, 15, 1.08, 17, 1.16, 19, 1.22];
 };
-const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
+const buildEngagementCategoryOpacityExpr = (category, floorScoped = false, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
+  if (heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION) {
+    if (floorScoped) {
+      if (category === 'unsafe') {
+        return ['interpolate', ['linear'], ['zoom'], 16, 0.86, 18, 0.90, 20, 0.94, 22, 0.97];
+      }
+      if (category === 'rarely' || category === 'outdated') {
+        return ['interpolate', ['linear'], ['zoom'], 16, 0.80, 18, 0.84, 20, 0.88, 22, 0.92];
+      }
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.84, 18, 0.88, 20, 0.92, 22, 0.95];
+    }
+    if (category === 'unsafe') {
+      return ['interpolate', ['linear'], ['zoom'], 10, 0.72, 13, 0.76, 16, 0.80, 19, 0.84];
+    }
+    if (category === 'rarely' || category === 'outdated') {
+      return ['interpolate', ['linear'], ['zoom'], 10, 0.64, 13, 0.68, 16, 0.74, 19, 0.78];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.68, 13, 0.72, 16, 0.78, 19, 0.82];
+  }
   if (floorScoped) {
     if (category === 'unsafe') {
       return ['interpolate', ['linear'], ['zoom'], 16, 0.78, 18, 0.82, 20, 0.86, 22, 0.90];
@@ -9845,6 +9891,7 @@ const StakeholderMap = ({
   const maintenanceWorkflowActive = (showFullMapfluenceControls || isDemoPublicMode) && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(true);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
+  const [engagementHeatStyle, setEngagementHeatStyle] = useState(ENGAGEMENT_HEAT_STYLE.PRESENTATION);
   const [presentationMode, setPresentationMode] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -22841,6 +22888,11 @@ useEffect(() => {
       // campus spread radii when no single floor is loaded so points do not look like dots.
       const floorStyleProfile = true;
       const floorSpreadProfile = Boolean(loadedSingleFloor);
+      const activeHeatStyle =
+        engagementHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION
+          ? ENGAGEMENT_HEAT_STYLE.PRESENTATION
+          : ENGAGEMENT_HEAT_STYLE.ANALYTIC;
+      const useThermalHalo = activeHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION;
 
       if (!map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) {
         map.addLayer(
@@ -22869,7 +22921,7 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-intensity', buildEngagementWarmHaloIntensityExpr(floorStyleProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-radius', buildEngagementWarmHaloRadiusExpr(floorSpreadProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-opacity', buildEngagementWarmHaloOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) {
         map.addLayer(
@@ -22898,7 +22950,7 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementCoolHaloIntensityExpr(floorStyleProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-radius', buildEngagementCoolHaloRadiusExpr(floorSpreadProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementCoolHaloOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) {
         map.addLayer(
@@ -22927,7 +22979,7 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementRarelyHaloIntensityExpr(floorStyleProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-radius', buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementRarelyHaloOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ category, layerId }) => {
         if (!map.getLayer(layerId)) {
@@ -22943,20 +22995,20 @@ useEffect(() => {
                 ENGAGEMENT_HAS_WEIGHT_FILTER
               ],
               paint: {
-                'heatmap-weight': buildEngagementCategoryWeightExpr(category),
-                'heatmap-intensity': buildEngagementCategoryIntensityExpr(category, floorStyleProfile),
-                'heatmap-radius': buildEngagementCategoryRadiusExpr(category, floorSpreadProfile),
-                'heatmap-opacity': buildEngagementCategoryOpacityExpr(category, floorStyleProfile),
-                'heatmap-color': buildEngagementCategoryHeatColorExpr(category)
+                'heatmap-weight': buildEngagementCategoryWeightExpr(category, activeHeatStyle),
+                'heatmap-intensity': buildEngagementCategoryIntensityExpr(category, floorStyleProfile, activeHeatStyle),
+                'heatmap-radius': buildEngagementCategoryRadiusExpr(category, floorSpreadProfile, activeHeatStyle),
+                'heatmap-opacity': buildEngagementCategoryOpacityExpr(category, floorStyleProfile, activeHeatStyle),
+                'heatmap-color': buildEngagementCategoryHeatColorExpr(category, activeHeatStyle)
               }
             },
             beforeId
           );
         }
-        map.setPaintProperty(layerId, 'heatmap-weight', buildEngagementCategoryWeightExpr(category));
-        map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile));
-        map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile));
-        map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
+        map.setPaintProperty(layerId, 'heatmap-weight', buildEngagementCategoryWeightExpr(category, activeHeatStyle));
+        map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile, activeHeatStyle));
+        map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile, activeHeatStyle));
+        map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile, activeHeatStyle));
         setMapLayerVisibility(map, layerId, engagementHeatmapOn);
       });
       [
@@ -22968,7 +23020,7 @@ useEffect(() => {
     } catch (err) {
       console.warn('Engagement heatmap update failed', err);
     }
-  }, [mapLoaded, stakeholderWorkflowActive, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor]);
+  }, [mapLoaded, stakeholderWorkflowActive, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor, engagementHeatStyle]);
 
   // ---------- Render markers ----------
   useEffect(() => {
@@ -26993,6 +27045,27 @@ useEffect(() => {
               )}
               {engagementHeatmapOn && (
                 <div className="legend-section" style={{ marginBottom: 10 }}>
+                  <h5>Heat Style</h5>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <button
+                      className="btn"
+                      style={{ width: '100%', fontWeight: engagementHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION ? 700 : 500 }}
+                      onClick={() => setEngagementHeatStyle(ENGAGEMENT_HEAT_STYLE.PRESENTATION)}
+                    >
+                      Presentation
+                    </button>
+                    <button
+                      className="btn"
+                      style={{ width: '100%', fontWeight: engagementHeatStyle === ENGAGEMENT_HEAT_STYLE.ANALYTIC ? 700 : 500 }}
+                      onClick={() => setEngagementHeatStyle(ENGAGEMENT_HEAT_STYLE.ANALYTIC)}
+                    >
+                      Analytic
+                    </button>
+                  </div>
+                </div>
+              )}
+              {engagementHeatmapOn && (
+                <div className="legend-section" style={{ marginBottom: 10 }}>
                   <h5>Heat Colors</h5>
                   <div
                     style={{
@@ -27007,7 +27080,9 @@ useEffect(() => {
                     <span>Warm</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                    Category cores plus thermal multicolor halo (comments stay gray dots only).
+                    {engagementHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION
+                      ? 'Bright centers plus soft halo, with floor detail still visible (comments stay gray dots only).'
+                      : 'Category-forward heat for cleaner analysis (comments stay gray dots only).'}
                   </div>
                 </div>
               )}
