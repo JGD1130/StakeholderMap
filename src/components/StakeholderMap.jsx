@@ -9590,8 +9590,8 @@ const ENGAGEMENT_COOL_HALO_CATEGORIES = ['outdated', 'unsafe'];
 const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
 const ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID = 'engagement-heat-rarely-halo-layer';
-// Keep thermal blended warm/cool halo overlays enabled.
-const ENGAGEMENT_USE_THERMAL_HALO = true;
+// Keep category-specific heat colors clean (disable blended thermal haze overlay).
+const ENGAGEMENT_USE_THERMAL_HALO = false;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
@@ -9687,31 +9687,17 @@ const isCoolEngagementCategory = (category) =>
 const buildEngagementCategoryHeatColorExpr = (category) => {
   const coreRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.rgb || '156,163,175';
   const haloRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.haloRgb || coreRgb;
-  if (isCoolEngagementCategory(category)) {
-    return [
-      'interpolate',
-      ['linear'],
-      ['heatmap-density'],
-      0, 'rgba(0,0,0,0)',
-      0.03, `rgba(${haloRgb},0.12)`,
-      0.10, `rgba(${haloRgb},0.24)`,
-      0.20, `rgba(${coreRgb},0.58)`,
-      0.36, `rgba(${coreRgb},0.82)`,
-      0.62, `rgba(${coreRgb},0.93)`,
-      1, `rgba(${coreRgb},0.995)`
-    ];
-  }
   return [
     'interpolate',
     ['linear'],
     ['heatmap-density'],
     0, 'rgba(0,0,0,0)',
-    0.03, `rgba(${haloRgb},0.12)`,
-    0.10, `rgba(${haloRgb},0.24)`,
-    0.20, `rgba(${coreRgb},0.58)`,
-    0.36, `rgba(${coreRgb},0.82)`,
-    0.62, `rgba(${coreRgb},0.93)`,
-    1, `rgba(${coreRgb},0.995)`
+    0.03, `rgba(${haloRgb},0.08)`,
+    0.12, `rgba(${haloRgb},0.18)`,
+    0.25, `rgba(${coreRgb},0.38)`,
+    0.42, `rgba(${coreRgb},0.58)`,
+    0.68, `rgba(${coreRgb},0.72)`,
+    1, `rgba(${coreRgb},0.84)`
   ];
 };
 const buildEngagementThermalWarmHaloColorExpr = () => ([
@@ -9808,33 +9794,33 @@ const buildEngagementCoolHaloOpacityExpr = (floorScoped = false) => (
 );
 const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
   if (floorScoped) {
-    return ['interpolate', ['linear'], ['zoom'], 16, 7, 18, 11, 20, 16, 22, 22];
+    return ['interpolate', ['linear'], ['zoom'], 16, 6, 18, 9, 20, 13, 22, 18];
   }
-  return ['interpolate', ['linear'], ['zoom'], 10, 13, 12, 18, 14, 26, 16, 36, 18, 46, 20, 56];
+  return ['interpolate', ['linear'], ['zoom'], 10, 10, 12, 14, 14, 20, 16, 28, 18, 36, 20, 44];
 };
 const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => {
   if (floorScoped) {
-    return ['interpolate', ['linear'], ['zoom'], 16, 1.24, 18, 1.34, 20, 1.44, 22, 1.56];
+    return ['interpolate', ['linear'], ['zoom'], 16, 1.00, 18, 1.08, 20, 1.16, 22, 1.24];
   }
-  return ['interpolate', ['linear'], ['zoom'], 10, 1.12, 13, 1.22, 15, 1.32, 17, 1.44, 19, 1.54];
+  return ['interpolate', ['linear'], ['zoom'], 10, 0.92, 13, 1.00, 15, 1.08, 17, 1.16, 19, 1.22];
 };
 const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
   if (floorScoped) {
     if (category === 'unsafe') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 1.0, 20, 1.0, 22, 1.0];
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.78, 18, 0.82, 20, 0.86, 22, 0.90];
     }
     if (category === 'rarely' || category === 'outdated') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 0.94, 18, 0.97, 20, 0.99, 22, 1.0];
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.66, 18, 0.70, 20, 0.76, 22, 0.80];
     }
-    return ['interpolate', ['linear'], ['zoom'], 16, 0.97, 18, 0.99, 20, 1.0, 22, 1.0];
+    return ['interpolate', ['linear'], ['zoom'], 16, 0.70, 18, 0.74, 20, 0.80, 22, 0.84];
   }
   if (category === 'unsafe') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 0.88, 13, 0.92, 16, 0.95, 19, 0.97];
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.62, 13, 0.66, 16, 0.70, 19, 0.74];
   }
   if (category === 'rarely' || category === 'outdated') {
-    return ['interpolate', ['linear'], ['zoom'], 10, 0.78, 13, 0.83, 16, 0.89, 19, 0.93];
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.52, 13, 0.56, 16, 0.62, 19, 0.68];
   }
-  return ['interpolate', ['linear'], ['zoom'], 10, 0.85, 13, 0.89, 16, 0.93, 19, 0.96];
+  return ['interpolate', ['linear'], ['zoom'], 10, 0.58, 13, 0.62, 16, 0.68, 19, 0.72];
 };
 const setMapLayerVisibility = (map, layerId, visible) => {
   try {
@@ -16571,8 +16557,8 @@ useEffect(() => {
     const floorOverrideValue = isEventLike ? null : floorOverride;
     const floorIdRaw = normalizeFloorIdValue(floorOverrideValue || selectedFloor);
     const buildingKey =
-      resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
-      resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
+      resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey) ||
+      resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey);
     let buildingFloors = buildingKey ? getAvailableFloors(buildingKey) : availableFloors;
     if ((!buildingFloors || buildingFloors.length === 0) && buildingKey) {
       buildingFloors = await ensureFloorsForBuilding(buildingKey);
@@ -21153,8 +21139,8 @@ useEffect(() => {
         return;
       }
       const folderKey =
-        resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey) ||
-        resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey);
+        resolveBuildingFolderKeyFromAny(selectedBuilding, getBuildingFolderKey) ||
+        resolveBuildingFolderKeyFromAny(selectedBuildingId, getBuildingFolderKey);
       if (!folderKey) {
         clearFloors();
         return;
@@ -22298,10 +22284,13 @@ useEffect(() => {
 useEffect(() => {
   if (!selectedBuildingId) return;
   const resolved = resolveBuildingPlanKey(selectedBuildingId) || selectedBuildingId;
+  if (engagementMode && isEngagementFloorScope && selectedBuilding && selectedBuilding !== resolved) {
+    return;
+  }
   if (selectedBuilding !== resolved) {
     setSelectedBuilding(resolved);
   }
-}, [selectedBuildingId, resolveBuildingPlanKey, selectedBuilding]);
+}, [selectedBuildingId, resolveBuildingPlanKey, selectedBuilding, engagementMode, isEngagementFloorScope]);
 
 useEffect(() => {
   if (!engagementMode || !mapLoaded) return;
@@ -22309,7 +22298,7 @@ useEffect(() => {
     engagementAutoLoadKeyRef.current = '';
     return;
   }
-  const buildingKey = bId(selectedBuildingId || selectedBuilding || '');
+  const buildingKey = bId(selectedBuilding || selectedBuildingId || '');
   const floorKey = fId(selectedFloor || '');
   const buildingFloors = getAvailableFloors(buildingKey);
   const floorExistsForBuilding = buildingFloors.some((fl) => fId(fl) === floorKey);
@@ -28276,6 +28265,10 @@ useEffect(() => {
                     onChange={(e) => {
                       const newBldg = e.target.value;
                       setSelectedBuilding(newBldg);
+                      const feature = matchBuildingFeature(config?.buildings?.features || [], newBldg);
+                      const nextId = String(feature?.properties?.id || '').trim();
+                      setSelectedBuildingId(nextId || null);
+                      selectedBuildingIdRef.current = nextId || null;
                     }}
                   >
                     {floorplanBuildingOptions.length ? (
@@ -29932,3 +29925,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
