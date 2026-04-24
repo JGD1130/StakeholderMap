@@ -9843,7 +9843,7 @@ const StakeholderMap = ({
   const stakeholderWorkflowActive = engagementMode && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
   const maintenanceWorkflowActive = (showFullMapfluenceControls || isDemoPublicMode) && mapView === MAP_VIEWS.MAINTENANCE;
-  const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(true);
+  const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(false);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
     if (typeof window === 'undefined') return false;
