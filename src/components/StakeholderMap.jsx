@@ -9594,13 +9594,6 @@ const ENGAGEMENT_HEAT_STYLE = {
   PRESENTATION: 'presentation',
   ANALYTIC: 'analytic'
 };
-const ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID = 'engagement-heat-hotspot-glow';
-const ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID = 'engagement-heat-hotspot-core';
-const ENGAGEMENT_HEAT_NONCOMMENT_FILTER = [
-  'all',
-  ENGAGEMENT_HAS_WEIGHT_FILTER,
-  ['!=', ['coalesce', ['get', 'heatCategory'], ''], 'comment']
-];
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
@@ -9728,54 +9721,27 @@ const buildEngagementThermalWarmHaloColorExpr = () => ([
   ['linear'],
   ['heatmap-density'],
   0, 'rgba(0,0,0,0)',
-  0.06, 'rgba(255,237,128,0.20)',
-  0.22, 'rgba(253,224,71,0.40)',
-  0.48, 'rgba(251,146,60,0.58)',
-  0.72, 'rgba(239,68,68,0.70)',
-  1, 'rgba(220,38,38,0.82)'
+  0.03, 'rgba(255,247,204,0.06)',
+  0.10, 'rgba(255,228,147,0.18)',
+  0.24, 'rgba(255,205,102,0.30)',
+  0.42, 'rgba(255,162,70,0.44)',
+  0.62, 'rgba(251,107,58,0.56)',
+  0.80, 'rgba(239,68,68,0.68)',
+  1, 'rgba(220,38,38,0.78)'
 ]);
 const buildEngagementThermalCoolHaloColorExpr = () => ([
   'interpolate',
   ['linear'],
   ['heatmap-density'],
   0, 'rgba(0,0,0,0)',
-  0.05, 'rgba(224,255,238,0.24)',
-  0.18, 'rgba(122,254,177,0.46)',
-  0.42, 'rgba(56,189,248,0.62)',
-  0.70, 'rgba(59,130,246,0.78)',
-  1, 'rgba(30,64,175,0.90)'
+  0.03, 'rgba(224,255,246,0.06)',
+  0.10, 'rgba(156,249,210,0.16)',
+  0.24, 'rgba(92,228,202,0.30)',
+  0.42, 'rgba(69,190,244,0.44)',
+  0.62, 'rgba(59,130,246,0.58)',
+  0.80, 'rgba(37,99,235,0.70)',
+  1, 'rgba(29,78,216,0.80)'
 ]);
-const buildEngagementHotspotColorExpr = () => ([
-  'match',
-  ['coalesce', ['get', 'heatCategory'], ''],
-  'study', 'rgba(255,70,70,1)',
-  'hangout', 'rgba(255,154,52,1)',
-  'improve', 'rgba(255,222,73,1)',
-  'outdated', 'rgba(103,232,249,1)',
-  'rarely', 'rgba(122,254,177,1)',
-  'unsafe', 'rgba(46,91,230,1)',
-  'rgba(156,163,175,0.9)'
-]);
-const buildEngagementHotspotCoreRadiusExpr = (floorScoped = false) => (
-  floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 4, 18, 6, 20, 8, 22, 10]
-    : ['interpolate', ['linear'], ['zoom'], 10, 4, 12, 6, 14, 8, 16, 10, 18, 12, 20, 14]
-);
-const buildEngagementHotspotGlowRadiusExpr = (floorScoped = false) => (
-  floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
-    : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62]
-);
-const buildEngagementHotspotCoreOpacityExpr = (floorScoped = false) => (
-  floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.87, 20, 0.92, 22, 0.95]
-    : ['interpolate', ['linear'], ['zoom'], 10, 0.74, 13, 0.80, 16, 0.86, 19, 0.90]
-);
-const buildEngagementHotspotGlowOpacityExpr = (floorScoped = false) => (
-  floorScoped
-    ? ['interpolate', ['linear'], ['zoom'], 16, 0.24, 18, 0.28, 20, 0.32, 22, 0.36]
-    : ['interpolate', ['linear'], ['zoom'], 10, 0.16, 13, 0.20, 16, 0.24, 19, 0.28]
-);
 const buildEngagementCategoryWeightExpr = (category, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
   const base = ['coalesce', ['get', 'weight'], 0];
   return ['*', base, heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION ? 1.16 : 1.08];
@@ -9790,11 +9756,13 @@ const buildEngagementRarelyHaloColorExpr = () => ([
   ['linear'],
   ['heatmap-density'],
   0, 'rgba(0,0,0,0)',
-  0.05, 'rgba(204,255,229,0.24)',
-  0.18, 'rgba(122,254,177,0.42)',
-  0.40, 'rgba(122,254,177,0.58)',
-  0.70, 'rgba(89,224,150,0.74)',
-  1, 'rgba(70,200,132,0.86)'
+  0.03, 'rgba(230,255,238,0.06)',
+  0.10, 'rgba(187,247,208,0.16)',
+  0.24, 'rgba(134,239,172,0.28)',
+  0.42, 'rgba(110,231,183,0.42)',
+  0.62, 'rgba(74,222,128,0.56)',
+  0.80, 'rgba(34,197,94,0.68)',
+  1, 'rgba(21,128,61,0.78)'
 ]);
 const buildEngagementRarelyHaloRadiusExpr = (floorScoped = false) => (
   floorScoped
@@ -23407,8 +23375,6 @@ useEffect(() => {
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
-      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID); } catch {}
-      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID); } catch {}
       try { if (map.getLayer('engagement-heat-rarely-glow')) map.removeLayer('engagement-heat-rarely-glow'); } catch {}
       layers
         .map((l) => l?.id)
@@ -23423,8 +23389,6 @@ useEffect(() => {
         try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch {}
       });
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
-      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID); } catch {}
-      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID); } catch {}
       try { if (map.getLayer('engagement-heat-rarely-glow')) map.removeLayer('engagement-heat-rarely-glow'); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
@@ -23467,48 +23431,48 @@ useEffect(() => {
       const showCategoryHeat = activeHeatStyle === ENGAGEMENT_HEAT_STYLE.ANALYTIC;
       const warmHaloIntensity = useThermalHalo
         ? (floorStyleProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 0.92, 18, 1.02, 20, 1.10, 22, 1.16]
-            : ['interpolate', ['linear'], ['zoom'], 10, 0.72, 13, 0.80, 16, 0.88, 19, 0.96])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.78, 18, 0.84, 20, 0.90, 22, 0.96]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.62, 13, 0.68, 16, 0.74, 19, 0.80])
         : buildEngagementWarmHaloIntensityExpr(floorStyleProfile);
       const warmHaloRadius = useThermalHalo
         ? (floorSpreadProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
-            : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 20, 18, 30, 20, 42, 22, 56]
+            : ['interpolate', ['linear'], ['zoom'], 10, 24, 12, 34, 14, 46, 16, 62, 18, 80, 20, 100])
         : buildEngagementWarmHaloRadiusExpr(floorSpreadProfile);
       const warmHaloOpacity = useThermalHalo
         ? (floorStyleProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 0.42, 18, 0.48, 20, 0.54, 22, 0.60]
-            : ['interpolate', ['linear'], ['zoom'], 10, 0.28, 13, 0.32, 16, 0.36, 19, 0.42])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.50, 18, 0.56, 20, 0.62, 22, 0.68]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.34, 13, 0.40, 16, 0.46, 19, 0.52])
         : buildEngagementWarmHaloOpacityExpr(floorStyleProfile);
       const coolHaloIntensity = useThermalHalo
         ? (floorStyleProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 0.90, 18, 1.00, 20, 1.08, 22, 1.14]
-            : ['interpolate', ['linear'], ['zoom'], 10, 0.70, 13, 0.78, 16, 0.86, 19, 0.94])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.76, 18, 0.82, 20, 0.88, 22, 0.94]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.60, 13, 0.66, 16, 0.72, 19, 0.78])
         : buildEngagementCoolHaloIntensityExpr(floorStyleProfile);
       const coolHaloRadius = useThermalHalo
         ? (floorSpreadProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
-            : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 20, 18, 30, 20, 42, 22, 56]
+            : ['interpolate', ['linear'], ['zoom'], 10, 24, 12, 34, 14, 46, 16, 62, 18, 80, 20, 100])
         : buildEngagementCoolHaloRadiusExpr(floorSpreadProfile);
       const coolHaloOpacity = useThermalHalo
         ? (floorStyleProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 0.40, 18, 0.46, 20, 0.52, 22, 0.58]
-            : ['interpolate', ['linear'], ['zoom'], 10, 0.26, 13, 0.30, 16, 0.35, 19, 0.40])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.48, 18, 0.54, 20, 0.60, 22, 0.66]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.32, 13, 0.38, 16, 0.44, 19, 0.50])
         : buildEngagementCoolHaloOpacityExpr(floorStyleProfile);
       const rarelyHaloIntensity = useThermalHalo
         ? (floorStyleProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 0.90, 18, 1.00, 20, 1.08, 22, 1.14]
-            : ['interpolate', ['linear'], ['zoom'], 10, 0.70, 13, 0.78, 16, 0.86, 19, 0.94])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.74, 18, 0.80, 20, 0.86, 22, 0.92]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.58, 13, 0.64, 16, 0.70, 19, 0.76])
         : buildEngagementRarelyHaloIntensityExpr(floorStyleProfile);
       const rarelyHaloRadius = useThermalHalo
         ? (floorSpreadProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
-            : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 20, 18, 30, 20, 42, 22, 56]
+            : ['interpolate', ['linear'], ['zoom'], 10, 24, 12, 34, 14, 46, 16, 62, 18, 80, 20, 100])
         : buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile);
       const rarelyHaloOpacity = useThermalHalo
         ? (floorStyleProfile
-            ? ['interpolate', ['linear'], ['zoom'], 16, 0.38, 18, 0.44, 20, 0.50, 22, 0.56]
-            : ['interpolate', ['linear'], ['zoom'], 10, 0.24, 13, 0.28, 16, 0.32, 19, 0.38])
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.46, 18, 0.52, 20, 0.58, 22, 0.64]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.30, 13, 0.36, 16, 0.42, 19, 0.48])
         : buildEngagementRarelyHaloOpacityExpr(floorStyleProfile);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) {
@@ -23597,52 +23561,6 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-radius', rarelyHaloRadius);
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-opacity', rarelyHaloOpacity);
       setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
-
-      if (!map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID)) {
-        map.addLayer(
-          {
-            id: ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID,
-            type: 'circle',
-            source: ENGAGEMENT_HEAT_SOURCE_ID,
-            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
-            filter: ENGAGEMENT_HEAT_NONCOMMENT_FILTER,
-            paint: {
-              'circle-color': buildEngagementHotspotColorExpr(),
-              'circle-radius': buildEngagementHotspotGlowRadiusExpr(floorSpreadProfile),
-              'circle-opacity': buildEngagementHotspotGlowOpacityExpr(floorStyleProfile),
-              'circle-blur': 0.86
-            }
-          },
-          beforeId
-        );
-      }
-      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, 'circle-color', buildEngagementHotspotColorExpr());
-      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, 'circle-radius', buildEngagementHotspotGlowRadiusExpr(floorSpreadProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, 'circle-opacity', buildEngagementHotspotGlowOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, engagementHeatmapOn && useThermalHalo);
-
-      if (!map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID)) {
-        map.addLayer(
-          {
-            id: ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID,
-            type: 'circle',
-            source: ENGAGEMENT_HEAT_SOURCE_ID,
-            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
-            filter: ENGAGEMENT_HEAT_NONCOMMENT_FILTER,
-            paint: {
-              'circle-color': buildEngagementHotspotColorExpr(),
-              'circle-radius': buildEngagementHotspotCoreRadiusExpr(floorSpreadProfile),
-              'circle-opacity': buildEngagementHotspotCoreOpacityExpr(floorStyleProfile),
-              'circle-blur': 0.16
-            }
-          },
-          beforeId
-        );
-      }
-      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, 'circle-color', buildEngagementHotspotColorExpr());
-      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, 'circle-radius', buildEngagementHotspotCoreRadiusExpr(floorSpreadProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, 'circle-opacity', buildEngagementHotspotCoreOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, engagementHeatmapOn && useThermalHalo);
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ category, layerId }) => {
         if (!map.getLayer(layerId)) {
           map.addLayer(
@@ -23677,8 +23595,6 @@ useEffect(() => {
         ENGAGEMENT_HEAT_LAYER_ID,
         ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID,
         ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID,
-        ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID,
-        ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID,
         ...ENGAGEMENT_HEAT_LAYER_DEFS.map((entry) => entry.layerId)
       ].forEach((layerId) => moveHeatLayer(layerId));
     } catch (err) {
@@ -28069,7 +27985,7 @@ useEffect(() => {
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
                     {engagementHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION
-                      ? 'Bright centers plus soft halo, with floor detail still visible (comments stay gray dots only).'
+                      ? 'Broader blended halos with gradual fade and minimal dot feel; floor detail stays visible (comments stay gray dots only).'
                       : 'Category-forward heat for cleaner analysis (comments stay gray dots only).'}
                   </div>
                 </div>
