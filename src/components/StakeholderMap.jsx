@@ -9591,7 +9591,7 @@ const ENGAGEMENT_HEAT_WEIGHT_EXPR = ['coalesce', ['get', 'weight'], 0];
 const ENGAGEMENT_HAS_WEIGHT_FILTER = ['>', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0];
 const ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID = 'engagement-heat-rarely-halo-layer';
 // Keep category-specific heat colors clean (disable blended thermal haze overlay).
-const ENGAGEMENT_USE_THERMAL_HALO = false;
+const ENGAGEMENT_USE_THERMAL_HALO = true;
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
