@@ -9399,6 +9399,13 @@ const ENGAGEMENT_HEAT_STYLE = {
   PRESENTATION: 'presentation',
   ANALYTIC: 'analytic'
 };
+const ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID = 'engagement-heat-hotspot-glow';
+const ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID = 'engagement-heat-hotspot-core';
+const ENGAGEMENT_HEAT_NONCOMMENT_FILTER = [
+  'all',
+  ENGAGEMENT_HAS_WEIGHT_FILTER,
+  ['!=', ['coalesce', ['get', 'heatCategory'], ''], 'comment']
+];
 const ENGAGEMENT_HEAT_LAYER_DEFS = [
   { category: 'rarely', layerId: 'engagement-heat-rarely' },
   { category: 'outdated', layerId: 'engagement-heat-outdated' },
@@ -9543,6 +9550,37 @@ const buildEngagementThermalCoolHaloColorExpr = () => ([
   0.70, 'rgba(59,130,246,0.78)',
   1, 'rgba(30,64,175,0.90)'
 ]);
+const buildEngagementHotspotColorExpr = () => ([
+  'match',
+  ['coalesce', ['get', 'heatCategory'], ''],
+  'study', 'rgba(255,70,70,1)',
+  'hangout', 'rgba(255,154,52,1)',
+  'improve', 'rgba(255,222,73,1)',
+  'outdated', 'rgba(103,232,249,1)',
+  'rarely', 'rgba(122,254,177,1)',
+  'unsafe', 'rgba(46,91,230,1)',
+  'rgba(156,163,175,0.9)'
+]);
+const buildEngagementHotspotCoreRadiusExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 4, 18, 6, 20, 8, 22, 10]
+    : ['interpolate', ['linear'], ['zoom'], 10, 4, 12, 6, 14, 8, 16, 10, 18, 12, 20, 14]
+);
+const buildEngagementHotspotGlowRadiusExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
+    : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62]
+);
+const buildEngagementHotspotCoreOpacityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.87, 20, 0.92, 22, 0.95]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.74, 13, 0.80, 16, 0.86, 19, 0.90]
+);
+const buildEngagementHotspotGlowOpacityExpr = (floorScoped = false) => (
+  floorScoped
+    ? ['interpolate', ['linear'], ['zoom'], 16, 0.24, 18, 0.28, 20, 0.32, 22, 0.36]
+    : ['interpolate', ['linear'], ['zoom'], 10, 0.16, 13, 0.20, 16, 0.24, 19, 0.28]
+);
 const buildEngagementCategoryWeightExpr = (category, heatStyle = ENGAGEMENT_HEAT_STYLE.ANALYTIC) => {
   const base = ['coalesce', ['get', 'weight'], 0];
   return ['*', base, heatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION ? 1.16 : 1.08];
@@ -22839,6 +22877,8 @@ useEffect(() => {
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID); } catch {}
       try { if (map.getLayer('engagement-heat-rarely-glow')) map.removeLayer('engagement-heat-rarely-glow'); } catch {}
       layers
         .map((l) => l?.id)
@@ -22853,6 +22893,8 @@ useEffect(() => {
         try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch {}
       });
       try { if (map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID); } catch {}
+      try { if (map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID); } catch {}
       try { if (map.getLayer('engagement-heat-rarely-glow')) map.removeLayer('engagement-heat-rarely-glow'); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_LAYER_ID); } catch {}
       try { if (map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) map.removeLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID); } catch {}
@@ -22884,15 +22926,60 @@ useEffect(() => {
         if (!beforeId || !map.getLayer(layerId)) return;
         try { map.moveLayer(layerId, beforeId); } catch {}
       };
-      // Keep floor-style color/halo/transparency in both modes, but use larger
-      // campus spread radii when no single floor is loaded so points do not look like dots.
-      const floorStyleProfile = true;
+      // Use floor-scoped vs campus-scoped profiles for visual balance.
+      const floorStyleProfile = Boolean(loadedSingleFloor);
       const floorSpreadProfile = Boolean(loadedSingleFloor);
       const activeHeatStyle =
         engagementHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION
           ? ENGAGEMENT_HEAT_STYLE.PRESENTATION
           : ENGAGEMENT_HEAT_STYLE.ANALYTIC;
       const useThermalHalo = activeHeatStyle === ENGAGEMENT_HEAT_STYLE.PRESENTATION;
+      const showCategoryHeat = activeHeatStyle === ENGAGEMENT_HEAT_STYLE.ANALYTIC;
+      const warmHaloIntensity = useThermalHalo
+        ? (floorStyleProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.92, 18, 1.02, 20, 1.10, 22, 1.16]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.72, 13, 0.80, 16, 0.88, 19, 0.96])
+        : buildEngagementWarmHaloIntensityExpr(floorStyleProfile);
+      const warmHaloRadius = useThermalHalo
+        ? (floorSpreadProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
+            : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62])
+        : buildEngagementWarmHaloRadiusExpr(floorSpreadProfile);
+      const warmHaloOpacity = useThermalHalo
+        ? (floorStyleProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.42, 18, 0.48, 20, 0.54, 22, 0.60]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.28, 13, 0.32, 16, 0.36, 19, 0.42])
+        : buildEngagementWarmHaloOpacityExpr(floorStyleProfile);
+      const coolHaloIntensity = useThermalHalo
+        ? (floorStyleProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.90, 18, 1.00, 20, 1.08, 22, 1.14]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.70, 13, 0.78, 16, 0.86, 19, 0.94])
+        : buildEngagementCoolHaloIntensityExpr(floorStyleProfile);
+      const coolHaloRadius = useThermalHalo
+        ? (floorSpreadProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
+            : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62])
+        : buildEngagementCoolHaloRadiusExpr(floorSpreadProfile);
+      const coolHaloOpacity = useThermalHalo
+        ? (floorStyleProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.40, 18, 0.46, 20, 0.52, 22, 0.58]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.26, 13, 0.30, 16, 0.35, 19, 0.40])
+        : buildEngagementCoolHaloOpacityExpr(floorStyleProfile);
+      const rarelyHaloIntensity = useThermalHalo
+        ? (floorStyleProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.90, 18, 1.00, 20, 1.08, 22, 1.14]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.70, 13, 0.78, 16, 0.86, 19, 0.94])
+        : buildEngagementRarelyHaloIntensityExpr(floorStyleProfile);
+      const rarelyHaloRadius = useThermalHalo
+        ? (floorSpreadProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 18, 20, 26, 22, 34]
+            : ['interpolate', ['linear'], ['zoom'], 10, 14, 12, 20, 14, 28, 16, 38, 18, 50, 20, 62])
+        : buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile);
+      const rarelyHaloOpacity = useThermalHalo
+        ? (floorStyleProfile
+            ? ['interpolate', ['linear'], ['zoom'], 16, 0.38, 18, 0.44, 20, 0.50, 22, 0.56]
+            : ['interpolate', ['linear'], ['zoom'], 10, 0.24, 13, 0.28, 16, 0.32, 19, 0.38])
+        : buildEngagementRarelyHaloOpacityExpr(floorStyleProfile);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) {
         map.addLayer(
@@ -22908,9 +22995,9 @@ useEffect(() => {
             ],
             paint: {
               'heatmap-weight': buildEngagementWarmHaloWeightExpr(),
-              'heatmap-intensity': buildEngagementWarmHaloIntensityExpr(floorStyleProfile),
-              'heatmap-radius': buildEngagementWarmHaloRadiusExpr(floorSpreadProfile),
-              'heatmap-opacity': buildEngagementWarmHaloOpacityExpr(floorStyleProfile),
+              'heatmap-intensity': warmHaloIntensity,
+              'heatmap-radius': warmHaloRadius,
+              'heatmap-opacity': warmHaloOpacity,
               'heatmap-color': buildEngagementThermalWarmHaloColorExpr()
             }
           },
@@ -22918,9 +23005,9 @@ useEffect(() => {
         );
       }
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-weight', buildEngagementWarmHaloWeightExpr());
-      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-intensity', buildEngagementWarmHaloIntensityExpr(floorStyleProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-radius', buildEngagementWarmHaloRadiusExpr(floorSpreadProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-opacity', buildEngagementWarmHaloOpacityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-intensity', warmHaloIntensity);
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-radius', warmHaloRadius);
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-opacity', warmHaloOpacity);
       setMapLayerVisibility(map, ENGAGEMENT_HEAT_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) {
@@ -22937,9 +23024,9 @@ useEffect(() => {
             ],
             paint: {
               'heatmap-weight': ['*', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0.98],
-              'heatmap-intensity': buildEngagementCoolHaloIntensityExpr(floorStyleProfile),
-              'heatmap-radius': buildEngagementCoolHaloRadiusExpr(floorSpreadProfile),
-              'heatmap-opacity': buildEngagementCoolHaloOpacityExpr(floorStyleProfile),
+              'heatmap-intensity': coolHaloIntensity,
+              'heatmap-radius': coolHaloRadius,
+              'heatmap-opacity': coolHaloOpacity,
               'heatmap-color': buildEngagementThermalCoolHaloColorExpr()
             }
           },
@@ -22947,9 +23034,9 @@ useEffect(() => {
         );
       }
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-weight', ['*', ENGAGEMENT_HEAT_WEIGHT_EXPR, 0.98]);
-      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementCoolHaloIntensityExpr(floorStyleProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-radius', buildEngagementCoolHaloRadiusExpr(floorSpreadProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementCoolHaloOpacityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-intensity', coolHaloIntensity);
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-radius', coolHaloRadius);
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-opacity', coolHaloOpacity);
       setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) {
@@ -22966,9 +23053,9 @@ useEffect(() => {
             ],
             paint: {
               'heatmap-weight': buildEngagementRarelyHaloWeightExpr(),
-              'heatmap-intensity': buildEngagementRarelyHaloIntensityExpr(floorStyleProfile),
-              'heatmap-radius': buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile),
-              'heatmap-opacity': buildEngagementRarelyHaloOpacityExpr(floorStyleProfile),
+              'heatmap-intensity': rarelyHaloIntensity,
+              'heatmap-radius': rarelyHaloRadius,
+              'heatmap-opacity': rarelyHaloOpacity,
               'heatmap-color': buildEngagementRarelyHaloColorExpr()
             }
           },
@@ -22976,11 +23063,56 @@ useEffect(() => {
         );
       }
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-weight', buildEngagementRarelyHaloWeightExpr());
-      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementRarelyHaloIntensityExpr(floorStyleProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-radius', buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile));
-      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementRarelyHaloOpacityExpr(floorStyleProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-intensity', rarelyHaloIntensity);
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-radius', rarelyHaloRadius);
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-opacity', rarelyHaloOpacity);
       setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
+      if (!map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID)) {
+        map.addLayer(
+          {
+            id: ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID,
+            type: 'circle',
+            source: ENGAGEMENT_HEAT_SOURCE_ID,
+            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+            filter: ENGAGEMENT_HEAT_NONCOMMENT_FILTER,
+            paint: {
+              'circle-color': buildEngagementHotspotColorExpr(),
+              'circle-radius': buildEngagementHotspotGlowRadiusExpr(floorSpreadProfile),
+              'circle-opacity': buildEngagementHotspotGlowOpacityExpr(floorStyleProfile),
+              'circle-blur': 0.86
+            }
+          },
+          beforeId
+        );
+      }
+      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, 'circle-color', buildEngagementHotspotColorExpr());
+      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, 'circle-radius', buildEngagementHotspotGlowRadiusExpr(floorSpreadProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, 'circle-opacity', buildEngagementHotspotGlowOpacityExpr(floorStyleProfile));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID, engagementHeatmapOn && useThermalHalo);
+
+      if (!map.getLayer(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID)) {
+        map.addLayer(
+          {
+            id: ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID,
+            type: 'circle',
+            source: ENGAGEMENT_HEAT_SOURCE_ID,
+            maxzoom: ENGAGEMENT_HEAT_MAX_ZOOM,
+            filter: ENGAGEMENT_HEAT_NONCOMMENT_FILTER,
+            paint: {
+              'circle-color': buildEngagementHotspotColorExpr(),
+              'circle-radius': buildEngagementHotspotCoreRadiusExpr(floorSpreadProfile),
+              'circle-opacity': buildEngagementHotspotCoreOpacityExpr(floorStyleProfile),
+              'circle-blur': 0.16
+            }
+          },
+          beforeId
+        );
+      }
+      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, 'circle-color', buildEngagementHotspotColorExpr());
+      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, 'circle-radius', buildEngagementHotspotCoreRadiusExpr(floorSpreadProfile));
+      map.setPaintProperty(ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, 'circle-opacity', buildEngagementHotspotCoreOpacityExpr(floorStyleProfile));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID, engagementHeatmapOn && useThermalHalo);
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ category, layerId }) => {
         if (!map.getLayer(layerId)) {
           map.addLayer(
@@ -23009,12 +23141,14 @@ useEffect(() => {
         map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile, activeHeatStyle));
         map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile, activeHeatStyle));
         map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile, activeHeatStyle));
-        setMapLayerVisibility(map, layerId, engagementHeatmapOn);
+        setMapLayerVisibility(map, layerId, engagementHeatmapOn && showCategoryHeat);
       });
       [
         ENGAGEMENT_HEAT_LAYER_ID,
         ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID,
         ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID,
+        ENGAGEMENT_HEAT_HOTSPOT_GLOW_LAYER_ID,
+        ENGAGEMENT_HEAT_HOTSPOT_CORE_LAYER_ID,
         ...ENGAGEMENT_HEAT_LAYER_DEFS.map((entry) => entry.layerId)
       ].forEach((layerId) => moveHeatLayer(layerId));
     } catch (err) {
