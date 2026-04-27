@@ -9325,6 +9325,10 @@ const progressColors = {
   2: '#5dade2',
   3: '#2e86c1'
 };
+const TECHNICAL_BUILDING_COLOR_MODE = {
+  STAGE_COMPLETED: 'stage-completed',
+  TECHNICAL_SCORE: 'technical-score'
+};
 const MAINTENANCE_ISSUE_TYPES = [
   'Electrical',
   'HVAC',
@@ -9496,6 +9500,32 @@ const computeTechnicalProgressFromScores = (scores = {}) => {
     missingFieldLabels,
     missingFieldCount: missingFieldLabels.length
   };
+};
+const computeTechnicalAverageScore = (scores = {}) => {
+  const scoreMap = scores && typeof scores === 'object' ? scores : {};
+  let scoredFields = 0;
+  let totalScore = 0;
+  TECHNICAL_SECTION_CONFIG.forEach((section) => {
+    const sectionScores = scoreMap?.[section.key] && typeof scoreMap[section.key] === 'object'
+      ? scoreMap[section.key]
+      : {};
+    section.fields.forEach((fieldKey) => {
+      const value = readTechnicalScoreValue(sectionScores, fieldKey);
+      if (!Number.isFinite(value) || value <= 0) return;
+      scoredFields += 1;
+      totalScore += value;
+    });
+  });
+  const averageScore = scoredFields > 0 ? (totalScore / scoredFields) : null;
+  return { averageScore, scoredFields };
+};
+const technicalScoreColorForAverage = (averageScore, scoredFields = 0) => {
+  if (!Number.isFinite(averageScore) || Number(scoredFields) <= 0) return progressColors[0];
+  if (averageScore >= 4.5) return '#4CAF50';
+  if (averageScore >= 3.5) return '#8BC34A';
+  if (averageScore >= 2.5) return '#FFEB3B';
+  if (averageScore >= 1.5) return '#FF9800';
+  return '#F44336';
 };
 
 const defaultBuildingColor = '#85474b';
@@ -9877,6 +9907,7 @@ const StakeholderMap = ({
   const roomEditPanelRef = useRef(null);
   const scenarioPanelRef = useRef(null);
   const renoPanelRef = useRef(null);
+  const technicalPanelRef = useRef(null);
   const maintenanceActionPopupRef = useRef(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -15277,6 +15308,7 @@ const StakeholderMap = ({
   const [markerToolMessage, setMarkerToolMessage] = useState('');
   const [technicalProgressShowIncompleteOnly, setTechnicalProgressShowIncompleteOnly] = useState(false);
   const [technicalProgressMessage, setTechnicalProgressMessage] = useState('');
+  const [technicalBuildingColorMode, setTechnicalBuildingColorMode] = useState(TECHNICAL_BUILDING_COLOR_MODE.STAGE_COMPLETED);
 
 
   const resolveBuildingPlanKey = useCallback((idOrName) => {
@@ -19423,6 +19455,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   // Floating panel anchor
   const [panelAnchor, setPanelAnchor] = useState(null);
   const [spacePanelPos, setSpacePanelPos] = useState(null);
+  const [technicalPanelPos, setTechnicalPanelPos] = useState(null);
   const [aiScenarioPos, setAiScenarioPos] = useState(null);
   const [aiCreateScenarioResultPos, setAiCreateScenarioResultPos] = useState(null);
   const getMapPageBounds = useCallback(() => {
@@ -19437,6 +19470,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   }), []);
   const handleSpacePanelDragStart = useCallback(
     (event) => beginPanelDrag(event, spacePanelRef, setSpacePanelPos, getMapPageBounds),
+    [getMapPageBounds]
+  );
+  const handleTechnicalPanelDragStart = useCallback(
+    (event) => beginPanelDrag(event, technicalPanelRef, setTechnicalPanelPos, getMapPageBounds),
     [getMapPageBounds]
   );
   const handleRoomEditDragStart = useCallback(
@@ -19467,6 +19504,10 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   );
   const spacePanelDragHandleProps = {
     onPointerDown: handleSpacePanelDragStart,
+    style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
+  };
+  const technicalPanelDragHandleProps = {
+    onPointerDown: handleTechnicalPanelDragStart,
     style: { cursor: 'grab', userSelect: 'none', touchAction: 'none' }
   };
   const roomEditDragHandleProps = {
@@ -20677,6 +20718,114 @@ const exportTechnicalMissingItemsCsv = useCallback(() => {
   URL.revokeObjectURL(a.href);
   setTechnicalProgressMessage(`Exported ${rows.length.toLocaleString()} buildings with missing items.`);
 }, [technicalProgressRows, universityId]);
+const exportTechnicalAssessmentCsv = useCallback(() => {
+  const rows = technicalProgressRows || [];
+  if (!rows.length) {
+    setTechnicalProgressMessage('No technical assessment data to export.');
+    return;
+  }
+  const esc = (value) => {
+    if (value === null || value === undefined) return '';
+    const text = String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const canonicalAssessment = new Map();
+  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+    const canonicalId = bId(rawId || assessment?.originalId || '');
+    if (!canonicalId) return;
+    canonicalAssessment.set(canonicalId, assessment || {});
+  });
+
+  const headers = [
+    'DataType',
+    'BuildingID',
+    'BuildingName',
+    'Category',
+    'SubCategory',
+    'Score',
+    'Notes',
+    'CompletionPct',
+    'AnsweredFields',
+    'TotalFields',
+    'StartedSections',
+    'AvgScore',
+    'ScoredFields',
+    'MissingFieldCount',
+    'MissingSections'
+  ];
+  const lines = [headers.join(',')];
+  let detailCount = 0;
+  const summaryCount = rows.length;
+
+  rows.forEach((row) => {
+    const direct = buildingAssessments?.[row.id] || null;
+    const assessment = direct || canonicalAssessment.get(bId(row.id || '')) || {};
+    const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
+    const notes = String(assessment?.notes || '').trim();
+    const scoreSummary = computeTechnicalAverageScore(scores);
+    const avgScore = Number.isFinite(scoreSummary.averageScore)
+      ? (Math.round(scoreSummary.averageScore * 100) / 100)
+      : '';
+
+    lines.push([
+      esc('TechnicalAssessmentSummary'),
+      esc(row.id),
+      esc(row.name),
+      esc('summary'),
+      esc('overall'),
+      esc(avgScore),
+      esc(notes),
+      esc(row.completionPct),
+      esc(row.answeredFields),
+      esc(row.totalFields),
+      esc(row.startedSections),
+      esc(avgScore),
+      esc(scoreSummary.scoredFields),
+      esc(row.missingFieldCount),
+      esc((row.missingSections || []).join('; '))
+    ].join(','));
+
+    TECHNICAL_SECTION_CONFIG.forEach((section) => {
+      const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
+        ? scores[section.key]
+        : {};
+      section.fields.forEach((fieldKey) => {
+        const scoreValue = readTechnicalScoreValue(sectionScores, fieldKey);
+        lines.push([
+          esc('TechnicalAssessment'),
+          esc(row.id),
+          esc(row.name),
+          esc(section.key),
+          esc(fieldKey),
+          esc(scoreValue > 0 ? scoreValue : ''),
+          esc(notes),
+          esc(''),
+          esc(''),
+          esc(''),
+          esc(''),
+          esc(''),
+          esc(''),
+          esc(''),
+          esc('')
+        ].join(','));
+        detailCount += 1;
+      });
+    });
+  });
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  a.download = `${base}-technical-assessment-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  setTechnicalProgressMessage(`Exported ${detailCount.toLocaleString()} technical rows + ${summaryCount.toLocaleString()} building summaries.`);
+}, [technicalProgressRows, buildingAssessments, universityId]);
+
 const focusTechnicalBuilding = useCallback((buildingId) => {
   const id = String(buildingId || '').trim();
   if (!id) return;
@@ -23653,8 +23802,13 @@ useEffect(() => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
         const sc = assessment && assessment.scores ? assessment.scores : {};
-        const completedSections = computeTechnicalProgressFromScores(sc).startedSections;
-        matchExpr.push((assessment && assessment.originalId) || buildingId, progressColors[completedSections]);
+        const progress = computeTechnicalProgressFromScores(sc);
+        const completedSections = progress.startedSections;
+        const scoreSummary = computeTechnicalAverageScore(sc);
+        const technicalColor = technicalBuildingColorMode === TECHNICAL_BUILDING_COLOR_MODE.TECHNICAL_SCORE
+          ? technicalScoreColorForAverage(scoreSummary.averageScore, scoreSummary.scoredFields)
+          : (progressColors[completedSections] || progressColors[0]);
+        matchExpr.push((assessment && assessment.originalId) || buildingId, technicalColor);
         hasEntries = true;
       });
     } else if (mode === 'admin' && mapView === MAP_VIEWS.SPACE_DATA && Object.keys(buildingConditions).length > 0) {
@@ -23677,7 +23831,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -26141,9 +26295,11 @@ useEffect(() => {
             buildingId={selectedBuildingId}
             assessments={buildingAssessments}
             universityId={universityId}
-            panelPos={panelAnchor}
+            panelPos={technicalPanelPos || panelAnchor}
             isAdminRole={isAdminUser}
             canWriteCloud={isTechnicalOnlyMode ? true : isAdminUser}
+            panelRef={technicalPanelRef}
+            dragHandleProps={technicalPanelDragHandleProps}
             onClose={() => {
               setIsTechnicalPanelOpen(false);
               if (showFullMapfluenceControls) {
@@ -27624,6 +27780,19 @@ useEffect(() => {
                 {'  '}|{'  '}Avg: {technicalProgressSummary.avgPct}%
                 {'  '}|{'  '}Visible: {technicalProgressVisibleRows.length.toLocaleString()}
               </div>
+              <div style={{ marginTop: 6 }}>
+                <label style={{ display: 'block', fontSize: 11, color: '#5b6677', marginBottom: 4 }}>
+                  Building Color Mode
+                </label>
+                <select
+                  value={technicalBuildingColorMode}
+                  onChange={(e) => setTechnicalBuildingColorMode(String(e.target.value || TECHNICAL_BUILDING_COLOR_MODE.STAGE_COMPLETED))}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                >
+                  <option value={TECHNICAL_BUILDING_COLOR_MODE.STAGE_COMPLETED}>Stage Completed</option>
+                  <option value={TECHNICAL_BUILDING_COLOR_MODE.TECHNICAL_SCORE}>Technical Score</option>
+                </select>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
                 <button
                   className="btn"
@@ -27642,6 +27811,14 @@ useEffect(() => {
                   {technicalProgressShowIncompleteOnly ? 'Show All' : 'Incomplete Only'}
                 </button>
               </div>
+              <button
+                className="btn"
+                style={{ width: '100%', marginTop: 6 }}
+                onClick={exportTechnicalAssessmentCsv}
+                disabled={!technicalProgressRows.length}
+              >
+                Export Technical Assessment CSV
+              </button>
               <button
                 className="btn"
                 style={{ width: '100%', marginTop: 6 }}
@@ -29925,4 +30102,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 
