@@ -20223,23 +20223,20 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
   });
 
   const headers = [
-    'DataType',
-    'BuildingID',
     'BuildingName',
     'Category',
     'SubCategory',
     'Score',
-    'Notes',
     'CompletionPct',
-    'AnsweredFields',
-    'TotalFields',
-    'StartedSections',
-    'AvgScore',
     'ScoredFields',
-    'MissingFieldCount',
-    'MissingSections'
+    'Notes'
   ];
-  const lines = [headers.join(',')];
+  const title = `Technical Assessment Summary - ${String(universityId || 'Campus')}`;
+  const lines = [
+    [esc(title), esc(''), esc(''), esc(''), esc(''), esc(''), esc('')].join(','),
+    '',
+    headers.join(',')
+  ];
   let detailCount = 0;
   const summaryCount = rows.length;
 
@@ -20252,24 +20249,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
     const avgScore = Number.isFinite(scoreSummary.averageScore)
       ? (Math.round(scoreSummary.averageScore * 100) / 100)
       : '';
-
-    lines.push([
-      esc('TechnicalAssessmentSummary'),
-      esc(row.id),
-      esc(row.name),
-      esc('summary'),
-      esc('overall'),
-      esc(avgScore),
-      esc(notes),
-      esc(row.completionPct),
-      esc(row.answeredFields),
-      esc(row.totalFields),
-      esc(row.startedSections),
-      esc(avgScore),
-      esc(scoreSummary.scoredFields),
-      esc(row.missingFieldCount),
-      esc((row.missingSections || []).join('; '))
-    ].join(','));
+    let firstDetailRow = true;
 
     TECHNICAL_SECTION_CONFIG.forEach((section) => {
       const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
@@ -20278,25 +20258,29 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
       section.fields.forEach((fieldKey) => {
         const scoreValue = readTechnicalScoreValue(sectionScores, fieldKey);
         lines.push([
-          esc('TechnicalAssessment'),
-          esc(row.id),
-          esc(row.name),
+          esc(firstDetailRow ? row.name : ''),
           esc(section.key),
           esc(fieldKey),
           esc(scoreValue > 0 ? scoreValue : ''),
-          esc(notes),
           esc(''),
           esc(''),
-          esc(''),
-          esc(''),
-          esc(''),
-          esc(''),
-          esc(''),
-          esc('')
+          esc(firstDetailRow ? notes : '')
         ].join(','));
+        firstDetailRow = false;
         detailCount += 1;
       });
     });
+
+    lines.push([
+      esc(row.name),
+      esc('summary'),
+      esc('overall'),
+      esc(avgScore),
+      esc(row.completionPct),
+      esc(scoreSummary.scoredFields),
+      esc('')
+    ].join(','));
+    lines.push('');
   });
 
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -29248,6 +29232,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
