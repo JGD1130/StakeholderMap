@@ -110,7 +110,7 @@ const formatSavedTime = (timestampMs) => {
   }
 };
 
-const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos, isAdminRole, canWriteCloud }) => {
+const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos, panelRef, dragHandleProps, isAdminRole, canWriteCloud }) => {
   const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
   const [saveState, setSaveState] = useState({ kind: 'idle', timestamp: 0, message: '' });
   const [isDraftDirty, setIsDraftDirty] = useState(false);
@@ -317,12 +317,12 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
   if (!buildingId) return null;
 
   const containerStyle = panelPos
-    ? { position: 'absolute', left: (panelPos.x ?? 80), top: (panelPos.y ?? 160), zIndex: 6 }
+    ? { position: 'absolute', left: (panelPos.x ?? 80), top: (panelPos.y ?? 160), zIndex: 500 }
     : undefined;
 
   return (
-    <div className="assessment-panel" style={containerStyle}>
-      <div className="panel-header">
+    <div ref={panelRef} className="assessment-panel" style={containerStyle}>
+      <div className="panel-header panel-header--draggable" {...(dragHandleProps || {})}>
         <h3>Technical Assessment</h3>
         <button onClick={onClose} className="close-button">x</button>
       </div>
@@ -384,3 +384,4 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
 };
 
 export default AssessmentPanel;
+
