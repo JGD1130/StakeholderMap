@@ -9871,7 +9871,9 @@ const StakeholderMap = ({
     ? MAP_VIEWS.TECHNICAL
     : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
   const [mapView, setMapView] = useState(defaultMapView);
-  const stakeholderWorkflowActive = engagementMode && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
+  const adminAssessmentEngagementMode = showFullMapfluenceControls && mapView === MAP_VIEWS.ASSESSMENT;
+  const adminEngagementToolsMode = isAdminCombinedMode || adminAssessmentEngagementMode;
+  const stakeholderWorkflowActive = (engagementMode || adminAssessmentEngagementMode) && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
   const maintenanceWorkflowActive = (showFullMapfluenceControls || isDemoPublicMode) && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(false);
@@ -9891,7 +9893,7 @@ const StakeholderMap = ({
     if (showFullMapfluenceControls) {
       return [
         { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
-        { value: MAP_VIEWS.ASSESSMENT, label: 'Assessment' },
+        { value: MAP_VIEWS.ASSESSMENT, label: 'Engagement' },
         { value: MAP_VIEWS.TECHNICAL, label: 'Technical' },
         { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
       ];
@@ -10254,8 +10256,8 @@ const StakeholderMap = ({
     const data = src ? (src._data || src.serialize?.().data || null) : null;
     const fc = toFeatureCollection(data);
     const requestedMode = mode === FLOOR_COLOR_MODES.VACANCY ? FLOOR_COLOR_MODES.OCCUPANCY : mode;
-    const effectiveMode = engagementMode ? FLOOR_COLOR_MODES.PLAIN : requestedMode;
-    if (engagementMode && engagementRoomSentimentOn) return;
+    const effectiveMode = stakeholderWorkflowActive ? FLOOR_COLOR_MODES.PLAIN : requestedMode;
+    if (stakeholderWorkflowActive && engagementRoomSentimentOn) return;
 
     if (effectiveMode === FLOOR_COLOR_MODES.PLAIN) {
       try {
@@ -10390,7 +10392,7 @@ const StakeholderMap = ({
     ensureFloorRoomLabelLayer(map, effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
-  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, engagementMode, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
+  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, stakeholderWorkflowActive, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
   useEffect(() => {
     roomEditSelectionRef.current = roomEditSelection;
   }, [roomEditSelection]);
@@ -10403,14 +10405,14 @@ const StakeholderMap = ({
     setRoomEditPanelPos(null);
   }, [clearRoomEditSelection, setFloorHighlight]);
   useEffect(() => {
-    if (!engagementMode) return;
+    if (!stakeholderWorkflowActive) return;
     setRoomEditOpen(false);
     setRoomEditData(null);
     setRoomEditIncluded(new Set());
     setRoomEditPanelPos(null);
     clearRoomEditSelection();
     setFloorHighlight(null);
-  }, [engagementMode, clearRoomEditSelection, setFloorHighlight]);
+  }, [stakeholderWorkflowActive, clearRoomEditSelection, setFloorHighlight]);
   const roomEditTargets = roomEditData?.targets?.length
     ? roomEditData.targets
     : roomEditData
@@ -16961,7 +16963,7 @@ useEffect(() => {
       if (map?.getSource(WALLS_SOURCE)) map.removeSource(WALLS_SOURCE);
     } catch {}
     setLoadedSingleFloor(false);
-    if (engagementMode) setEngagementScopeMode('campus');
+    if (stakeholderWorkflowActive) setEngagementScopeMode('campus');
     engagementAutoLoadKeyRef.current = '';
     currentFloorUrlRef.current = null;
     lastFloorUrlRef.current = null;
@@ -19133,7 +19135,7 @@ const filteredMarkers = useMemo(() => {
   });
 }, [activeMarkers, showStudentMarkers, showStaffMarkers, mode]);
 const scopedEngagementMarkers = useMemo(() => {
-  if (!engagementMode) return activeMarkers;
+  if (!stakeholderWorkflowActive) return activeMarkers;
   if (!loadedSingleFloor) return activeMarkers;
   const ctx = currentFloorContextRef.current || {};
   const targetBuildingId = bId(ctx?.buildingId || selectedBuildingId || selectedBuilding || '');
@@ -19149,7 +19151,7 @@ const scopedEngagementMarkers = useMemo(() => {
     if (floorTokens.length) return floorMatchesTokens(markerFloorRaw, floorTokens);
     return false;
   });
-}, [activeMarkers, engagementMode, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
+}, [activeMarkers, stakeholderWorkflowActive, loadedSingleFloor, selectedBuildingId, selectedBuilding, selectedFloor, floorFeatureVersion]);
 const scopedEngagementHeatmapData = useMemo(() => ({
   type: 'FeatureCollection',
   features: (scopedEngagementMarkers || [])
@@ -21887,16 +21889,16 @@ useEffect(() => {
 useEffect(() => {
   if (!selectedBuildingId) return;
   const resolved = resolveBuildingPlanKey(selectedBuildingId) || selectedBuildingId;
-  if (engagementMode && isEngagementFloorScope && selectedBuilding && selectedBuilding !== resolved) {
+  if (stakeholderWorkflowActive && isEngagementFloorScope && selectedBuilding && selectedBuilding !== resolved) {
     return;
   }
   if (selectedBuilding !== resolved) {
     setSelectedBuilding(resolved);
   }
-}, [selectedBuildingId, resolveBuildingPlanKey, selectedBuilding, engagementMode, isEngagementFloorScope]);
+}, [selectedBuildingId, resolveBuildingPlanKey, selectedBuilding, stakeholderWorkflowActive, isEngagementFloorScope]);
 
 useEffect(() => {
-  if (!engagementMode || !mapLoaded) return;
+  if (!stakeholderWorkflowActive || !mapLoaded) return;
   if (!isEngagementFloorScope) {
     engagementAutoLoadKeyRef.current = '';
     return;
@@ -21921,7 +21923,7 @@ useEffect(() => {
   engagementAutoLoadKeyRef.current = targetKey;
   void handleLoadFloorplan(selectedFloor);
 }, [
-  engagementMode,
+  stakeholderWorkflowActive,
   isEngagementFloorScope,
   mapLoaded,
   selectedBuildingId,
@@ -21933,31 +21935,31 @@ useEffect(() => {
 ]);
 
 useEffect(() => {
-  if (!engagementMode) return;
+  if (!stakeholderWorkflowActive) return;
   if (isEngagementFloorScope) return;
   if (!loadedSingleFloor) return;
   handleUnloadFloorplan();
-}, [engagementMode, isEngagementFloorScope, loadedSingleFloor, handleUnloadFloorplan]);
+}, [stakeholderWorkflowActive, isEngagementFloorScope, loadedSingleFloor, handleUnloadFloorplan]);
 
 useEffect(() => {
-  if (!engagementMode || !isAdminCombinedMode) return;
+  if (!adminEngagementToolsMode) return;
   if (!technicalWorkflowActive) return;
   if (!loadedSingleFloor) return;
   handleUnloadFloorplan();
-}, [engagementMode, isAdminCombinedMode, technicalWorkflowActive, loadedSingleFloor, handleUnloadFloorplan]);
+}, [adminEngagementToolsMode, technicalWorkflowActive, loadedSingleFloor, handleUnloadFloorplan]);
 
 useEffect(() => {
-  if (!engagementMode) return;
+  if (!stakeholderWorkflowActive) return;
   if (!isEngagementFloorScope) {
     setEngagementHeatmapOn(true);
   }
-}, [engagementMode, isEngagementFloorScope]);
+}, [stakeholderWorkflowActive, isEngagementFloorScope]);
 
 useEffect(() => {
-  if (!engagementMode || !isEngagementFloorScope || !loadedSingleFloor) {
+  if (!stakeholderWorkflowActive || !isEngagementFloorScope || !loadedSingleFloor) {
     setEngagementRoomSentimentOn(false);
   }
-}, [engagementMode, isEngagementFloorScope, loadedSingleFloor]);
+}, [stakeholderWorkflowActive, isEngagementFloorScope, loadedSingleFloor]);
 
 useEffect(() => {
   if (roomSubRef.current) {
@@ -23241,7 +23243,7 @@ useEffect(() => {
     const matchExpr = ['match', ['get', 'id']];
     let hasEntries = false;
 
-    if (isAdminCombinedMode && stakeholderWorkflowActive && stakeholderConditionModeOn && Object.keys(buildingConditions).length > 0) {
+    if (adminEngagementToolsMode && stakeholderWorkflowActive && stakeholderConditionModeOn && Object.keys(buildingConditions).length > 0) {
       Object.entries(buildingConditions).forEach((tuple) => {
         const id = tuple[0];
         const conditionValue = tuple[1];
@@ -23285,7 +23287,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -23453,7 +23455,7 @@ useEffect(() => {
   }, [markerTypes, markersCollection, persona, engagementMode, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
 
   useEffect(() => {
-    if (!engagementMode) return;
+    if (!stakeholderWorkflowActive) return;
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const onEngagementClick = (e) => {
@@ -23481,7 +23483,7 @@ useEffect(() => {
           clickedBuildingContext.inFloorplan = floorHits.length > 0;
         } catch {}
       }
-      if (isAdminCombinedMode && stakeholderConditionModeOn && !isFloorplanStakeholderScope) {
+      if (adminEngagementToolsMode && stakeholderConditionModeOn && !isFloorplanStakeholderScope) {
         try {
           const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] }) || [];
           if (buildingHits.length > 0) return;
@@ -23505,7 +23507,7 @@ useEffect(() => {
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [engagementMode, mode, mapLoaded, mapView, stakeholderWorkflowActive, isAdminCombinedMode, stakeholderConditionModeOn, isTechnicalPanelOpen, canCreateEngagementMarker, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
+  }, [stakeholderWorkflowActive, mode, mapLoaded, mapView, adminEngagementToolsMode, stakeholderConditionModeOn, isTechnicalPanelOpen, canCreateEngagementMarker, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -25359,7 +25361,7 @@ useEffect(() => {
             />
           </div>
         </div>
-        {!engagementMode && !technicalMode && (
+        {!stakeholderWorkflowActive && !technicalMode && (
           <div className="dashboard-box">
             <SpaceDashboardPanel
               title={dashboardTitle}
@@ -25450,7 +25452,7 @@ useEffect(() => {
       </>
     )}
 
-    {mapView === MAP_VIEWS.SPACE_DATA && !engagementMode && !technicalMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+    {mapView === MAP_VIEWS.SPACE_DATA && !stakeholderWorkflowActive && !technicalMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
       const containerWidth = mapContainerRef.current?.clientWidth || 1000;
       const containerHeight = mapContainerRef.current?.clientHeight || 800;
       const PANEL_WIDTH = 360;
@@ -27068,7 +27070,7 @@ useEffect(() => {
             </div>
           )}
 
-          {isAdminCombinedMode && stakeholderWorkflowActive && (
+          {adminEngagementToolsMode && stakeholderWorkflowActive && (
             <div className="control-section" style={{ marginTop: 6, border: '1px solid #d8e0ea', borderRadius: 6, padding: 6, background: '#f8fbff' }}>
               <h5 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Building Stakeholder Condition</h5>
               <button
@@ -27091,7 +27093,7 @@ useEffect(() => {
             <div className="legend" style={{ marginTop: 6 }}>
               <h4>Legend</h4>
               <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-                {isAdminCombinedMode && !canCreateEngagementMarker && (
+                {adminEngagementToolsMode && !canCreateEngagementMarker && (
                   <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 8px' }}>
                     Read-only: sign in as campus admin to add markers in this admin route.
                   </div>
@@ -27205,7 +27207,7 @@ useEffect(() => {
                   <div key={label} className="legend-item">
                     <span
                       className="legend-color-box"
-                      style={{ backgroundColor: engagementMode ? (engagementMarkerTypeColors[label] || color) : color }}
+                      style={{ backgroundColor: stakeholderWorkflowActive ? (engagementMarkerTypeColors[label] || color) : color }}
                     />
                     <span>{label}</span>
                   </div>
@@ -27214,7 +27216,7 @@ useEffect(() => {
             </div>
           )}
 
-          {isAdminCombinedMode && stakeholderWorkflowActive && (
+          {adminEngagementToolsMode && stakeholderWorkflowActive && (
             <div
               className="control-section"
               style={{
@@ -27530,7 +27532,7 @@ useEffect(() => {
                 <h4 style={{ margin: '0 0 6px 0', fontSize: 12.5 }}>Floorplans</h4>
 
                 <div className="floorplans" style={{ display: 'grid', gap: 6 }}>
-                  {engagementMode && (
+                  {stakeholderWorkflowActive && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                       <button
                         className="btn"
@@ -27603,7 +27605,7 @@ useEffect(() => {
                     className="btn"
                     style={{ width: '100%' }}
                     onClick={() => {
-                      if (engagementMode) setEngagementScopeMode('floor');
+                      if (stakeholderWorkflowActive) setEngagementScopeMode('floor');
                       handleLoadFloorplan();
                     }}
                     disabled={!availableFloors.length || !floorplanBuildingOptions.length}
@@ -27614,7 +27616,7 @@ useEffect(() => {
                     className="btn"
                     style={{ width: '100%' }}
                     onClick={() => {
-                      if (engagementMode) setEngagementScopeMode('campus');
+                      if (stakeholderWorkflowActive) setEngagementScopeMode('campus');
                       handleUnloadFloorplan();
                     }}
                   >
@@ -27635,7 +27637,7 @@ useEffect(() => {
                   )}
                 </div>
 
-                {!engagementMode && !technicalMode && (
+                {!stakeholderWorkflowActive && !technicalMode && (
                   <div style={{ marginTop: 8 }}>
                     <button
                       className="mf-btn"
@@ -27654,7 +27656,7 @@ useEffect(() => {
               </div>
               )}
 
-              {!engagementMode && !technicalMode && (
+              {!stakeholderWorkflowActive && !technicalMode && (
               <div
                 className="floorplans-section"
                 style={{
@@ -27753,7 +27755,7 @@ useEffect(() => {
           */}
 
 
-            {!engagementMode && !technicalMode && (
+            {!stakeholderWorkflowActive && !technicalMode && (
             <div
               style={{
                 marginTop: 4,
@@ -29232,7 +29234,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
 
