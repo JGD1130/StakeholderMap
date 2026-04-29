@@ -1,6 +1,6 @@
 // src/App.jsx --- FINAL CORRECT VERSION ---
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, useParams, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import PublicMapPage from './pages/PublicMapPage.jsx';
 import AdminMapPage from './pages/AdminMapPage.jsx';
 import { getConfig } from './configLoader';
@@ -50,14 +50,21 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
   }
 }
 
+function LegacyAdminWorkflowRedirect() {
+  const { universityId } = useParams();
+  const location = useLocation();
+  const suffix = `${location?.search || ''}${location?.hash || ''}`;
+  return <Navigate to={`/${universityId}/admin${suffix}`} replace />;
+}
+
 function App() {
   return (
     // This basename is CRITICAL for GitHub Pages deployment in a subdirectory
     <Router basename="/StakeholderMap">
       <Routes>
         <Route path="/:universityId/admin" element={<UniversityMapLoader />} />
-        <Route path="/:universityId/admin/engagement" element={<UniversityMapLoader engagementMode />} />
-        <Route path="/:universityId/admin/technical" element={<UniversityMapLoader technicalMode />} />
+        <Route path="/:universityId/admin/engagement" element={<LegacyAdminWorkflowRedirect />} />
+        <Route path="/:universityId/admin/technical" element={<LegacyAdminWorkflowRedirect />} />
         <Route path="/:universityId/engagement" element={<UniversityMapLoader engagementMode />} />
         <Route path="/:universityId/technical" element={<UniversityMapLoader technicalMode />} />
         <Route path="/:universityId/:persona" element={<UniversityMapLoader />} />

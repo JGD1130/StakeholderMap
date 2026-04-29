@@ -1,6 +1,9 @@
-# Hastings Pre-Release Go/No-Go Checklist
+﻿# Hastings Pre-Release Go/No-Go Checklist
 Date: March 18, 2026
 Project: StakeholderMap (`/StakeholderMap`)
+
+## Env Baseline
+- Verify deploy secrets/vars using `docs/DEPLOY_ENV_VARS.md` (especially `VITE_MAPBOX_PUBLIC_TOKEN`).
 
 ## Current Validation Snapshot
 | Check | Status | Notes |
@@ -13,28 +16,29 @@ Project: StakeholderMap (`/StakeholderMap`)
 ## URL + Auth Go/No-Go Matrix
 | URL | Auth State | Expected Behavior | Status |
 |---|---|---|---|
-| `/hastings/admin` | Signed-in admin | Full Mapfluence admin controls (planning/AI/edit flows) visible and usable. | PENDING MANUAL |
-| `/hastings/admin` | Signed out / non-admin | Admin sign-in visible; write actions should not proceed without admin role. | PENDING MANUAL |
-| `/hastings/admin/engagement` | Signed-in admin | Workflow switch between `Stakeholder` and `Technical`; marker + archive tools writable; technical saves to cloud enabled. | PENDING MANUAL |
-| `/hastings/admin/engagement` | Signed out / non-admin | Read-only messaging visible; no marker placement; archive/delete actions blocked; building condition toggle disabled. | PENDING MANUAL |
+| `/hastings/admin` | Signed-in admin | Full Mapfluence admin controls visible; `Engagement` and `Technical` map views work from the main admin selector. | PENDING MANUAL |
+| `/hastings/admin` | Signed out / non-admin | Admin sign-in visible; write actions should not proceed without admin role, including Engagement marker/archive tools. | PENDING MANUAL |
+| `/hastings/admin/engagement` | Any | Legacy admin workflow URL redirects to `/hastings/admin`. | PENDING MANUAL |
+| `/hastings/admin/technical` | Any | Legacy admin technical URL redirects to `/hastings/admin`. | PENDING MANUAL |
 | `/hastings/engagement` | Any user | Public stakeholder engagement map works (marker add + heatmap/floorplan flows per current Firestore rules). | PENDING MANUAL |
 | `/hastings/technical` | Signed-in admin | Technical panel cloud save works; progress/checklist reflects saved values. | PENDING MANUAL |
 | `/hastings/technical` | Signed out / non-admin | Technical panel supports full assessment workflow, including cloud save for selected users. | PENDING MANUAL |
 
 ## Manual Release Smoke Steps (Quick)
 1. Open each URL in a fresh tab (avoid stale state).
-2. Verify route title/subtitle at top of controls matches intended mode.
-3. For admin routes, test both signed-out and signed-in-admin states.
-4. In `/admin/engagement`:
-   - Stakeholder mode: marker controls visible.
-   - Technical mode: technical progress + panel behavior visible.
+2. In a fresh incognito/private window, open `/hastings` and verify the map loads without any token prompt modal.
+3. Verify route title/subtitle at top of controls matches intended mode.
+4. For admin routes, test both signed-out and signed-in-admin states.
+5. In `/admin`:
+   - Map View `Engagement`: marker controls visible.
+   - Map View `Technical`: technical progress + panel behavior visible.
    - Confirm floorplan unload behavior when switching to technical.
-5. Validate one cloud-save path:
+6. Validate one cloud-save path:
    - Technical save (`Save to Cloud`) as admin.
-   - Marker archive/undo in admin engagement.
-6. Validate one export path:
+   - Marker archive/undo in admin Engagement view.
+7. Validate one export path:
    - Technical missing-items CSV.
-   - Marker filtered CSV (admin engagement).
+   - Marker filtered CSV (admin Engagement view).
 
 ## Go/No-Go Rule
 - **GO** when all matrix rows are manually verified and no blocking regressions are found.
