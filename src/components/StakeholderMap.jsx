@@ -9978,10 +9978,11 @@ const StakeholderMap = ({
       setIsTechnicalPanelOpen(false);
       return;
     }
+    if (showFullMapfluenceControls) return;
     if (selectedBuildingId) {
       setIsTechnicalPanelOpen(true);
     }
-  }, [mapView, selectedBuildingId]);
+  }, [mapView, selectedBuildingId, showFullMapfluenceControls]);
   const [showEngagementHelp, setShowEngagementHelp] = useState(true);
   const closeEngagementHelp = useCallback((e) => {
     try {
@@ -10651,7 +10652,7 @@ const StakeholderMap = ({
 
   // Floorplans
   const roomAttrsRef = useRef({});
-  const [engagementScopeMode, setEngagementScopeMode] = useState(() => (engagementMode ? 'campus' : 'floor'));
+  const [engagementScopeMode, setEngagementScopeMode] = useState(() => ((engagementMode || isAdminMode) ? 'campus' : 'floor'));
   const [selectedFloor, setSelectedFloor] = useState('LEVEL_1');
   const [availableFloors, setAvailableFloors] = useState([]);
   const availableFloorsByBuildingRef = useRef(new Map());
@@ -10712,7 +10713,7 @@ const StakeholderMap = ({
       defaultProgramName: `${buildingLabel} ${floorLabel} Program Test Fit`
     });
   }, [floorStats, activeBuildingName, selectedBuildingId, selectedBuilding, selectedFloor, openProgramTestFit]);
-  const isEngagementFloorScope = engagementMode && engagementScopeMode === 'floor';
+  const isEngagementFloorScope = stakeholderWorkflowActive && engagementScopeMode === 'floor';
   const getAvailableFloors = useCallback((buildingKey) => {
     if (!buildingKey) return [];
     return availableFloorsByBuildingRef.current.get(buildingKey) ?? [];
@@ -15268,7 +15269,7 @@ const StakeholderMap = ({
   }, [getBuildingFolderKey, getAvailableFloors, fetchFloorSummary, ensureFloorsForBuilding]);
 
   const showBuildingStats = useCallback((buildingId) => {
-    if (engagementMode) {
+    if (stakeholderWorkflowActive) {
       setBuildingStats(null);
       setFloorStats(null);
       setPanelStats(null);
@@ -15299,12 +15300,12 @@ const StakeholderMap = ({
         setBuildingStats(null);
         setPanelStats(formatSummaryForPanel(null, 'building'));
       });
-  }, [computeBuildingTotals, engagementMode, resolveBuildingPlanKey]);
+  }, [computeBuildingTotals, stakeholderWorkflowActive, resolveBuildingPlanKey]);
 
   const showFloorStats = useCallback((url) => {
     if (!url) return;
     currentFloorUrlRef.current = url;
-    if (engagementMode) {
+    if (stakeholderWorkflowActive) {
       setFloorStats(null);
       return;
     }
@@ -15346,7 +15347,7 @@ const StakeholderMap = ({
         setFloorStats(null);
         setPanelStats(formatSummaryForPanel(null, 'floor'));
       });
-  }, [buildLegendForMode, engagementMode, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
+  }, [buildLegendForMode, stakeholderWorkflowActive, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
 
   const recordAirtableScopeCheck = useCallback((sourceLabel, rawRooms = [], scopedRooms = []) => {
     const rawCount = Array.isArray(rawRooms) ? rawRooms.length : 0;
@@ -16163,6 +16164,7 @@ useEffect(() => {
 
   async function handleLoadFloorplan(floorOverride) {
     if (!mapLoaded || !mapRef.current) return false;
+    if (stakeholderWorkflowActive) setEngagementScopeMode('floor');
     const isEventLike = Boolean(
       floorOverride &&
       typeof floorOverride === 'object' &&
@@ -16198,7 +16200,7 @@ useEffect(() => {
     if (floorId !== selectedFloor) {
       setSelectedFloor(floorId);
     }
-    const url = floorUrl || buildFloorUrl(selectedBuilding, floorId);
+    const url = floorUrl || buildFloorUrl(selectedBuilding || selectedBuildingId || buildingKey, floorId);
     if (!url) { alert('No file mapped for that floor.'); return false; }
     try {
       setPopupMode('floor');
@@ -16972,7 +16974,7 @@ useEffect(() => {
     setPopupMode('building');
     const buildingKey = selectedBuildingIdRef.current || selectedBuilding;
     if (buildingKey) showBuildingStats(buildingKey);
-  }, [selectedBuilding, showBuildingStats, engagementMode]);
+  }, [selectedBuilding, showBuildingStats, stakeholderWorkflowActive]);
 
   const handleCenterOnFloorplan = useCallback(() => {
     centerOnCurrentFloor(mapRef.current);
@@ -19473,7 +19475,7 @@ const maintenanceRenderableMarkerCount = useMemo(
 );
 const maintenanceIssueIsEditing = Boolean(String(maintenanceIssueDraft?.id || '').trim());
 const adminEngagementMarkerRows = useMemo(() => {
-  if (!(isAdminCombinedMode && engagementMode)) return [];
+  if (!(adminEngagementToolsMode && stakeholderWorkflowActive)) return [];
   return (markers || [])
     .map((marker) => {
       const id = String(marker?.id || '').trim();
@@ -19553,7 +19555,7 @@ const adminEngagementMarkerRows = useMemo(() => {
       };
     })
     .filter(Boolean);
-}, [isAdminCombinedMode, engagementMode, markers]);
+}, [adminEngagementToolsMode, stakeholderWorkflowActive, markers]);
 const markerToolBuildingOptions = useMemo(() => {
   const byKey = new Map();
   adminEngagementMarkerRows.forEach((row) => {
@@ -20354,7 +20356,7 @@ const engagementRoomSentimentSummary = useMemo(() => {
     roomCount: 0,
     markerCount: 0
   };
-  if (!engagementMode || !engagementRoomSentimentOn) return empty;
+  if (!stakeholderWorkflowActive || !engagementRoomSentimentOn) return empty;
   if (!loadedSingleFloor || !isEngagementFloorScope) return empty;
   const map = mapRef.current;
   const src = map ? getGeojsonSource(map, FLOOR_SOURCE) : null;
@@ -20453,7 +20455,7 @@ const engagementRoomSentimentSummary = useMemo(() => {
     markerCount: matchedMarkers
   };
 }, [
-  engagementMode,
+  stakeholderWorkflowActive,
   engagementRoomSentimentOn,
   loadedSingleFloor,
   isEngagementFloorScope,
@@ -20465,7 +20467,7 @@ useEffect(() => {
   if (!mapLoaded) return;
   const map = mapRef.current;
   if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
-  if (!engagementMode || !engagementRoomSentimentOn || !loadedSingleFloor || !isEngagementFloorScope) {
+  if (!stakeholderWorkflowActive || !engagementRoomSentimentOn || !loadedSingleFloor || !isEngagementFloorScope) {
     clearEngagementRoomSentimentGradient(map);
     return;
   }
@@ -20543,7 +20545,7 @@ useEffect(() => {
   }
 }, [
   mapLoaded,
-  engagementMode,
+  stakeholderWorkflowActive,
   engagementRoomSentimentOn,
   engagementRoomFillStyle,
   loadedSingleFloor,
@@ -20553,13 +20555,13 @@ useEffect(() => {
 ]);
 
 useEffect(() => {
-  if (!mapLoaded || !engagementMode || !loadedSingleFloor) return;
+  if (!mapLoaded || !stakeholderWorkflowActive || !loadedSingleFloor) return;
   if (engagementRoomSentimentOn) return;
   clearEngagementRoomSentimentGradient(mapRef.current);
   applyFloorColorMode(floorColorMode);
 }, [
   mapLoaded,
-  engagementMode,
+  stakeholderWorkflowActive,
   loadedSingleFloor,
   engagementRoomSentimentOn,
   floorColorMode,
@@ -20573,10 +20575,10 @@ useEffect(() => {
 }, [engagementRoomSentimentOn, loadedSingleFloor, isEngagementFloorScope]);
 
   const markerTypes = useMemo(() => {
-    if (engagementMode) return (isSarpyCountyInstance ? ENGAGEMENT_MARKER_TYPES_SARPY : ENGAGEMENT_MARKER_TYPES);
+    if (stakeholderWorkflowActive) return (isSarpyCountyInstance ? ENGAGEMENT_MARKER_TYPES_SARPY : ENGAGEMENT_MARKER_TYPES);
     if (mode === 'admin') return { ...surveyConfigs.student, ...surveyConfigs.staff };
     return surveyConfigs[persona] || surveyConfigs.default;
-  }, [persona, mode, engagementMode, isSarpyCountyInstance]);
+  }, [persona, mode, stakeholderWorkflowActive, isSarpyCountyInstance]);
   const engagementMarkerTypeColors = useMemo(() => {
     const out = {};
     Object.keys(markerTypes || {}).forEach((label) => {
@@ -22665,6 +22667,7 @@ useEffect(() => {
   // Dedicated building click (works even with no floorplan loaded)
   const onBuildingClick = async (e) => {
     if (!map) return;
+    if (stakeholderWorkflowActive && !(adminEngagementToolsMode && stakeholderConditionModeOn)) return;
     let clickedRoom = null;
     try {
       if (map.getLayer(FLOOR_FILL_ID)) {
@@ -22706,6 +22709,10 @@ useEffect(() => {
     setPopupMode('building');
     setFloorStats(null);
     setBuildingStats(null);
+    if (stakeholderWorkflowActive) {
+      setPanelStats(null);
+      return;
+    }
     setPanelStats({ loading: true, mode: 'building' });
     if (maintenanceWorkflowActive) {
       const buildingContext = {
@@ -22766,6 +22773,7 @@ useEffect(() => {
 
   const onLowZoomMarkerClick = (e) => {
     if (!map) return;
+    if (stakeholderWorkflowActive) return;
     const markerFeature = e?.features?.[0] || null;
     if (!markerFeature) return;
 
@@ -22840,7 +22848,7 @@ useEffect(() => {
       }
     } catch {}
   };
-}, [engagementMode, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup, resolveBuildingNameFromInput, lowZoomBuildingMarkersEnabled]);
+}, [stakeholderWorkflowActive, adminEngagementToolsMode, stakeholderConditionModeOn, technicalMode, technicalWorkflowActive, maintenanceWorkflowActive, showFullMapfluenceControls, mapLoaded, config, mapView, prefetchFloorSummaries, computeBuildingTotals, fetchBuildingSummary, showMaintenanceActionPopup, resolveBuildingNameFromInput, lowZoomBuildingMarkersEnabled]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -23117,13 +23125,13 @@ useEffect(() => {
 
     const markersToDraw = maintenanceWorkflowActive
       ? (maintenanceShowIssueMarkers ? maintenanceFilteredIssues.filter((issue) => Array.isArray(issue?.coordinates) && issue.coordinates.length === 2) : [])
-      : engagementMode
-        ? (stakeholderWorkflowActive ? scopedEngagementMarkers : [])
+      : stakeholderWorkflowActive
+        ? scopedEngagementMarkers
         : (mode === 'admin' ? (showMarkers ? filteredMarkers : []) : sessionMarkers);
     const shouldDrawMarkers = maintenanceWorkflowActive
       ? maintenanceShowIssueMarkers
-      : engagementMode
-        ? (stakeholderWorkflowActive && !(engagementHeatmapOn || engagementRoomSentimentOnly))
+      : stakeholderWorkflowActive
+        ? !(engagementHeatmapOn || engagementRoomSentimentOnly)
         : true;
     if (!shouldDrawMarkers) return;
     markersToDraw.forEach((m) => {
@@ -23131,7 +23139,7 @@ useEffect(() => {
       el.className = 'custom-marker custom-mapbox-marker';
       const markerColor = maintenanceWorkflowActive
         ? maintenancePriorityColor(m.priority)
-        : engagementMode
+        : stakeholderWorkflowActive
           ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || engagementColorForType(m.type) || '#9E9E9E')
           : (markerTypes[m.type] || '#9E9E9E');
       el.style.backgroundColor = markerColor;
@@ -23163,7 +23171,7 @@ useEffect(() => {
       }
       mk.addTo(map);
     });
-  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, engagementMode, stakeholderWorkflowActive, engagementHeatmapOn, engagementRoomSentimentOnly, maintenanceWorkflowActive, maintenanceShowIssueMarkers, maintenanceFilteredIssues]);  // ---------- Recolor buildings based on theme ----------
+  }, [filteredMarkers, sessionMarkers, scopedEngagementMarkers, markerTypes, engagementMarkerTypeColors, mapLoaded, mode, showMarkers, stakeholderWorkflowActive, engagementHeatmapOn, engagementRoomSentimentOnly, maintenanceWorkflowActive, maintenanceShowIssueMarkers, maintenanceFilteredIssues]);  // ---------- Recolor buildings based on theme ----------
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
   const map = mapRef.current;
@@ -23425,7 +23433,7 @@ useEffect(() => {
         roomLabel: String(roomContext?.roomLabel || '').trim(),
         roomGuid: String(roomContext?.roomGuid || '').trim(),
         revitId: String(roomContext?.revitId || '').trim(),
-        persona: persona || (engagementMode ? 'student' : 'admin'),
+        persona: persona || (stakeholderWorkflowActive ? 'student' : 'admin'),
         createdAt: serverTimestamp()
       };
       let markerId = `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -23452,7 +23460,7 @@ useEffect(() => {
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes, markersCollection, persona, engagementMode, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
+  }, [markerTypes, markersCollection, persona, stakeholderWorkflowActive, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
 
   useEffect(() => {
     if (!stakeholderWorkflowActive) return;
@@ -23461,7 +23469,7 @@ useEffect(() => {
     const onEngagementClick = (e) => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
       const canDropMarker = mode === 'admin'
-        ? (canCreateEngagementMarker && stakeholderWorkflowActive && !isTechnicalPanelOpen)
+        ? (isAdminUser && stakeholderWorkflowActive && !isTechnicalPanelOpen)
         : mapView === MAP_VIEWS.SPACE_DATA;
       if (!canDropMarker) return;
       const isFloorplanStakeholderScope = isEngagementFloorScope && loadedSingleFloor;
@@ -23507,7 +23515,7 @@ useEffect(() => {
     return () => {
       try { map.off('click', onEngagementClick); } catch {}
     };
-  }, [stakeholderWorkflowActive, mode, mapLoaded, mapView, adminEngagementToolsMode, stakeholderConditionModeOn, isTechnicalPanelOpen, canCreateEngagementMarker, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
+  }, [stakeholderWorkflowActive, mode, mapLoaded, mapView, adminEngagementToolsMode, stakeholderConditionModeOn, isTechnicalPanelOpen, isAdminUser, showMarkerPopup, loadedSingleFloor, selectedBuildingId, selectedBuilding, isEngagementFloorScope, resolveEngagementRoomFromClick]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -23838,7 +23846,7 @@ useEffect(() => {
       } catch {}
 
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
-      if (engagementMode) {
+      if (stakeholderWorkflowActive) {
         setFloorHighlight(null);
         return;
       }
@@ -24489,7 +24497,7 @@ useEffect(() => {
 
     const onEnter = () => {
       if (drawingAlignActiveRef.current || floorAdjustActiveRef.current) return;
-      if (engagementMode) return;
+      if (stakeholderWorkflowActive) return;
       try { map.getCanvas().style.cursor = 'pointer'; } catch {}
     };
     const onLeave = () => {
@@ -24511,7 +24519,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, engagementMode, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -25442,9 +25450,6 @@ useEffect(() => {
             dragHandleProps={technicalPanelDragHandleProps}
             onClose={() => {
               setIsTechnicalPanelOpen(false);
-              if (showFullMapfluenceControls) {
-                setMapView(MAP_VIEWS.ASSESSMENT);
-              }
             }}
             onSave={handleAssessmentSave}
           />
@@ -27557,7 +27562,7 @@ useEffect(() => {
                         }}
                         onClick={() => {
                           setEngagementScopeMode('floor');
-                          if (!loadedSingleFloor) void handleLoadFloorplan();
+                          void handleLoadFloorplan(selectedFloor);
                         }}
                         disabled={!availableFloors.length || !floorplanBuildingOptions.length}
                       >
@@ -27606,7 +27611,7 @@ useEffect(() => {
                     style={{ width: '100%' }}
                     onClick={() => {
                       if (stakeholderWorkflowActive) setEngagementScopeMode('floor');
-                      handleLoadFloorplan();
+                      void handleLoadFloorplan(selectedFloor);
                     }}
                     disabled={!availableFloors.length || !floorplanBuildingOptions.length}
                   >
@@ -27972,7 +27977,7 @@ useEffect(() => {
       </div>
     )}
 
-    {!engagementMode && roomEditOpen && roomEditData && (
+    {!stakeholderWorkflowActive && roomEditOpen && roomEditData && (
       <div
         style={{
           position: 'fixed',

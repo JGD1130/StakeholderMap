@@ -41,18 +41,16 @@ mustContain('Assessment save handler is implemented', 'const handleAssessmentSav
 mustContain('Technical panel open sets map view', 'setMapView(MAP_VIEWS.TECHNICAL);')
 
 appMustContain('Technical standalone route exists', 'path="/:universityId/technical"')
-appMustContain('Admin engagement route exists', 'path="/:universityId/admin/engagement"')
+appMustContain('Legacy admin workflow redirect component exists', 'function LegacyAdminWorkflowRedirect()')
+appMustContain('Legacy admin engagement redirects to full admin', 'path="/:universityId/admin/engagement" element={<LegacyAdminWorkflowRedirect />}')
+appMustContain('Legacy admin technical redirects to full admin', 'path="/:universityId/admin/technical" element={<LegacyAdminWorkflowRedirect />}')
 
 mustContain('Admin engagement marker placement gated by admin role', '? (isAdminUser && stakeholderWorkflowActive && !isTechnicalPanelOpen)')
+mustContain('Full admin Engagement marker tools use shared workflow mode', 'if (!(adminEngagementToolsMode && stakeholderWorkflowActive)) return [];')
 mustContain('Archive selected requires admin role', "Admin sign-in required for marker archive actions.")
 mustContain('Permanent delete requires admin role', "Admin sign-in required for permanent delete.")
 mustContain('Building condition toggle disabled for non-admin', 'disabled={!isAdminUser}')
-mustContain('Admin engagement read-only marker message shown', 'Signed out read-only: sign in as campus admin to add markers in this admin route.')
-checks.push({
-  label: 'No legacy admin technical route',
-  ok: !appSource.includes('path="/:universityId/admin/technical"'),
-  detail: 'path="/:universityId/admin/technical"'
-})
+mustContain('Admin engagement read-only marker message shown', 'Read-only: sign in as campus admin to add markers in this admin route.')
 
 const failed = checks.filter((c) => !c.ok)
 const passed = checks.length - failed.length
