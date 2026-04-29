@@ -23261,7 +23261,7 @@ useEffect(() => {
           hasEntries = true;
         }
       });
-    } else if ((mode === 'admin' || technicalMode) && (mapView === MAP_VIEWS.TECHNICAL || (showFullMapfluenceControls && mapView === MAP_VIEWS.ASSESSMENT)) && Object.keys(buildingAssessments).length > 0) {
+    } else if ((mode === 'admin' || technicalMode) && technicalWorkflowActive && Object.keys(buildingAssessments).length > 0) {
       Object.entries(buildingAssessments).forEach((tuple) => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
@@ -23295,7 +23295,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
