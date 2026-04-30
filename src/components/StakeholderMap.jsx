@@ -13986,7 +13986,8 @@ const StakeholderMap = ({
       };
     };
 
-    const evaluateOrientation = (orientation) => {
+    const evaluateOrientation = (orientation, options = {}) => {
+      const { midpointOnly = false } = options || {};
       const frame = buildOrientationFrame(orientation);
       if (!frame) return null;
       const { minX, minY, maxX, maxY } = frame.bounds;
@@ -14009,6 +14010,16 @@ const StakeholderMap = ({
           splitResult
         };
       };
+
+      if (midpointOnly) {
+        const midpointResult = evaluateOffset((minOffset + maxOffset) / 2);
+        if (!midpointResult) return null;
+        return {
+          ...midpointResult,
+          frame,
+          dividerDeg: frame.dividerDeg
+        };
+      }
 
       const sampleCount = 36;
       const padding = Math.max(span * 0.05, 0.001);
@@ -14078,11 +14089,12 @@ const StakeholderMap = ({
       };
     };
 
-    const orientationsToTry = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal'
+    const forcedOrientation = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal';
+    const orientationsToTry = forcedOrientation
       ? [preferredOrientation]
       : ['vertical', 'horizontal'];
     const bestResult = orientationsToTry
-      .map((orientation) => evaluateOrientation(orientation))
+      .map((orientation) => evaluateOrientation(orientation, { midpointOnly: forcedOrientation }))
       .filter(Boolean)
       .reduce((best, candidate) => {
         if (!best) return candidate;
@@ -14103,7 +14115,6 @@ const StakeholderMap = ({
     const bestImbalanceRatio = bestTotalArea > 1e-8
       ? (Math.abs(bestResult.absDiff || 0) / bestTotalArea)
       : 1;
-    const forcedOrientation = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal';
     if (!forcedOrientation && (!Number.isFinite(bestImbalanceRatio) || bestImbalanceRatio > 0.2)) {
       alert('Unable to compute a reliable equal-area split for this room and orientation.');
       return false;
