@@ -13186,15 +13186,60 @@ const StakeholderMap = ({
             splitEnd = [Number(last[0]), axisOffset];
           }
         } else {
-          const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
-          const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
-          const snappedStartCoord = snappedStart?.geometry?.coordinates;
-          const snappedEndCoord = snappedEnd?.geometry?.coordinates;
-          if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
-            splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
+          const rawDx = Number(splitEnd[0]) - Number(splitStart[0]);
+          const rawDy = Number(splitEnd[1]) - Number(splitStart[1]);
+          const rawLen = Math.hypot(rawDx, rawDy);
+          const bbox = turf.bbox(feature);
+          const span = Math.max(
+            Math.abs((bbox?.[2] || 0) - (bbox?.[0] || 0)),
+            Math.abs((bbox?.[3] || 0) - (bbox?.[1] || 0))
+          ) || 0.001;
+          let snappedToGuideIntersections = false;
+          if (Number.isFinite(rawLen) && rawLen > 1e-9) {
+            const ext = Math.max(span * 4, 0.001);
+            const ux = rawDx / rawLen;
+            const uy = rawDy / rawLen;
+            const guideLine = turf.lineString([
+              [Number(splitStart[0]) - ux * ext, Number(splitStart[1]) - uy * ext],
+              [Number(splitEnd[0]) + ux * ext, Number(splitEnd[1]) + uy * ext]
+            ]);
+            const intersections = (turf.lineIntersect(boundary, guideLine)?.features || [])
+              .map((hit) => hit?.geometry?.coordinates || [])
+              .filter((coord) => Array.isArray(coord) && coord.length >= 2)
+              .map((coord) => [Number(coord[0]), Number(coord[1])])
+              .filter((coord) => Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
+            const pointEps = Math.max(span * 1e-8, 1e-7);
+            const uniqueIntersections = intersections.reduce((acc, coord) => {
+              const exists = acc.some((existing) => Math.hypot(existing[0] - coord[0], existing[1] - coord[1]) <= pointEps);
+              if (!exists) acc.push(coord);
+              return acc;
+            }, []);
+            if (uniqueIntersections.length >= 2) {
+              uniqueIntersections.sort((a, b) => {
+                const aProj = ((Number(a[0]) - Number(splitStart[0])) * ux) + ((Number(a[1]) - Number(splitStart[1])) * uy);
+                const bProj = ((Number(b[0]) - Number(splitStart[0])) * ux) + ((Number(b[1]) - Number(splitStart[1])) * uy);
+                return aProj - bProj;
+              });
+              const first = uniqueIntersections[0];
+              const last = uniqueIntersections[uniqueIntersections.length - 1];
+              if (Array.isArray(first) && Array.isArray(last)) {
+                splitStart = [Number(first[0]), Number(first[1])];
+                splitEnd = [Number(last[0]), Number(last[1])];
+                snappedToGuideIntersections = true;
+              }
+            }
           }
-          if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
-            splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
+          if (!snappedToGuideIntersections) {
+            const snappedStart = turf.nearestPointOnLine(boundary, turf.point(splitStart));
+            const snappedEnd = turf.nearestPointOnLine(boundary, turf.point(splitEnd));
+            const snappedStartCoord = snappedStart?.geometry?.coordinates;
+            const snappedEndCoord = snappedEnd?.geometry?.coordinates;
+            if (Array.isArray(snappedStartCoord) && snappedStartCoord.length >= 2) {
+              splitStart = [Number(snappedStartCoord[0]), Number(snappedStartCoord[1])];
+            }
+            if (Array.isArray(snappedEndCoord) && snappedEndCoord.length >= 2) {
+              splitEnd = [Number(snappedEndCoord[0]), Number(snappedEndCoord[1])];
+            }
           }
         }
       } catch {}
