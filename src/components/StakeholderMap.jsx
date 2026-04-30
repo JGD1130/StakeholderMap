@@ -13939,11 +13939,16 @@ const StakeholderMap = ({
     // Primary anchor is the wall direction that is most horizontal on screen.
     // Horizontal halving uses this directly.
     const primaryAxisDeg = toHorizontalAnchorAngle(rawOrientationDeg);
-    // Vertical halving should favor actual side-wall direction (if present),
-    // rather than forcing strict 90deg from primary.
+    // Vertical halving should stay perpendicular to the primary axis on rotated
+    // floorplans. We only honor a detected side-wall angle when it is already
+    // very close to that perpendicular target; otherwise skewed/trapezoidal
+    // room edges can pull the divider off-axis.
     const verticalTargetDeg = normalizeAngleDelta(primaryAxisDeg + 90);
-    const sideWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, verticalTargetDeg, 50, 0.1);
-    const verticalDividerDeg = Number.isFinite(sideWallDeg) ? sideWallDeg : verticalTargetDeg;
+    const sideWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, verticalTargetDeg, 12, 0.08);
+    const verticalDividerDeg =
+      Number.isFinite(sideWallDeg) && getUndirectedAngleDistanceDeg(sideWallDeg, verticalTargetDeg) <= 12
+        ? sideWallDeg
+        : verticalTargetDeg;
 
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
