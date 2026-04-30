@@ -22728,7 +22728,8 @@ useEffect(() => {
       showMaintenanceActionPopup(e.lngLat, buildingContext);
       return;
     }
-    if (technicalMode || technicalWorkflowActive) {
+    const openingTechnicalWorkflow = technicalMode || technicalWorkflowActive;
+    if (openingTechnicalWorkflow) {
       setMapView(MAP_VIEWS.TECHNICAL);
       setIsTechnicalPanelOpen(true);
     }
@@ -22740,7 +22741,7 @@ useEffect(() => {
         setBuildingStats(sum);
         setPanelStats(formatSummaryForPanel(sum, 'building'));
       }
-      if (showFullMapfluenceControls && mapView !== MAP_VIEWS.SPACE_DATA) {
+      if (showFullMapfluenceControls && mapView !== MAP_VIEWS.SPACE_DATA && !openingTechnicalWorkflow) {
         const statsRaw = (await fetchBuildingSummary?.(id)) || sum || {};
         const fmtArea = (val) => (Number.isFinite(val) ? Math.round(val).toLocaleString() : '-');
         const fmtCount = (val) => (Number.isFinite(val) ? Number(val).toLocaleString() : '-');
