@@ -13709,6 +13709,11 @@ const StakeholderMap = ({
     // room edges can pull the divider off-axis.
     const verticalTargetDeg = normalizeAngleDelta(primaryAxisDeg + 90);
     const sideWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, verticalTargetDeg, 12, 0.08);
+    const horizontalWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, primaryAxisDeg, 12, 0.08);
+    const horizontalDividerDeg =
+      Number.isFinite(horizontalWallDeg) && getUndirectedAngleDistanceDeg(horizontalWallDeg, primaryAxisDeg) <= 12
+        ? horizontalWallDeg
+        : primaryAxisDeg;
     const verticalDividerDeg =
       Number.isFinite(sideWallDeg) && getUndirectedAngleDistanceDeg(sideWallDeg, verticalTargetDeg) <= 12
         ? sideWallDeg
@@ -13723,6 +13728,75 @@ const StakeholderMap = ({
         coordinates: mapCoords(geometry.coordinates, (pt) => rotatePoint(pt, pivot, deg))
       };
     };
+
+    const resolveForcedMidpointHalve = (dividerDeg) => {
+      if (!Number.isFinite(dividerDeg)) return null;
+      const toDividerDeg = -Number(dividerDeg);
+      const workingGeometry = rotateGeometryAroundPivot(baseGeometry, toDividerDeg);
+      const workingFeature = { type: 'Feature', properties: {}, geometry: workingGeometry };
+      const bbox = turf.bbox(workingFeature);
+      const minX = Number(bbox?.[0]);
+      const minY = Number(bbox?.[1]);
+      const maxX = Number(bbox?.[2]);
+      const maxY = Number(bbox?.[3]);
+      if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+      const span = Math.max(Math.abs(maxX - minX), Math.abs(maxY - minY), 0.001);
+      const pad = Math.max(span * 0.05, 0.001);
+      const midY = (minY + maxY) / 2;
+      const splitResult = resolveScenarioSplitPieces(
+        workingGeometry,
+        [minX - pad, midY],
+        [maxX + pad, midY],
+        { snapEndpoints: true }
+      );
+      if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
+      return (!pivot || Math.abs(dividerDeg) <= 1e-7)
+        ? splitResult
+        : {
+            ...splitResult,
+            splitStart: Array.isArray(splitResult?.splitStart)
+              ? rotatePoint(splitResult.splitStart, pivot, dividerDeg)
+              : splitResult?.splitStart,
+            splitEnd: Array.isArray(splitResult?.splitEnd)
+              ? rotatePoint(splitResult.splitEnd, pivot, dividerDeg)
+              : splitResult?.splitEnd,
+            pieces: (splitResult.pieces || []).map((piece) => {
+              if (!piece?.geometry) return piece;
+              return {
+                ...piece,
+                geometry: rotateGeometryAroundPivot(piece.geometry, dividerDeg)
+              };
+            })
+          };
+    };
+
+    if (preferredOrientation === 'horizontal' || preferredOrientation === 'vertical') {
+      const forcedDividerDeg = preferredOrientation === 'horizontal'
+        ? horizontalDividerDeg
+        : verticalDividerDeg;
+      const forcedSplitResult = resolveForcedMidpointHalve(forcedDividerDeg);
+      if (!forcedSplitResult?.pieces?.length || forcedSplitResult.pieces.length < 2) {
+        alert(`Unable to compute a ${preferredOrientation} split for this room.`);
+        return false;
+      }
+      const applied = commitScenarioRoomSplit(effectiveRoom, forcedSplitResult, {
+        roomTypeLabel: 'Halved Scenario Room',
+        operationType: 'halve'
+      });
+      if (!applied) {
+        alert('Unable to apply midpoint split.');
+        return false;
+      }
+      console.log('[Planning Scenario Debug] forced halve applied', {
+        roomId,
+        preferredOrientation,
+        primaryAxisDeg,
+        horizontalDividerDeg,
+        verticalDividerDeg,
+        chosenDividerDeg: forcedDividerDeg
+      });
+      return true;
+    }
 
     const buildOrientationFrame = (orientation) => {
       const axisXDeg = orientation === 'vertical'
@@ -13853,18 +13927,9 @@ const StakeholderMap = ({
       };
     };
 
-    // For explicit halve buttons, treat the requested direction as the anchor
-    // wall orientation and keep the cut perpendicular to that wall. This
-    // matches the original planning workflow better than treating the label as
-    // the divider line direction.
-    const requestedOrientation = preferredOrientation === 'horizontal'
-      ? 'vertical'
-      : preferredOrientation === 'vertical'
-        ? 'horizontal'
-        : preferredOrientation;
-    const forcedOrientation = requestedOrientation === 'vertical' || requestedOrientation === 'horizontal';
+    const forcedOrientation = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal';
     const orientationsToTry = forcedOrientation
-      ? [requestedOrientation]
+      ? [preferredOrientation]
       : ['vertical', 'horizontal'];
     const bestResult = orientationsToTry
       .map((orientation) => evaluateOrientation(orientation, { midpointOnly: forcedOrientation }))
@@ -13924,9 +13989,9 @@ const StakeholderMap = ({
     console.log('[Planning Scenario Debug] auto halve applied', {
       roomId,
       preferredOrientation,
-      requestedOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: primaryAxisDeg,
+      horizontalDividerDeg,
       verticalDividerDeg,
       chosenDividerDeg: bestResult?.dividerDeg,
       imbalanceRatio: bestImbalanceRatio,
