@@ -13624,6 +13624,66 @@ const StakeholderMap = ({
     };
   }, [resolveScenarioSplitPieces]);
 
+  const resolveScenarioHalvePrimaryAxisDeg = useCallback((targetRoomId, effectiveRoom = null) => {
+    const roomId = String(targetRoomId || '').trim();
+    const axisCandidates = [];
+    const addAxisCandidate = (deg) => {
+      if (!Number.isFinite(Number(deg))) return;
+      axisCandidates.push(toHorizontalAnchorAngle(Number(deg)));
+    };
+    const collectAxisCandidatesFromGeometry = (geometry) => {
+      if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return;
+      addAxisCandidate(getEdgeWeightedOrientationDeg(geometry));
+      addAxisCandidate(getDominantEdgeAngleDeg(geometry));
+    };
+
+    const mergeState = scenarioMergeStateRef.current || {};
+    const syntheticRoom = mergeState.bySyntheticRoomId?.get(roomId) || null;
+    const sourceRoomIds = Array.isArray(syntheticRoom?.sourceRoomIds)
+      ? syntheticRoom.sourceRoomIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+
+    if (sourceRoomIds.length) {
+      const sourceFeatures = sourceRoomIds
+        .map((sourceRoomId) => {
+          const geometry = resolveScenarioRoomGeometry(sourceRoomId);
+          if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return null;
+          return {
+            type: 'Feature',
+            properties: {},
+            geometry: cloneGeoJsonValue(geometry)
+          };
+        })
+        .filter(Boolean);
+      if (sourceFeatures.length) {
+        const sourceHull = buildHullFeature({ type: 'FeatureCollection', features: sourceFeatures });
+        if (sourceHull?.geometry) collectAxisCandidatesFromGeometry(sourceHull.geometry);
+        sourceFeatures.forEach((feature) => collectAxisCandidatesFromGeometry(feature.geometry));
+      }
+    }
+
+    const floorSourceData = scenarioFloorBaseFcRef.current || currentFloorContextRef.current?.fc || null;
+    const floorFc = toFeatureCollection(floorSourceData);
+    if (floorFc?.features?.length) {
+      const floorRoomFeatures = floorFc.features.filter((feature) => {
+        if (!featureLooksLikeRoom(feature)) return false;
+        const geometry = feature?.geometry;
+        return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon');
+      });
+      const floorHull = buildHullFeature({
+        type: 'FeatureCollection',
+        features: floorRoomFeatures.length ? floorRoomFeatures : floorFc.features
+      });
+      if (floorHull?.geometry) collectAxisCandidatesFromGeometry(floorHull.geometry);
+    }
+
+    collectAxisCandidatesFromGeometry(effectiveRoom?.geometry);
+
+    if (!axisCandidates.length) return 0;
+    axisCandidates.sort((a, b) => a - b);
+    return axisCandidates[Math.floor(axisCandidates.length / 2)];
+  }, [resolveScenarioRoomGeometry]);
+
   const applyScenarioRoomHalve = useCallback((targetRoomId, preferredOrientation = 'auto') => {
     const roomId = String(targetRoomId || '').trim();
     if (!roomId) return false;
@@ -13639,14 +13699,10 @@ const StakeholderMap = ({
     const pivot = Array.isArray(centroid) && centroid.length >= 2
       ? [Number(centroid[0]), Number(centroid[1])]
       : null;
-    const dominantEdgeDeg = Number(getDominantEdgeAngleDeg(baseGeometry));
-    const weightedEdgeDeg = Number(getEdgeWeightedOrientationDeg(baseGeometry));
-    const rawOrientationDeg = Number.isFinite(dominantEdgeDeg)
-      ? dominantEdgeDeg
-      : (Number.isFinite(weightedEdgeDeg) ? weightedEdgeDeg : 0);
-    // Primary anchor is the wall direction that is most horizontal on screen.
-    // Horizontal halving uses this directly.
-    const primaryAxisDeg = toHorizontalAnchorAngle(rawOrientationDeg);
+    // Anchor the room-relative split frame to the underlying floor/source-room
+    // axis so synthetic split edges do not skew subsequent vertical/horizontal
+    // operations on rotated rooms.
+    const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom)) || 0;
     // Vertical halving should stay perpendicular to the primary axis on rotated
     // floorplans. We only honor a detected side-wall angle when it is already
     // very close to that perpendicular target; otherwise skewed/trapezoidal
@@ -13867,7 +13923,7 @@ const StakeholderMap = ({
       absAreaDiff: bestResult.absDiff
     });
     return true;
-  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioAxisSplitPieces, commitScenarioRoomSplit]);
+  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioAxisSplitPieces, commitScenarioRoomSplit, resolveScenarioHalvePrimaryAxisDeg]);
 
   const scenarioSplitValidation = useMemo(() => {
     const selectedIds = Array.from(scenarioSelection || [])
