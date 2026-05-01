@@ -6907,6 +6907,40 @@ function getDominantEdgeAngleNearDeg(geom, targetDeg, maxDeltaDeg = 35, minShare
   return normalizeAngleDelta((angle * 180) / Math.PI);
 }
 
+function getLongestEdgeMidpointNearDeg(geom, targetDeg, maxDeltaDeg = 35) {
+  if (!geom?.coordinates) return null;
+  const rings = [];
+  collectRings(geom.coordinates, rings);
+  let best = null;
+  rings.forEach((ring) => {
+    if (!Array.isArray(ring) || ring.length < 2) return;
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const a = ring[i];
+      const b = ring[i + 1];
+      if (!isPositionArray(a) || !isPositionArray(b)) continue;
+      const dx = Number(b[0]) - Number(a[0]);
+      const dy = Number(b[1]) - Number(a[1]);
+      const len = Math.hypot(dx, dy);
+      if (len <= 0) continue;
+      const angleDeg = normalizeAngleDelta((Math.atan2(dy, dx) * 180) / Math.PI);
+      if (getUndirectedAngleDistanceDeg(angleDeg, targetDeg) > Math.max(1, Number(maxDeltaDeg) || 35)) continue;
+      if (!best || len > best.length) {
+        best = {
+          angleDeg,
+          length: len,
+          midpoint: [
+            (Number(a[0]) + Number(b[0])) / 2,
+            (Number(a[1]) + Number(b[1])) / 2
+          ],
+          start: [Number(a[0]), Number(a[1])],
+          end: [Number(b[0]), Number(b[1])]
+        };
+      }
+    }
+  });
+  return best;
+}
+
 function getFeatureOrientationDeg(feature, limit = 2000) {
   if (!feature?.geometry) return 0;
   const pts = extractLngLatPairs(feature.geometry, limit);
@@ -13752,52 +13786,40 @@ const StakeholderMap = ({
       };
     };
 
-    const resolveForcedMidpointHalve = (dividerDeg) => {
-      if (!Number.isFinite(dividerDeg)) return null;
-      const toDividerDeg = -Number(dividerDeg);
-      const workingGeometry = rotateGeometryAroundPivot(baseGeometry, toDividerDeg);
-      const workingFeature = { type: 'Feature', properties: {}, geometry: workingGeometry };
-      const bbox = turf.bbox(workingFeature);
-      const minX = Number(bbox?.[0]);
-      const minY = Number(bbox?.[1]);
-      const maxX = Number(bbox?.[2]);
-      const maxY = Number(bbox?.[3]);
-      if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
-      const span = Math.max(Math.abs(maxX - minX), Math.abs(maxY - minY), 0.001);
-      const pad = Math.max(span * 0.05, 0.001);
-      const midY = (minY + maxY) / 2;
-      const splitResult = resolveScenarioSplitPieces(
-        workingGeometry,
-        [minX - pad, midY],
-        [maxX + pad, midY],
+    const resolveForcedPerpendicularHalve = (dividerDeg, anchorWallDeg) => {
+      if (!Number.isFinite(dividerDeg) || !Number.isFinite(anchorWallDeg)) return null;
+      const sourceRoomIds = Array.isArray(effectiveRoom?.sourceRoomIds) && effectiveRoom.sourceRoomIds.length
+        ? effectiveRoom.sourceRoomIds
+        : [roomId];
+      const sourceGeometry = sourceRoomIds
+        .map((sourceRoomId) => resolveScenarioRoomGeometry(sourceRoomId))
+        .find((geometry) => geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon')) || baseGeometry;
+      const anchorEdge = getLongestEdgeMidpointNearDeg(sourceGeometry, anchorWallDeg, 20);
+      if (!anchorEdge?.midpoint) return null;
+      const span = Math.max(
+        Math.abs((turf.bbox(feature)?.[2] || 0) - (turf.bbox(feature)?.[0] || 0)),
+        Math.abs((turf.bbox(feature)?.[3] || 0) - (turf.bbox(feature)?.[1] || 0)),
+        0.001
+      );
+      const ext = Math.max(span * 4, 0.001);
+      const dividerRad = (Number(dividerDeg) * Math.PI) / 180;
+      const ux = Math.cos(dividerRad);
+      const uy = Math.sin(dividerRad);
+      const midpoint = anchorEdge.midpoint;
+      return resolveScenarioSplitPieces(
+        baseGeometry,
+        [Number(midpoint[0]) - (ux * ext), Number(midpoint[1]) - (uy * ext)],
+        [Number(midpoint[0]) + (ux * ext), Number(midpoint[1]) + (uy * ext)],
         { snapEndpoints: true }
       );
-      if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
-      return (!pivot || Math.abs(dividerDeg) <= 1e-7)
-        ? splitResult
-        : {
-            ...splitResult,
-            splitStart: Array.isArray(splitResult?.splitStart)
-              ? rotatePoint(splitResult.splitStart, pivot, dividerDeg)
-              : splitResult?.splitStart,
-            splitEnd: Array.isArray(splitResult?.splitEnd)
-              ? rotatePoint(splitResult.splitEnd, pivot, dividerDeg)
-              : splitResult?.splitEnd,
-            pieces: (splitResult.pieces || []).map((piece) => {
-              if (!piece?.geometry) return piece;
-              return {
-                ...piece,
-                geometry: rotateGeometryAroundPivot(piece.geometry, dividerDeg)
-              };
-            })
-          };
     };
 
     if (preferredOrientation === 'horizontal' || preferredOrientation === 'vertical') {
       const forcedDividerDeg = preferredOrientation === 'horizontal'
         ? horizontalDividerDeg
         : verticalDividerDeg;
-      const forcedSplitResult = resolveForcedMidpointHalve(forcedDividerDeg);
+      const anchorWallDeg = normalizeAngleDelta(forcedDividerDeg + 90);
+      const forcedSplitResult = resolveForcedPerpendicularHalve(forcedDividerDeg, anchorWallDeg);
       if (!forcedSplitResult?.pieces?.length || forcedSplitResult.pieces.length < 2) {
         alert(`Unable to compute a ${preferredOrientation} split for this room.`);
         return false;
@@ -13817,6 +13839,7 @@ const StakeholderMap = ({
         explicitPrimaryAxisDeg,
         horizontalDividerDeg,
         verticalDividerDeg,
+        anchorWallDeg,
         chosenDividerDeg: forcedDividerDeg
       });
       return true;
