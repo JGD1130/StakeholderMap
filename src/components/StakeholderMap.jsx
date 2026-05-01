@@ -12899,7 +12899,9 @@ const StakeholderMap = ({
             geometry: syntheticRaw?.geometry && (
               syntheticRaw.geometry.type === 'Polygon' || syntheticRaw.geometry.type === 'MultiPolygon'
             ) ? cloneGeoJsonValue(syntheticRaw.geometry) : null,
-            sourceRoomIds: sourceIds,
+            sourceRoomIds: Array.isArray(syntheticRaw?.sourceRoomIds) && syntheticRaw.sourceRoomIds.length
+              ? syntheticRaw.sourceRoomIds.map((value) => String(value || '').trim()).filter(Boolean)
+              : sourceIds,
             isScenarioSynthetic: true
           };
         })
@@ -13846,6 +13848,10 @@ const StakeholderMap = ({
       runningSf += next;
       return next;
     });
+    const inheritedSourceRoomIds = Array.isArray(effectiveRoom?.sourceRoomIds)
+      ? effectiveRoom.sourceRoomIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const rootSourceRoomIds = inheritedSourceRoomIds.length ? inheritedSourceRoomIds : [roomId];
     let remainingSeats = sourceSeatCount;
     const splitSeats = ratios.map((ratio, idx) => {
       if (idx === ratios.length - 1) return Math.max(0, remainingSeats);
@@ -13875,6 +13881,7 @@ const StakeholderMap = ({
       baseCategoryCode: normalizeScenarioCategoryCode(effectiveRoom.baseCategoryCode || effectiveRoom.categoryCode || ''),
       seatCount: splitSeats[idx] || 0,
       baseSeatCount: splitBaseSeats[idx] || 0,
+      sourceRoomIds: rootSourceRoomIds,
       geometry: cloneGeoJsonValue(part.geometry),
       deriveAreaFromSources: false,
       deriveSeatsFromSources: false
@@ -14040,21 +14047,12 @@ const StakeholderMap = ({
     // axis so synthetic split edges do not skew subsequent vertical/horizontal
     // operations on rotated rooms.
     const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom)) || 0;
-    // Vertical halving should stay perpendicular to the primary axis on rotated
-    // floorplans. We only honor a detected side-wall angle when it is already
-    // very close to that perpendicular target; otherwise skewed/trapezoidal
-    // room edges can pull the divider off-axis.
-    const verticalTargetDeg = normalizeAngleDelta(primaryAxisDeg + 90);
-    const sideWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, verticalTargetDeg, 12, 0.08);
-    const horizontalWallDeg = getDominantEdgeAngleNearDeg(baseGeometry, primaryAxisDeg, 12, 0.08);
-    const horizontalDividerDeg =
-      Number.isFinite(horizontalWallDeg) && getUndirectedAngleDistanceDeg(horizontalWallDeg, primaryAxisDeg) <= 12
-        ? horizontalWallDeg
-        : primaryAxisDeg;
-    const verticalDividerDeg =
-      Number.isFinite(sideWallDeg) && getUndirectedAngleDistanceDeg(sideWallDeg, verticalTargetDeg) <= 12
-        ? sideWallDeg
-        : verticalTargetDeg;
+    // For explicit halve buttons, keep the divider locked to the original
+    // room-relative axis instead of re-reading angles from synthetic edges.
+    // This preserves the simple "perpendicular to the source wall" behavior
+    // even after repeated scenario splits.
+    const horizontalDividerDeg = primaryAxisDeg;
+    const verticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
 
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
