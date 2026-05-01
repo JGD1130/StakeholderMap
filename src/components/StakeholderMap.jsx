@@ -13691,6 +13691,27 @@ const StakeholderMap = ({
     return axisCandidates[Math.floor(axisCandidates.length / 2)];
   }, [resolveScenarioRoomGeometry]);
 
+  const resolveScenarioFloorPrimaryAxisDeg = useCallback(() => {
+    const floorSourceData = scenarioFloorBaseFcRef.current || currentFloorContextRef.current?.fc || null;
+    const floorFc = toFeatureCollection(floorSourceData);
+    if (!floorFc?.features?.length) return null;
+    const floorRoomFeatures = floorFc.features.filter((feature) => {
+      if (!featureLooksLikeRoom(feature)) return false;
+      const geometry = feature?.geometry;
+      return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon');
+    });
+    const floorHull = buildHullFeature({
+      type: 'FeatureCollection',
+      features: floorRoomFeatures.length ? floorRoomFeatures : floorFc.features
+    });
+    const hullGeometry = floorHull?.geometry || null;
+    const weighted = hullGeometry ? getEdgeWeightedOrientationDeg(hullGeometry) : null;
+    if (Number.isFinite(weighted)) return toHorizontalAnchorAngle(weighted);
+    const dominant = hullGeometry ? getDominantEdgeAngleDeg(hullGeometry) : null;
+    if (Number.isFinite(dominant)) return toHorizontalAnchorAngle(dominant);
+    return null;
+  }, []);
+
   const applyScenarioRoomHalve = useCallback((targetRoomId, preferredOrientation = 'auto') => {
     const roomId = String(targetRoomId || '').trim();
     if (!roomId) return false;
@@ -13706,16 +13727,20 @@ const StakeholderMap = ({
     const pivot = Array.isArray(centroid) && centroid.length >= 2
       ? [Number(centroid[0]), Number(centroid[1])]
       : null;
+    const floorPrimaryAxisDeg = resolveScenarioFloorPrimaryAxisDeg();
     // Anchor the room-relative split frame to the underlying floor/source-room
     // axis so synthetic split edges do not skew subsequent vertical/horizontal
     // operations on rotated rooms.
     const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom)) || 0;
+    const explicitPrimaryAxisDeg = Number.isFinite(floorPrimaryAxisDeg)
+      ? Number(floorPrimaryAxisDeg)
+      : primaryAxisDeg;
     // For explicit halve buttons, keep the divider locked to the original
     // room-relative axis instead of re-reading angles from synthetic edges.
     // This preserves the simple "perpendicular to the source wall" behavior
     // even after repeated scenario splits.
-    const horizontalDividerDeg = primaryAxisDeg;
-    const verticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
+    const horizontalDividerDeg = explicitPrimaryAxisDeg;
+    const verticalDividerDeg = normalizeAngleDelta(explicitPrimaryAxisDeg + 90);
 
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
@@ -13789,6 +13814,7 @@ const StakeholderMap = ({
         roomId,
         preferredOrientation,
         primaryAxisDeg,
+        explicitPrimaryAxisDeg,
         horizontalDividerDeg,
         verticalDividerDeg,
         chosenDividerDeg: forcedDividerDeg
@@ -13989,6 +14015,7 @@ const StakeholderMap = ({
       preferredOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: primaryAxisDeg,
+      explicitPrimaryAxisDeg,
       horizontalDividerDeg,
       verticalDividerDeg,
       chosenDividerDeg: bestResult?.dividerDeg,
@@ -13996,7 +14023,7 @@ const StakeholderMap = ({
       absAreaDiff: bestResult.absDiff
     });
     return true;
-  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioAxisSplitPieces, commitScenarioRoomSplit, resolveScenarioHalvePrimaryAxisDeg]);
+  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioAxisSplitPieces, commitScenarioRoomSplit, resolveScenarioHalvePrimaryAxisDeg, resolveScenarioFloorPrimaryAxisDeg]);
 
   const scenarioSplitValidation = useMemo(() => {
     const selectedIds = Array.from(scenarioSelection || [])
