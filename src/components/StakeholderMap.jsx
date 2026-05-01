@@ -14190,9 +14190,18 @@ const StakeholderMap = ({
       };
     };
 
-    const forcedOrientation = preferredOrientation === 'vertical' || preferredOrientation === 'horizontal';
+    // For explicit halve buttons, treat the requested direction as the anchor
+    // wall orientation and keep the cut perpendicular to that wall. This
+    // matches the original planning workflow better than treating the label as
+    // the divider line direction.
+    const requestedOrientation = preferredOrientation === 'horizontal'
+      ? 'vertical'
+      : preferredOrientation === 'vertical'
+        ? 'horizontal'
+        : preferredOrientation;
+    const forcedOrientation = requestedOrientation === 'vertical' || requestedOrientation === 'horizontal';
     const orientationsToTry = forcedOrientation
-      ? [preferredOrientation]
+      ? [requestedOrientation]
       : ['vertical', 'horizontal'];
     const bestResult = orientationsToTry
       .map((orientation) => evaluateOrientation(orientation, { midpointOnly: forcedOrientation }))
@@ -14252,6 +14261,7 @@ const StakeholderMap = ({
     console.log('[Planning Scenario Debug] auto halve applied', {
       roomId,
       preferredOrientation,
+      requestedOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: primaryAxisDeg,
       verticalDividerDeg,
