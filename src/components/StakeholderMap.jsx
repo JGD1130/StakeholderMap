@@ -6904,40 +6904,6 @@ function getDominantEdgeAngleNearDeg(geom, targetDeg, maxDeltaDeg = 35, minShare
   return normalizeAngleDelta((angle * 180) / Math.PI);
 }
 
-function getLongestEdgeMidpointNearDeg(geom, targetDeg, maxDeltaDeg = 35) {
-  if (!geom?.coordinates) return null;
-  const rings = [];
-  collectRings(geom.coordinates, rings);
-  let best = null;
-  rings.forEach((ring) => {
-    if (!Array.isArray(ring) || ring.length < 2) return;
-    for (let i = 0; i < ring.length - 1; i += 1) {
-      const a = ring[i];
-      const b = ring[i + 1];
-      if (!isPositionArray(a) || !isPositionArray(b)) continue;
-      const dx = Number(b[0]) - Number(a[0]);
-      const dy = Number(b[1]) - Number(a[1]);
-      const len = Math.hypot(dx, dy);
-      if (len <= 0) continue;
-      const angleDeg = normalizeAngleDelta((Math.atan2(dy, dx) * 180) / Math.PI);
-      if (getUndirectedAngleDistanceDeg(angleDeg, targetDeg) > Math.max(1, Number(maxDeltaDeg) || 35)) continue;
-      if (!best || len > best.length) {
-        best = {
-          angleDeg,
-          length: len,
-          midpoint: [
-            (Number(a[0]) + Number(b[0])) / 2,
-            (Number(a[1]) + Number(b[1])) / 2
-          ],
-          start: [Number(a[0]), Number(a[1])],
-          end: [Number(b[0]), Number(b[1])]
-        };
-      }
-    }
-  });
-  return best;
-}
-
 function getFeatureOrientationDeg(feature, limit = 2000) {
   if (!feature?.geometry) return 0;
   const pts = extractLngLatPairs(feature.geometry, limit);
@@ -14004,15 +13970,39 @@ const StakeholderMap = ({
 
   const resolveScenarioHalvePrimaryAxisDeg = useCallback((targetRoomId, effectiveRoom = null) => {
     const roomId = String(targetRoomId || '').trim();
-    const axisCandidates = [];
-    const addAxisCandidate = (deg) => {
-      if (!Number.isFinite(Number(deg))) return;
-      axisCandidates.push(toHorizontalAnchorAngle(Number(deg)));
+    const collectAxisCandidates = (geometries = []) => {
+      const axisCandidates = [];
+      const addAxisCandidate = (deg) => {
+        if (!Number.isFinite(Number(deg))) return;
+        axisCandidates.push(toHorizontalAnchorAngle(Number(deg)));
+      };
+      (geometries || []).forEach((geometry) => {
+        if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return;
+        addAxisCandidate(getEdgeWeightedOrientationDeg(geometry));
+        addAxisCandidate(getDominantEdgeAngleDeg(geometry));
+      });
+      if (!axisCandidates.length) return null;
+      axisCandidates.sort((a, b) => a - b);
+      return axisCandidates[Math.floor(axisCandidates.length / 2)];
     };
-    const collectAxisCandidatesFromGeometry = (geometry) => {
+    const resolveFloorAxis = () => {
+      const floorSourceData = scenarioFloorBaseFcRef.current || currentFloorContextRef.current?.fc || null;
+      const floorFc = toFeatureCollection(floorSourceData);
+      if (!floorFc?.features?.length) return null;
+      const floorRoomFeatures = floorFc.features.filter((feature) => {
+        if (!featureLooksLikeRoom(feature)) return false;
+        const geometry = feature?.geometry;
+        return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon');
+      });
+      const floorHull = buildHullFeature({
+        type: 'FeatureCollection',
+        features: floorRoomFeatures.length ? floorRoomFeatures : floorFc.features
+      });
+      return collectAxisCandidates([floorHull?.geometry]);
+    };
+    const collectAxisCandidatesFromGeometry = (geometry, target = []) => {
       if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return;
-      addAxisCandidate(getEdgeWeightedOrientationDeg(geometry));
-      addAxisCandidate(getDominantEdgeAngleDeg(geometry));
+      target.push(geometry);
     };
 
     const mergeState = scenarioMergeStateRef.current || {};
@@ -14034,54 +14024,21 @@ const StakeholderMap = ({
         })
         .filter(Boolean);
       if (sourceFeatures.length) {
+        const sourceGeometries = [];
         const sourceHull = buildHullFeature({ type: 'FeatureCollection', features: sourceFeatures });
-        if (sourceHull?.geometry) collectAxisCandidatesFromGeometry(sourceHull.geometry);
-        sourceFeatures.forEach((feature) => collectAxisCandidatesFromGeometry(feature.geometry));
+        if (sourceHull?.geometry) collectAxisCandidatesFromGeometry(sourceHull.geometry, sourceGeometries);
+        sourceFeatures.forEach((feature) => collectAxisCandidatesFromGeometry(feature.geometry, sourceGeometries));
+        const sourceAxis = collectAxisCandidates(sourceGeometries);
+        if (Number.isFinite(sourceAxis)) return sourceAxis;
       }
     }
 
-    const floorSourceData = scenarioFloorBaseFcRef.current || currentFloorContextRef.current?.fc || null;
-    const floorFc = toFeatureCollection(floorSourceData);
-    if (floorFc?.features?.length) {
-      const floorRoomFeatures = floorFc.features.filter((feature) => {
-        if (!featureLooksLikeRoom(feature)) return false;
-        const geometry = feature?.geometry;
-        return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon');
-      });
-      const floorHull = buildHullFeature({
-        type: 'FeatureCollection',
-        features: floorRoomFeatures.length ? floorRoomFeatures : floorFc.features
-      });
-      if (floorHull?.geometry) collectAxisCandidatesFromGeometry(floorHull.geometry);
-    }
+    const roomAxis = collectAxisCandidates([effectiveRoom?.geometry]);
+    if (Number.isFinite(roomAxis)) return roomAxis;
 
-    collectAxisCandidatesFromGeometry(effectiveRoom?.geometry);
-
-    if (!axisCandidates.length) return 0;
-    axisCandidates.sort((a, b) => a - b);
-    return axisCandidates[Math.floor(axisCandidates.length / 2)];
+    const floorAxis = resolveFloorAxis();
+    return Number.isFinite(floorAxis) ? floorAxis : 0;
   }, [resolveScenarioRoomGeometry]);
-
-  const resolveScenarioFloorPrimaryAxisDeg = useCallback(() => {
-    const floorSourceData = scenarioFloorBaseFcRef.current || currentFloorContextRef.current?.fc || null;
-    const floorFc = toFeatureCollection(floorSourceData);
-    if (!floorFc?.features?.length) return null;
-    const floorRoomFeatures = floorFc.features.filter((feature) => {
-      if (!featureLooksLikeRoom(feature)) return false;
-      const geometry = feature?.geometry;
-      return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon');
-    });
-    const floorHull = buildHullFeature({
-      type: 'FeatureCollection',
-      features: floorRoomFeatures.length ? floorRoomFeatures : floorFc.features
-    });
-    const hullGeometry = floorHull?.geometry || null;
-    const weighted = hullGeometry ? getEdgeWeightedOrientationDeg(hullGeometry) : null;
-    if (Number.isFinite(weighted)) return toHorizontalAnchorAngle(weighted);
-    const dominant = hullGeometry ? getDominantEdgeAngleDeg(hullGeometry) : null;
-    if (Number.isFinite(dominant)) return toHorizontalAnchorAngle(dominant);
-    return null;
-  }, []);
 
   const applyScenarioRoomHalve = useCallback((targetRoomId, preferredOrientation = 'auto') => {
     const roomId = String(targetRoomId || '').trim();
@@ -14098,20 +14055,11 @@ const StakeholderMap = ({
     const pivot = Array.isArray(centroid) && centroid.length >= 2
       ? [Number(centroid[0]), Number(centroid[1])]
       : null;
-    const floorPrimaryAxisDeg = resolveScenarioFloorPrimaryAxisDeg();
-    // Anchor the room-relative split frame to the underlying floor/source-room
-    // axis so synthetic split edges do not skew subsequent vertical/horizontal
-    // operations on rotated rooms.
+    // Source geometry keeps repeated halves from drifting onto synthetic split
+    // edges, while room geometry keeps one-off rooms aligned to their own walls.
     const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom)) || 0;
-    const explicitPrimaryAxisDeg = Number.isFinite(floorPrimaryAxisDeg)
-      ? Number(floorPrimaryAxisDeg)
-      : primaryAxisDeg;
-    // For explicit halve buttons, keep the divider locked to the original
-    // room-relative axis instead of re-reading angles from synthetic edges.
-    // This preserves the simple "perpendicular to the source wall" behavior
-    // even after repeated scenario splits.
-    const horizontalDividerDeg = explicitPrimaryAxisDeg;
-    const verticalDividerDeg = normalizeAngleDelta(explicitPrimaryAxisDeg + 90);
+    const horizontalDividerDeg = primaryAxisDeg;
+    const verticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
 
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
@@ -14123,40 +14071,43 @@ const StakeholderMap = ({
       };
     };
 
-    const resolveForcedPerpendicularHalve = (dividerDeg, anchorWallDeg) => {
-      if (!Number.isFinite(dividerDeg) || !Number.isFinite(anchorWallDeg)) return null;
-      const sourceRoomIds = Array.isArray(effectiveRoom?.sourceRoomIds) && effectiveRoom.sourceRoomIds.length
-        ? effectiveRoom.sourceRoomIds
-        : [roomId];
-      const sourceGeometry = sourceRoomIds
-        .map((sourceRoomId) => resolveScenarioRoomGeometry(sourceRoomId))
-        .find((geometry) => geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon')) || baseGeometry;
-      const anchorEdge = getLongestEdgeMidpointNearDeg(sourceGeometry, anchorWallDeg, 20);
-      if (!anchorEdge?.midpoint) return null;
-      const span = Math.max(
-        Math.abs((turf.bbox(feature)?.[2] || 0) - (turf.bbox(feature)?.[0] || 0)),
-        Math.abs((turf.bbox(feature)?.[3] || 0) - (turf.bbox(feature)?.[1] || 0)),
-        0.001
-      );
-      const ext = Math.max(span * 4, 0.001);
-      const dividerRad = (Number(dividerDeg) * Math.PI) / 180;
-      const ux = Math.cos(dividerRad);
-      const uy = Math.sin(dividerRad);
-      const midpoint = anchorEdge.midpoint;
-      return resolveScenarioSplitPieces(
-        baseGeometry,
-        [Number(midpoint[0]) - (ux * ext), Number(midpoint[1]) - (uy * ext)],
-        [Number(midpoint[0]) + (ux * ext), Number(midpoint[1]) + (uy * ext)],
-        { snapEndpoints: true }
-      );
+    const resolveForcedMidpointHalve = (dividerDeg) => {
+      if (!Number.isFinite(dividerDeg)) return null;
+      const toDividerDeg = -Number(dividerDeg);
+      const workingGeometry = rotateGeometryAroundPivot(baseGeometry, toDividerDeg);
+      const workingFeature = { type: 'Feature', properties: {}, geometry: workingGeometry };
+      const bbox = turf.bbox(workingFeature);
+      const minY = Number(bbox?.[1]);
+      const maxY = Number(bbox?.[3]);
+      if (![minY, maxY].every(Number.isFinite)) return null;
+      const midY = (minY + maxY) / 2;
+      const splitResult = resolveScenarioAxisSplitPieces(workingGeometry, 'horizontal', midY);
+      if (!splitResult?.pieces?.length || splitResult.pieces.length < 2) return null;
+      return (!pivot || Math.abs(dividerDeg) <= 1e-7)
+        ? splitResult
+        : {
+            ...splitResult,
+            splitStart: Array.isArray(splitResult?.splitStart)
+              ? rotatePoint(splitResult.splitStart, pivot, dividerDeg)
+              : splitResult?.splitStart,
+            splitEnd: Array.isArray(splitResult?.splitEnd)
+              ? rotatePoint(splitResult.splitEnd, pivot, dividerDeg)
+              : splitResult?.splitEnd,
+            pieces: (splitResult.pieces || []).map((piece) => {
+              if (!piece?.geometry) return piece;
+              return {
+                ...piece,
+                geometry: rotateGeometryAroundPivot(piece.geometry, dividerDeg)
+              };
+            })
+          };
     };
 
     if (preferredOrientation === 'horizontal' || preferredOrientation === 'vertical') {
       const forcedDividerDeg = preferredOrientation === 'horizontal'
         ? horizontalDividerDeg
         : verticalDividerDeg;
-      const anchorWallDeg = normalizeAngleDelta(forcedDividerDeg + 90);
-      const forcedSplitResult = resolveForcedPerpendicularHalve(forcedDividerDeg, anchorWallDeg);
+      const forcedSplitResult = resolveForcedMidpointHalve(forcedDividerDeg);
       if (!forcedSplitResult?.pieces?.length || forcedSplitResult.pieces.length < 2) {
         alert(`Unable to compute a ${preferredOrientation} split for this room.`);
         return false;
@@ -14173,10 +14124,8 @@ const StakeholderMap = ({
         roomId,
         preferredOrientation,
         primaryAxisDeg,
-        explicitPrimaryAxisDeg,
         horizontalDividerDeg,
         verticalDividerDeg,
-        anchorWallDeg,
         chosenDividerDeg: forcedDividerDeg
       });
       return true;
@@ -14375,7 +14324,6 @@ const StakeholderMap = ({
       preferredOrientation,
       chosenOrientation: bestResult.orientation,
       roomOrientationDeg: primaryAxisDeg,
-      explicitPrimaryAxisDeg,
       horizontalDividerDeg,
       verticalDividerDeg,
       chosenDividerDeg: bestResult?.dividerDeg,
@@ -14383,7 +14331,7 @@ const StakeholderMap = ({
       absAreaDiff: bestResult.absDiff
     });
     return true;
-  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioAxisSplitPieces, commitScenarioRoomSplit, resolveScenarioHalvePrimaryAxisDeg, resolveScenarioFloorPrimaryAxisDeg]);
+  }, [buildEffectiveScenarioRoomWithGeometry, resolveScenarioAxisSplitPieces, commitScenarioRoomSplit, resolveScenarioHalvePrimaryAxisDeg]);
 
   const scenarioSplitValidation = useMemo(() => {
     const selectedIds = Array.from(scenarioSelection || [])
