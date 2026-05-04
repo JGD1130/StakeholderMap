@@ -1,6 +1,6 @@
 # Session Snapshot
 
-Last updated: 2026-04-29
+Last updated: 2026-05-04
 
 ## Session continuity note
 
@@ -13,6 +13,7 @@ Last updated: 2026-04-29
 
 ## Latest session note
 
+- 2026-05-04: Fixed the `Halve Vertical` / `Halve Horizontal` regression on scenario floorplans. The latest wall-midpoint anchor could place the divider on or outside the selected room and trigger `Unable to compute a horizontal split for this room`; the prior floor-axis override could also make angled rooms like Hazzelrig room 146 look crooked. Explicit halve now uses a room-centered axis-locked split in a rotated room frame, and primary axis detection prefers original/source room geometry before falling back to the floor axis. Validation: `npm.cmd run smoke` passed (`26/26`) and `npm.cmd run build` passed.
 - 2026-04-30: Fixed the generic `Split Room` boundary snapping path for rotated rooms. The prior non-axis split logic snapped each click point independently to the nearest room boundary point, which could skew an intended straight split into a different diagonal on angled rooms like Hazzelrig room 146. Updated `resolveScenarioSplitPieces` so freeform splits preserve the clicked line direction and extend that line to the room boundary intersections before polygonizing. Validation: `npm.cmd run smoke` passed and `npm.cmd run build` passed.
 - 2026-04-30: Reworked explicit `Halve Vertical` / `Halve Horizontal` behavior for rotated rooms on scenario floorplans. The prior implementation still searched for an equal-area divider inside the rotated room frame, which could place the cut awkwardly on skewed polygons like Hazzelrig room 146 even when the divider angle was correct. Updated forced vertical/horizontal halve actions to cut through the midpoint of the rotated room frame instead. Validation: `npm.cmd run smoke` passed and `npm.cmd run build` passed.
 - 2026-04-30: Tightened rotated-room halve orientation on scenario floorplans. `Halve Vertical` was allowed to follow a loosely matched side-wall angle, which could skew cuts on angled or trapezoidal rooms away from the intended perpendicular room axis. Updated the vertical orientation logic so it stays perpendicular to the room's primary rotated axis unless a side wall is already very close to that target. Validation: `npm.cmd run smoke` passed and `npm.cmd run build` passed.
