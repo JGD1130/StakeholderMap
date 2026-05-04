@@ -14055,11 +14055,13 @@ const StakeholderMap = ({
     const pivot = Array.isArray(centroid) && centroid.length >= 2
       ? [Number(centroid[0]), Number(centroid[1])]
       : null;
-    // Source geometry keeps repeated halves from drifting onto synthetic split
-    // edges, while room geometry keeps one-off rooms aligned to their own walls.
+    // Source geometry keeps auto halves from drifting onto synthetic split
+    // edges, while explicit buttons stay aligned to the visible map axes.
     const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom)) || 0;
-    const horizontalDividerDeg = primaryAxisDeg;
-    const verticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
+    const autoHorizontalDividerDeg = primaryAxisDeg;
+    const autoVerticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
+    const horizontalDividerDeg = 0;
+    const verticalDividerDeg = 90;
 
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
@@ -14133,7 +14135,7 @@ const StakeholderMap = ({
 
     const buildOrientationFrame = (orientation) => {
       const axisXDeg = orientation === 'vertical'
-        ? normalizeAngleDelta(verticalDividerDeg - 90)
+        ? normalizeAngleDelta(autoVerticalDividerDeg - 90)
         : primaryAxisDeg;
       const toAxisDeg = pivot && Number.isFinite(axisXDeg) && Math.abs(axisXDeg) > 1e-4
         ? -axisXDeg
@@ -14326,6 +14328,8 @@ const StakeholderMap = ({
       roomOrientationDeg: primaryAxisDeg,
       horizontalDividerDeg,
       verticalDividerDeg,
+      autoHorizontalDividerDeg,
+      autoVerticalDividerDeg,
       chosenDividerDeg: bestResult?.dividerDeg,
       imbalanceRatio: bestImbalanceRatio,
       absAreaDiff: bestResult.absDiff
