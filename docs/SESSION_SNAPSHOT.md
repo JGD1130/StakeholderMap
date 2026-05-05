@@ -1,6 +1,6 @@
 # Session Snapshot
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 ## Session continuity note
 
@@ -13,6 +13,7 @@ Last updated: 2026-05-04
 
 ## Latest session note
 
+- 2026-05-05: Fixed full-admin Hastings planning-scenario `Halve Vertical` / `Halve Horizontal` behavior for buildings whose floorplans are not true north/south. The 2026-05-04 global-axis lock made explicit halves visually straight on north-up rooms but wrong for rotated buildings. Explicit and auto halves now derive the divider axes from source/effective room geometry in a local planar frame around the selected room centroid, then rotate/split in that same local frame so dividers remain perpendicular to the building/room plane at Hastings latitude. Sarpy County building GeoJSON already contains the two new user-added polygons and was left intact. Validation: Sarpy GeoJSON parse passed, `npm.cmd run smoke` passed (`26/26`), and `npm.cmd run build` passed.
 - 2026-05-04: Follow-up fix for explicit `Halve Vertical` / `Halve Horizontal` cuts still appearing crooked after the previous regression fix. The previous repair restored splitting but still let explicit buttons inherit the room/floor primary axis, so the divider stayed wall-parallel instead of visually vertical/horizontal. Explicit halve buttons now lock to visible map axes (`Vertical` = 90 degrees, `Horizontal` = 0 degrees), while auto/equal-area logic can still use room/source axes. Validation: `npm.cmd run smoke` passed (`26/26`) and `npm.cmd run build` passed.
 - 2026-05-04: Fixed the `Halve Vertical` / `Halve Horizontal` regression on scenario floorplans. The latest wall-midpoint anchor could place the divider on or outside the selected room and trigger `Unable to compute a horizontal split for this room`; the prior floor-axis override could also make angled rooms like Hazzelrig room 146 look crooked. Explicit halve now uses a room-centered axis-locked split in a rotated room frame, and primary axis detection prefers original/source room geometry before falling back to the floor axis. Validation: `npm.cmd run smoke` passed (`26/26`) and `npm.cmd run build` passed.
 - 2026-04-30: Fixed the generic `Split Room` boundary snapping path for rotated rooms. The prior non-axis split logic snapped each click point independently to the nearest room boundary point, which could skew an intended straight split into a different diagonal on angled rooms like Hazzelrig room 146. Updated `resolveScenarioSplitPieces` so freeform splits preserve the clicked line direction and extend that line to the room boundary intersections before polygonizing. Validation: `npm.cmd run smoke` passed and `npm.cmd run build` passed.
