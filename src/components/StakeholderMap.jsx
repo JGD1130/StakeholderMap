@@ -6870,6 +6870,51 @@ function toHorizontalAnchorAngle(deg) {
   return Math.abs(alt) < Math.abs(base) ? alt : base;
 }
 
+function isValidLngLat(point) {
+  return Array.isArray(point) &&
+    point.length >= 2 &&
+    Number.isFinite(Number(point[0])) &&
+    Number.isFinite(Number(point[1]));
+}
+
+function localPlaneScale(origin) {
+  const lat = Number(origin?.[1]);
+  const cosLat = Math.cos(((Number.isFinite(lat) ? lat : 0) * Math.PI) / 180);
+  return Math.max(1e-6, Math.abs(cosLat));
+}
+
+function projectLngLatToLocalPlane(point, origin) {
+  if (!isValidLngLat(point) || !isValidLngLat(origin)) return point;
+  const scaleX = localPlaneScale(origin);
+  return [
+    (Number(point[0]) - Number(origin[0])) * scaleX,
+    Number(point[1]) - Number(origin[1])
+  ];
+}
+
+function unprojectLocalPlaneToLngLat(point, origin) {
+  if (!isValidLngLat(point) || !isValidLngLat(origin)) return point;
+  const scaleX = localPlaneScale(origin);
+  return [
+    Number(origin[0]) + (Number(point[0]) / scaleX),
+    Number(origin[1]) + Number(point[1])
+  ];
+}
+
+function geometryToLocalPlane(geometry, origin) {
+  if (!geometry?.coordinates || !isValidLngLat(origin)) return cloneGeoJsonValue(geometry);
+  return {
+    ...geometry,
+    coordinates: mapCoords(geometry.coordinates, (pt) => projectLngLatToLocalPlane(pt, origin))
+  };
+}
+
+function rotateLngLatAroundLocalPlane(point, origin, deg) {
+  if (!isValidLngLat(point) || !isValidLngLat(origin) || !Number.isFinite(Number(deg))) return point;
+  const rotated = rotatePoint(projectLngLatToLocalPlane(point, origin), [0, 0], deg);
+  return unprojectLocalPlaneToLngLat(rotated, origin);
+}
+
 function getUndirectedAngleDistanceDeg(a, b) {
   return Math.abs(normalizeAngleDelta((Number(a) || 0) - (Number(b) || 0)));
 }
@@ -13631,7 +13676,7 @@ const StakeholderMap = ({
     };
   }, [resolveScenarioSplitPieces]);
 
-  const resolveScenarioHalvePrimaryAxisDeg = useCallback((targetRoomId, effectiveRoom = null) => {
+  const resolveScenarioHalvePrimaryAxisDeg = useCallback((targetRoomId, effectiveRoom = null, localOrigin = null) => {
     const roomId = String(targetRoomId || '').trim();
     const collectAxisCandidates = (geometries = []) => {
       const axisCandidates = [];
@@ -13641,8 +13686,11 @@ const StakeholderMap = ({
       };
       (geometries || []).forEach((geometry) => {
         if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return;
-        addAxisCandidate(getEdgeWeightedOrientationDeg(geometry));
-        addAxisCandidate(getDominantEdgeAngleDeg(geometry));
+        const workingGeometry = isValidLngLat(localOrigin)
+          ? geometryToLocalPlane(geometry, localOrigin)
+          : geometry;
+        addAxisCandidate(getEdgeWeightedOrientationDeg(workingGeometry));
+        addAxisCandidate(getDominantEdgeAngleDeg(workingGeometry));
       });
       if (!axisCandidates.length) return null;
       axisCandidates.sort((a, b) => a - b);
@@ -13718,13 +13766,13 @@ const StakeholderMap = ({
     const pivot = Array.isArray(centroid) && centroid.length >= 2
       ? [Number(centroid[0]), Number(centroid[1])]
       : null;
-    // Source geometry keeps auto halves from drifting onto synthetic split
-    // edges, while explicit buttons stay aligned to the visible map axes.
-    const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom)) || 0;
-    const autoHorizontalDividerDeg = primaryAxisDeg;
-    const autoVerticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
-    const horizontalDividerDeg = 0;
-    const verticalDividerDeg = 90;
+    // Source geometry keeps repeated halves from drifting onto synthetic split
+    // edges; local-plane math keeps rotated Hastings floors truly perpendicular.
+    const primaryAxisDeg = Number(resolveScenarioHalvePrimaryAxisDeg(roomId, effectiveRoom, pivot)) || 0;
+    const horizontalDividerDeg = primaryAxisDeg;
+    const verticalDividerDeg = normalizeAngleDelta(primaryAxisDeg + 90);
+    const autoHorizontalDividerDeg = horizontalDividerDeg;
+    const autoVerticalDividerDeg = verticalDividerDeg;
 
     const rotateGeometryAroundPivot = (geometry, deg) => {
       if (!geometry?.coordinates || !pivot || !Number.isFinite(deg) || Math.abs(deg) <= 1e-7) {
@@ -13732,7 +13780,7 @@ const StakeholderMap = ({
       }
       return {
         ...geometry,
-        coordinates: mapCoords(geometry.coordinates, (pt) => rotatePoint(pt, pivot, deg))
+        coordinates: mapCoords(geometry.coordinates, (pt) => rotateLngLatAroundLocalPlane(pt, pivot, deg))
       };
     };
 
@@ -13753,10 +13801,10 @@ const StakeholderMap = ({
         : {
             ...splitResult,
             splitStart: Array.isArray(splitResult?.splitStart)
-              ? rotatePoint(splitResult.splitStart, pivot, dividerDeg)
+              ? rotateLngLatAroundLocalPlane(splitResult.splitStart, pivot, dividerDeg)
               : splitResult?.splitStart,
             splitEnd: Array.isArray(splitResult?.splitEnd)
-              ? rotatePoint(splitResult.splitEnd, pivot, dividerDeg)
+              ? rotateLngLatAroundLocalPlane(splitResult.splitEnd, pivot, dividerDeg)
               : splitResult?.splitEnd,
             pieces: (splitResult.pieces || []).map((piece) => {
               if (!piece?.geometry) return piece;
@@ -13962,10 +14010,10 @@ const StakeholderMap = ({
       : {
           ...bestResult.splitResult,
           splitStart: Array.isArray(bestResult.splitResult?.splitStart)
-            ? rotatePoint(bestResult.splitResult.splitStart, pivot, bestFromAxisDeg)
+            ? rotateLngLatAroundLocalPlane(bestResult.splitResult.splitStart, pivot, bestFromAxisDeg)
             : bestResult.splitResult?.splitStart,
           splitEnd: Array.isArray(bestResult.splitResult?.splitEnd)
-            ? rotatePoint(bestResult.splitResult.splitEnd, pivot, bestFromAxisDeg)
+            ? rotateLngLatAroundLocalPlane(bestResult.splitResult.splitEnd, pivot, bestFromAxisDeg)
             : bestResult.splitResult?.splitEnd,
           pieces: (bestResult.splitResult?.pieces || []).map((piece) => {
             if (!piece?.geometry) return piece;
