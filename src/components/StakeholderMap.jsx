@@ -585,6 +585,10 @@ function getAiBaseUrl() {
   return '';
 }
 
+function isStaticGithubHost() {
+  return typeof window !== 'undefined' && window.location.hostname.includes('github.io');
+}
+
 function summarizeFloorFromFeatures(fc) {
   if (!fc || !Array.isArray(fc.features)) {
     return {
@@ -17250,9 +17254,9 @@ useEffect(() => {
 
   useEffect(() => {
     const aiBase = getAiBaseUrl();
-    const isStaticHost = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
+    const isStaticHost = isStaticGithubHost();
     if (isStaticHost) {
-      setAiStatus(aiBase ? 'ok' : 'down');
+      setAiStatus('down');
       return () => {};
     }
     if (!aiBase) {
@@ -21144,6 +21148,11 @@ useEffect(() => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (isStaticGithubHost()) {
+        setDashboardLoading(false);
+        setDashboardError(null);
+        return;
+      }
       setDashboardLoading(true);
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
@@ -21639,6 +21648,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (strategicEnrollmentTouched) return;
+    if (isStaticGithubHost()) return () => {};
     let cancelled = false;
     (async () => {
       try {
