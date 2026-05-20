@@ -2943,6 +2943,33 @@ function applyFloorplanFitTransform(fc, transform) {
   if (fc.__mfFitTransformApplied) return fc;
   let out = fc;
   try {
+    if (
+      transform.localPlanarFit &&
+      Number.isFinite(transform.localScale) &&
+      Array.isArray(transform.localCenterFrom) &&
+      Array.isArray(transform.localCenterTo)
+    ) {
+      const scale = Number(transform.localScale) || 1;
+      const [fromX, fromY] = transform.localCenterFrom;
+      const [toX, toY] = transform.localCenterTo;
+      out = {
+        ...out,
+        features: (out.features || []).map((feature) => {
+          if (!feature?.geometry?.coordinates) return feature;
+          return {
+            ...feature,
+            geometry: {
+              ...feature.geometry,
+              coordinates: mapCoords(feature.geometry.coordinates, ([x, y]) => ([
+                toX + ((x - fromX) * scale),
+                toY + ((y - fromY) * scale)
+              ]))
+            }
+          };
+        })
+      };
+    }
+
     const {
       rotationDeg,
       rotationPivot,
@@ -4799,31 +4826,43 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   let summary = computeFloorSummary(fc);
   cacheFloorSummary(summary, fc);
 
-  const fitCandidate = buildFitCandidate(fc);
-  const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
   let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
   try {
-    if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding)) {
-      const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
-      if (fitted?.features?.length) {
-        fitTransform = fitted.__mfFitTransform || null;
-        if (fitSource !== fc && fitTransform) {
-          const applied = applyFloorplanFitTransform(fc, fitTransform);
-          if (applied?.features?.length) {
-            if (fc.__mfAffineApplied) applied.__mfAffineApplied = fc.__mfAffineApplied;
-            if (fc.__mfRotationOverride != null) applied.__mfRotationOverride = fc.__mfRotationOverride;
-            if (fc.__mfRotationPivot) applied.__mfRotationPivot = fc.__mfRotationPivot;
-            applied.__mfFitted = true;
-            applied.__mfFittedBuilding = fitted.__mfFittedBuilding || '';
-            applied.__mfFitTransform = fitTransform;
-            fc = applied;
-          }
-        } else {
-          fc = fitted;
-        }
+    if (fitBuilding && !isLikelyLonLat(fc)) {
+      const locallyFitted = fitLocalFloorplanToBuilding(fc, fitBuilding);
+      if (locallyFitted?.features?.length) {
+        fc = locallyFitted;
+        fitTransform = locallyFitted.__mfFitTransform || null;
         data.__mfTransformed = true;
         if (!snapCorner) {
           floorCache.set(url, fc);
+        }
+      }
+    } else {
+      const fitCandidate = buildFitCandidate(fc);
+      const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
+      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding)) {
+        const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
+        if (fitted?.features?.length) {
+          fitTransform = fitted.__mfFitTransform || null;
+          if (fitSource !== fc && fitTransform) {
+            const applied = applyFloorplanFitTransform(fc, fitTransform);
+            if (applied?.features?.length) {
+              if (fc.__mfAffineApplied) applied.__mfAffineApplied = fc.__mfAffineApplied;
+              if (fc.__mfRotationOverride != null) applied.__mfRotationOverride = fc.__mfRotationOverride;
+              if (fc.__mfRotationPivot) applied.__mfRotationPivot = fc.__mfRotationPivot;
+              applied.__mfFitted = true;
+              applied.__mfFittedBuilding = fitted.__mfFittedBuilding || '';
+              applied.__mfFitTransform = fitTransform;
+              fc = applied;
+            }
+          } else {
+            fc = fitted;
+          }
+          data.__mfTransformed = true;
+          if (!snapCorner) {
+            floorCache.set(url, fc);
+          }
         }
       }
     }
@@ -5177,7 +5216,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   // fit view to floor
   try {
-    const b = turf.bbox(fc);
+    const shouldUseBuildingBounds =
+      Boolean(fitBuilding) &&
+      (fc?.__mfFitted || fc?.__mfFitTransform || !isLikelyLonLat(fc));
+    const boundsSource = shouldUseBuildingBounds ? fitBuilding : fc;
+    const b = turf.bbox(boundsSource);
     if (b && isFinite(b[0])) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, duration: 400 });
   } catch {}
 
@@ -6302,6 +6345,63 @@ function slugifyId(s) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
+}
+
+function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
+  try {
+    if (!localFC || !Array.isArray(localFC.features) || !localFC.features.length) return localFC;
+    const building = (buildingGeomOrFeature?.type === 'Feature')
+      ? buildingGeomOrFeature
+      : (buildingGeomOrFeature?.type ? { type: 'Feature', properties: {}, geometry: buildingGeomOrFeature } : null);
+    if (!building) return localFC;
+
+    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(localFC);
+    const [bxMin, byMin, bxMax, byMax] = turf.bbox(building);
+    if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
+      return localFC;
+    }
+
+    const rW = Math.max(1e-9, rxMax - rxMin);
+    const rH = Math.max(1e-9, ryMax - ryMin);
+    const bW = Math.max(1e-9, bxMax - bxMin);
+    const bH = Math.max(1e-9, byMax - byMin);
+    const scale = Math.min(bW / rW, bH / rH) * 0.96;
+
+    const roomCx = (rxMin + rxMax) / 2;
+    const roomCy = (ryMin + ryMax) / 2;
+    const bldgCx = (bxMin + bxMax) / 2;
+    const bldgCy = (byMin + byMax) / 2;
+
+    const next = {
+      ...localFC,
+      features: (localFC.features || []).map((feature) => {
+        if (!feature?.geometry?.coordinates) return feature;
+        return {
+          ...feature,
+          geometry: {
+            ...feature.geometry,
+            coordinates: mapCoords(feature.geometry.coordinates, ([x, y]) => ([
+              bldgCx + ((x - roomCx) * scale),
+              bldgCy + ((y - roomCy) * scale)
+            ]))
+          }
+        };
+      })
+    };
+
+    next.__mfFitted = true;
+    next.__mfFittedBuilding = building?.properties?.id || building?.properties?.name || '';
+    next.__mfLocalPlanarFit = true;
+    next.__mfFitTransform = {
+      localPlanarFit: true,
+      localScale: scale,
+      localCenterFrom: [roomCx, roomCy],
+      localCenterTo: [bldgCx, bldgCy]
+    };
+    return next;
+  } catch {
+    return localFC;
+  }
 }
 
 // Fit a rooms FeatureCollection to a building feature by scaling to bbox and aligning centroids
@@ -7511,6 +7611,7 @@ const BUILDINGS_LIST = [
   { name: 'Stone Health Center', folder: 'Stone Health Center' },
   { name: 'Taylor Hall', folder: 'Taylor Hall' },
   { name: 'Wilson Center', folder: 'WilsonCenter' },
+  { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
 
   // add more as you add folders...
 ];
@@ -9803,11 +9904,33 @@ const StakeholderMap = ({
   ).trim() || 'HC_image.png';
   const universityLogoAlt = isSarpyCountyInstance ? 'Sarpy County' : (universityName || 'University');
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
-  const [selectedBuilding, setSelectedBuilding] = useState(() => (floorplansEnabled ? (BUILDINGS_LIST[0]?.name || '') : ''));
+  const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
   const floorplanBuildingOptions = useMemo(
-    () => (floorplansEnabled ? BUILDINGS_LIST : []),
-    [floorplansEnabled]
+    () => {
+      if (!floorplansEnabled) return [];
+      if (!isSarpyCountyInstance) {
+        return BUILDINGS_LIST.filter((b) => !b?.campus || b.campus === 'Hastings');
+      }
+      const seen = new Set();
+      return (config?.buildings?.features || [])
+        .map((feature) => {
+          const props = feature?.properties || {};
+          return String(props.name || props.Name || props.id || '').trim();
+        })
+        .filter((name) => {
+          if (!name || seen.has(name)) return false;
+          if (!BUILDING_FOLDER_MAP[name]) return false;
+          seen.add(name);
+          return true;
+        })
+        .map((name) => ({ name, folder: BUILDING_FOLDER_MAP[name] }));
+    },
+    [floorplansEnabled, isSarpyCountyInstance, config?.buildings?.features]
+  );
+  const floorplanBuildingNames = useMemo(
+    () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
+    [floorplanBuildingOptions]
   );
   const configuredDashboardBuildingKeys = useMemo(() => {
     const out = new Set();
@@ -15443,7 +15566,7 @@ const StakeholderMap = ({
     const campusAcc = createEmptySummaryAccumulator();
 
     const summaries = await Promise.all(
-      BUILDINGS_LIST.map(async (b) => {
+      floorplanBuildingOptions.map(async (b) => {
         if (!b?.name) return null;
         try {
           return await computeBuildingTotals(b.name);
@@ -15472,7 +15595,7 @@ const StakeholderMap = ({
     });
 
     return finalizeCombinedSummary(campusAcc);
-  }, [computeBuildingTotals]);
+  }, [computeBuildingTotals, floorplanBuildingOptions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -16015,12 +16138,16 @@ const StakeholderMap = ({
 useEffect(() => {
   if (!floorplansEnabled) return;
   if (selectedBuilding) return;
-  if (!BUILDINGS_LIST.length) return;
+  if (!floorplanBuildingOptions.length) return;
 
-  const first = BUILDINGS_LIST[0].name;
+  const first = floorplanBuildingOptions[0].name;
   setSelectedBuilding(first);
+  const feature = matchBuildingFeature(config?.buildings?.features || [], first);
+  const nextId = String(feature?.properties?.id || '').trim();
+  setSelectedBuildingId(nextId || null);
+  selectedBuildingIdRef.current = nextId || null;
   setSelectedFloor('LEVEL_1');
-}, [selectedBuilding, floorplansEnabled]);
+}, [selectedBuilding, floorplansEnabled, floorplanBuildingOptions, config]);
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
@@ -17260,7 +17387,7 @@ useEffect(() => {
 const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilterRaw = '') => {
   const includeAllBuildings = !buildingFilter || buildingFilter === '__all__';
   const targetBuildings = includeAllBuildings
-    ? BUILDINGS_LIST.map((b) => b.name).filter(Boolean)
+    ? floorplanBuildingNames
     : [buildingFilter];
 
   const targetBuildingKeys = includeAllBuildings
@@ -17360,7 +17487,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
   }
   return rows;
-  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
 
   const buildMoveScenarioInventory = useCallback(async () => {
     const rows = await collectSpaceRows('__all__', '');
@@ -17371,7 +17498,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   const collectSpaceSummaryRows = useCallback(async (buildingFilter = '__all__', deptFilterRaw = '') => {
     const includeAllBuildings = !buildingFilter || buildingFilter === '__all__';
     const targetBuildings = includeAllBuildings
-      ? BUILDINGS_LIST.map((b) => b.name).filter(Boolean)
+      ? floorplanBuildingNames
       : [buildingFilter];
     const targetBuildingKeys = includeAllBuildings
       ? null
@@ -17481,7 +17608,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       : null;
 
     return { campusRow, buildingRows };
-  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
 
   const onCreateMoveScenario = useCallback(async (opts = {}) => {
     const forceRelaxed = Boolean(opts?.forceRelaxed);
@@ -19457,12 +19584,12 @@ const maintenanceBuildingCatalog = useMemo(() => {
     const props = feature?.properties || {};
     addBuilding(props.id, props.name || props.Name || '');
   });
-  BUILDINGS_LIST.forEach((entry) => addBuilding(entry?.name, entry?.name));
+  floorplanBuildingOptions.forEach((entry) => addBuilding(entry?.name, entry?.name));
   (maintenanceIssues || []).forEach((issue) => {
     addBuilding(issue?.buildingId, issue?.buildingName);
   });
   return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
-}, [maintenanceIssues, config]);
+}, [maintenanceIssues, config, floorplanBuildingOptions]);
 const maintenanceBuildingOptions = useMemo(
   () => maintenanceBuildingCatalog.map((row) => ({ value: row.key, label: row.label })),
   [maintenanceBuildingCatalog]
@@ -27921,7 +28048,7 @@ useEffect(() => {
                     onChange={(e) => setExportBuildingFilter(e.target.value)}
                   >
                     <option value="__all__">All buildings</option>
-                    {BUILDINGS_LIST.map((b) => (
+                    {floorplanBuildingOptions.map((b) => (
                       <option key={b.name} value={b.name}>{b.name}</option>
                     ))}
                   </select>
