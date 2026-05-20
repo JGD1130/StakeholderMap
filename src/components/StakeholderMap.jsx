@@ -10036,8 +10036,10 @@ const StakeholderMap = ({
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
+  const isSharedPublicPlanningMode = isSarpyCountyInstance && isDemoPublicMode;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
   const defaultMapView = isTechnicalOnlyMode
     ? MAP_VIEWS.TECHNICAL
@@ -10107,8 +10109,10 @@ const StakeholderMap = ({
     }
     if (isDemoPublicMode && mapView === MAP_VIEWS.MAINTENANCE) {
       return {
-        title: 'Demo Maintenance Tracker',
-        subtitle: 'Maintenance issue reporting and tracking demo mode.'
+        title: isSharedPublicPlanningMode ? 'Shared Planning Workspace' : 'Demo Maintenance Tracker',
+        subtitle: isSharedPublicPlanningMode
+          ? 'No-sign-in planning, reno, and AI tools for team review. Room edits stay read-only.'
+          : 'Maintenance issue reporting and tracking demo mode.'
       };
     }
     if (isAdminCombinedMode) {
@@ -10129,11 +10133,17 @@ const StakeholderMap = ({
         subtitle: 'Public engagement map for marker collection and sentiment.'
       };
     }
+    if (isSharedPublicPlanningMode) {
+      return {
+        title: 'Shared Planning Workspace',
+        subtitle: 'No-sign-in planning, reno, and AI tools for team review. Room edits stay read-only.'
+      };
+    }
     return {
       title: `${activeUniversityName} Map`,
       subtitle: 'Campus space visualization view.'
     };
-  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
   useEffect(() => {
@@ -11273,6 +11283,7 @@ const StakeholderMap = ({
 
   const persistScenarioOperation = useCallback(async (op) => {
     if (!SCENARIO_OP_PERSIST_ENABLED) return;
+    if (isSharedPublicPlanningMode) return;
     if (!scenarioOpsCollection || !op) return;
     try {
       await addDoc(scenarioOpsCollection, {
@@ -11284,10 +11295,11 @@ const StakeholderMap = ({
     } catch (err) {
       // Keep scenario edits local if Firestore rules block writes.
     }
-  }, [scenarioOpsCollection, universityId]);
+  }, [isSharedPublicPlanningMode, scenarioOpsCollection, universityId]);
 
   const persistScenarioGeometryOperation = useCallback(async (op) => {
     if (!op || !SCENARIO_LAYOUT_OP_TYPES.has(String(op?.opType || ''))) return;
+    if (isSharedPublicPlanningMode) return;
     if (!universityId) return;
     try {
       await addDoc(collection(db, 'moves'), {
@@ -11300,7 +11312,7 @@ const StakeholderMap = ({
     } catch {
       // Keep layout edits local if Firestore rules block writes.
     }
-  }, [universityId]);
+  }, [isSharedPublicPlanningMode, universityId]);
 
   useEffect(() => {
     if (!planningScenariosCollection) {
@@ -12473,6 +12485,9 @@ const StakeholderMap = ({
       if (duplicate || !String(scenarioLabel || '').trim()) setScenarioLabel(scenarioName);
       return true;
     };
+    if (isSharedPublicPlanningMode) {
+      return saveLocalFallback();
+    }
     if (!planningScenariosCollection) {
       return saveLocalFallback();
     }
@@ -12503,7 +12518,8 @@ const StakeholderMap = ({
     selectedPlanningScenarioId,
     scenarioLabel,
     buildPlanningScenarioSnapshot,
-    upsertLocalPlanningScenarioRecord
+    upsertLocalPlanningScenarioRecord,
+    isSharedPublicPlanningMode
   ]);
 
   const renamePlanningScenario = useCallback(async () => {
@@ -14580,6 +14596,9 @@ const StakeholderMap = ({
       setRenoScenarioSaveMessage(message);
       return true;
     };
+    if (isSharedPublicPlanningMode) {
+      return saveLocalFallback('Saved locally');
+    }
     if (!universityId) {
       return saveLocalFallback('Saved locally');
     }
@@ -14637,7 +14656,8 @@ const StakeholderMap = ({
     universityId,
     renoScenarioSummary,
     buildRenoScenarioPayload,
-    persistLocalRenoScenarioState
+    persistLocalRenoScenarioState,
+    isSharedPublicPlanningMode
   ]);
 
   const handleLaunchRenoScenario = useCallback(() => {
@@ -26137,7 +26157,7 @@ useEffect(() => {
           </button>
         </div>
 
-        {!isDemoPublicMode && (
+        {showScenarioAdvancedControls && (
           <>
             <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
               <div style={{ fontWeight: 600, marginBottom: 6 }}>Saved Scenarios</div>
@@ -26197,7 +26217,7 @@ useEffect(() => {
           </>
         )}
 
-        {!isDemoPublicMode && moveScenarioMode && loadedSingleFloor ? (
+        {showScenarioAdvancedControls && moveScenarioMode && loadedSingleFloor ? (
           <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Scenario View</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 8, alignItems: 'center' }}>
@@ -26229,7 +26249,7 @@ useEffect(() => {
           </div>
         </div>
 
-        {!isDemoPublicMode && (
+        {showScenarioAdvancedControls && (
           <div style={{ marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Layout Edit Mode</div>
           <div style={{ display: 'grid', gap: 6 }}>
@@ -26286,7 +26306,8 @@ useEffect(() => {
             </button>
           </div>
           <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
-            Geometry edits are scenario-only and stored in Firestore. Airtable is not modified.
+            Geometry edits are scenario-only and do not modify Airtable.
+            {isSharedPublicPlanningMode ? ' Changes stay in this browser unless you export them.' : ' Changes are saved to the project workspace when permitted.'}
             {scenarioLayoutMode === 'split' && scenarioSplitDraft?.targetRoomId
               ? (Array.isArray(scenarioSplitDraft.start)
                   ? ' Click a second boundary point to commit split.'
@@ -26339,7 +26360,7 @@ useEffect(() => {
           </button>
         </div>
 
-        {!isDemoPublicMode && (
+        {showScenarioAdvancedControls && (
         <div style={{ marginTop: 8 }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>Scenario Operations</div>
           {scenarioOperations.length === 0 ? (
@@ -26400,7 +26421,7 @@ useEffect(() => {
         </div>
         )}
 
-        {!isDemoPublicMode && (
+        {showScenarioAdvancedControls && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
           <button
             className="btn primary"
@@ -26420,7 +26441,7 @@ useEffect(() => {
         </div>
         )}
 
-        {!isDemoPublicMode && (
+        {showScenarioAdvancedControls && (
         <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <button
             type="button"
@@ -26486,7 +26507,7 @@ useEffect(() => {
         </div>
         )}
 
-        {!isDemoPublicMode && (
+        {showScenarioAdvancedControls && (
         <div style={{ marginTop: 8, marginBottom: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 8 }}>
           <button
             type="button"
@@ -28089,7 +28110,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {(mode === 'admin' || isDemoPublicMode) && (
+                  {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -28105,19 +28126,19 @@ useEffect(() => {
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {(mode === 'admin' || isDemoPublicMode) && airtableRefreshMessage && (
+                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {(mode === 'admin' || isDemoPublicMode) && (
+                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
                   </div>
                 )}
-                {(mode === 'admin' || isDemoPublicMode) && (
+                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
                   <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
                     Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
@@ -28280,7 +28301,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {mode === 'admin' && (
+            {(mode === 'admin' || isSharedPublicPlanningMode) && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}
