@@ -2,7 +2,7 @@
   "universityId": "sarpy-county",
   "universityName": "Sarpy County, NE",
   "enableDrawingEntry": true,
-  "enableFloorplans": false,
+  "enableFloorplans": true,
   "floorplanCampus": "SarpyCounty",
   "style": "mapbox://styles/mapbox/streets-v12",
   "initialCenter": [-96.0804, 41.1367],
