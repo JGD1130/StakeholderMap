@@ -9571,6 +9571,15 @@ const ENGAGEMENT_HEAT_CATEGORY_LABELS = {
   unsafe: 'Do Not Feel Safe',
   comment: 'Comment'
 };
+const SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE = {
+  unsafe: { color: '#0b1f3a', heatValue: 1.03, rgb: '11,31,58', haloRgb: '30,58,95' },
+  outdated: { color: '#215d92', heatValue: 1.03, rgb: '33,93,146', haloRgb: '69,132,194' },
+  rarely: { color: '#4384c2', heatValue: 1.03, rgb: '67,132,194', haloRgb: '125,179,225' },
+  improve: { color: '#7fb3e1', heatValue: 1.03, rgb: '127,179,225', haloRgb: '184,220,243' },
+  hangout: { color: '#b8dcf3', heatValue: 1.03, rgb: '184,220,243', haloRgb: '210,235,248' },
+  study: { color: '#edf6fd', heatValue: 1.03, rgb: '237,246,253', haloRgb: '255,255,255' },
+  comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '196,201,209' }
+};
 const ENGAGEMENT_MARKER_TYPES = {
   'This is a go to study spot': '#ef4444',
   'This is a go to hang out spot': '#fb923c',
@@ -9615,6 +9624,11 @@ const ENGAGEMENT_ROOM_SENTIMENT_GRADIENT_SOURCE_ID = 'engagement-room-sentiment-
 const ENGAGEMENT_ROOM_SENTIMENT_GRADIENT_LAYER_PREFIX = 'engagement-room-sentiment-gradient-band-';
 const ENGAGEMENT_ROOM_SENTIMENT_BAND_COUNT = 10;
 const ENGAGEMENT_ROOM_SENTIMENT_BAND_OPACITY = [0.06, 0.09, 0.13, 0.19, 0.27, 0.38, 0.50, 0.64, 0.79, 0.93];
+const getEngagementHeatCategoryStyle = (category, isSarpy = false) =>
+  (isSarpy ? SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE[category] : ENGAGEMENT_HEAT_CATEGORY_STYLE[category]) ||
+  ENGAGEMENT_HEAT_CATEGORY_STYLE[category] ||
+  SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE[category] ||
+  ENGAGEMENT_HEAT_CATEGORY_STYLE.comment;
 const clearEngagementRoomSentimentGradient = (map) => {
   if (!map) return;
   for (let i = 0; i < ENGAGEMENT_ROOM_SENTIMENT_BAND_COUNT; i += 1) {
@@ -9695,9 +9709,10 @@ const engagementColorForType = (markerType) =>
   ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.color || '#9ca3af';
 const isCoolEngagementCategory = (category) =>
   category === 'outdated' || category === 'rarely' || category === 'unsafe';
-const buildEngagementCategoryHeatColorExpr = (category) => {
-  const coreRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.rgb || '156,163,175';
-  const haloRgb = ENGAGEMENT_HEAT_CATEGORY_STYLE[category]?.haloRgb || coreRgb;
+const buildEngagementCategoryHeatColorExpr = (category, isSarpy = false) => {
+  const style = getEngagementHeatCategoryStyle(category, isSarpy);
+  const coreRgb = style?.rgb || '156,163,175';
+  const haloRgb = style?.haloRgb || coreRgb;
   return [
     'interpolate',
     ['linear'],
@@ -9711,7 +9726,17 @@ const buildEngagementCategoryHeatColorExpr = (category) => {
     1, `rgba(${coreRgb},0.84)`
   ];
 };
-const buildEngagementThermalWarmHaloColorExpr = () => ([
+const buildEngagementThermalWarmHaloColorExpr = (isSarpy = false) => (isSarpy ? [
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0,0,0,0)',
+  0.06, 'rgba(184,220,243,0.20)',
+  0.22, 'rgba(157,201,235,0.38)',
+  0.48, 'rgba(127,179,225,0.56)',
+  0.72, 'rgba(93,153,211,0.70)',
+  1, 'rgba(67,132,194,0.82)'
+] : [
   'interpolate',
   ['linear'],
   ['heatmap-density'],
@@ -9722,7 +9747,17 @@ const buildEngagementThermalWarmHaloColorExpr = () => ([
   0.72, 'rgba(239,68,68,0.70)',
   1, 'rgba(220,38,38,0.82)'
 ]);
-const buildEngagementThermalCoolHaloColorExpr = () => ([
+const buildEngagementThermalCoolHaloColorExpr = (isSarpy = false) => (isSarpy ? [
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0,0,0,0)',
+  0.05, 'rgba(237,246,253,0.22)',
+  0.18, 'rgba(184,220,243,0.40)',
+  0.42, 'rgba(93,153,211,0.60)',
+  0.70, 'rgba(33,93,146,0.78)',
+  1, 'rgba(11,31,58,0.90)'
+] : [
   'interpolate',
   ['linear'],
   ['heatmap-density'],
@@ -9742,7 +9777,17 @@ const buildEngagementRarelyHaloWeightExpr = () => ([
   ENGAGEMENT_HEAT_WEIGHT_EXPR,
   0.98
 ]);
-const buildEngagementRarelyHaloColorExpr = () => ([
+const buildEngagementRarelyHaloColorExpr = (isSarpy = false) => (isSarpy ? [
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0,0,0,0)',
+  0.05, 'rgba(210,235,248,0.22)',
+  0.18, 'rgba(184,220,243,0.38)',
+  0.40, 'rgba(127,179,225,0.54)',
+  0.70, 'rgba(93,153,211,0.70)',
+  1, 'rgba(67,132,194,0.84)'
+] : [
   'interpolate',
   ['linear'],
   ['heatmap-density'],
@@ -23411,6 +23456,8 @@ useEffect(() => {
       // campus spread radii when no single floor is loaded so points do not look like dots.
       const floorStyleProfile = true;
       const floorSpreadProfile = Boolean(loadedSingleFloor);
+      const useSarpyHeatPalette = Boolean(isSarpyCountyInstance);
+      const useThermalHalo = ENGAGEMENT_USE_THERMAL_HALO && !useSarpyHeatPalette;
 
       if (!map.getLayer(ENGAGEMENT_HEAT_LAYER_ID)) {
         map.addLayer(
@@ -23429,7 +23476,7 @@ useEffect(() => {
               'heatmap-intensity': buildEngagementWarmHaloIntensityExpr(floorStyleProfile),
               'heatmap-radius': buildEngagementWarmHaloRadiusExpr(floorSpreadProfile),
               'heatmap-opacity': buildEngagementWarmHaloOpacityExpr(floorStyleProfile),
-              'heatmap-color': buildEngagementThermalWarmHaloColorExpr()
+              'heatmap-color': buildEngagementThermalWarmHaloColorExpr(useSarpyHeatPalette)
             }
           },
           beforeId
@@ -23439,7 +23486,8 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-intensity', buildEngagementWarmHaloIntensityExpr(floorStyleProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-radius', buildEngagementWarmHaloRadiusExpr(floorSpreadProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-opacity', buildEngagementWarmHaloOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+      map.setPaintProperty(ENGAGEMENT_HEAT_LAYER_ID, 'heatmap-color', buildEngagementThermalWarmHaloColorExpr(useSarpyHeatPalette));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID)) {
         map.addLayer(
@@ -23458,7 +23506,7 @@ useEffect(() => {
               'heatmap-intensity': buildEngagementCoolHaloIntensityExpr(floorStyleProfile),
               'heatmap-radius': buildEngagementCoolHaloRadiusExpr(floorSpreadProfile),
               'heatmap-opacity': buildEngagementCoolHaloOpacityExpr(floorStyleProfile),
-              'heatmap-color': buildEngagementThermalCoolHaloColorExpr()
+              'heatmap-color': buildEngagementThermalCoolHaloColorExpr(useSarpyHeatPalette)
             }
           },
           beforeId
@@ -23468,7 +23516,8 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementCoolHaloIntensityExpr(floorStyleProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-radius', buildEngagementCoolHaloRadiusExpr(floorSpreadProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementCoolHaloOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+      map.setPaintProperty(ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, 'heatmap-color', buildEngagementThermalCoolHaloColorExpr(useSarpyHeatPalette));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_COOL_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       if (!map.getLayer(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID)) {
         map.addLayer(
@@ -23487,7 +23536,7 @@ useEffect(() => {
               'heatmap-intensity': buildEngagementRarelyHaloIntensityExpr(floorStyleProfile),
               'heatmap-radius': buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile),
               'heatmap-opacity': buildEngagementRarelyHaloOpacityExpr(floorStyleProfile),
-              'heatmap-color': buildEngagementRarelyHaloColorExpr()
+              'heatmap-color': buildEngagementRarelyHaloColorExpr(useSarpyHeatPalette)
             }
           },
           beforeId
@@ -23497,7 +23546,8 @@ useEffect(() => {
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-intensity', buildEngagementRarelyHaloIntensityExpr(floorStyleProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-radius', buildEngagementRarelyHaloRadiusExpr(floorSpreadProfile));
       map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-opacity', buildEngagementRarelyHaloOpacityExpr(floorStyleProfile));
-      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && ENGAGEMENT_USE_THERMAL_HALO);
+      map.setPaintProperty(ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, 'heatmap-color', buildEngagementRarelyHaloColorExpr(useSarpyHeatPalette));
+      setMapLayerVisibility(map, ENGAGEMENT_HEAT_RARELY_HALO_LAYER_ID, engagementHeatmapOn && useThermalHalo);
 
       ENGAGEMENT_HEAT_LAYER_DEFS.forEach(({ category, layerId }) => {
         if (!map.getLayer(layerId)) {
@@ -23517,7 +23567,7 @@ useEffect(() => {
                 'heatmap-intensity': buildEngagementCategoryIntensityExpr(category, floorStyleProfile),
                 'heatmap-radius': buildEngagementCategoryRadiusExpr(category, floorSpreadProfile),
                 'heatmap-opacity': buildEngagementCategoryOpacityExpr(category, floorStyleProfile),
-                'heatmap-color': buildEngagementCategoryHeatColorExpr(category)
+                'heatmap-color': buildEngagementCategoryHeatColorExpr(category, useSarpyHeatPalette)
               }
             },
             beforeId
@@ -23527,6 +23577,7 @@ useEffect(() => {
         map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile));
         map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile));
         map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
+        map.setPaintProperty(layerId, 'heatmap-color', buildEngagementCategoryHeatColorExpr(category, useSarpyHeatPalette));
         setMapLayerVisibility(map, layerId, engagementHeatmapOn);
       });
       [
@@ -23538,7 +23589,7 @@ useEffect(() => {
     } catch (err) {
       console.warn('Engagement heatmap update failed', err);
     }
-  }, [mapLoaded, stakeholderWorkflowActive, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor]);
+  }, [mapLoaded, stakeholderWorkflowActive, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor, isSarpyCountyInstance]);
 
   // ---------- Render markers ----------
   useEffect(() => {
@@ -27595,7 +27646,9 @@ useEffect(() => {
                       height: 10,
                       borderRadius: 6,
                       border: '1px solid #ddd',
-                      background: 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #facc15 56%, #fb923c 78%, #ef4444 100%)'
+                      background: stakeholderWorkflowActive && isSarpyCountyInstance
+                        ? 'linear-gradient(90deg, #0b1f3a 0%, #12315a 14%, #215d92 30%, #4384c2 52%, #7fb3e1 72%, #b8dcf3 88%, #edf6fd 100%)'
+                        : 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #facc15 56%, #fb923c 78%, #ef4444 100%)'
                     }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginTop: 4 }}>
@@ -27603,7 +27656,9 @@ useEffect(() => {
                     <span>More positive</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                    Blue tones signal concern hotspots; warmer tones indicate positive or opportunity-focused feedback.
+                    {stakeholderWorkflowActive && isSarpyCountyInstance
+                      ? 'Darker blues indicate higher-concern clusters; lighter blues indicate more positive or opportunity-focused feedback.'
+                      : 'Blue tones signal concern hotspots; warmer tones indicate positive or opportunity-focused feedback.'}
                   </div>
                 </div>
               )}
