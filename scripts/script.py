@@ -87,6 +87,7 @@ DXF_EXCLUDE_LAYERS = set([
     "Q-SPCQ",
 ])
 DXF_EXCLUDE_GEOMETRY_TYPES = set(["Point", "MultiPoint"])
+DXF_ALLOWED_FILL_TEXT = set(["SOLID"])
 
 # =============================================================================
 # GUARDS
@@ -189,6 +190,14 @@ def get_dxf_subclasses(feature):
     props = feature.get("properties") or {}
     return (get_first_prop(props, ["SubClasses", "Subclasses", "subclasses"]) or "").strip().lower()
 
+def get_dxf_text_value(feature):
+    props = feature.get("properties") or {}
+    return (get_first_prop(props, [
+        "Text", "text", "TEXT",
+        "PlainText", "plainText", "PLAINTEXT",
+        "EntityText", "entityText", "ENTITYTEXT",
+    ]) or "").strip()
+
 def should_keep_dxf_feature(feature):
     if not feature:
         return False
@@ -199,6 +208,9 @@ def should_keep_dxf_feature(feature):
 
     subclasses = get_dxf_subclasses(feature)
     if "acdbmtext" in subclasses or "acdbtext" in subclasses:
+        return False
+    text_value = get_dxf_text_value(feature)
+    if text_value and text_value.upper() not in DXF_ALLOWED_FILL_TEXT:
         return False
 
     layer = get_dxf_layer(feature)

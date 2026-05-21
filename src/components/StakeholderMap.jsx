@@ -1810,6 +1810,21 @@ const getRoomTypeLabelFromProps = (props = {}) => {
   ).toString().trim();
 };
 
+const hasMeaningfulRoomTypeLabel = (value) => {
+  const text = String(value ?? '').trim();
+  if (!text) return false;
+  const normalized = text.toLowerCase();
+  return !new Set([
+    'unknown',
+    'unspecified',
+    'unassigned',
+    'na',
+    'n/a',
+    'none',
+    '-'
+  ]).has(normalized);
+};
+
 function resolveNcesType(p = {}) {
   return (
     p.NCES_Type ??
@@ -8961,6 +8976,8 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
   const occupant = String(room.occupant ?? '').trim();
   const type = String(room.type ?? '').trim();
   const department = String(room.department ?? '').trim();
+  const exportTypeLabel = String(getRoomTypeLabelFromProps(props) ?? '').trim();
+  const shouldPatchType = !hasMeaningfulRoomTypeLabel(exportTypeLabel);
   if (!occupancyStatus && !occupant && !type && !department) return null;
 
   const patch = {};
@@ -8973,7 +8990,7 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
     patch.occupant = occupant;
     patch.Occupant = occupant;
   }
-  if (type) {
+  if (type && shouldPatchType) {
     patch.type = type;
     patch.Type = type;
     patch['Room Type'] = type;
@@ -9223,8 +9240,12 @@ function buildFloorRoomLabelExpressions(colorMode = 'department') {
   const scenarioDeptField = [
     'coalesce',
     ['get', 'scenarioDepartment'],
+    ['get', '__dept'],
     ['get', 'department'],
     ['get', 'Department'],
+    ['get', 'Dept'],
+    ['get', 'NCES_Department'],
+    ['get', 'NCES_Dept'],
     ['literal', '-']
   ];
   const typeField = [
