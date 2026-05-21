@@ -9776,13 +9776,18 @@ const ENGAGEMENT_MARKER_TYPES = {
   'Just leave a comment': '#9ca3af'
 };
 const ENGAGEMENT_MARKER_TYPES_SARPY = {
-  'This area supports productive work': '#ef4444',
-  'This area works well for collaboration/meetings': '#fb923c',
-  'I would use this area more if it were improved': '#fde047',
-  'I rarely or never use this area': '#7AFEB1',
-  'This area feels outdated or inefficient': '#67e8f9',
-  'This area has safety or accessibility concerns': '#1d4ed8',
-  'General comment': '#9ca3af'
+  'Safety concern': '#0b1f3a',
+  'Accessibility could be improved': '#12315a',
+  'Parking or site access is difficult': '#1a4876',
+  'This space is difficult to use': '#215d92',
+  'Wayfinding is confusing': '#2f6fae',
+  'This building feels outdated': '#4384c2',
+  'Maintenance or upkeep concern': '#5d99d3',
+  'Waiting or service experience could improve': '#7fb3e1',
+  'General improvement idea': '#9dc9eb',
+  'Community space opportunity': '#b8dcf3',
+  'This space works well for daily operations': '#d2ebf8',
+  'Positive feedback or appreciated feature': '#edf6fd'
 };
 const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
 const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
@@ -9870,13 +9875,13 @@ const getEngagementHeatCategory = (markerType) => {
   const text = String(markerType || '').trim().toLowerCase();
   if (!text) return 'comment';
   if (/general comment|just leave a ?comment|leave a comment about this space/.test(text)) return 'comment';
-  if (/do not feel safe|unsafe|safety|accessibility.*concern|concern.*accessibility|concern.*safety/.test(text)) return 'unsafe';
+  if (/safety concern|do not feel safe|unsafe|safety|accessibility could be improved|accessibility.*concern|concern.*accessibility|concern.*safety|parking.*access|site access/.test(text)) return 'unsafe';
   if (/rarely|never/.test(text)) return 'rarely';
-  if (/outdated|run-down|run down|inefficient/.test(text)) return 'outdated';
+  if (/outdated|run-down|run down|inefficient|maintenance|upkeep/.test(text)) return 'outdated';
   if (/furniture.*uncomfortable|layout.*not functional|lighting|temperature|technology.*inadequate|unreliable|privacy/.test(text)) return 'outdated';
-  if (/needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|would use this area more if it were improved|improv/.test(text)) return 'improve';
-  if (/go[- ]to hang ?out|hang ?out|collaboration|meeting/.test(text)) return 'hangout';
-  if (/go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively|productive work|focus work|individual work/.test(text)) return 'study';
+  if (/space is difficult to use|difficult to use|waiting.*service.*improve|wayfinding|needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|would use this area more if it were improved|general improvement|improv/.test(text)) return 'improve';
+  if (/community space opportunity|go[- ]to hang ?out|hang ?out|collaboration|meeting/.test(text)) return 'hangout';
+  if (/positive feedback|appreciated feature|space works well|go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively|productive work|focus work|individual work/.test(text)) return 'study';
   return 'comment';
 };
 const getEngagementHeatWeight = (markerType) =>
@@ -21508,10 +21513,13 @@ useEffect(() => {
   const engagementMarkerTypeColors = useMemo(() => {
     const out = {};
     Object.keys(markerTypes || {}).forEach((label) => {
-      out[label] = engagementColorForType(label);
+      out[label] =
+        (isSarpyCountyInstance && stakeholderWorkflowActive
+          ? (markerTypes[label] || engagementColorForType(label))
+          : engagementColorForType(label));
     });
     return out;
-  }, [markerTypes]);
+  }, [markerTypes, isSarpyCountyInstance, stakeholderWorkflowActive]);
 
   // ---------- Auth ----------
   useEffect(() => {
@@ -28445,11 +28453,11 @@ useEffect(() => {
                     }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginTop: 4 }}>
-                    <span>Cool</span>
-                    <span>Warm</span>
+                    <span>Higher concern</span>
+                    <span>More positive</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                    Category cores plus thermal multicolor halo (comments stay gray dots only).
+                    Blue tones signal concern hotspots; warmer tones indicate positive or opportunity-focused feedback.
                   </div>
                 </div>
               )}
