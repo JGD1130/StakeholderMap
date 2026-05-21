@@ -698,6 +698,10 @@ const TYPE_FALLBACKS = [
   '#d946ef', '#ec4899', '#f43f5e', '#fb7185', '#f472b6', '#38bdf8', '#2dd4bf', '#34d399',
   '#a3e635', '#facc15', '#fb923c', '#f87171', '#60a5fa', '#818cf8', '#22d3ee', '#4ade80'
 ];
+const ROOM_CATEGORY_FALLBACKS = [
+  '#2563eb', '#0f766e', '#d97706', '#7c2d12', '#991b1b', '#0f766e',
+  '#1d4ed8', '#475569', '#65a30d', '#9ca3af', '#0369a1', '#be123c'
+];
 
 const adjustHexColor = (hex, delta = 0) => {
   const normalized = String(hex || '').replace('#', '');
@@ -726,6 +730,16 @@ const colorForType = (name) => {
   const h = _hash(normName);
   const base = TYPE_FALLBACKS[h % TYPE_FALLBACKS.length];
   const shade = [0, 18, -12][(h >>> 5) % 3];
+  return adjustHexColor(base, shade);
+};
+const colorForRoomCategory = (name) => {
+  if (!name) return '#CCCCCC';
+  const normName = String(name).trim().toLowerCase();
+  if (!normName) return '#CCCCCC';
+  if (normName.includes('circulation') || normName.includes('building support')) return '#D9D9D9';
+  const h = _hash(normName);
+  const base = ROOM_CATEGORY_FALLBACKS[h % ROOM_CATEGORY_FALLBACKS.length];
+  const shade = [0, 14, -10][(h >>> 4) % 3];
   return adjustHexColor(base, shade);
 };
 
@@ -1113,6 +1127,7 @@ function normalizeOccupancyLegendLabel(props = {}) {
     const upper = rawStr.toUpperCase();
     if (
       upper.includes('VACANT') ||
+      upper.includes('VACNANT') ||
       upper.includes('UNOCCUPIED') ||
       upper.includes('AVAILABLE') ||
       upper.includes('UNASSIGNED')
@@ -1120,10 +1135,13 @@ function normalizeOccupancyLegendLabel(props = {}) {
       return 'Vacant';
     }
     if (upper.includes('OCCUPIED')) return 'Occupied';
+    if (upper.includes('ASSIGNED') && !upper.includes('UNASSIGNED')) return 'Occupied';
+    if (isAllowedOfficeType(getRoomTypeLabelFromProps(props) || props?.Name || '')) return 'Occupied';
     return 'Unknown';
   }
   const occ = (props.occupant ?? props.Occupant ?? '').toString().trim();
-  return occ ? 'Occupied' : 'Unknown';
+  if (occ) return 'Occupied';
+  return isAllowedOfficeType(getRoomTypeLabelFromProps(props) || props?.Name || '') ? 'Occupied' : 'Unknown';
 }
 
 function resolveLegendEntryForProps(props = {}, mode = 'department') {
@@ -1132,6 +1150,10 @@ function resolveLegendEntryForProps(props = {}, mode = 'department') {
     (props?.__roomType || getRoomTypeLabelFromProps(props) || props?.Name || '')
       .toString()
       .trim() || 'Unknown';
+  const categoryName = getRoomCategoryLabelFromProps(props) || 'Uncategorized';
+  if (effectiveMode === 'category') {
+    return { name: categoryName, color: colorForRoomCategory(categoryName) };
+  }
   if (effectiveMode === 'type') {
     return { name: typeName, color: colorForType(typeName) };
   }
@@ -1290,6 +1312,100 @@ function getRoomCategoryCode(props = {}) {
     'NCES Category Code'
   ]);
   return raw ? String(raw).trim() : null;
+}
+
+const SARPY_ROOM_CATEGORY_LABEL_BY_CODE = {
+  '100': 'Public Interface and Civic Access',
+  '200': 'Office and Administrative Workplace',
+  '300': 'Meeting Training and Assembly',
+  '400': 'Courts and Judicial Proceedings',
+  '500': 'Detention Custody and Secure Justice',
+  '600': 'Elections and Civic Process',
+  '700': 'Public Safety and Emergency Operations',
+  '800': 'Records Archives and Document Storage',
+  '900': 'Staff Support and Amenities',
+  '1000': 'Building Support and Circulation',
+  '1100': 'Operations Fleet and Facility Services',
+  '1200': 'Specialty Program and Client Services'
+};
+
+const deriveSarpyRoomCategoryFromTypeLabel = (typeLabel = '') => {
+  const text = String(typeLabel || '').trim().toLowerCase();
+  if (!text) return '';
+  if (/\boffice\b|\bworkspace\b|\bworkstation\b|\bcubicle\b|\bopen office\b|\bprivate office\b|\badministrative\b/.test(text)) {
+    return 'Office and Administrative Workplace';
+  }
+  if (/\bcourt(room)?\b|\bjudge\b|\bjury\b|\bchamber\b|\bhearing\b|\bclerk\b|\barraignment\b|\bmagistrate\b/.test(text)) {
+    return 'Courts and Judicial Proceedings';
+  }
+  if (/\bdetention\b|\bholding\b|\bcell\b|\bcustody\b|\bbooking\b|\bsally port\b|\binmate\b|\bevidence\b|\bsecure justice\b/.test(text)) {
+    return 'Detention Custody and Secure Justice';
+  }
+  if (/\belection\b|\bballot\b|\bvoting\b|\bpoll\b|\btabulation\b/.test(text)) {
+    return 'Elections and Civic Process';
+  }
+  if (/\bdispatch\b|\b911\b|\bemergency\b|\bcommand\b|\bpublic safety\b|\bsheriff\b|\bpolice\b|\bfire\b/.test(text)) {
+    return 'Public Safety and Emergency Operations';
+  }
+  if (/\bgarage\b|\bvehicle\b|\bfleet\b|\bshop\b|\bwarehouse\b|\bloading\b|\bmaintenance\b|\bfacility services\b|\bgrounds\b/.test(text)) {
+    return 'Operations Fleet and Facility Services';
+  }
+  if (/\brecords?\b|\barchive\b|\bfile\b|\bdocument\b|\bvault\b/.test(text)) {
+    return 'Records Archives and Document Storage';
+  }
+  if (/\bbreak\b|\blounge\b|\bkitchen\b|\bpantry\b|\brestroom\b|\btoilet\b|\blocker\b|\blactation\b|\bwellness\b|\bcopy\b|\bmail\b/.test(text)) {
+    return 'Staff Support and Amenities';
+  }
+  if (/\bconference\b|\bmeeting\b|\btraining\b|\bassembly\b|\bboard\b|\bclassroom\b|\bseminar\b/.test(text)) {
+    return 'Meeting Training and Assembly';
+  }
+  if (/\blobby\b|\breception\b|\bwaiting\b|\bqueue\b|\bcounter\b|\btransaction\b|\bkiosk\b|\bfront desk\b|\bvestibule\b|\bintake\b/.test(text)) {
+    return 'Public Interface and Civic Access';
+  }
+  if (/\bcorridor\b|\bhall\b|\bcirculation\b|\bstair\b|\belevator\b|\bmechanical\b|\belectrical\b|\btelecom\b|\bjanitor\b|\butility\b|\bserver\b|\bboiler\b|\bpump\b/.test(text)) {
+    return 'Building Support and Circulation';
+  }
+  if (/\bclinic\b|\bcounsel\b|\btherapy\b|\bassessment\b|\bprogram\b|\binterview\b|\bcasework\b|\bveteran\b|\bhuman services\b|\bclient\b/.test(text)) {
+    return 'Specialty Program and Client Services';
+  }
+  return '';
+};
+
+function getRoomCategoryLabelFromProps(props = {}) {
+  const directLabel = pickFirstDefined(props, [
+    'Room Category Name',
+    'Room Category',
+    'RoomCategoryName',
+    'roomCategoryName',
+    'Category Name',
+    'CategoryName',
+    'NCES_Category_Desc',
+    'NCES Category Desc',
+    'NCES Category Description'
+  ]);
+  if (directLabel) {
+    const text = String(directLabel).trim();
+    if (text && !/^\d+$/.test(text)) return text;
+  }
+
+  const categoryCode = getRoomCategoryCode(props);
+  const sarpyCodeLabel = categoryCode ? SARPY_ROOM_CATEGORY_LABEL_BY_CODE[String(categoryCode).trim()] : '';
+  if (sarpyCodeLabel) return sarpyCodeLabel;
+
+  const roomTypeLabel =
+    props?.__roomType ||
+    getRoomTypeLabelFromProps(props) ||
+    props?.Name ||
+    '';
+  const sarpyTypeLabel = deriveSarpyRoomCategoryFromTypeLabel(roomTypeLabel);
+  if (sarpyTypeLabel) return sarpyTypeLabel;
+
+  const categoryText = String(categoryCode || '').trim();
+  if (categoryText.startsWith('3')) return 'Office and Administrative Workplace';
+  if (categoryText.startsWith('1') || categoryText.startsWith('2')) return 'Meeting Training and Assembly';
+  if (categoryText.startsWith('7')) return 'Building Support and Circulation';
+  if (categoryText.startsWith('6')) return 'Staff Support and Amenities';
+  return '';
 }
 
 function getSeatCount(props = {}) {
@@ -1884,16 +2000,25 @@ function applyRoomTypeLabel(fc) {
   if (!fc?.features?.length) return fc;
   const nextFeatures = fc.features.map((f) => {
     const props = f?.properties || {};
-    if ('__roomType' in props) return f;
-    const ncesType = resolveNcesType(props);
-    const normalized = ncesType && String(ncesType).trim();
-    if (!normalized) return f;
+    const roomType = String(props.__roomType || resolveNcesType(props) || getRoomTypeLabelFromProps(props) || '').trim();
+    const roomCategory = String(props.__roomCategory || getRoomCategoryLabelFromProps({
+      ...props,
+      __roomType: roomType
+    }) || '').trim();
+    const nextProps = { ...props };
+    let changed = false;
+    if (roomType && props.__roomType !== roomType) {
+      nextProps.__roomType = roomType;
+      changed = true;
+    }
+    if (roomCategory && props.__roomCategory !== roomCategory) {
+      nextProps.__roomCategory = roomCategory;
+      changed = true;
+    }
+    if (!changed) return f;
     return {
       ...f,
-      properties: {
-        ...props,
-        __roomType: normalized
-      }
+      properties: nextProps
     };
   });
   return { ...fc, features: nextFeatures };
@@ -4259,16 +4384,27 @@ function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOO
   const isVacantExpr = [
     'any',
     ['>=', ['index-of', 'VACANT', occupancyUpperExpr], 0],
+    ['>=', ['index-of', 'VACNANT', occupancyUpperExpr], 0],
     ['>=', ['index-of', 'UNOCCUPIED', occupancyUpperExpr], 0],
     ['>=', ['index-of', 'AVAILABLE', occupancyUpperExpr], 0],
     ['>=', ['index-of', 'UNASSIGNED', occupancyUpperExpr], 0]
   ];
-  const isOccupiedExpr = ['>=', ['index-of', 'OCCUPIED', occupancyUpperExpr], 0];
+  const isOccupiedExpr = [
+    'any',
+    ['>=', ['index-of', 'OCCUPIED', occupancyUpperExpr], 0],
+    [
+      'all',
+      ['>=', ['index-of', 'ASSIGNED', occupancyUpperExpr], 0],
+      ['<', ['index-of', 'UNASSIGNED', occupancyUpperExpr], 0]
+    ]
+  ];
   const occupancyLabelExpr = [
     'case',
     hasOccupancyExpr,
-    ['case', isVacantExpr, 'Vacant', isOccupiedExpr, 'Occupied', 'Unknown'],
+    ['case', isVacantExpr, 'Vacant', isOccupiedExpr, 'Occupied', isOfficeExpr, 'Occupied', 'Unknown'],
     occupantExpr,
+    'Occupied',
+    isOfficeExpr,
     'Occupied',
     'Unknown'
   ];
@@ -5002,11 +5138,16 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         }
       }
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
+      const categoryLabel = getRoomCategoryLabelFromProps({
+        ...mergedProps,
+        __roomType: typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '')
+      });
       return {
         ...feature,
         properties: {
           ...mergedProps,
-          __roomType: typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '')
+          __roomType: typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || ''),
+          __roomCategory: categoryLabel ? String(categoryLabel).trim() : (mergedProps.__roomCategory || '')
         }
       };
     });
@@ -8415,7 +8556,7 @@ const isRoomVacantForListing = (room) => {
   if (occupant) return false;
   if (status.includes('occupied')) return false;
   if (status.includes('assigned') && !status.includes('unassigned')) return false;
-  return status.includes('vacant') || status.includes('available');
+  return status.includes('vacant') || status.includes('vacnant') || status.includes('available');
 };
 const buildVacantOfficeListRows = (rooms = []) => {
   const seen = new Set();
@@ -9081,12 +9222,50 @@ function buildFloorRoomLabelExpressions(colorMode = 'department') {
       ''
     ]
   ];
+  const occupancyStatusUpperField = ['upcase', occupancyStatusField];
+  const isVacantOccupancyField = [
+    'any',
+    ['>=', ['index-of', 'VACANT', occupancyStatusUpperField], 0],
+    ['>=', ['index-of', 'VACNANT', occupancyStatusUpperField], 0],
+    ['>=', ['index-of', 'UNOCCUPIED', occupancyStatusUpperField], 0],
+    ['>=', ['index-of', 'AVAILABLE', occupancyStatusUpperField], 0],
+    ['>=', ['index-of', 'UNASSIGNED', occupancyStatusUpperField], 0]
+  ];
+  const isOccupiedOccupancyField = [
+    'any',
+    ['>=', ['index-of', 'OCCUPIED', occupancyStatusUpperField], 0],
+    [
+      'all',
+      ['>=', ['index-of', 'ASSIGNED', occupancyStatusUpperField], 0],
+      ['<', ['index-of', 'UNASSIGNED', occupancyStatusUpperField], 0]
+    ]
+  ];
+  const roomTypeUpperField = [
+    'upcase',
+    [
+      'to-string',
+      [
+        'coalesce',
+        ['get', '__roomType'],
+        ['get', 'RoomType'],
+        ['get', 'Room Type'],
+        ['get', 'Type'],
+        ['get', 'type'],
+        ['get', 'NCES_Type'],
+        ['get', 'Name'],
+        ''
+      ]
+    ]
+  ];
+  const isOfficeOccupancyField = ['in', roomTypeUpperField, ['literal', OFFICE_TYPE_LABELS_UPPER]];
   const occupancyLabelField = [
     'case',
     ['>', ['length', occupantField], 0],
     occupantField,
     ['>', ['length', occupancyStatusField], 0],
-    occupancyStatusField,
+    ['case', isVacantOccupancyField, 'Vacant', isOccupiedOccupancyField, 'Occupied', isOfficeOccupancyField, 'Occupied', 'Unknown'],
+    isOfficeOccupancyField,
+    'Occupied',
     'Unknown'
   ];
   const infoLineField =
@@ -9571,6 +9750,15 @@ const ENGAGEMENT_HEAT_CATEGORY_LABELS = {
   unsafe: 'Do Not Feel Safe',
   comment: 'Comment'
 };
+const SARPY_ENGAGEMENT_HEAT_CATEGORY_LABELS = {
+  study: 'Supports Work Well',
+  hangout: 'Collaboration / Location',
+  improve: 'Functional / Planning Issue',
+  outdated: 'Modernization / Maintenance',
+  rarely: 'Underutilized / Excess Capacity',
+  unsafe: 'Access / Privacy / Safety',
+  comment: 'Comment'
+};
 const SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE = {
   unsafe: { color: '#0b1f3a', heatValue: 1.03, rgb: '11,31,58', haloRgb: '30,58,95' },
   outdated: { color: '#215d92', heatValue: 1.03, rgb: '33,93,146', haloRgb: '69,132,194' },
@@ -9589,20 +9777,26 @@ const ENGAGEMENT_MARKER_TYPES = {
   'I do not feel safe in this space': '#1d4ed8',
   'Just leave a comment': '#9ca3af'
 };
-const ENGAGEMENT_MARKER_TYPES_SARPY = {
-  'Safety concern': '#0b1f3a',
-  'Accessibility could be improved': '#12315a',
-  'Parking or site access is difficult': '#1a4876',
-  'This space is difficult to use': '#215d92',
-  'Wayfinding is confusing': '#2f6fae',
-  'This building feels outdated': '#4384c2',
-  'Maintenance or upkeep concern': '#5d99d3',
-  'Waiting or service experience could improve': '#7fb3e1',
-  'General improvement idea': '#9dc9eb',
-  'Community space opportunity': '#b8dcf3',
-  'This space works well for daily operations': '#d2ebf8',
-  'Positive feedback or appreciated feature': '#edf6fd'
+const SARPY_ENGAGEMENT_MARKER_META = {
+  'This space supports my work well': { color: '#edf6fd', category: 'study', weight: 0.88 },
+  'This space does not support my work': { color: '#4384c2', category: 'improve', weight: 1.08 },
+  'This space is too small': { color: '#5d99d3', category: 'improve', weight: 1.12 },
+  'This space is underutilized': { color: '#4384c2', category: 'rarely', weight: 0.94 },
+  'This space needs modernization': { color: '#215d92', category: 'outdated', weight: 1.04 },
+  'Collaboration is difficult here': { color: '#9dc9eb', category: 'hangout', weight: 1.00 },
+  'Privacy/acoustics are a problem': { color: '#12315a', category: 'unsafe', weight: 1.12 },
+  'Technology does not meet needs': { color: '#2f6fae', category: 'outdated', weight: 1.02 },
+  'Storage is insufficient': { color: '#7fb3e1', category: 'improve', weight: 0.98 },
+  'Workflow is inefficient': { color: '#7fb3e1', category: 'improve', weight: 1.04 },
+  'This location works well': { color: '#d2ebf8', category: 'hangout', weight: 0.90 },
+  'Accessibility could be improved': { color: '#1a4876', category: 'unsafe', weight: 1.10 },
+  'Safety/security concern': { color: '#0b1f3a', category: 'unsafe', weight: 1.16 },
+  'Maintenance issue': { color: '#5d99d3', category: 'outdated', weight: 1.05 },
+  'Opportunity for future improvement': { color: '#b8dcf3', category: 'improve', weight: 0.92 }
 };
+const ENGAGEMENT_MARKER_TYPES_SARPY = Object.fromEntries(
+  Object.entries(SARPY_ENGAGEMENT_MARKER_META).map(([label, meta]) => [label, meta.color])
+);
 const ENGAGEMENT_HEAT_MAX_ZOOM = 24;
 const ENGAGEMENT_WARM_CATEGORIES = ['study', 'hangout', 'improve'];
 const ENGAGEMENT_COOL_CATEGORIES = ['outdated', 'rarely', 'unsafe'];
@@ -9629,6 +9823,11 @@ const getEngagementHeatCategoryStyle = (category, isSarpy = false) =>
   ENGAGEMENT_HEAT_CATEGORY_STYLE[category] ||
   SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE[category] ||
   ENGAGEMENT_HEAT_CATEGORY_STYLE.comment;
+const getEngagementHeatCategoryLabel = (category, isSarpy = false) =>
+  (isSarpy ? SARPY_ENGAGEMENT_HEAT_CATEGORY_LABELS[category] : ENGAGEMENT_HEAT_CATEGORY_LABELS[category]) ||
+  ENGAGEMENT_HEAT_CATEGORY_LABELS[category] ||
+  SARPY_ENGAGEMENT_HEAT_CATEGORY_LABELS[category] ||
+  category;
 const clearEngagementRoomSentimentGradient = (map) => {
   if (!map) return;
   for (let i = 0; i < ENGAGEMENT_ROOM_SENTIMENT_BAND_COUNT; i += 1) {
@@ -9691,22 +9890,30 @@ const buildRoomSentimentGradientFeatureCollection = (fc, colorByRoomId) => {
   return { type: 'FeatureCollection', features: out };
 };
 const getEngagementHeatCategory = (markerType) => {
+  const exact = SARPY_ENGAGEMENT_MARKER_META[String(markerType || '').trim()];
+  if (exact?.category) return exact.category;
   const text = String(markerType || '').trim().toLowerCase();
   if (!text) return 'comment';
   if (/general comment|just leave a ?comment|leave a comment about this space/.test(text)) return 'comment';
-  if (/safety concern|do not feel safe|unsafe|safety|accessibility could be improved|accessibility.*concern|concern.*accessibility|concern.*safety|parking.*access|site access/.test(text)) return 'unsafe';
-  if (/rarely|never/.test(text)) return 'rarely';
-  if (/outdated|run-down|run down|inefficient|maintenance|upkeep/.test(text)) return 'outdated';
+  if (/safety\/security concern|safety concern|do not feel safe|unsafe|safety|accessibility could be improved|accessibility.*concern|concern.*accessibility|concern.*safety|privacy\/acoustics|noise\/confidentiality|parking.*access|site access/.test(text)) return 'unsafe';
+  if (/underutilized|excess capacity|rarely|never/.test(text)) return 'rarely';
+  if (/outdated|run-down|run down|needs modernization|maintenance|upkeep|technology does not meet needs|av\/it/.test(text)) return 'outdated';
   if (/furniture.*uncomfortable|layout.*not functional|lighting|temperature|technology.*inadequate|unreliable|privacy/.test(text)) return 'outdated';
-  if (/space is difficult to use|difficult to use|waiting.*service.*improve|wayfinding|needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|would use this area more if it were improved|general improvement|improv/.test(text)) return 'improve';
-  if (/community space opportunity|go[- ]to hang ?out|hang ?out|collaboration|meeting/.test(text)) return 'hangout';
-  if (/positive feedback|appreciated feature|space works well|go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively|productive work|focus work|individual work/.test(text)) return 'study';
+  if (/does not support my work|too small|overcrowded|workflow is inefficient|process\/layout issue|space is difficult to use|difficult to use|waiting.*service.*improve|wayfinding|needs improvement|need improvement|more flexible|adaptable|wish this space were more flexible|would use this area more if it were improved|general improvement|planning idea|opportunity for future improvement|storage is insufficient|improv/.test(text)) return 'improve';
+  if (/location works well|good adjacency|collaboration is difficult here|poor teamwork support|community space opportunity|go[- ]to hang ?out|hang ?out|collaboration|meeting/.test(text)) return 'hangout';
+  if (/supports my work well|successful space|positive feedback|appreciated feature|space works well|go[- ]to study|study spot|supports my teaching|professional work effectively|supports .*work effectively|productive work|focus work|individual work/.test(text)) return 'study';
   return 'comment';
 };
-const getEngagementHeatWeight = (markerType) =>
-  ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.heatValue ?? 0;
-const engagementColorForType = (markerType) =>
-  ENGAGEMENT_HEAT_CATEGORY_STYLE[getEngagementHeatCategory(markerType)]?.color || '#9ca3af';
+const getEngagementHeatWeight = (markerType, isSarpy = false) => {
+  const exact = SARPY_ENGAGEMENT_MARKER_META[String(markerType || '').trim()];
+  if (exact && Number.isFinite(exact.weight)) return exact.weight;
+  return getEngagementHeatCategoryStyle(getEngagementHeatCategory(markerType), isSarpy)?.heatValue ?? 0;
+};
+const engagementColorForType = (markerType, isSarpy = false) => {
+  const exact = SARPY_ENGAGEMENT_MARKER_META[String(markerType || '').trim()];
+  if (exact?.color) return exact.color;
+  return getEngagementHeatCategoryStyle(getEngagementHeatCategory(markerType), isSarpy)?.color || '#9ca3af';
+};
 const isCoolEngagementCategory = (category) =>
   category === 'outdated' || category === 'rarely' || category === 'unsafe';
 const buildEngagementCategoryHeatColorExpr = (category, isSarpy = false) => {
@@ -9850,25 +10057,25 @@ const buildEngagementCoolHaloOpacityExpr = (floorScoped = false) => (
 );
 const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
   if (floorScoped) {
-    return ['interpolate', ['linear'], ['zoom'], 16, 6, 18, 9, 20, 13, 22, 18];
+    return ['interpolate', ['linear'], ['zoom'], 16, 10, 18, 14, 20, 20, 22, 28];
   }
   return ['interpolate', ['linear'], ['zoom'], 10, 10, 12, 14, 14, 20, 16, 28, 18, 36, 20, 44];
 };
 const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => {
   if (floorScoped) {
-    return ['interpolate', ['linear'], ['zoom'], 16, 1.00, 18, 1.08, 20, 1.16, 22, 1.24];
+    return ['interpolate', ['linear'], ['zoom'], 16, 1.12, 18, 1.24, 20, 1.34, 22, 1.44];
   }
   return ['interpolate', ['linear'], ['zoom'], 10, 0.92, 13, 1.00, 15, 1.08, 17, 1.16, 19, 1.22];
 };
 const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
   if (floorScoped) {
     if (category === 'unsafe') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 0.78, 18, 0.82, 20, 0.86, 22, 0.90];
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.88, 18, 0.92, 20, 0.96, 22, 0.98];
     }
     if (category === 'rarely' || category === 'outdated') {
-      return ['interpolate', ['linear'], ['zoom'], 16, 0.66, 18, 0.70, 20, 0.76, 22, 0.80];
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.78, 18, 0.82, 20, 0.88, 22, 0.92];
     }
-    return ['interpolate', ['linear'], ['zoom'], 16, 0.70, 18, 0.74, 20, 0.80, 22, 0.84];
+    return ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.86, 20, 0.91, 22, 0.95];
   }
   if (category === 'unsafe') {
     return ['interpolate', ['linear'], ['zoom'], 10, 0.62, 13, 0.66, 16, 0.70, 19, 0.74];
@@ -10415,6 +10622,7 @@ const StakeholderMap = ({
   const aiIsUnknown = aiStatus === 'unknown';
   const FLOOR_COLOR_MODES = useMemo(() => ({
     DEPARTMENT: 'department',
+    CATEGORY: 'category',
     TYPE: 'type',
     OCCUPANCY: 'occupancy',
     VACANCY: 'vacancy',
@@ -10494,7 +10702,7 @@ const StakeholderMap = ({
     const items = buildLegendItemsForFeatureCollection(fc, mode, { includeIds: true });
     setFloorLegendItems(items);
     setFloorLegendLookup(new Map(items.map((item) => [item.name, item.ids || []])));
-  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY]);
+  }, [FLOOR_COLOR_MODES.CATEGORY, FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY]);
 
   const syncScenarioBaselineFillColor = useCallback((map, fillColor) => {
     if (!map || !map.getLayer(SCENARIO_BASELINE_FILL_ID)) return;
@@ -10587,6 +10795,60 @@ const StakeholderMap = ({
       } catch {}
     }
 
+    if (effectiveMode === FLOOR_COLOR_MODES.CATEGORY && fc?.features?.length) {
+      const categoryColorMap = new Map();
+      const areaSums = new Map();
+      const idsByCategory = new Map();
+      const normalizeId = (val) => {
+        if (Number.isFinite(val)) return val;
+        const asNum = Number(val);
+        return Number.isFinite(asNum) ? asNum : (val != null ? String(val) : null);
+      };
+      fc.features.forEach((f) => {
+        const p = f.properties || {};
+        const categoryVal = (p.__roomCategory || getRoomCategoryLabelFromProps(p) || '').toString().trim() || 'Uncategorized';
+        const color = colorForRoomCategory(categoryVal);
+        categoryColorMap.set(categoryVal, color);
+        const areaVal = resolvePatchedArea(p);
+        if (Number.isFinite(areaVal) && areaVal > 0) {
+          const prev = areaSums.get(categoryVal) || 0;
+          areaSums.set(categoryVal, prev + areaVal);
+        }
+        const fid = normalizeId(f.id ?? p.RevitId ?? p.id);
+        if (fid != null) {
+          const list = idsByCategory.get(categoryVal) || [];
+          list.push(fid);
+          idsByCategory.set(categoryVal, list);
+        }
+      });
+      const pairs = [];
+      categoryColorMap.forEach((color, categoryVal) => {
+        pairs.push(categoryVal, color);
+      });
+      const categoryExprKey = [
+        'case',
+        ['any', ['!', ['has', '__roomCategory']], ['==', ['get', '__roomCategory'], '']],
+        'Uncategorized',
+        ['get', '__roomCategory']
+      ];
+      const categoryExpr = ['match', categoryExprKey, ...pairs, '#e6e6e6'];
+      try {
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', categoryExpr);
+        map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+        syncScenarioBaselineFillColor(map, categoryExpr);
+        const legend = Array.from(categoryColorMap.entries()).map(([name, color]) => ({
+          name,
+          color,
+          areaSf: areaSums.get(name) || 0,
+          ids: idsByCategory.get(name) || []
+        })).sort((a, b) => (b.areaSf || 0) - (a.areaSf || 0));
+        setFloorLegendItems(legend);
+        setFloorLegendLookup(new Map(legend.map((item) => [item.name, item.ids || []])));
+        ensureFloorRoomLabelLayer(map, effectiveMode);
+        return;
+      } catch {}
+    }
+
     if (effectiveMode === FLOOR_COLOR_MODES.TYPE && fc?.features?.length) {
       const typeColorMap = new Map();
       const areaSums = new Map();
@@ -10646,7 +10908,7 @@ const StakeholderMap = ({
     ensureFloorRoomLabelLayer(map, effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
-  }, [FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, stakeholderWorkflowActive, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
+  }, [FLOOR_COLOR_MODES.CATEGORY, FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, stakeholderWorkflowActive, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
   useEffect(() => {
     roomEditSelectionRef.current = roomEditSelection;
   }, [roomEditSelection]);
@@ -16021,6 +16283,7 @@ const StakeholderMap = ({
             RoomTypeDescription: patchTypeValue,
             roomTypeDescription: patchTypeValue,
             __roomType: patchTypeValue,
+            __roomCategory: getRoomCategoryLabelFromProps({ ...properties, __roomType: patchTypeValue }),
             department: patchDeptValue,
             Department: patchDeptValue,
             NCES_Department: patchDeptValue,
@@ -17404,6 +17667,7 @@ useEffect(() => {
     const legendTitle =
       {
         department: 'Key Departments',
+        category: 'Room Categories',
         type: 'Key Types',
         occupancy: 'Occupancy',
         vacancy: 'Vacancy'
@@ -19626,7 +19890,7 @@ const scopedEngagementHeatmapData = useMemo(() => ({
         type: 'Feature',
         properties: {
           heatCategory: category,
-          weight: getEngagementHeatWeight(m?.type),
+          weight: getEngagementHeatWeight(m?.type, isSarpyCountyInstance),
           markerType: m?.type || ''
         },
         geometry: {
@@ -19635,7 +19899,7 @@ const scopedEngagementHeatmapData = useMemo(() => ({
         }
       };
     })
-}), [scopedEngagementMarkers]);
+}), [scopedEngagementMarkers, isSarpyCountyInstance]);
 const campusKey = canon(universityId);
 const canCreateEngagementMarker = useMemo(() => {
   return Boolean(
@@ -20886,17 +21150,17 @@ const engagementRoomSentimentSummary = useMemo(() => {
     roomCount += 1;
     const sorted = Array.from(bucket.counts.entries()).sort((a, b) => {
       if ((b[1] || 0) !== (a[1] || 0)) return (b[1] || 0) - (a[1] || 0);
-      const heatA = ENGAGEMENT_HEAT_CATEGORY_STYLE[a[0]]?.heatValue ?? 0;
-      const heatB = ENGAGEMENT_HEAT_CATEGORY_STYLE[b[0]]?.heatValue ?? 0;
+      const heatA = getEngagementHeatCategoryStyle(a[0], isSarpyCountyInstance)?.heatValue ?? 0;
+      const heatB = getEngagementHeatCategoryStyle(b[0], isSarpyCountyInstance)?.heatValue ?? 0;
       return heatB - heatA;
     });
     const dominantCategory = sorted[0]?.[0] || 'comment';
-    const dominantColor = ENGAGEMENT_HEAT_CATEGORY_STYLE[dominantCategory]?.color || '#9ca3af';
+    const dominantColor = getEngagementHeatCategoryStyle(dominantCategory, isSarpyCountyInstance)?.color || '#9ca3af';
     matchPairs.push(room.idKey, dominantColor);
 
     const agg = categoryAgg.get(dominantCategory) || {
       category: dominantCategory,
-      label: ENGAGEMENT_HEAT_CATEGORY_LABELS[dominantCategory] || dominantCategory,
+      label: getEngagementHeatCategoryLabel(dominantCategory, isSarpyCountyInstance),
       color: dominantColor,
       roomCount: 0,
       markerCount: 0,
@@ -20922,7 +21186,8 @@ const engagementRoomSentimentSummary = useMemo(() => {
   loadedSingleFloor,
   isEngagementFloorScope,
   scopedEngagementMarkers,
-  floorFeatureVersion
+  floorFeatureVersion,
+  isSarpyCountyInstance
 ]);
 
 useEffect(() => {
@@ -21046,8 +21311,8 @@ useEffect(() => {
     Object.keys(markerTypes || {}).forEach((label) => {
       out[label] =
         (isSarpyCountyInstance && stakeholderWorkflowActive
-          ? (markerTypes[label] || engagementColorForType(label))
-          : engagementColorForType(label));
+          ? (markerTypes[label] || engagementColorForType(label, true))
+          : engagementColorForType(label, false));
     });
     return out;
   }, [markerTypes, isSarpyCountyInstance, stakeholderWorkflowActive]);
@@ -23454,7 +23719,7 @@ useEffect(() => {
       };
       // Keep floor-style color/halo/transparency in both modes, but use larger
       // campus spread radii when no single floor is loaded so points do not look like dots.
-      const floorStyleProfile = true;
+      const floorStyleProfile = Boolean(loadedSingleFloor);
       const floorSpreadProfile = Boolean(loadedSingleFloor);
       const useSarpyHeatPalette = Boolean(isSarpyCountyInstance);
       const useThermalHalo = ENGAGEMENT_USE_THERMAL_HALO && !useSarpyHeatPalette;
@@ -23618,7 +23883,7 @@ useEffect(() => {
       const markerColor = maintenanceWorkflowActive
         ? maintenancePriorityColor(m.priority)
         : stakeholderWorkflowActive
-          ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || engagementColorForType(m.type) || '#9E9E9E')
+          ? (engagementMarkerTypeColors[m.type] || markerTypes[m.type] || engagementColorForType(m.type, isSarpyCountyInstance) || '#9E9E9E')
           : (markerTypes[m.type] || '#9E9E9E');
       el.style.backgroundColor = markerColor;
       if (maintenanceWorkflowActive) {
@@ -25134,6 +25399,7 @@ useEffect(() => {
     const legendTitle =
       {
         department: 'Key Departments',
+        category: 'Room Categories',
         type: 'Key Types',
         occupancy: 'Occupancy',
         vacancy: 'Vacancy'
@@ -26042,6 +26308,7 @@ useEffect(() => {
               legendTitle={
                 {
                   department: 'Key Departments',
+                  category: 'Room Categories',
                   type: 'Key Types',
                   occupancy: 'Occupancy',
                   vacancy: 'Vacancy'
@@ -28789,6 +29056,7 @@ useEffect(() => {
                           feat.properties.RoomTypeDescription = feat.properties.type;
                           feat.properties.roomTypeDescription = feat.properties.type;
                           feat.properties.__roomType = feat.properties.type;
+                          feat.properties.__roomCategory = getRoomCategoryLabelFromProps(feat.properties);
                           if (editHasOfficeType) {
                             feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
                             feat.properties.occupant = feat.properties.Occupant;

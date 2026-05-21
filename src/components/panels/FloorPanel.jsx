@@ -183,6 +183,7 @@ export default function FloorPanel({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
             {[
               { key: 'department', label: 'Department' },
+              { key: 'category', label: 'Room Category' },
               { key: 'type', label: 'Type' },
               { key: 'occupancy', label: 'Occupancy' }
             ].map((opt) => (
