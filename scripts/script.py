@@ -494,6 +494,8 @@ for r in rooms:
         "Name": get_str_param(r, BuiltInParameter.ROOM_NAME),
         "NCES_Type": get_param_any(r, "NCES Types"),
         "NCES_Department": get_param_any(r, "NCES_Dept"),
+        "NCES_Occupancy Status": get_param_any(r, "NCES_Occupancy Status"),
+        "occupancyStatus": get_param_any(r, "NCES_Occupancy Status"),
         "Level": lvl_name,
         "Area_SF": round(r.Area, 2),
         "RevitId": element_id_to_int(r.Id),

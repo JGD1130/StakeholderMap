@@ -18,6 +18,10 @@ function resolveOccupancyStatus(p = {}) {
   const occupancyRaw =
     p.occupancyStatus ??
     p['Occupancy Status'] ??
+    p['NCES_Occupancy Status'] ??
+    p.NCES_OccupancyStatus ??
+    p.NCES_Occupancy_Status ??
+    p['NCES Occupancy Status'] ??
     p.vacancy ??
     p.Vacancy ??
     p.Vacant ??
@@ -52,7 +56,7 @@ function resolveOccupancyStatus(p = {}) {
   const occupant =
     (p.occupant ?? p.Occupant ?? p.AssignedTo ?? p.Assignee ?? '').toString().trim();
   if (occupant.length > 0) return 'Occupied';
-  return 'Unknown';
+  return isOfficeRoom(p) ? 'Occupied' : 'Unknown';
 }
 
 const OFFICE_TYPE_LABELS = [
