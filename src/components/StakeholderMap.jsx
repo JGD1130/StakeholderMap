@@ -702,6 +702,25 @@ const ROOM_CATEGORY_FALLBACKS = [
   '#2563eb', '#0f766e', '#d97706', '#7c2d12', '#991b1b', '#0f766e',
   '#1d4ed8', '#475569', '#65a30d', '#9ca3af', '#0369a1', '#be123c'
 ];
+const SARPY_ROOM_CATEGORY_COLORS = {
+  'public interface and civic access': '#2563eb',
+  'office and administrative workplace': '#0f766e',
+  'meeting training and assembly': '#ea580c',
+  'courts and judicial proceedings': '#7c3aed',
+  'detention custody and secure justice': '#b91c1c',
+  'elections and civic process': '#0891b2',
+  'public safety and emergency operations': '#15803d',
+  'records archives and document storage': '#65a30d',
+  'staff support and amenities': '#db2777',
+  'building support and circulation': '#94a3b8',
+  'operations fleet and facility services': '#a16207',
+  'specialty program and client services': '#c026d3',
+  'uncategorized': '#475569'
+};
+const ROOM_TYPE_DISPLAY_LABEL_OVERRIDES = {
+  'conference room': 'Meeting Room',
+  'election counting machines': 'Ballot Counting Room'
+};
 
 const adjustHexColor = (hex, delta = 0) => {
   const normalized = String(hex || '').replace('#', '');
@@ -736,11 +755,19 @@ const colorForRoomCategory = (name) => {
   if (!name) return '#CCCCCC';
   const normName = String(name).trim().toLowerCase();
   if (!normName) return '#CCCCCC';
+  const exactColor = SARPY_ROOM_CATEGORY_COLORS[normName];
+  if (exactColor) return exactColor;
   if (normName.includes('circulation') || normName.includes('building support')) return '#D9D9D9';
   const h = _hash(normName);
   const base = ROOM_CATEGORY_FALLBACKS[h % ROOM_CATEGORY_FALLBACKS.length];
   const shade = [0, 14, -10][(h >>> 4) % 3];
   return adjustHexColor(base, shade);
+};
+
+const normalizeRoomTypeDisplayLabel = (value = '') => {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  return ROOM_TYPE_DISPLAY_LABEL_OVERRIDES[text.toLowerCase()] || text;
 };
 
 const summarizeProgramCounts = (stats) => {
@@ -1095,7 +1122,8 @@ function getDeptFromProps(props = {}) {
 }
 
 function getTypeFromProps(props = {}) {
-  return (
+  return normalizeRoomTypeDisplayLabel(
+    (
     props["Room Type Description"] ||
     props.RoomTypeDescription ||
     props.roomTypeDescription ||
@@ -1109,6 +1137,7 @@ function getTypeFromProps(props = {}) {
     props["Room Type Text"] ||
     props.RoomTypeName ||
     ""
+    )
   );
 }
 
@@ -1901,7 +1930,7 @@ const getRoomTypeLabelFromProps = (props = {}) => {
     props['Room Type Description'] ??
     props.RoomTypeDescription ??
     props.roomTypeDescription;
-  if (roomTypeDesc && String(roomTypeDesc).trim()) return String(roomTypeDesc).trim();
+  if (roomTypeDesc && String(roomTypeDesc).trim()) return normalizeRoomTypeDisplayLabel(roomTypeDesc);
   const nces =
     props.NCES_Type ??
     props['NCES Type'] ??
@@ -1909,15 +1938,16 @@ const getRoomTypeLabelFromProps = (props = {}) => {
     props.NCES_Types ??
     props.nces_type ??
     props.ncesType;
-  if (nces && String(nces).trim()) return String(nces).trim();
+  if (nces && String(nces).trim()) return normalizeRoomTypeDisplayLabel(nces);
   const ncesDesc =
     props['NCES_Type Description_Sh'] ??
     props['NCES_Type Description'] ??
     props['NCES Type Description'] ??
     props['NCES_Type Description_Short'] ??
     props['NCES Type Description Short'];
-  if (ncesDesc && String(ncesDesc).trim()) return String(ncesDesc).trim();
-  return (
+  if (ncesDesc && String(ncesDesc).trim()) return normalizeRoomTypeDisplayLabel(ncesDesc);
+  return normalizeRoomTypeDisplayLabel(
+    (
     props['Room Type'] ||
     props.RoomType ||
     props.RoomTypeName ||
@@ -1928,7 +1958,8 @@ const getRoomTypeLabelFromProps = (props = {}) => {
     props.Name ||
     props['Room Name'] ||
     ''
-  ).toString().trim();
+    ).toString().trim()
+  );
 };
 
 const hasMeaningfulRoomTypeLabel = (value) => {
@@ -1947,14 +1978,16 @@ const hasMeaningfulRoomTypeLabel = (value) => {
 };
 
 function resolveNcesType(p = {}) {
-  return (
+  return normalizeRoomTypeDisplayLabel(
+    (
     p.NCES_Type ??
     p['NCES Types'] ??
     p.NCES_Types ??
     p.nces_type ??
     p.ncesType ??
     ''
-  ).toString().trim();
+    ).toString().trim()
+  );
 }
 
 function resolveNcesDept(p = {}) {
