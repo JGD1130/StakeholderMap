@@ -770,6 +770,29 @@ const normalizeRoomTypeDisplayLabel = (value = '') => {
   return ROOM_TYPE_DISPLAY_LABEL_OVERRIDES[text.toLowerCase()] || text;
 };
 
+const getHexLuminance = (hex) => {
+  const normalized = String(hex || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return Number.POSITIVE_INFINITY;
+  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(normalized.slice(offset, offset + 2), 16) / 255);
+  const linearize = (value) => (
+    value <= 0.03928
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4)
+  );
+  const [lr, lg, lb] = [r, g, b].map(linearize);
+  return (0.2126 * lr) + (0.7152 * lg) + (0.0722 * lb);
+};
+
+const sortMarkerTypeEntriesDarkToLight = (entries = []) => (
+  [...entries].sort((a, b) => {
+    const colorA = a?.[1] || '';
+    const colorB = b?.[1] || '';
+    const luminanceDelta = getHexLuminance(colorA) - getHexLuminance(colorB);
+    if (Math.abs(luminanceDelta) > 0.0001) return luminanceDelta;
+    return String(a?.[0] || '').localeCompare(String(b?.[0] || ''));
+  })
+);
+
 const summarizeProgramCounts = (stats) => {
   const rt = stats?.roomTypes || {};
   let offices = 0, classrooms = 0, labs = 0;
@@ -10144,10 +10167,38 @@ const engagementColorForType = (markerType, isSarpy = false) => {
 };
 const isCoolEngagementCategory = (category) =>
   category === 'outdated' || category === 'rarely' || category === 'unsafe';
-const buildEngagementCategoryHeatColorExpr = (category, isSarpy = false) => {
+const buildEngagementCategoryHeatColorExpr = (category, isSarpy = false, floorScoped = false) => {
   const style = getEngagementHeatCategoryStyle(category, isSarpy);
   const coreRgb = style?.rgb || '156,163,175';
   const haloRgb = style?.haloRgb || coreRgb;
+  if (isSarpy && floorScoped) {
+    return [
+      'interpolate',
+      ['linear'],
+      ['heatmap-density'],
+      0, 'rgba(0,0,0,0)',
+      0.04, `rgba(${haloRgb},0.14)`,
+      0.12, `rgba(${haloRgb},0.30)`,
+      0.24, `rgba(${coreRgb},0.52)`,
+      0.40, `rgba(${coreRgb},0.70)`,
+      0.64, `rgba(${coreRgb},0.84)`,
+      1, `rgba(${coreRgb},0.96)`
+    ];
+  }
+  if (isSarpy) {
+    return [
+      'interpolate',
+      ['linear'],
+      ['heatmap-density'],
+      0, 'rgba(0,0,0,0)',
+      0.05, `rgba(${haloRgb},0.06)`,
+      0.16, `rgba(${haloRgb},0.16)`,
+      0.30, `rgba(${coreRgb},0.30)`,
+      0.48, `rgba(${coreRgb},0.46)`,
+      0.72, `rgba(${coreRgb},0.60)`,
+      1, `rgba(${coreRgb},0.74)`
+    ];
+  }
   return [
     'interpolate',
     ['linear'],
@@ -10283,19 +10334,49 @@ const buildEngagementCoolHaloOpacityExpr = (floorScoped = false) => (
     ? ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.88, 20, 0.94, 22, 0.97]
     : ['interpolate', ['linear'], ['zoom'], 10, 0.62, 13, 0.68, 16, 0.74, 19, 0.80]
 );
-const buildEngagementCategoryRadiusExpr = (category, floorScoped = false) => {
+const buildEngagementCategoryRadiusExpr = (category, floorScoped = false, isSarpy = false) => {
+  if (isSarpy && floorScoped) {
+    return ['interpolate', ['linear'], ['zoom'], 16, 8, 18, 12, 20, 18, 22, 24];
+  }
+  if (isSarpy) {
+    return ['interpolate', ['linear'], ['zoom'], 10, 18, 12, 28, 14, 40, 16, 54, 18, 70, 20, 88];
+  }
   if (floorScoped) {
     return ['interpolate', ['linear'], ['zoom'], 16, 10, 18, 14, 20, 20, 22, 28];
   }
   return ['interpolate', ['linear'], ['zoom'], 10, 10, 12, 14, 14, 20, 16, 28, 18, 36, 20, 44];
 };
-const buildEngagementCategoryIntensityExpr = (category, floorScoped = false) => {
+const buildEngagementCategoryIntensityExpr = (category, floorScoped = false, isSarpy = false) => {
+  if (isSarpy && floorScoped) {
+    return ['interpolate', ['linear'], ['zoom'], 16, 1.18, 18, 1.30, 20, 1.42, 22, 1.52];
+  }
+  if (isSarpy) {
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.88, 13, 0.96, 15, 1.04, 17, 1.12, 19, 1.18];
+  }
   if (floorScoped) {
     return ['interpolate', ['linear'], ['zoom'], 16, 1.12, 18, 1.24, 20, 1.34, 22, 1.44];
   }
   return ['interpolate', ['linear'], ['zoom'], 10, 0.92, 13, 1.00, 15, 1.08, 17, 1.16, 19, 1.22];
 };
-const buildEngagementCategoryOpacityExpr = (category, floorScoped = false) => {
+const buildEngagementCategoryOpacityExpr = (category, floorScoped = false, isSarpy = false) => {
+  if (isSarpy && floorScoped) {
+    if (category === 'unsafe') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.92, 18, 0.95, 20, 0.98, 22, 0.99];
+    }
+    if (category === 'rarely' || category === 'outdated') {
+      return ['interpolate', ['linear'], ['zoom'], 16, 0.82, 18, 0.86, 20, 0.91, 22, 0.95];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 16, 0.86, 18, 0.90, 20, 0.94, 22, 0.97];
+  }
+  if (isSarpy) {
+    if (category === 'unsafe') {
+      return ['interpolate', ['linear'], ['zoom'], 10, 0.54, 13, 0.58, 16, 0.62, 19, 0.66];
+    }
+    if (category === 'rarely' || category === 'outdated') {
+      return ['interpolate', ['linear'], ['zoom'], 10, 0.44, 13, 0.48, 16, 0.54, 19, 0.60];
+    }
+    return ['interpolate', ['linear'], ['zoom'], 10, 0.48, 13, 0.52, 16, 0.58, 19, 0.64];
+  }
   if (floorScoped) {
     if (category === 'unsafe') {
       return ['interpolate', ['linear'], ['zoom'], 16, 0.88, 18, 0.92, 20, 0.96, 22, 0.98];
@@ -21863,6 +21944,16 @@ useEffect(() => {
     });
     return out;
   }, [markerTypes, isSarpyCountyInstance, stakeholderWorkflowActive]);
+  const orderedMarkerTypeEntries = useMemo(() => {
+    const entries = Object.entries(markerTypes || {}).map(([label, color]) => ([
+      label,
+      stakeholderWorkflowActive ? (engagementMarkerTypeColors[label] || color) : color
+    ]));
+    if (stakeholderWorkflowActive && isSarpyCountyInstance) {
+      return sortMarkerTypeEntriesDarkToLight(entries);
+    }
+    return entries;
+  }, [markerTypes, stakeholderWorkflowActive, engagementMarkerTypeColors, isSarpyCountyInstance]);
 
   // ---------- Auth ----------
   useEffect(() => {
@@ -24282,8 +24373,9 @@ useEffect(() => {
       };
       // Keep floor-style color/halo/transparency in both modes, but use larger
       // campus spread radii when no single floor is loaded so points do not look like dots.
-      const floorStyleProfile = Boolean(loadedSingleFloor);
-      const floorSpreadProfile = Boolean(loadedSingleFloor);
+      const useFloorScopedHeatProfile = Boolean(loadedSingleFloor && isEngagementFloorScope);
+      const floorStyleProfile = useFloorScopedHeatProfile;
+      const floorSpreadProfile = useFloorScopedHeatProfile;
       const useSarpyHeatPalette = Boolean(isSarpyCountyInstance);
       const useThermalHalo = ENGAGEMENT_USE_THERMAL_HALO && !useSarpyHeatPalette;
 
@@ -24392,20 +24484,20 @@ useEffect(() => {
               ],
               paint: {
                 'heatmap-weight': buildEngagementCategoryWeightExpr(category),
-                'heatmap-intensity': buildEngagementCategoryIntensityExpr(category, floorStyleProfile),
-                'heatmap-radius': buildEngagementCategoryRadiusExpr(category, floorSpreadProfile),
-                'heatmap-opacity': buildEngagementCategoryOpacityExpr(category, floorStyleProfile),
-                'heatmap-color': buildEngagementCategoryHeatColorExpr(category, useSarpyHeatPalette)
+                'heatmap-intensity': buildEngagementCategoryIntensityExpr(category, floorStyleProfile, useSarpyHeatPalette),
+                'heatmap-radius': buildEngagementCategoryRadiusExpr(category, floorSpreadProfile, useSarpyHeatPalette),
+                'heatmap-opacity': buildEngagementCategoryOpacityExpr(category, floorStyleProfile, useSarpyHeatPalette),
+                'heatmap-color': buildEngagementCategoryHeatColorExpr(category, useSarpyHeatPalette, floorStyleProfile)
               }
             },
             beforeId
           );
         }
         map.setPaintProperty(layerId, 'heatmap-weight', buildEngagementCategoryWeightExpr(category));
-        map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile));
-        map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile));
-        map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile));
-        map.setPaintProperty(layerId, 'heatmap-color', buildEngagementCategoryHeatColorExpr(category, useSarpyHeatPalette));
+        map.setPaintProperty(layerId, 'heatmap-intensity', buildEngagementCategoryIntensityExpr(category, floorStyleProfile, useSarpyHeatPalette));
+        map.setPaintProperty(layerId, 'heatmap-radius', buildEngagementCategoryRadiusExpr(category, floorSpreadProfile, useSarpyHeatPalette));
+        map.setPaintProperty(layerId, 'heatmap-opacity', buildEngagementCategoryOpacityExpr(category, floorStyleProfile, useSarpyHeatPalette));
+        map.setPaintProperty(layerId, 'heatmap-color', buildEngagementCategoryHeatColorExpr(category, useSarpyHeatPalette, floorStyleProfile));
         setMapLayerVisibility(map, layerId, engagementHeatmapOn);
       });
       [
@@ -24417,7 +24509,7 @@ useEffect(() => {
     } catch (err) {
       console.warn('Engagement heatmap update failed', err);
     }
-  }, [mapLoaded, stakeholderWorkflowActive, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor, isSarpyCountyInstance]);
+  }, [mapLoaded, stakeholderWorkflowActive, scopedEngagementHeatmapData, engagementHeatmapOn, loadedSingleFloor, isEngagementFloorScope, isSarpyCountyInstance]);
 
   // ---------- Render markers ----------
   useEffect(() => {
@@ -24681,7 +24773,7 @@ useEffect(() => {
     popupNode.className = 'marker-prompt-popup';
     popupNode.innerHTML = `
       <h4>Add a Marker</h4>
-      <select id="marker-type">${Object.keys(markerTypes).map((type) => `<option value="${type}">${type}</option>`).join('')}</select>
+      <select id="marker-type">${orderedMarkerTypeEntries.map(([type]) => `<option value="${type}">${type}</option>`).join('')}</select>
       <textarea id="marker-comment" placeholder="Optional comment..."></textarea>
       <div class="button-group">
         <button id="confirm-marker">Add</button>
@@ -24766,7 +24858,7 @@ useEffect(() => {
       popup.remove();
     });
     popupNode.querySelector('#cancel-marker').addEventListener('click', () => popup.remove());
-  }, [markerTypes, markersCollection, persona, stakeholderWorkflowActive, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
+  }, [orderedMarkerTypeEntries, markersCollection, persona, stakeholderWorkflowActive, selectedBuildingId, selectedBuilding, selectedFloor, floorUrl, activeBuildingName, isEngagementFloorScope, loadedSingleFloor]);
 
   useEffect(() => {
     if (!stakeholderWorkflowActive) return;
@@ -28811,7 +28903,9 @@ useEffect(() => {
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
                     {stakeholderWorkflowActive && isSarpyCountyInstance
-                      ? 'Darker blues indicate higher-concern clusters; lighter blues indicate more positive or opportunity-focused feedback.'
+                      ? (loadedSingleFloor && isEngagementFloorScope
+                          ? 'Floorplan heat uses tighter room-scale clustering. Darker blues show higher concern; lighter blues show more positive or opportunity-focused feedback.'
+                          : 'Zoomed-out heat uses broader countywide clustering. Darker blues show higher concern; lighter blues show more positive or opportunity-focused feedback.')
                       : 'Blue tones signal concern hotspots; warmer tones indicate positive or opportunity-focused feedback.'}
                   </div>
                 </div>
@@ -28845,11 +28939,11 @@ useEffect(() => {
               )}
               <div className="legend-section">
                 <h5>Marker Types</h5>
-                {Object.entries(markerTypes || {}).map(([label, color]) => (
+                {orderedMarkerTypeEntries.map(([label, color]) => (
                   <div key={label} className="legend-item">
                     <span
                       className="legend-color-box"
-                      style={{ backgroundColor: stakeholderWorkflowActive ? (engagementMarkerTypeColors[label] || color) : color }}
+                      style={{ backgroundColor: color }}
                     />
                     <span>{label}</span>
                   </div>
