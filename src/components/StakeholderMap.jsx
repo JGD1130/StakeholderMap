@@ -10016,7 +10016,7 @@ const SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE = {
   rarely: { color: '#1f6fd1', heatValue: 1.03, rgb: '31,111,209', haloRgb: '86,161,255' },
   improve: { color: '#1696ff', heatValue: 1.03, rgb: '22,150,255', haloRgb: '109,198,255' },
   hangout: { color: '#00b8ff', heatValue: 1.03, rgb: '0,184,255', haloRgb: '103,223,255' },
-  study: { color: '#7cefcf', heatValue: 1.03, rgb: '124,239,207', haloRgb: '194,255,234' },
+  study: { color: '#8be7ff', heatValue: 1.03, rgb: '139,231,255', haloRgb: '211,247,255' },
   comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '196,201,209' }
 };
 const ENGAGEMENT_MARKER_TYPES = {
@@ -10029,7 +10029,7 @@ const ENGAGEMENT_MARKER_TYPES = {
   'Just leave a comment': '#9ca3af'
 };
 const SARPY_ENGAGEMENT_MARKER_META = {
-  'This space supports my work well': { color: '#7cefcf', category: 'study', weight: 0.88 },
+  'This space supports my work well': { color: '#8be7ff', category: 'study', weight: 0.88 },
   'This space does not support my work': { color: '#1696ff', category: 'improve', weight: 1.08 },
   'This space is too small': { color: '#0d84f2', category: 'improve', weight: 1.12 },
   'This space is underutilized': { color: '#1f6fd1', category: 'rarely', weight: 0.94 },
@@ -10039,7 +10039,7 @@ const SARPY_ENGAGEMENT_MARKER_META = {
   'Technology does not meet needs': { color: '#205aad', category: 'outdated', weight: 1.02 },
   'Storage is insufficient': { color: '#35a7ff', category: 'improve', weight: 0.98 },
   'Workflow is inefficient': { color: '#4ab3ff', category: 'improve', weight: 1.04 },
-  'This location works well': { color: '#4de1ff', category: 'hangout', weight: 0.90 },
+  'This location works well': { color: '#64dcff', category: 'hangout', weight: 0.90 },
   'Accessibility could be improved': { color: '#16498d', category: 'unsafe', weight: 1.10 },
   'Safety/security concern': { color: '#081a3a', category: 'unsafe', weight: 1.16 },
   'Maintenance issue': { color: '#2a6dbd', category: 'outdated', weight: 1.05 },
@@ -28893,7 +28893,7 @@ useEffect(() => {
                       borderRadius: 6,
                       border: '1px solid #ddd',
                       background: stakeholderWorkflowActive && isSarpyCountyInstance
-                        ? 'linear-gradient(90deg, #081a3a 0%, #123f7a 18%, #1f6fd1 38%, #1696ff 58%, #00b8ff 76%, #19d3c5 90%, #7cefcf 100%)'
+                        ? 'linear-gradient(90deg, #081a3a 0%, #123f7a 18%, #1f6fd1 38%, #1696ff 58%, #00b8ff 76%, #52d8ff 90%, #8be7ff 100%)'
                         : 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #facc15 56%, #fb923c 78%, #ef4444 100%)'
                     }}
                   />
