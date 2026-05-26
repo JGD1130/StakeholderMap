@@ -1169,6 +1169,10 @@ function normalizeOccupancyLegendLabel(props = {}) {
     props.occupancyStatus ??
     props['Occupancy Status'] ??
     props.OccupancyStatus ??
+    props['NCES_Occupancy Status'] ??
+    props.NCES_OccupancyStatus ??
+    props.NCES_Occupancy_Status ??
+    props['NCES Occupancy Status'] ??
     props.Occupancy ??
     props.Vacancy ??
     props.vacancy ??
@@ -4410,6 +4414,10 @@ function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOO
       ['get', 'occupancyStatus'],
       ['get', 'Occupancy Status'],
       ['get', 'OccupancyStatus'],
+      ['get', 'NCES_Occupancy Status'],
+      ['get', 'NCES_OccupancyStatus'],
+      ['get', 'NCES_Occupancy_Status'],
+      ['get', 'NCES Occupancy Status'],
       ['get', 'Occupancy'],
       ['get', 'Vacancy'],
       ['get', 'vacancy'],
@@ -9271,6 +9279,10 @@ function buildFloorRoomLabelExpressions(colorMode = 'department') {
       ['get', 'occupancyStatus'],
       ['get', 'Occupancy Status'],
       ['get', 'OccupancyStatus'],
+      ['get', 'NCES_Occupancy Status'],
+      ['get', 'NCES_OccupancyStatus'],
+      ['get', 'NCES_Occupancy_Status'],
+      ['get', 'NCES Occupancy Status'],
       ['get', 'Occupancy'],
       ['get', 'Vacancy'],
       ['get', 'vacancy'],
