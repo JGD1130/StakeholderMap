@@ -4440,7 +4440,11 @@ function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOO
       ]
     ]
   ];
-  const isOfficeExpr = ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]];
+  const isOfficeExpr = [
+    'any',
+    ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]],
+    ['>=', ['index-of', 'OFFICE', roomTypeUpperExpr], 0]
+  ];
   const hasOccupancyExpr = ['>', ['length', occupancyUpperExpr], 0];
   const isVacantExpr = [
     'any',
@@ -8738,7 +8742,10 @@ const normalizeOfficeTypeLabel = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
-const isAllowedOfficeType = (value) => OFFICE_TYPE_SET.has(normalizeOfficeTypeLabel(value));
+const isAllowedOfficeType = (value) => {
+  const normalized = normalizeOfficeTypeLabel(value);
+  return OFFICE_TYPE_SET.has(normalized) || normalized.includes('office');
+};
 const GUID_VALUE_REGEX = /^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?[)}]?$/i;
 const LONG_HEX_VALUE_REGEX = /^[0-9a-f]{24,}$/i;
 const GUID_SUBSTRING_REGEX = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?/i;
@@ -9520,7 +9527,11 @@ function buildFloorRoomLabelExpressions(colorMode = 'department') {
       ]
     ]
   ];
-  const isOfficeOccupancyField = ['in', roomTypeUpperField, ['literal', OFFICE_TYPE_LABELS_UPPER]];
+  const isOfficeOccupancyField = [
+    'any',
+    ['in', roomTypeUpperField, ['literal', OFFICE_TYPE_LABELS_UPPER]],
+    ['>=', ['index-of', 'OFFICE', roomTypeUpperField], 0]
+  ];
   const occupancyLabelField = [
     'case',
     ['>', ['length', occupantField], 0],

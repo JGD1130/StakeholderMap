@@ -78,18 +78,18 @@ const normalizeOfficeTypeLabel = (value) =>
 const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
 
 function isOfficeRoom(p = {}) {
-  const type =
-    (p.NCES_Type ??
-      p.NCES_Type_Desc ??
-      p.__roomType ??
-      p.RoomTypeName ??
-      p.RoomType ??
-      p.Type ??
-      p.type ??
-      '')
-      .toString()
-      .toLowerCase();
-  return OFFICE_TYPE_SET.has(normalizeOfficeTypeLabel(type));
+  const type = (
+    p.NCES_Type ??
+    p.NCES_Type_Desc ??
+    p.__roomType ??
+    p.RoomTypeName ??
+    p.RoomType ??
+    p.Type ??
+    p.type ??
+    ''
+  ).toString();
+  const normalized = normalizeOfficeTypeLabel(type);
+  return OFFICE_TYPE_SET.has(normalized) || normalized.includes('office');
 }
 
 export function computeOfficeOccupancy(featureCollectionOrFeatures) {
