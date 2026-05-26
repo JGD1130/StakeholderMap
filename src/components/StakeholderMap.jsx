@@ -10011,12 +10011,12 @@ const SARPY_ENGAGEMENT_HEAT_CATEGORY_LABELS = {
   comment: 'Comment'
 };
 const SARPY_ENGAGEMENT_HEAT_CATEGORY_STYLE = {
-  unsafe: { color: '#0b1f3a', heatValue: 1.03, rgb: '11,31,58', haloRgb: '30,58,95' },
-  outdated: { color: '#215d92', heatValue: 1.03, rgb: '33,93,146', haloRgb: '69,132,194' },
-  rarely: { color: '#4384c2', heatValue: 1.03, rgb: '67,132,194', haloRgb: '125,179,225' },
-  improve: { color: '#7fb3e1', heatValue: 1.03, rgb: '127,179,225', haloRgb: '184,220,243' },
-  hangout: { color: '#b8dcf3', heatValue: 1.03, rgb: '184,220,243', haloRgb: '210,235,248' },
-  study: { color: '#edf6fd', heatValue: 1.03, rgb: '237,246,253', haloRgb: '255,255,255' },
+  unsafe: { color: '#081a3a', heatValue: 1.03, rgb: '8,26,58', haloRgb: '21,52,102' },
+  outdated: { color: '#123f7a', heatValue: 1.03, rgb: '18,63,122', haloRgb: '44,102,184' },
+  rarely: { color: '#1f6fd1', heatValue: 1.03, rgb: '31,111,209', haloRgb: '86,161,255' },
+  improve: { color: '#1696ff', heatValue: 1.03, rgb: '22,150,255', haloRgb: '109,198,255' },
+  hangout: { color: '#00b8ff', heatValue: 1.03, rgb: '0,184,255', haloRgb: '103,223,255' },
+  study: { color: '#7cefcf', heatValue: 1.03, rgb: '124,239,207', haloRgb: '194,255,234' },
   comment: { color: '#9ca3af', heatValue: 0, rgb: '156,163,175', haloRgb: '196,201,209' }
 };
 const ENGAGEMENT_MARKER_TYPES = {
@@ -10029,21 +10029,21 @@ const ENGAGEMENT_MARKER_TYPES = {
   'Just leave a comment': '#9ca3af'
 };
 const SARPY_ENGAGEMENT_MARKER_META = {
-  'This space supports my work well': { color: '#edf6fd', category: 'study', weight: 0.88 },
-  'This space does not support my work': { color: '#4384c2', category: 'improve', weight: 1.08 },
-  'This space is too small': { color: '#5d99d3', category: 'improve', weight: 1.12 },
-  'This space is underutilized': { color: '#4384c2', category: 'rarely', weight: 0.94 },
-  'This space needs modernization': { color: '#215d92', category: 'outdated', weight: 1.04 },
-  'Collaboration is difficult here': { color: '#9dc9eb', category: 'hangout', weight: 1.00 },
-  'Privacy/acoustics are a problem': { color: '#12315a', category: 'unsafe', weight: 1.12 },
-  'Technology does not meet needs': { color: '#2f6fae', category: 'outdated', weight: 1.02 },
-  'Storage is insufficient': { color: '#7fb3e1', category: 'improve', weight: 0.98 },
-  'Workflow is inefficient': { color: '#7fb3e1', category: 'improve', weight: 1.04 },
-  'This location works well': { color: '#d2ebf8', category: 'hangout', weight: 0.90 },
-  'Accessibility could be improved': { color: '#1a4876', category: 'unsafe', weight: 1.10 },
-  'Safety/security concern': { color: '#0b1f3a', category: 'unsafe', weight: 1.16 },
-  'Maintenance issue': { color: '#5d99d3', category: 'outdated', weight: 1.05 },
-  'Opportunity for future improvement': { color: '#b8dcf3', category: 'improve', weight: 0.92 }
+  'This space supports my work well': { color: '#7cefcf', category: 'study', weight: 0.88 },
+  'This space does not support my work': { color: '#1696ff', category: 'improve', weight: 1.08 },
+  'This space is too small': { color: '#0d84f2', category: 'improve', weight: 1.12 },
+  'This space is underutilized': { color: '#1f6fd1', category: 'rarely', weight: 0.94 },
+  'This space needs modernization': { color: '#123f7a', category: 'outdated', weight: 1.04 },
+  'Collaboration is difficult here': { color: '#00b8ff', category: 'hangout', weight: 1.00 },
+  'Privacy/acoustics are a problem': { color: '#0d2858', category: 'unsafe', weight: 1.12 },
+  'Technology does not meet needs': { color: '#205aad', category: 'outdated', weight: 1.02 },
+  'Storage is insufficient': { color: '#35a7ff', category: 'improve', weight: 0.98 },
+  'Workflow is inefficient': { color: '#4ab3ff', category: 'improve', weight: 1.04 },
+  'This location works well': { color: '#4de1ff', category: 'hangout', weight: 0.90 },
+  'Accessibility could be improved': { color: '#16498d', category: 'unsafe', weight: 1.10 },
+  'Safety/security concern': { color: '#081a3a', category: 'unsafe', weight: 1.16 },
+  'Maintenance issue': { color: '#2a6dbd', category: 'outdated', weight: 1.05 },
+  'Opportunity for future improvement': { color: '#9ae8ff', category: 'improve', weight: 0.92 }
 };
 const ENGAGEMENT_MARKER_TYPES_SARPY = Object.fromEntries(
   Object.entries(SARPY_ENGAGEMENT_MARKER_META).map(([label, meta]) => [label, meta.color])
@@ -10177,12 +10177,12 @@ const buildEngagementCategoryHeatColorExpr = (category, isSarpy = false, floorSc
       ['linear'],
       ['heatmap-density'],
       0, 'rgba(0,0,0,0)',
-      0.04, `rgba(${haloRgb},0.14)`,
-      0.12, `rgba(${haloRgb},0.30)`,
-      0.24, `rgba(${coreRgb},0.52)`,
-      0.40, `rgba(${coreRgb},0.70)`,
-      0.64, `rgba(${coreRgb},0.84)`,
-      1, `rgba(${coreRgb},0.96)`
+      0.04, `rgba(${haloRgb},0.18)`,
+      0.12, `rgba(${haloRgb},0.36)`,
+      0.24, `rgba(${coreRgb},0.60)`,
+      0.40, `rgba(${coreRgb},0.78)`,
+      0.64, `rgba(${coreRgb},0.90)`,
+      1, `rgba(${coreRgb},0.98)`
     ];
   }
   if (isSarpy) {
@@ -10191,12 +10191,12 @@ const buildEngagementCategoryHeatColorExpr = (category, isSarpy = false, floorSc
       ['linear'],
       ['heatmap-density'],
       0, 'rgba(0,0,0,0)',
-      0.05, `rgba(${haloRgb},0.06)`,
-      0.16, `rgba(${haloRgb},0.16)`,
-      0.30, `rgba(${coreRgb},0.30)`,
-      0.48, `rgba(${coreRgb},0.46)`,
-      0.72, `rgba(${coreRgb},0.60)`,
-      1, `rgba(${coreRgb},0.74)`
+      0.05, `rgba(${haloRgb},0.10)`,
+      0.16, `rgba(${haloRgb},0.22)`,
+      0.30, `rgba(${coreRgb},0.38)`,
+      0.48, `rgba(${coreRgb},0.54)`,
+      0.72, `rgba(${coreRgb},0.70)`,
+      1, `rgba(${coreRgb},0.84)`
     ];
   }
   return [
@@ -28893,7 +28893,7 @@ useEffect(() => {
                       borderRadius: 6,
                       border: '1px solid #ddd',
                       background: stakeholderWorkflowActive && isSarpyCountyInstance
-                        ? 'linear-gradient(90deg, #0b1f3a 0%, #12315a 14%, #215d92 30%, #4384c2 52%, #7fb3e1 72%, #b8dcf3 88%, #edf6fd 100%)'
+                        ? 'linear-gradient(90deg, #081a3a 0%, #123f7a 18%, #1f6fd1 38%, #1696ff 58%, #00b8ff 76%, #19d3c5 90%, #7cefcf 100%)'
                         : 'linear-gradient(90deg, #1d4ed8 0%, #60a5fa 14%, #67e8f9 30%, #facc15 56%, #fb923c 78%, #ef4444 100%)'
                     }}
                   />
