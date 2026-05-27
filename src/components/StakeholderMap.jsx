@@ -21672,15 +21672,13 @@ useEffect(() => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (isStaticGithubHost()) {
-        setDashboardLoading(false);
-        setDashboardError(null);
-        return;
-      }
       setDashboardLoading(true);
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
       try {
+        if (isStaticGithubHost()) {
+          throw new Error('Static host: skip AI rooms API and hydrate dashboard from floorplan manifest');
+        }
         const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
         let data = null;
         try {
