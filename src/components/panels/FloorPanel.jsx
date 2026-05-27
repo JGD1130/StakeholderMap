@@ -6,6 +6,7 @@ export default function FloorPanel({
   buildingName,
   floorLabel,
   stats, // { totalSf, rooms, classroomSf, classroomCount }
+  hideClassroomSummary = false,
   legendItems = [], // [{ name, areaSf, color }]
   floors = [],
   selectedFloor,
@@ -89,12 +90,16 @@ export default function FloorPanel({
           <div>
             <b>Rooms:</b> {count(stats?.rooms)}
           </div>
-          <div>
-            <b>Classroom SF:</b> {area(stats?.classroomSf)}
-          </div>
-          <div>
-            <b>Classrooms:</b> {count(stats?.classroomCount)}
-          </div>
+          {!hideClassroomSummary ? (
+            <>
+              <div>
+                <b>Classroom SF:</b> {area(stats?.classroomSf)}
+              </div>
+              <div>
+                <b>Classrooms:</b> {count(stats?.classroomCount)}
+              </div>
+            </>
+          ) : null}
         </div>
 
         <div>

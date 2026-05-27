@@ -6,6 +6,7 @@ import UtilizationBars from "../UtilizationBars";
 export default function BuildingPanel({
   buildingName,
   stats, // { totalSf, rooms, classroomSf, classroomCount }
+  hideClassroomSummary = false,
   keyDepts = [], // [{ name, areaSf }, ...] already sorted by area desc
   floors = [],
   selectedFloor,
@@ -66,12 +67,16 @@ export default function BuildingPanel({
             <div>
               <b>Rooms:</b> {count(stats?.rooms)}
             </div>
-            <div>
-              <b>Classroom SF:</b> {area(stats?.classroomSf)}
-            </div>
-            <div>
-              <b>Classrooms:</b> {count(stats?.classroomCount)}
-            </div>
+            {!hideClassroomSummary ? (
+              <>
+                <div>
+                  <b>Classroom SF:</b> {area(stats?.classroomSf)}
+                </div>
+                <div>
+                  <b>Classrooms:</b> {count(stats?.classroomCount)}
+                </div>
+              </>
+            ) : null}
             <div>
               <b>Levels:</b> {floors?.length ?? 0}
             </div>
