@@ -10277,6 +10277,11 @@ const setMapLayerVisibility = (map, layerId, visible) => {
 };
 const SATELLITE_BASEMAP_SOURCE_ID = 'mf-satellite-basemap-source';
 const SATELLITE_BASEMAP_LAYER_ID = 'mf-satellite-basemap-layer';
+const USGS_NAIP_BASEMAP_SOURCE_ID = 'mf-usgs-naip-basemap-source';
+const USGS_NAIP_BASEMAP_LAYER_ID = 'mf-usgs-naip-basemap-layer';
+const USGS_NAIP_TILES = [
+  'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=false&interpolation=RSP_BilinearInterpolation&renderingRule=%7B%22rasterFunction%22%3A%22NaturalColor%22%7D&f=image'
+];
 const parseFirestoreTimestampMs = (value) => {
   if (!value) return 0;
   if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
@@ -10330,7 +10335,8 @@ const StakeholderMap = ({
   const [mapLoaded, setMapLoaded] = useState(false);
   const BASEMAP_VIEWS = {
     STREETS: 'streets',
-    SATELLITE: 'satellite'
+    SATELLITE: 'satellite',
+    NAIP: 'naip'
   };
   const hasRuntimeMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
   const [basemapView, setBasemapView] = useState(BASEMAP_VIEWS.STREETS);
@@ -10554,6 +10560,7 @@ const StakeholderMap = ({
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
+  const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
@@ -22651,30 +22658,26 @@ useEffect(() => {
     if (!mapLoaded || !mapRef.current || !showBasemapSelector) return;
     const map = mapRef.current;
 
-    const ensureSatelliteLayer = () => {
+    const ensureRasterBasemapLayer = ({ sourceId, layerId, sourceConfig }) => {
       try {
-        if (!map.getSource(SATELLITE_BASEMAP_SOURCE_ID)) {
-          map.addSource(SATELLITE_BASEMAP_SOURCE_ID, {
-            type: 'raster',
-            url: 'mapbox://mapbox.satellite',
-            tileSize: 256
-          });
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, sourceConfig);
         }
       } catch (err) {
-        console.warn('Failed to add satellite basemap source:', err);
+        console.warn(`Failed to add raster basemap source (${sourceId}):`, err);
         return;
       }
 
       try {
-        if (!map.getLayer(SATELLITE_BASEMAP_LAYER_ID)) {
+        if (!map.getLayer(layerId)) {
           const firstSymbolLayer = map
             .getStyle()
             ?.layers?.find((layerDef) => layerDef?.type === 'symbol');
           map.addLayer(
             {
-              id: SATELLITE_BASEMAP_LAYER_ID,
+              id: layerId,
               type: 'raster',
-              source: SATELLITE_BASEMAP_SOURCE_ID,
+              source: sourceId,
               layout: { visibility: 'none' },
               paint: { 'raster-opacity': 1 }
             },
@@ -22682,13 +22685,34 @@ useEffect(() => {
           );
         }
       } catch (err) {
-        console.warn('Failed to add satellite basemap layer:', err);
+        console.warn(`Failed to add raster basemap layer (${layerId}):`, err);
       }
     };
 
     const applyBasemapView = () => {
-      ensureSatelliteLayer();
+      ensureRasterBasemapLayer({
+        sourceId: SATELLITE_BASEMAP_SOURCE_ID,
+        layerId: SATELLITE_BASEMAP_LAYER_ID,
+        sourceConfig: {
+          type: 'raster',
+          url: 'mapbox://mapbox.satellite',
+          tileSize: 256
+        }
+      });
+      if (showSarpyNaipBasemapOption) {
+        ensureRasterBasemapLayer({
+          sourceId: USGS_NAIP_BASEMAP_SOURCE_ID,
+          layerId: USGS_NAIP_BASEMAP_LAYER_ID,
+          sourceConfig: {
+            type: 'raster',
+            tiles: USGS_NAIP_TILES,
+            tileSize: 256,
+            attribution: 'USGS NAIP'
+          }
+        });
+      }
       setMapLayerVisibility(map, SATELLITE_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SATELLITE);
+      setMapLayerVisibility(map, USGS_NAIP_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.NAIP);
     };
 
     applyBasemapView();
@@ -22698,7 +22722,7 @@ useEffect(() => {
         map.off('style.load', applyBasemapView);
       } catch {}
     };
-  }, [mapLoaded, basemapView, showBasemapSelector, BASEMAP_VIEWS.SATELLITE]);
+  }, [mapLoaded, basemapView, showBasemapSelector, showSarpyNaipBasemapOption, BASEMAP_VIEWS.SATELLITE, BASEMAP_VIEWS.NAIP]);
 
 
   // ---------- Load data (markers/assessments/conditions) ----------
@@ -27437,6 +27461,9 @@ useEffect(() => {
               >
                 <option value={BASEMAP_VIEWS.STREETS}>Map</option>
                 <option value={BASEMAP_VIEWS.SATELLITE}>Satellite</option>
+                {showSarpyNaipBasemapOption && (
+                  <option value={BASEMAP_VIEWS.NAIP}>NAIP Test</option>
+                )}
               </select>
             </div>
           )}
