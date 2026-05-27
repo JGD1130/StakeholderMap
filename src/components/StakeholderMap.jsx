@@ -23647,15 +23647,15 @@ useEffect(() => {
         const fmtArea = (val) => (Number.isFinite(val) ? Math.round(val).toLocaleString() : '-');
         const fmtCount = (val) => (Number.isFinite(val) ? Number(val).toLocaleString() : '-');
         const deptListHtml = renderDeptListHTML(statsRaw.keyDepts || []);
-        const popupHtml = `
+      const popupHtml = `
           <div class="mf-popup mf-popup--building" style="min-width:280px;padding:8px 10px;">
             <div style="display:flex;gap:18px;align-items:flex-start;">
               <div style="flex:1">
                 <div style="font-weight:700;margin-bottom:6px;">${buildingName}</div>
                 <div><b>Total SF:</b> ${fmtArea(statsRaw.totalSf)}</div>
                 <div><b>Rooms:</b> ${fmtCount(statsRaw.rooms)}</div>
-                <div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>
-                <div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>
+                ${isSarpyCountyInstance ? '' : `<div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>`}
+                ${isSarpyCountyInstance ? '' : `<div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>`}
               </div>
               <div style="min-width:180px;">
                 <div style="font-weight:600;margin-bottom:4px;">Key Departments</div>
@@ -26437,6 +26437,7 @@ useEffect(() => {
             <BuildingPanel
               buildingName={activeBuildingName}
               stats={buildingStats}
+              hideClassroomSummary={isSarpyCountyInstance}
               keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
               utilization={getUtilizationForBuilding(activeBuildingName)}
               floors={availableFloors}
@@ -26470,6 +26471,7 @@ useEffect(() => {
               buildingName={activeBuildingName}
               floorLabel={floorStats?.floorLabel || panelSelectedFloor}
               stats={floorStats}
+              hideClassroomSummary={isSarpyCountyInstance}
               legendItems={floorLegendItems}
               legendTitle={
                 {
