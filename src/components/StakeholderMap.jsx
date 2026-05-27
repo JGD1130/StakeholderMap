@@ -1197,12 +1197,12 @@ function normalizeOccupancyLegendLabel(props = {}) {
     }
     if (upper.includes('OCCUPIED')) return 'Occupied';
     if (upper.includes('ASSIGNED') && !upper.includes('UNASSIGNED')) return 'Occupied';
-    if (isAllowedOfficeType(getRoomTypeLabelFromProps(props) || props?.Name || '')) return 'Occupied';
+    if (isSarpyCountyPath() && isAllowedOfficeType(getRoomTypeLabelFromProps(props) || props?.Name || '')) return 'Occupied';
     return 'Unknown';
   }
   const occ = (props.occupant ?? props.Occupant ?? '').toString().trim();
   if (occ) return 'Occupied';
-  return isAllowedOfficeType(getRoomTypeLabelFromProps(props) || props?.Name || '') ? 'Occupied' : 'Unknown';
+  return isSarpyCountyPath() && isAllowedOfficeType(getRoomTypeLabelFromProps(props) || props?.Name || '') ? 'Occupied' : 'Unknown';
 }
 
 function resolveLegendEntryForProps(props = {}, mode = 'department') {
@@ -4399,6 +4399,7 @@ const STAIR_PAINT = {
 
 function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOOR_FILL_ID) {
   if (!map || !map.getLayer(targetLayerId)) return;
+  const useSarpyOfficeDefaults = isSarpyCountyPath();
   const occupantExpr = [
     '>',
     ['length', ['coalesce', ['to-string', ['get', 'occupant']], ['to-string', ['get', 'Occupant']], '']],
@@ -4440,11 +4441,13 @@ function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOO
       ]
     ]
   ];
-  const isOfficeExpr = [
-    'any',
-    ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]],
-    ['>=', ['index-of', 'OFFICE', roomTypeUpperExpr], 0]
-  ];
+  const isOfficeExpr = useSarpyOfficeDefaults
+    ? [
+        'any',
+        ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]],
+        ['>=', ['index-of', 'OFFICE', roomTypeUpperExpr], 0]
+      ]
+    : ['in', roomTypeUpperExpr, ['literal', OFFICE_TYPE_LABELS_UPPER]];
   const hasOccupancyExpr = ['>', ['length', occupancyUpperExpr], 0];
   const isVacantExpr = [
     'any',
@@ -4463,16 +4466,25 @@ function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOO
       ['<', ['index-of', 'UNASSIGNED', occupancyUpperExpr], 0]
     ]
   ];
-  const occupancyLabelExpr = [
-    'case',
-    hasOccupancyExpr,
-    ['case', isVacantExpr, 'Vacant', isOccupiedExpr, 'Occupied', isOfficeExpr, 'Occupied', 'Unknown'],
-    occupantExpr,
-    'Occupied',
-    isOfficeExpr,
-    'Occupied',
-    'Unknown'
-  ];
+  const occupancyLabelExpr = useSarpyOfficeDefaults
+    ? [
+        'case',
+        hasOccupancyExpr,
+        ['case', isVacantExpr, 'Vacant', isOccupiedExpr, 'Occupied', isOfficeExpr, 'Occupied', 'Unknown'],
+        occupantExpr,
+        'Occupied',
+        isOfficeExpr,
+        'Occupied',
+        'Unknown'
+      ]
+    : [
+        'case',
+        hasOccupancyExpr,
+        ['case', isVacantExpr, 'Vacant', isOccupiedExpr, 'Occupied', 'Unknown'],
+        occupantExpr,
+        'Occupied',
+        'Unknown'
+      ];
   const occupancyColorExpr = [
     'case',
     isOfficeExpr,
@@ -8742,9 +8754,14 @@ const normalizeOfficeTypeLabel = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 const OFFICE_TYPE_SET = new Set(OFFICE_TYPE_LABELS.map(normalizeOfficeTypeLabel).filter(Boolean));
+const isSarpyCountyPath = () => {
+  if (typeof window === 'undefined') return false;
+  const path = String(window.location?.pathname || '').toLowerCase();
+  return /\/sarpy-county(?:\/|$)/.test(path);
+};
 const isAllowedOfficeType = (value) => {
   const normalized = normalizeOfficeTypeLabel(value);
-  return OFFICE_TYPE_SET.has(normalized) || normalized.includes('office');
+  return OFFICE_TYPE_SET.has(normalized) || (isSarpyCountyPath() && normalized.includes('office'));
 };
 const GUID_VALUE_REGEX = /^[{(]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:-[0-9a-f]{2,})?[)}]?$/i;
 const LONG_HEX_VALUE_REGEX = /^[0-9a-f]{24,}$/i;
@@ -9527,21 +9544,33 @@ function buildFloorRoomLabelExpressions(colorMode = 'department') {
       ]
     ]
   ];
-  const isOfficeOccupancyField = [
-    'any',
-    ['in', roomTypeUpperField, ['literal', OFFICE_TYPE_LABELS_UPPER]],
-    ['>=', ['index-of', 'OFFICE', roomTypeUpperField], 0]
-  ];
-  const occupancyLabelField = [
-    'case',
-    ['>', ['length', occupantField], 0],
-    occupantField,
-    ['>', ['length', occupancyStatusField], 0],
-    ['case', isVacantOccupancyField, 'Vacant', isOccupiedOccupancyField, 'Occupied', isOfficeOccupancyField, 'Occupied', 'Unknown'],
-    isOfficeOccupancyField,
-    'Occupied',
-    'Unknown'
-  ];
+  const useSarpyOfficeDefaults = isSarpyCountyPath();
+  const isOfficeOccupancyField = useSarpyOfficeDefaults
+    ? [
+        'any',
+        ['in', roomTypeUpperField, ['literal', OFFICE_TYPE_LABELS_UPPER]],
+        ['>=', ['index-of', 'OFFICE', roomTypeUpperField], 0]
+      ]
+    : ['in', roomTypeUpperField, ['literal', OFFICE_TYPE_LABELS_UPPER]];
+  const occupancyLabelField = useSarpyOfficeDefaults
+    ? [
+        'case',
+        ['>', ['length', occupantField], 0],
+        occupantField,
+        ['>', ['length', occupancyStatusField], 0],
+        ['case', isVacantOccupancyField, 'Vacant', isOccupiedOccupancyField, 'Occupied', isOfficeOccupancyField, 'Occupied', 'Unknown'],
+        isOfficeOccupancyField,
+        'Occupied',
+        'Unknown'
+      ]
+    : [
+        'case',
+        ['>', ['length', occupantField], 0],
+        occupantField,
+        ['>', ['length', occupancyStatusField], 0],
+        ['case', isVacantOccupancyField, 'Vacant', isOccupiedOccupancyField, 'Occupied', 'Unknown'],
+        'Unknown'
+      ];
   const infoLineField =
     colorMode === 'occupancy' || colorMode === 'vacancy'
       ? occupancyLabelField
@@ -22053,7 +22082,7 @@ useEffect(() => {
       }
 
       const storedBuildingId = String(stored?.selectedBuildingId || '').trim();
-      if (storedBuildingId) {
+      if (isSarpyCountyInstance && storedBuildingId) {
         setSelectedBuildingId(storedBuildingId);
         selectedBuildingIdRef.current = storedBuildingId;
       }
@@ -22063,12 +22092,12 @@ useEffect(() => {
         resolveBuildingNameFromInput(storedBuildingName || storedBuildingId) ||
         storedBuildingName ||
         '';
-      if (resolvedBuilding) {
+      if (isSarpyCountyInstance && resolvedBuilding) {
         setSelectedBuilding(resolvedBuilding);
       }
 
       const storedFloor = normalizeFloorIdValue(stored?.selectedFloor || '');
-      if (storedFloor) {
+      if (isSarpyCountyInstance && storedFloor) {
         setSelectedFloor(storedFloor);
       }
     } finally {
@@ -22079,6 +22108,7 @@ useEffect(() => {
   }, [
     isAdminCombinedMode,
     adminCombinedPrefsStorageKey,
+    isSarpyCountyInstance,
     resolveBuildingNameFromInput,
     MAP_VIEWS.TECHNICAL,
     MAP_VIEWS.ASSESSMENT
@@ -22123,7 +22153,7 @@ useEffect(() => {
           const opts = bSnap.docs.map(d => ({ id: d.id, name: d.data()?.name || d.id }));
           // (removed setBuildingOptions)
           // If nothing is selected yet, default to the first
-          if (!selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
+          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
           return;
         }
         // Fallback to local manifest if Firestore empty
@@ -22132,13 +22162,13 @@ useEffect(() => {
           const m = await res.json(); // { buildings: { [id]: { name, floors: [...] } } }
           const opts = Object.entries(m.buildings || {}).map(([id, v]) => ({ id, name: v?.name || id }));
           // (removed setBuildingOptions)
-          if (!selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
+          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
         }
       } catch (e) {
         console.warn('Building options load failed:', e);
       }
     })();
-  }, [universityId]);
+  }, [universityId, isSarpyCountyInstance, selectedBuilding]);
 
   useEffect(() => {
     let cancelled = false;

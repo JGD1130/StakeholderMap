@@ -14,6 +14,12 @@ function resolveAreaSf(p = {}) {
   return sf;
 }
 
+function isSarpyCountyPath() {
+  if (typeof window === 'undefined') return false;
+  const path = String(window.location?.pathname || '').toLowerCase();
+  return /\/sarpy-county(?:\/|$)/.test(path);
+}
+
 function resolveOccupancyStatus(p = {}) {
   const occupancyRaw =
     p.occupancyStatus ??
@@ -50,13 +56,13 @@ function resolveOccupancyStatus(p = {}) {
   if (hasExplicit) {
     if (isVacantExplicit && !isOccupiedExplicit) return 'Vacant';
     if (isOccupiedExplicit) return 'Occupied';
-    return 'Unknown';
+    return isSarpyCountyPath() && isOfficeRoom(p) ? 'Occupied' : 'Unknown';
   }
 
   const occupant =
     (p.occupant ?? p.Occupant ?? p.AssignedTo ?? p.Assignee ?? '').toString().trim();
   if (occupant.length > 0) return 'Occupied';
-  return isOfficeRoom(p) ? 'Occupied' : 'Unknown';
+  return isSarpyCountyPath() && isOfficeRoom(p) ? 'Occupied' : 'Unknown';
 }
 
 const OFFICE_TYPE_LABELS = [
@@ -89,7 +95,7 @@ function isOfficeRoom(p = {}) {
     ''
   ).toString();
   const normalized = normalizeOfficeTypeLabel(type);
-  return OFFICE_TYPE_SET.has(normalized) || normalized.includes('office');
+  return OFFICE_TYPE_SET.has(normalized) || (isSarpyCountyPath() && normalized.includes('office'));
 }
 
 export function computeOfficeOccupancy(featureCollectionOrFeatures) {
