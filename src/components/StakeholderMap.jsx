@@ -17096,20 +17096,21 @@ const StakeholderMap = ({
     [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite]
   );
 
-  // Initialize defaults on mount: first building + LEVEL_1 (or fallback)
-useEffect(() => {
-  if (!floorplansEnabled) return;
-  if (selectedBuilding) return;
-  if (!floorplanBuildingOptions.length) return;
+  // Sarpy keeps a guided default building/floor for demos; other campuses stay unselected on load.
+  useEffect(() => {
+    if (!isSarpyCountyInstance) return;
+    if (!floorplansEnabled) return;
+    if (selectedBuilding) return;
+    if (!floorplanBuildingOptions.length) return;
 
-  const first = floorplanBuildingOptions[0].name;
-  setSelectedBuilding(first);
-  const feature = matchBuildingFeature(config?.buildings?.features || [], first);
-  const nextId = String(feature?.properties?.id || '').trim();
-  setSelectedBuildingId(nextId || null);
-  selectedBuildingIdRef.current = nextId || null;
-  setSelectedFloor('LEVEL_1');
-}, [selectedBuilding, floorplansEnabled, floorplanBuildingOptions, config]);
+    const first = floorplanBuildingOptions[0].name;
+    setSelectedBuilding(first);
+    const feature = matchBuildingFeature(config?.buildings?.features || [], first);
+    const nextId = String(feature?.properties?.id || '').trim();
+    setSelectedBuildingId(nextId || null);
+    selectedBuildingIdRef.current = nextId || null;
+    setSelectedFloor('LEVEL_1');
+  }, [isSarpyCountyInstance, selectedBuilding, floorplansEnabled, floorplanBuildingOptions, config]);
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
@@ -22237,9 +22238,6 @@ useEffect(() => {
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
       try {
-        if (isStaticGithubHost()) {
-          throw new Error('Static host: skip AI rooms API and hydrate dashboard from floorplan manifest');
-        }
         const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
         let data = null;
         try {
