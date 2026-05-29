@@ -18220,11 +18220,6 @@ const StakeholderMap = ({
 
   useEffect(() => {
     const aiBase = getAiBaseUrl();
-    const isStaticHost = isStaticGithubHost();
-    if (isStaticHost) {
-      setAiStatus('down');
-      return () => {};
-    }
     if (!aiBase) {
       setAiStatus('down');
       return () => {};
