@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { AsyncLocalStorage } from "async_hooks";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
@@ -46,6 +47,12 @@ const AI_DOC_FILE_NAMES = String(process.env.AI_DOC_FILE_NAMES || "")
 const AI_DOC_TMP_DIR = process.env.AI_DOC_TMP_DIR
   ? path.resolve(process.env.AI_DOC_TMP_DIR)
   : path.join(os.tmpdir(), "mapfluence-ai-docs");
+const AI_USAGE_LOG_ENABLED = String(process.env.AI_USAGE_LOG_ENABLED || "true").toLowerCase() !== "false";
+const AI_USAGE_LOG_TO_FILE = String(process.env.AI_USAGE_LOG_TO_FILE || "true").toLowerCase() !== "false";
+const AI_USAGE_LOG_DIR = process.env.AI_USAGE_LOG_DIR
+  ? path.resolve(process.env.AI_USAGE_LOG_DIR)
+  : path.join(__dirname, "logs");
+const AI_USAGE_SUMMARY_MAX_MONTHS = Number(process.env.AI_USAGE_SUMMARY_MAX_MONTHS || 12);
 const AI_DOC_XLSX_MAX_CHARS = Number(process.env.AI_DOC_XLSX_MAX_CHARS || 250000);
 const ASK_DOCS_SKIP_DATA_CHARS = Number(process.env.ASK_DOCS_SKIP_DATA_CHARS || 40000);
 const ASK_DOCS_SKIP_ROOM_ROWS = Number(process.env.ASK_DOCS_SKIP_ROOM_ROWS || 150);
@@ -70,6 +77,99 @@ const XLSX_API = (XLSX && XLSX.readFile && XLSX.utils)
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
+};
+const requestContextStorage = new AsyncLocalStorage();
+
+app.use((req, res, next) => {
+  requestContextStorage.run(
+    {
+      requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      method: req.method,
+      path: req.path,
+      hostname: req.hostname || "",
+      startedAt: Date.now()
+    },
+    () => next()
+  );
+});
+
+function getCurrentUsageMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function buildAiUsageLogPath(monthKey = getCurrentUsageMonth()) {
+  return path.join(AI_USAGE_LOG_DIR, `ai-usage-${monthKey}.jsonl`);
+}
+
+function getAiRequestContext() {
+  return requestContextStorage.getStore() || {};
+}
+
+async function appendAiUsageRecord(record) {
+  if (!AI_USAGE_LOG_ENABLED || !record) return;
+
+  const line = JSON.stringify(record);
+  console.log(`[ai-usage] ${line}`);
+
+  if (!AI_USAGE_LOG_TO_FILE) return;
+  try {
+    await fsp.mkdir(AI_USAGE_LOG_DIR, { recursive: true });
+    await fsp.appendFile(buildAiUsageLogPath(record.month), `${line}\n`, "utf8");
+  } catch (err) {
+    console.warn("AI usage log write failed:", err?.message || err);
+  }
+}
+
+function summarizeAiInputChars(input) {
+  if (typeof input === "string") return input.length;
+  return estimateJsonChars(input);
+}
+
+function makeAiUsageRecord({ model, payload, startedAt, status, response, error }) {
+  const ctx = getAiRequestContext();
+  const now = new Date();
+  return {
+    ts: now.toISOString(),
+    month: now.toISOString().slice(0, 7),
+    requestId: ctx.requestId || "",
+    method: ctx.method || "",
+    path: ctx.path || "",
+    hostname: ctx.hostname || "",
+    status,
+    model: model || payload?.model || "",
+    latencyMs: Math.max(0, Date.now() - startedAt),
+    inputChars: summarizeAiInputChars(payload?.input),
+    outputChars: String(response?.output_text || "").length,
+    responseId: response?.id || "",
+    error: error ? String(error?.error?.message || error?.message || error) : ""
+  };
+}
+
+const rawResponsesCreate = client.responses.create.bind(client.responses);
+client.responses.create = async function patchedResponsesCreate(payload, ...rest) {
+  const startedAt = Date.now();
+  try {
+    const response = await rawResponsesCreate(payload, ...rest);
+    await appendAiUsageRecord(
+      makeAiUsageRecord({
+        payload,
+        startedAt,
+        status: "ok",
+        response
+      })
+    );
+    return response;
+  } catch (error) {
+    await appendAiUsageRecord(
+      makeAiUsageRecord({
+        payload,
+        startedAt,
+        status: "error",
+        error
+      })
+    );
+    throw error;
+  }
 };
 
 function isAllowedAiDocFile(name) {
@@ -238,6 +338,126 @@ function estimateJsonChars(value) {
   } catch {
     return 0;
   }
+}
+
+async function readAiUsageSummary(months = AI_USAGE_SUMMARY_MAX_MONTHS) {
+  const requestedMonths = Math.min(
+    Math.max(Number(months) || 1, 1),
+    Math.max(1, AI_USAGE_SUMMARY_MAX_MONTHS)
+  );
+
+  let entries = [];
+  try {
+    entries = await fsp.readdir(AI_USAGE_LOG_DIR, { withFileTypes: true });
+  } catch {
+    return {
+      ok: true,
+      logDir: AI_USAGE_LOG_DIR,
+      logToFile: AI_USAGE_LOG_TO_FILE,
+      months: [],
+      totals: {
+        requests: 0,
+        successes: 0,
+        errors: 0,
+        inputChars: 0,
+        outputChars: 0,
+        avgLatencyMs: 0
+      }
+    };
+  }
+
+  const files = entries
+    .filter((entry) => entry.isFile() && /^ai-usage-\d{4}-\d{2}\.jsonl$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .sort()
+    .slice(-requestedMonths);
+
+  const monthSummaries = [];
+  const totals = {
+    requests: 0,
+    successes: 0,
+    errors: 0,
+    inputChars: 0,
+    outputChars: 0,
+    latencyMsTotal: 0
+  };
+
+  for (const fileName of files) {
+    const monthKey = fileName.slice("ai-usage-".length, "ai-usage-YYYY-MM".length);
+    const monthSummary = {
+      month: monthKey,
+      requests: 0,
+      successes: 0,
+      errors: 0,
+      inputChars: 0,
+      outputChars: 0,
+      avgLatencyMs: 0,
+      byPath: {},
+      byModel: {}
+    };
+
+    let content = "";
+    try {
+      content = await fsp.readFile(path.join(AI_USAGE_LOG_DIR, fileName), "utf8");
+    } catch {
+      monthSummaries.push(monthSummary);
+      continue;
+    }
+
+    for (const line of content.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let record = null;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      const pathKey = record?.path || "unknown";
+      const modelKey = record?.model || "unknown";
+      const latencyMs = Number(record?.latencyMs || 0) || 0;
+      const inputChars = Number(record?.inputChars || 0) || 0;
+      const outputChars = Number(record?.outputChars || 0) || 0;
+      const isSuccess = record?.status === "ok";
+
+      monthSummary.requests += 1;
+      monthSummary.successes += isSuccess ? 1 : 0;
+      monthSummary.errors += isSuccess ? 0 : 1;
+      monthSummary.inputChars += inputChars;
+      monthSummary.outputChars += outputChars;
+      monthSummary.avgLatencyMs += latencyMs;
+
+      monthSummary.byPath[pathKey] = (monthSummary.byPath[pathKey] || 0) + 1;
+      monthSummary.byModel[modelKey] = (monthSummary.byModel[modelKey] || 0) + 1;
+
+      totals.requests += 1;
+      totals.successes += isSuccess ? 1 : 0;
+      totals.errors += isSuccess ? 0 : 1;
+      totals.inputChars += inputChars;
+      totals.outputChars += outputChars;
+      totals.latencyMsTotal += latencyMs;
+    }
+
+    monthSummary.avgLatencyMs = monthSummary.requests
+      ? Math.round(monthSummary.avgLatencyMs / monthSummary.requests)
+      : 0;
+    monthSummaries.push(monthSummary);
+  }
+
+  return {
+    ok: true,
+    logDir: AI_USAGE_LOG_DIR,
+    logToFile: AI_USAGE_LOG_TO_FILE,
+    months: monthSummaries,
+    totals: {
+      requests: totals.requests,
+      successes: totals.successes,
+      errors: totals.errors,
+      inputChars: totals.inputChars,
+      outputChars: totals.outputChars,
+      avgLatencyMs: totals.requests ? Math.round(totals.latencyMsTotal / totals.requests) : 0
+    }
+  };
 }
 
 function topNumericEntries(mapLike, maxItems = EXPLAIN_CAMPUS_MAX_TOP_ITEMS) {
@@ -6003,6 +6223,15 @@ app.get("/health", (req, res) =>
     commit: SERVER_COMMIT || "unknown"
   })
 );
+
+app.get("/ai/usage-summary", async (req, res) => {
+  try {
+    const summary = await readAiUsageSummary(req.query?.months);
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
 
 app.listen(8787, () => {
   console.log("[ai-server] running at http://localhost:8787");
