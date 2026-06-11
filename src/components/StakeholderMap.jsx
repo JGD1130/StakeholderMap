@@ -10914,6 +10914,7 @@ const StakeholderMap = ({
   const isSharedPublicPlanningMode = isSarpyCountyInstance && isDemoPublicMode;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
   const planningScenarioControlsEnabled = showFullMapfluenceControls || (isDemoPublicMode && (demoEditingEnabled || isSharedPublicPlanningMode));
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
@@ -12210,6 +12211,15 @@ const StakeholderMap = ({
     roomEditSelection.length,
     clearRoomEditSelection
   ]);
+  useEffect(() => {
+    if (aiEnabledForCurrentView) return;
+    setAskOpen(false);
+    setAiInfoOpen(false);
+    setAiOpen(false);
+    setAiBuildingOpen(false);
+    setAiCampusOpen(false);
+    setAiCreateScenarioOpen(false);
+  }, [aiEnabledForCurrentView]);
   useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
@@ -27654,9 +27664,9 @@ useEffect(() => {
                 setPopupMode('building');
               }}
               onExportPDF={handleExportBuilding}
-              onExplainBuilding={onExplainBuilding}
+              onExplainBuilding={aiEnabledForCurrentView ? onExplainBuilding : null}
               explainBuildingLoading={aiBuildingLoading}
-              explainBuildingDisabled={aiIsDown || !buildingStats}
+              explainBuildingDisabled={!aiEnabledForCurrentView || aiIsDown || !buildingStats}
               explainBuildingError={aiBuildingErr}
               dragHandleProps={spacePanelDragHandleProps}
             />
@@ -27715,9 +27725,9 @@ useEffect(() => {
                 setPopupMode('building');
               }}
               onExportPDF={handleExportFloor}
-              onExplainFloor={onExplain}
+              onExplainFloor={aiEnabledForCurrentView ? onExplain : null}
               explainLoading={aiLoading}
-              explainDisabled={aiIsDown || !floorStats}
+              explainDisabled={!aiEnabledForCurrentView || aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={planningScenarioControlsEnabled ? handleToggleMoveScenarioMode : undefined}
@@ -29882,7 +29892,7 @@ useEffect(() => {
           */}
 
 
-            {!stakeholderWorkflowActive && !technicalMode && (
+            {!stakeholderWorkflowActive && !technicalMode && aiEnabledForCurrentView && (
             <div
               style={{
                 marginTop: 4,
