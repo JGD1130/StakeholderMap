@@ -2773,6 +2773,289 @@ function isDrawingFeature(props = {}) {
   return props.interactive === false;
 }
 
+function getFloorFeatureLayerName(props = {}) {
+  if (!props) return '';
+  return String(
+    props.Layer ??
+    props.layer ??
+    props.FeatureClass ??
+    props.featureClass ??
+    ''
+  ).trim();
+}
+
+function shouldEnableSyntheticUnassignedFallback({ buildingLabel = '', buildingId = '', floorBasePath = '' } = {}) {
+  const folderName = floorBasePath ? getBuildingFolderFromBasePath(floorBasePath) : '';
+  const keys = [buildingLabel, buildingId, folderName]
+    .map((value) => normalizeSnapKey(value))
+    .filter(Boolean);
+  return keys.some((key) => SYNTHETIC_UNASSIGNED_BUILDING_KEYS.has(key));
+}
+
+function shouldUseDrawingForSyntheticUnassigned(props = {}) {
+  if (!isDrawingFeature(props)) return false;
+  const layer = getFloorFeatureLayerName(props).toUpperCase();
+  if (!layer) return true;
+  if (layer.includes('GRID') || layer.includes('AREA-BNDY') || layer.includes('AREA BNDY')) return false;
+  if (
+    layer.includes('FURN') ||
+    layer.includes('PNLS') ||
+    layer.includes('CASE') ||
+    layer.includes('FIXT')
+  ) {
+    return false;
+  }
+  return (
+    layer.includes('WALL') ||
+    layer.includes('DOOR') ||
+    layer.includes('GLAZ') ||
+    layer.includes('STRS') ||
+    layer.includes('STAIR') ||
+    layer.includes('SHAFT') ||
+    layer.includes('CORE') ||
+    layer.includes('ELEV')
+  );
+}
+
+function pushSyntheticUnassignedLinework(target, feature) {
+  if (!Array.isArray(target) || !feature?.geometry?.type) return;
+  const geomType = feature.geometry.type;
+  try {
+    if (geomType === 'LineString' || geomType === 'MultiLineString') {
+      const flat = turf.flatten(feature)?.features || [feature];
+      flat.forEach((line) => {
+        if (line?.geometry?.type === 'LineString' || line?.geometry?.type === 'MultiLineString') {
+          target.push({ type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(line.geometry) });
+        }
+      });
+      return;
+    }
+    if (geomType === 'Polygon' || geomType === 'MultiPolygon') {
+      const boundary = turf.polygonToLine(feature);
+      const flat = turf.flatten(boundary)?.features || [];
+      flat.forEach((line) => {
+        if (line?.geometry?.type === 'LineString' || line?.geometry?.type === 'MultiLineString') {
+          target.push({ type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(line.geometry) });
+        }
+      });
+    }
+  } catch {}
+}
+
+function bboxArraysIntersect(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 4 || b.length < 4) return false;
+  return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+}
+
+function deriveSyntheticUnassignedAreaScale(roomFeatures = []) {
+  const ratios = [];
+  for (const feature of roomFeatures) {
+    if (ratios.length >= 80) break;
+    const areaSf = resolvePatchedArea(feature?.properties || {});
+    if (!Number.isFinite(areaSf) || areaSf <= 0) continue;
+    try {
+      const geomArea = Number(turf.area(feature) || 0);
+      if (!Number.isFinite(geomArea) || geomArea <= 1e-8) continue;
+      const ratio = areaSf / geomArea;
+      if (Number.isFinite(ratio) && ratio > 0.01 && ratio < 1000000) ratios.push(ratio);
+    } catch {}
+  }
+  if (!ratios.length) return SYNTHETIC_UNASSIGNED_GEOM_AREA_TO_SF;
+  ratios.sort((a, b) => a - b);
+  return ratios[Math.floor(ratios.length / 2)] || SYNTHETIC_UNASSIGNED_GEOM_AREA_TO_SF;
+}
+
+function computePlanarRingMetrics(ring = []) {
+  if (!Array.isArray(ring) || ring.length < 4) return { area: 0, perimeter: 0 };
+  let twiceArea = 0;
+  let perimeter = 0;
+  for (let i = 0; i < ring.length - 1; i += 1) {
+    const start = ring[i];
+    const end = ring[i + 1];
+    if (!Array.isArray(start) || !Array.isArray(end)) continue;
+    const x1 = Number(start[0]);
+    const y1 = Number(start[1]);
+    const x2 = Number(end[0]);
+    const y2 = Number(end[1]);
+    if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+    twiceArea += (x1 * y2) - (x2 * y1);
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    perimeter += Math.sqrt((dx * dx) + (dy * dy));
+  }
+  return { area: Math.abs(twiceArea) / 2, perimeter };
+}
+
+function computePlanarCompactness(feature) {
+  const geomType = feature?.geometry?.type || '';
+  const coords = feature?.geometry?.coordinates;
+  if (!coords) return 0;
+  let area = 0;
+  let perimeter = 0;
+  const polygons = geomType === 'Polygon'
+    ? [coords]
+    : (geomType === 'MultiPolygon' ? coords : []);
+  polygons.forEach((polygon) => {
+    if (!Array.isArray(polygon) || !polygon.length) return;
+    polygon.forEach((ring, idx) => {
+      const metrics = computePlanarRingMetrics(ring);
+      perimeter += metrics.perimeter;
+      area += idx === 0 ? metrics.area : -metrics.area;
+    });
+  });
+  if (!Number.isFinite(area) || !Number.isFinite(perimeter) || area <= 0 || perimeter <= 0) return 0;
+  return (4 * Math.PI * area) / (perimeter * perimeter);
+}
+
+function injectSyntheticUnassignedRooms(fc, context = {}) {
+  if (!fc?.features?.length || fc.__mfSyntheticUnassignedApplied) return fc;
+  if (!shouldEnableSyntheticUnassignedFallback(context)) return fc;
+  if (fc.features.some((feature) => feature?.properties?.__syntheticUnassigned)) {
+    return { ...fc, __mfSyntheticUnassignedApplied: true };
+  }
+
+  const roomFeatures = fc.features.filter((feature) => featureLooksLikeRoom(feature));
+  const drawingFeatures = fc.features.filter((feature) => shouldUseDrawingForSyntheticUnassigned(feature?.properties || {}));
+  if (!roomFeatures.length || !drawingFeatures.length) return fc;
+
+  const lineInputs = [];
+  roomFeatures.forEach((feature) => pushSyntheticUnassignedLinework(lineInputs, feature));
+  drawingFeatures.forEach((feature) => pushSyntheticUnassignedLinework(lineInputs, feature));
+  if (lineInputs.length < 4) return fc;
+
+  let polygonizedPieces = [];
+  try {
+    polygonizedPieces = turf.polygonize(turf.featureCollection(lineInputs))?.features || [];
+  } catch {
+    polygonizedPieces = [];
+  }
+  if (!polygonizedPieces.length) return fc;
+
+  const areaScale = deriveSyntheticUnassignedAreaScale(roomFeatures);
+  const roomIndex = roomFeatures.map((feature) => {
+    try {
+      const bbox = turf.bbox(feature);
+      return Array.isArray(bbox) && bbox.length === 4 && bbox.every(Number.isFinite)
+        ? { feature, bbox }
+        : null;
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+
+  const candidates = [];
+  polygonizedPieces.forEach((piece) => {
+    const geomType = piece?.geometry?.type || '';
+    if (geomType !== 'Polygon' && geomType !== 'MultiPolygon') return;
+    let centroid = null;
+    let bbox = null;
+    let areaGeom = 0;
+    try {
+      areaGeom = Math.max(0, Number(turf.area(piece) || 0));
+      centroid = turf.centroid(piece);
+      bbox = turf.bbox(piece);
+    } catch {
+      return;
+    }
+    if (!areaGeom || !centroid?.geometry?.coordinates || !Array.isArray(bbox) || bbox.length < 4) return;
+
+    const areaSf = Math.max(0, Math.round(areaGeom * areaScale));
+    if (areaSf < SYNTHETIC_UNASSIGNED_MIN_AREA_SF) return;
+    const compactness = computePlanarCompactness(piece);
+    if (compactness < SYNTHETIC_UNASSIGNED_MIN_COMPACTNESS) return;
+
+    const nearbyRooms = roomIndex.filter((entry) => bboxArraysIntersect(entry.bbox, bbox));
+    let overlapArea = 0;
+    let centroidInsideRoom = false;
+    for (const entry of nearbyRooms) {
+      try {
+        if (turf.booleanPointInPolygon(centroid, entry.feature)) {
+          centroidInsideRoom = true;
+          break;
+        }
+      } catch {}
+      try {
+        const intersection = turf.intersect(turf.featureCollection([piece, entry.feature]));
+        if (intersection) {
+          overlapArea += Math.max(0, Number(turf.area(intersection) || 0));
+          if ((overlapArea / areaGeom) > SYNTHETIC_UNASSIGNED_MAX_ROOM_OVERLAP_RATIO) break;
+        }
+      } catch {}
+    }
+    if (centroidInsideRoom) return;
+    if ((overlapArea / areaGeom) > SYNTHETIC_UNASSIGNED_MAX_ROOM_OVERLAP_RATIO) return;
+
+    candidates.push({
+      piece,
+      areaSf,
+      centroid: centroid.geometry.coordinates
+    });
+  });
+
+  if (!candidates.length) return fc;
+
+  candidates.sort((a, b) => {
+    if (b.areaSf !== a.areaSf) return b.areaSf - a.areaSf;
+    if ((a.centroid?.[1] || 0) !== (b.centroid?.[1] || 0)) return (b.centroid?.[1] || 0) - (a.centroid?.[1] || 0);
+    return (a.centroid?.[0] || 0) - (b.centroid?.[0] || 0);
+  });
+
+  const floorId = String(context?.floorId || context?.floor || '').trim();
+  const buildingName = String(context?.buildingId || context?.buildingLabel || '').trim();
+  const syntheticFeatures = candidates.map((candidate, idx) => {
+    const syntheticId = `synthetic-unassigned-${normalizeSnapKey(buildingName || 'building')}-${normalizeSnapKey(floorId || 'floor')}-${idx + 1}`;
+    const roomNumber = `UA-${idx + 1}`;
+    return {
+      type: 'Feature',
+      id: syntheticId,
+      properties: {
+        Element: 'Room',
+        Name: 'Unassigned',
+        Room: 'Unassigned',
+        Label: 'Unassigned',
+        Type: 'Unassigned',
+        type: 'Unassigned',
+        NCES_Type: 'Unassigned',
+        'Room Type': 'Unassigned',
+        'Room Type Description': 'Unassigned',
+        department: 'Unassigned',
+        Department: 'Unassigned',
+        NCES_Department: 'Unassigned',
+        occupancyStatus: 'Unassigned',
+        OccupancyStatus: 'Unassigned',
+        'Occupancy Status': 'Unassigned',
+        Area_SF: candidate.areaSf,
+        Area: candidate.areaSf,
+        areaSF: candidate.areaSf,
+        area: candidate.areaSf,
+        __areaSf: candidate.areaSf,
+        __dept: 'Unassigned',
+        __roomType: 'Unassigned',
+        __roomCategory: 'Unassigned',
+        Number: roomNumber,
+        RoomNumber: roomNumber,
+        roomNumber,
+        RevitId: syntheticId,
+        revitId: syntheticId,
+        roomGuid: syntheticId,
+        'Room GUID': syntheticId,
+        Building: buildingName,
+        building: buildingName,
+        Floor: floorId,
+        floor: floorId,
+        __syntheticUnassigned: true
+      },
+      geometry: cloneGeoJsonValue(candidate.piece.geometry)
+    };
+  });
+
+  return {
+    ...fc,
+    __mfSyntheticUnassignedApplied: true,
+    features: [...fc.features, ...syntheticFeatures]
+  };
+}
+
 function snapToNearestVertex(feature, fallback) {
   if (!feature?.geometry || !Array.isArray(fallback)) return fallback;
   const pts = extractLngLatPairs(feature.geometry, 4000);
@@ -3013,6 +3296,15 @@ const DEBUG_OVERLAY_LOGS = false;
 const ENABLE_DOOR_STAIR_OVERLAY = false;
 const ENABLE_WALLS_OVERLAY = false;
 const ROOMS_ONLY_FILTER = ['==', ['get', 'Element'], 'Room'];
+const SYNTHETIC_UNASSIGNED_BUILDING_KEYS = new Set([
+  normalizeSnapKey('Administration/Courthouse'),
+  normalizeSnapKey('Administration Courthouse'),
+  normalizeSnapKey('AdministrationCourthouse')
+]);
+const SYNTHETIC_UNASSIGNED_MIN_AREA_SF = 24;
+const SYNTHETIC_UNASSIGNED_MIN_COMPACTNESS = 0.035;
+const SYNTHETIC_UNASSIGNED_MAX_ROOM_OVERLAP_RATIO = 0.08;
+const SYNTHETIC_UNASSIGNED_GEOM_AREA_TO_SF = 10.76391041671;
 
 async function fetchJSON(url) {
   try {
@@ -5229,10 +5521,17 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       };
     });
     patchedFC = { ...fc, features: patchedFeatures };
-    if (typeof onOptionsCollected === 'function') {
-      const { typeOptions, deptOptions } = collectFloorOptions(patchedFeatures);
-      onOptionsCollected({ typeOptions, deptOptions });
-    }
+  }
+  patchedFC = injectSyntheticUnassignedRooms(patchedFC, {
+    buildingLabel: affineBuildingLabel || buildingId || '',
+    buildingId,
+    floor: floorId || floor || '',
+    floorId: floorId || floor || '',
+    floorBasePath
+  });
+  if ((canUseRoomPatches || canUseAirtable) && typeof onOptionsCollected === 'function') {
+    const { typeOptions, deptOptions } = collectFloorOptions(patchedFC?.features || []);
+    onOptionsCollected({ typeOptions, deptOptions });
   }
   if (currentFloorContextRef && typeof currentFloorContextRef === 'object') {
     currentFloorContextRef.current = {
