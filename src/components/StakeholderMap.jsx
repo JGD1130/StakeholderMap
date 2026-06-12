@@ -12248,18 +12248,27 @@ const StakeholderMap = ({
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
+    const preferSarpyPublicFloorAsset =
+      isSarpyPublicReadonlyMode &&
+      floorplanCampus === 'SarpyCounty';
+    const toPreferredAssetUrl = (candidateUrl) => {
+      if (!candidateUrl) return candidateUrl;
+      const resolved = /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
+      if (!preferSarpyPublicFloorAsset) return resolved;
+      return resolved.replace(/_Dept_Rooms\.geojson(\?.*)?$/i, '_Dept_Rooms_Public.geojson$1');
+    };
     const floors = getAvailableFloors(folderKey);
     if (!floors.includes(normalizedFloorId)) return null;
     const urlMap = availableFloorUrlsByBuildingRef.current.get(folderKey);
     const manifestUrl = urlMap?.get(normalizedFloorId);
     if (manifestUrl) {
-      return /^https?:\/\//i.test(manifestUrl) ? manifestUrl : assetUrl(manifestUrl);
+      return toPreferredAssetUrl(manifestUrl);
     }
     const campusSeg = encodeURIComponent(floorplanCampus);
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(normalizedFloorId);
-    return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
-  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled]);
+    return toPreferredAssetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
+  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled, isSarpyPublicReadonlyMode]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
     if (!floorplansEnabled) return [];
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
@@ -18005,7 +18014,10 @@ const StakeholderMap = ({
     if (!floorId && floorIdRaw && floorOverrideValue && buildingKey && (!buildingFloors || buildingFloors.length === 0)) {
       floorId = floorIdRaw;
       const campusSeg = encodeURIComponent(floorplanCampus);
-      floorUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
+      const baseFallbackUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
+      floorUrl = (isSarpyPublicReadonlyMode && floorplanCampus === 'SarpyCounty')
+        ? baseFallbackUrl.replace(/_Dept_Rooms\.geojson$/i, '_Dept_Rooms_Public.geojson')
+        : baseFallbackUrl;
       if (buildingFloors && !buildingFloors.includes(floorId)) {
         buildingFloors = [...buildingFloors, floorId];
         availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
