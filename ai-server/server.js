@@ -71,12 +71,19 @@ const SERVER_COMMIT =
   "";
 const ENROLLMENT_FILE_NAME = process.env.ENROLLMENT_FILE_NAME || "HastingsCollege_Enrollment.xlsx";
 const ENROLLMENT_SHEET_NAME = process.env.ENROLLMENT_SHEET_NAME || "";
+const CLASS_SCHEDULE_FILE_NAME = process.env.CLASS_SCHEDULE_FILE_NAME || "";
+const CLASS_SCHEDULE_SHEET_NAME = process.env.CLASS_SCHEDULE_SHEET_NAME || "";
 const XLSX_API = (XLSX && XLSX.readFile && XLSX.utils)
   ? XLSX
   : (XLSX?.default || XLSX);
 const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
+};
+const classScheduleCache = {
+  filePath: "",
+  mtimeMs: 0,
+  payload: null
 };
 const requestContextStorage = new AsyncLocalStorage();
 
@@ -709,6 +716,297 @@ async function resolveEnrollmentFilePath() {
     if (hit) return path.join(AI_DOCS_DIR, hit.name);
   } catch {}
   return null;
+}
+
+function normalizeScheduleHeaderKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function parseScheduleNumber(value) {
+  if (value == null || value === "") return null;
+  const cleaned = String(value).replace(/,/g, "").trim();
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+function normalizeScheduleDayTokens(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  const upper = raw.toUpperCase().replace(/\./g, "");
+  const tokens = new Set();
+  const add = (token) => {
+    if (token) tokens.add(token);
+  };
+  if (/TBA|ARR|ONLINE|ASYNCH/i.test(upper)) return [];
+  if (/[MTWRFSU]{2,}/.test(upper) && !/\s/.test(upper)) {
+    const chars = upper.split("");
+    for (let i = 0; i < chars.length; i += 1) {
+      const ch = chars[i];
+      if (ch === "T" && chars[i + 1] === "H") {
+        add("TH");
+        i += 1;
+        continue;
+      }
+      if (ch === "S" && chars[i + 1] === "U") {
+        add("SU");
+        i += 1;
+        continue;
+      }
+      add(ch);
+    }
+    return Array.from(tokens);
+  }
+  const normalized = upper.replace(/[^A-Z0-9]+/g, " ");
+  if (/\bMON(DAY)?\b/.test(normalized)) add("M");
+  if (/\bTUE(S|SDAY)?\b/.test(normalized)) add("TU");
+  if (/\bWED(NESDAY)?\b/.test(normalized)) add("W");
+  if (/\bTHU(R|RSDAY)?\b/.test(normalized)) add("TH");
+  if (/\bFRI(DAY)?\b/.test(normalized)) add("F");
+  if (/\bSAT(URDAY)?\b/.test(normalized)) add("SA");
+  if (/\bSUN(DAY)?\b/.test(normalized)) add("SU");
+  if (/\b M \b/.test(` ${normalized} `)) add("M");
+  if (/\b T \b/.test(` ${normalized} `)) add("T");
+  if (/\b W \b/.test(` ${normalized} `)) add("W");
+  if (/\b R \b/.test(` ${normalized} `)) add("R");
+  if (/\b F \b/.test(` ${normalized} `)) add("F");
+  return Array.from(tokens);
+}
+
+function parseTimeToMinutes(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value >= 0 && value < 1) return Math.round(value * 24 * 60);
+    if (value >= 100 && value <= 2359) {
+      const hours = Math.floor(value / 100);
+      const minutes = value % 100;
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return (hours * 60) + minutes;
+      }
+    }
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const compact = raw.replace(/\s+/g, " ").toUpperCase();
+  const match = compact.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2] || 0);
+  const meridiem = String(match[3] || "").toUpperCase();
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes < 0 || minutes > 59) return null;
+  if (meridiem === "PM" && hours < 12) hours += 12;
+  if (meridiem === "AM" && hours === 12) hours = 0;
+  if (!meridiem && hours < 8 && compact.includes(":")) hours += 12;
+  if (hours < 0 || hours > 23) return null;
+  return (hours * 60) + minutes;
+}
+
+function buildTimeLabel(minutes) {
+  if (!Number.isFinite(minutes)) return "";
+  const safeMinutes = Math.max(0, Math.min(23 * 60 + 59, Math.round(minutes)));
+  const hours24 = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  const meridiem = hours24 >= 12 ? "PM" : "AM";
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${String(mins).padStart(2, "0")} ${meridiem}`;
+}
+
+function parseTimeRange(startValue, endValue, rangeValue) {
+  let startMinutes = parseTimeToMinutes(startValue);
+  let endMinutes = parseTimeToMinutes(endValue);
+  let timeText = String(rangeValue || "").trim();
+  if ((!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) && timeText) {
+    const parts = timeText.split(/\s*(?:-|–|—|to)\s*/i);
+    if (parts.length >= 2) {
+      startMinutes = parseTimeToMinutes(parts[0]);
+      endMinutes = parseTimeToMinutes(parts[1]);
+    }
+  }
+  if (!timeText && Number.isFinite(startMinutes) && Number.isFinite(endMinutes)) {
+    timeText = `${buildTimeLabel(startMinutes)} - ${buildTimeLabel(endMinutes)}`;
+  }
+  return {
+    startMinutes: Number.isFinite(startMinutes) ? startMinutes : null,
+    endMinutes: Number.isFinite(endMinutes) ? endMinutes : null,
+    startTime: Number.isFinite(startMinutes) ? buildTimeLabel(startMinutes) : String(startValue || "").trim(),
+    endTime: Number.isFinite(endMinutes) ? buildTimeLabel(endMinutes) : String(endValue || "").trim(),
+    timeText
+  };
+}
+
+function splitScheduleBuildingAndRoom(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { building: "", room: "" };
+  for (const delimiter of [" / ", " - ", " – ", ", "]) {
+    if (!raw.includes(delimiter)) continue;
+    const [left, ...rightParts] = raw.split(delimiter);
+    const right = rightParts.join(delimiter).trim();
+    if (left.trim() && right) return { building: left.trim(), room: right };
+  }
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return { building: "", room: raw };
+  let roomStart = tokens.length - 1;
+  while (roomStart > 0 && /[0-9]/.test(tokens[roomStart - 1])) roomStart -= 1;
+  const room = tokens.slice(roomStart).join(" ").trim();
+  const building = tokens.slice(0, roomStart).join(" ").trim();
+  return building && room ? { building, room } : { building: "", room: raw };
+}
+
+function detectClassScheduleHeader(rows) {
+  let best = null;
+  const maxRows = Math.min(rows.length, 20);
+  for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
+    const row = Array.isArray(rows[rowIndex]) ? rows[rowIndex] : [];
+    const headers = row.map((cell) => normalizeScheduleHeaderKey(cell));
+    if (!headers.some(Boolean)) continue;
+    const getIndex = (patterns) => headers.findIndex((header) => patterns.some((pattern) => pattern.test(header)));
+    const headerMap = {
+      building: getIndex([/\bbuilding\b/]),
+      room: getIndex([/\broom\b/, /\blocation\b/, /\bclassroom\b/]),
+      combinedLocation: getIndex([/\bbuilding room\b/, /\broom location\b/, /\blocation\b/]),
+      course: getIndex([/\bcourse\b/, /\bclass\b/, /\bcrn\b/]),
+      subject: getIndex([/\bsubject\b/, /\bdept\b/]),
+      number: getIndex([/\bnumber\b/, /\bcatalog\b/]),
+      section: getIndex([/\bsection\b/]),
+      title: getIndex([/\btitle\b/, /\bname\b/]),
+      instructor: getIndex([/\binstructor\b/, /\bfaculty\b/, /\bteacher\b/]),
+      days: getIndex([/\bdays\b/, /\bmeeting pattern\b/, /\bmeeting days\b/]),
+      start: getIndex([/\bstart\b/]),
+      end: getIndex([/\bend\b/]),
+      time: getIndex([/\btime\b/, /\bmeeting time\b/]),
+      enrollment: getIndex([/\benrollment\b/, /\bregistered\b/, /\benrl\b/]),
+      capacity: getIndex([/\bcapacity\b/, /\bcap\b/, /\bmax\b/])
+    };
+    let score = 0;
+    if (headerMap.building >= 0 || headerMap.combinedLocation >= 0) score += 2;
+    if (headerMap.room >= 0 || headerMap.combinedLocation >= 0) score += 2;
+    if (headerMap.days >= 0) score += 2;
+    if (headerMap.start >= 0 || headerMap.time >= 0) score += 2;
+    if (headerMap.course >= 0 || headerMap.title >= 0) score += 1;
+    if (score >= 6 && (!best || score > best.score)) best = { rowIndex, headerMap, score };
+  }
+  return best;
+}
+
+function parseClassScheduleSheet(sheet, sheetName) {
+  const rows = XLSX_API.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+  if (!Array.isArray(rows) || !rows.length) return [];
+  const detected = detectClassScheduleHeader(rows);
+  if (!detected) return [];
+  const { rowIndex, headerMap } = detected;
+  const records = [];
+  for (let i = rowIndex + 1; i < rows.length; i += 1) {
+    const row = Array.isArray(rows[i]) ? rows[i] : [];
+    if (!row.some((cell) => String(cell || "").trim())) continue;
+    const directBuilding = String(row[headerMap.building] || "").trim();
+    const directRoom = String(row[headerMap.room] || "").trim();
+    const combinedLocation = String(row[headerMap.combinedLocation] || "").trim();
+    const split = splitScheduleBuildingAndRoom(combinedLocation || directRoom);
+    const building = directBuilding || split.building;
+    const room = directRoom && directBuilding ? directRoom : (directRoom || split.room);
+    const subject = String(row[headerMap.subject] || "").trim();
+    const number = String(row[headerMap.number] || "").trim();
+    const courseField = String(row[headerMap.course] || "").trim();
+    const section = String(row[headerMap.section] || "").trim();
+    const title = String(row[headerMap.title] || "").trim();
+    const instructor = String(row[headerMap.instructor] || "").trim();
+    const daysText = String(row[headerMap.days] || "").trim();
+    const dayTokens = normalizeScheduleDayTokens(daysText);
+    const { startMinutes, endMinutes, startTime, endTime, timeText } = parseTimeRange(
+      row[headerMap.start],
+      row[headerMap.end],
+      row[headerMap.time]
+    );
+    const courseCode = courseField || [subject, number].filter(Boolean).join(" ");
+    const enrollment = parseScheduleNumber(row[headerMap.enrollment]);
+    const capacity = parseScheduleNumber(row[headerMap.capacity]);
+    if (!building || !room) continue;
+    if (!courseCode && !title && !timeText && !daysText) continue;
+    records.push({
+      building,
+      room,
+      courseCode,
+      section,
+      title,
+      instructor,
+      daysText,
+      dayTokens,
+      startMinutes,
+      endMinutes,
+      startTime,
+      endTime,
+      timeText,
+      enrollment,
+      capacity,
+      sheet: sheetName
+    });
+  }
+  return records;
+}
+
+async function resolveClassScheduleFilePath() {
+  if (CLASS_SCHEDULE_FILE_NAME) {
+    const preferredPath = path.join(AI_DOCS_DIR, CLASS_SCHEDULE_FILE_NAME);
+    try {
+      const st = await fsp.stat(preferredPath);
+      if (st.isFile()) return preferredPath;
+    } catch {}
+  }
+  try {
+    const entries = await fsp.readdir(AI_DOCS_DIR, { withFileTypes: true });
+    const hit = entries.find((entry) =>
+      entry.isFile() &&
+      /\.(xlsx|xls)$/i.test(entry.name) &&
+      /(schedule|registrar|course).*\.(xlsx|xls)$/i.test(entry.name)
+    );
+    if (hit) return path.join(AI_DOCS_DIR, hit.name);
+  } catch {}
+  return null;
+}
+
+async function loadClassScheduleData() {
+  if (!XLSX_API?.readFile || !XLSX_API?.utils?.sheet_to_json) {
+    throw new Error("XLSX parser is not initialized correctly on this server");
+  }
+  const filePath = await resolveClassScheduleFilePath();
+  if (!filePath) return null;
+  const stat = await fsp.stat(filePath);
+  if (
+    classScheduleCache.payload &&
+    classScheduleCache.filePath === filePath &&
+    classScheduleCache.mtimeMs === stat.mtimeMs
+  ) {
+    return classScheduleCache.payload;
+  }
+  const workbook = XLSX_API.readFile(filePath, { cellDates: false });
+  const preferredSheetNames = [];
+  if (CLASS_SCHEDULE_SHEET_NAME && workbook.Sheets[CLASS_SCHEDULE_SHEET_NAME]) {
+    preferredSheetNames.push(CLASS_SCHEDULE_SHEET_NAME);
+  }
+  (workbook.SheetNames || []).forEach((name) => {
+    if (!preferredSheetNames.includes(name)) preferredSheetNames.push(name);
+  });
+  let bestSheet = "";
+  let bestRows = [];
+  for (const sheetName of preferredSheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+    const parsedRows = parseClassScheduleSheet(sheet, sheetName);
+    if (parsedRows.length > bestRows.length) {
+      bestRows = parsedRows;
+      bestSheet = sheetName;
+    }
+  }
+  if (!bestRows.length) throw new Error("Unable to parse building/room schedule rows from workbook");
+  const payload = {
+    source: path.basename(filePath),
+    sheet: bestSheet,
+    rows: bestRows
+  };
+  classScheduleCache.filePath = filePath;
+  classScheduleCache.mtimeMs = stat.mtimeMs;
+  classScheduleCache.payload = payload;
+  return payload;
 }
 
 function summarizeAskMapData(data) {
@@ -6278,6 +6576,25 @@ app.get("/demo/sample", async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.get("/class-schedule", async (req, res) => {
+  try {
+    const payload = await loadClassScheduleData();
+    if (!payload) {
+      return res.status(404).json({ ok: false, error: "No class schedule workbook found in Docs" });
+    }
+    return res.json({
+      ok: true,
+      source: payload.source,
+      sheet: payload.sheet,
+      rows: payload.rows
+    });
+  } catch (err) {
+    const message = err?.message || String(err);
+    const status = /unable to parse/i.test(message) ? 422 : 500;
+    return res.status(status).json({ ok: false, error: message });
   }
 });
 

@@ -8430,6 +8430,89 @@ const parseUtilizationCsv = (csvText = '') => {
   return { buildings, rooms, campus };
 };
 
+const normalizeClassScheduleRoomKey = (buildingName, roomLabel) => {
+  const resolvedBuilding = resolveBuildingNameFromInput(buildingName) || String(buildingName || '').trim();
+  const buildingKey = normalizeDashboardKey(resolvedBuilding);
+  const roomKey = normalizeUtilizationRoomKey(roomLabel);
+  if (!buildingKey || !roomKey) return '';
+  return `${buildingKey}||${roomKey}`;
+};
+
+const getScheduleDayTokensForDate = (date = new Date()) => {
+  switch (date.getDay()) {
+    case 0: return ['SU'];
+    case 1: return ['M'];
+    case 2: return ['T', 'TU'];
+    case 3: return ['W'];
+    case 4: return ['R', 'TH'];
+    case 5: return ['F'];
+    case 6: return ['SA'];
+    default: return [];
+  }
+};
+
+const isCurrentEmptyClassroomQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  const asksForCurrentAvailability =
+    /\b(currently|right now|at the moment|now)\b/.test(text) ||
+    (/\b(empty|available|open|vacant)\b/.test(text) && /\b(find|show|list|which|what)\b/.test(text));
+  if (!asksForCurrentAvailability) return false;
+  if (/\bclassroom(s)?\b|\bteaching room(s)?\b/.test(text)) return true;
+  return /\bclass(es)?\b/.test(text) && /\broom(s)?\b|\bseat(s)?\b|\bcapacity\b/.test(text);
+};
+
+const extractMinimumSeatCountFromQuestion = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  const patterns = [
+    /\bat least\s+(\d+)\s+seat(s)?\b/,
+    /\bminimum\s+of\s+(\d+)\s+seat(s)?\b/,
+    /\bminimum\s+(\d+)\s+seat(s)?\b/,
+    /\bwith\s+(\d+)\+?\s+seat(s)?\b/,
+    /\b(\d+)\+?\s+seat(s)?\b/,
+    /\bcapacity\s+(of\s+)?(\d+)\b/
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const numericGroup = match.slice(1).find((value) => /^\d+$/.test(String(value || '')));
+    const parsed = Number(numericGroup);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+};
+
+const isScheduleEntryActiveAt = (entry, date = new Date()) => {
+  if (!entry) return false;
+  const dayTokens = Array.isArray(entry.dayTokens) ? entry.dayTokens : [];
+  if (dayTokens.length) {
+    const todaysTokens = getScheduleDayTokensForDate(date);
+    if (!todaysTokens.some((token) => dayTokens.includes(token))) return false;
+  }
+  const startMinutes = Number(entry.startMinutes);
+  const endMinutes = Number(entry.endMinutes);
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) return false;
+  const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+  return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+};
+
+const getScheduleEntriesForToday = (entries = [], date = new Date()) => {
+  const todaysTokens = getScheduleDayTokensForDate(date);
+  return (entries || []).filter((entry) => {
+    const dayTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
+    if (!dayTokens.length) return true;
+    return todaysTokens.some((token) => dayTokens.includes(token));
+  });
+};
+
+const formatScheduleEntryTime = (entry) => {
+  const timeText = String(entry?.timeText || '').trim();
+  if (timeText) return timeText;
+  const startText = String(entry?.startTime || '').trim();
+  const endText = String(entry?.endTime || '').trim();
+  if (startText && endText) return `${startText} - ${endText}`;
+  return startText || endText || 'Time TBD';
+};
+
 const BUILDING_SNAP_CORNERS = {
   [normalizeSnapKey('Babcock Hall')]: 'nw',
   [normalizeSnapKey('Babcock Hall Residence')]: 'nw',
@@ -10911,11 +10994,15 @@ const StakeholderMap = ({
   const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const demoEditingEnabled = DEMO_EDITING_ENABLED;
-  const isSharedPublicPlanningMode = isSarpyCountyInstance && isDemoPublicMode;
+  const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
+  const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
-  const planningScenarioControlsEnabled = showFullMapfluenceControls || (isDemoPublicMode && (demoEditingEnabled || isSharedPublicPlanningMode));
+  const planningScenarioControlsEnabled = showFullMapfluenceControls || (publicPlanningScenarioAllowed && demoEditingEnabled);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
   const defaultMapView = isTechnicalOnlyMode
@@ -11177,6 +11264,13 @@ const StakeholderMap = ({
     entry: null
   });
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
+  const [classScheduleRows, setClassScheduleRows] = useState([]);
+  const [classScheduleMeta, setClassScheduleMeta] = useState({
+    source: '',
+    sheet: '',
+    error: '',
+    missing: false
+  });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
   const [strategicTargetUtilization, setStrategicTargetUtilization] = useState(STRATEGIC_DEFAULT_TARGET_UTILIZATION);
@@ -11221,6 +11315,83 @@ const StakeholderMap = ({
     const key = buildUtilizationKey(resolved, roomLabel);
     return utilizationByRoom[key] || null;
   }, [utilizationByRoom]);
+  const classScheduleByRoom = useMemo(() => {
+    const grouped = new Map();
+    (classScheduleRows || []).forEach((entry) => {
+      const key = normalizeClassScheduleRoomKey(entry?.building, entry?.room);
+      if (!key) return;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(entry);
+    });
+    grouped.forEach((entries, key) => {
+      grouped.set(key, [...entries].sort((a, b) => {
+        const aStart = Number(a?.startMinutes);
+        const bStart = Number(b?.startMinutes);
+        if (Number.isFinite(aStart) && Number.isFinite(bStart) && aStart !== bStart) return aStart - bStart;
+        return String(a?.courseCode || a?.title || '').localeCompare(String(b?.courseCode || b?.title || ''));
+      }));
+    });
+    return grouped;
+  }, [classScheduleRows]);
+  const getScheduleEntriesForRoom = useCallback((buildingName, roomLabel) => {
+    const key = normalizeClassScheduleRoomKey(buildingName, roomLabel);
+    return key ? (classScheduleByRoom.get(key) || []) : [];
+  }, [classScheduleByRoom]);
+  const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
+    const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
+    const todaysEntries = getScheduleEntriesForToday(entries, date);
+    const activeEntries = todaysEntries.filter((entry) => isScheduleEntryActiveAt(entry, date));
+    const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+    const upcomingEntries = todaysEntries.filter((entry) => {
+      const startMinutes = Number(entry?.startMinutes);
+      return Number.isFinite(startMinutes) && startMinutes >= nowMinutes;
+    });
+    return {
+      entries,
+      todaysEntries,
+      activeEntries,
+      upcomingEntries
+    };
+  }, [getScheduleEntriesForRoom]);
+  const buildCurrentlyAvailableClassroomRows = useCallback((rooms = [], options = {}) => {
+    const now = options?.now instanceof Date ? options.now : new Date();
+    const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
+    const rows = [];
+    const seen = new Set();
+    (rooms || []).forEach((room) => {
+      if (!isScheduledTeachingTypeLabel(room?.type ?? room?.roomType ?? '')) return;
+      const seatCount = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
+      if (minimumSeats && (!Number.isFinite(seatCount) || seatCount < minimumSeats)) return;
+      const building = String(getRoomBuildingLabel(room) || '').trim();
+      const roomNumber = getDisplayRoomNumber(room);
+      if (!building || !roomNumber) return;
+      const dedupeKey = `${normalizeDashboardKey(building)}|${normalizeUtilizationRoomKey(roomNumber)}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      const schedule = getRoomScheduleSnapshot(building, roomNumber, now);
+      if (schedule.activeEntries.length) return;
+      const nextEntry = schedule.upcomingEntries[0] || null;
+      rows.push({
+        Building: building,
+        'Room Number': roomNumber,
+        Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
+        'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
+        Status: nextEntry
+          ? `Available now | Next: ${formatScheduleEntryTime(nextEntry)}`
+          : 'Available now',
+        'Next Class': nextEntry
+          ? `${String(nextEntry?.courseCode || nextEntry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(nextEntry)})`
+          : 'No more classes today'
+      });
+    });
+    return rows.sort((a, b) => {
+      const seatDiff = Number(b?.Seats || 0) - Number(a?.Seats || 0);
+      if (seatDiff !== 0) return seatDiff;
+      const buildingCompare = String(a?.Building || '').localeCompare(String(b?.Building || ''));
+      if (buildingCompare !== 0) return buildingCompare;
+      return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
+    });
+  }, [getRoomScheduleSnapshot]);
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
@@ -18259,6 +18430,19 @@ const StakeholderMap = ({
     return json;
   }, []);
 
+  const fetchClassSchedule = useCallback(async () => {
+    const res = await guardedAiFetch('/ai/class-schedule', {
+      cache: 'no-store',
+      timeoutMs: 12000
+    });
+
+    const raw = await res.text();
+    let json = null;
+    try { json = JSON.parse(raw); } catch {}
+    if (!res.ok) throw new Error(json?.error || raw || `HTTP ${res.status}`);
+    return json;
+  }, []);
+
   const explainBuilding = useCallback(async ({ context, buildingStats, panelStats }) => {
     const res = await guardedAiFetch('/ai/explain-building', {
       method: 'POST',
@@ -19830,6 +20014,47 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
         return;
       }
+      if (isHastingsCollegeInstance && isCurrentEmptyClassroomQuery(q)) {
+        if (!classScheduleRows.length) {
+          setAskResult({
+            answer: 'Class schedule data is not loaded for Hastings College yet.',
+            bullets: [
+              classScheduleMeta.missing
+                ? 'No class schedule workbook was found on the AI server.'
+                : (classScheduleMeta.error || 'Schedule data needs to be loaded before this query can run.')
+            ],
+            resultType: 'none',
+            columns: [],
+            rows: [],
+            dataUsed: [],
+            missingData: ['Class schedule workbook']
+          });
+          return;
+        }
+        const minimumSeats = extractMinimumSeatCountFromQuestion(q);
+        const rows = buildCurrentlyAvailableClassroomRows(scopeRooms, {
+          minimumSeats,
+          now: new Date()
+        });
+        const scopeLabel = forceCampusScope
+          ? 'campus'
+          : (inferredBuilding ? inferredBuilding : 'selected scope');
+        const answer = rows.length
+          ? `Found ${rows.length.toLocaleString()} currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
+          : `No currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`;
+        setAskResult({
+          answer,
+          bullets: [
+            'Availability is based on the current local time, the loaded class schedule workbook, and classroom seat counts from the room inventory.'
+          ],
+          resultType: rows.length ? 'table' : 'none',
+          columns: rows.length ? ['Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class'] : [],
+          rows: rows.slice(0, 100),
+          dataUsed: ['roomRows', 'classScheduleRows'],
+          missingData: []
+        });
+        return;
+      }
       if (isVacantOfficeCountQuery(q)) {
         const rows = buildVacantOfficeListRows(scopeRooms);
         const scopeLabel = forceCampusScope
@@ -20089,6 +20314,29 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           roomRowsPayload = null;
         }
       }
+      let classScheduleRowsPayload = null;
+      if (isHastingsCollegeInstance && classScheduleRows.length) {
+        const roomKeys = new Set(
+          scopeRooms
+            .map((room) => normalizeClassScheduleRoomKey(getRoomBuildingLabel(room), getDisplayRoomNumber(room)))
+            .filter(Boolean)
+        );
+        const filteredScheduleRows = roomKeys.size
+          ? classScheduleRows.filter((entry) => roomKeys.has(normalizeClassScheduleRoomKey(entry?.building, entry?.room)))
+          : classScheduleRows;
+        classScheduleRowsPayload = filteredScheduleRows.slice(0, 150).map((entry) => ({
+          building: String(entry?.building || '').trim(),
+          room: String(entry?.room || '').trim(),
+          courseCode: String(entry?.courseCode || '').trim(),
+          section: String(entry?.section || '').trim(),
+          title: String(entry?.title || '').trim(),
+          instructor: String(entry?.instructor || '').trim(),
+          days: String(entry?.daysText || '').trim(),
+          time: formatScheduleEntryTime(entry),
+          enrollment: Number.isFinite(Number(entry?.enrollment)) ? Number(entry.enrollment) : '',
+          capacity: Number.isFinite(Number(entry?.capacity)) ? Number(entry.capacity) : ''
+        }));
+      }
       const data = {
         campusStats,
         buildingStats: (!forceCampusScope && inferredBuilding && !shouldUseFloorScope)
@@ -20097,13 +20345,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         floorStats: shouldUseFloorScope ? (floorFallback || undefined) : undefined,
         dashboardMetrics: undefined,
         scopeSummary: fallbackSummary || undefined,
-        roomRows: roomRowsPayload || undefined
+        roomRows: roomRowsPayload || undefined,
+        classScheduleRows: classScheduleRowsPayload || undefined
       };
 
       const out = await askMapfluence({ question: q, context, data });
       setAskResult(out);
     } catch (e) {
-      setAskErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAskErr(message);
     } finally {
       setAskLoading(false);
     }
@@ -20125,7 +20376,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     askMapfluence,
     buildingResourcesCatalog,
     resolveBuildingNameFromInput,
-    collectSpaceRows
+    collectSpaceRows,
+    isHastingsCollegeInstance,
+    classScheduleRows,
+    classScheduleMeta,
+    buildCurrentlyAvailableClassroomRows
   ]);
 
   const onExportAskResultPdf = useCallback(() => {
@@ -22566,6 +22821,14 @@ useEffect(() => {
             setAirtableLastSyncedAt(new Date());
             recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
           }
+          if (isSarpyPublicReadonlyMode) {
+            if (!cancelled) {
+              setCampusRooms(scopedRooms);
+              setCampusRoomsLoaded(true);
+              setDashboardError(null);
+            }
+            return;
+          }
           if (scopedRooms.some(hasDashboardRoomArea)) {
             return;
           }
@@ -22580,7 +22843,7 @@ useEffect(() => {
         }
         throw new Error('Rooms payload missing or invalid');
       } catch (err) {
-        if (!floorplansEnabled) {
+        if (!floorplansEnabled || isSarpyPublicReadonlyMode) {
           if (!cancelled) {
             setCampusRooms([]);
             setCampusRoomsLoaded(true);
@@ -22612,14 +22875,59 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle, floorplansEnabled, recordAirtableScopeCheck]);
+  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode]);
   useEffect(() => {
+    if (isSarpyPublicReadonlyMode) return undefined;
     const intervalMs = 30 * 60 * 1000;
     const id = setInterval(() => {
       refreshCampusRoomsFromApi();
     }, intervalMs);
     return () => clearInterval(id);
-  }, [refreshCampusRoomsFromApi]);
+  }, [refreshCampusRoomsFromApi, isSarpyPublicReadonlyMode]);
+
+  useEffect(() => {
+    if (!isHastingsCollegeInstance) {
+      setClassScheduleRows([]);
+      setClassScheduleMeta({
+        source: '',
+        sheet: '',
+        error: '',
+        missing: false
+      });
+      return undefined;
+    }
+    let cancelled = false;
+    setClassScheduleMeta((prev) => ({
+      ...prev,
+      error: '',
+      missing: false
+    }));
+    (async () => {
+      try {
+        const data = await fetchClassSchedule();
+        if (cancelled) return;
+        setClassScheduleRows(Array.isArray(data?.rows) ? data.rows : []);
+        setClassScheduleMeta({
+          source: String(data?.source || ''),
+          sheet: String(data?.sheet || ''),
+          error: '',
+          missing: false
+        });
+      } catch (err) {
+        if (cancelled) return;
+        const message = normalizeAiClientErrorMessage(err);
+        const missing = /no class schedule workbook found/i.test(message) || /http 404/i.test(message);
+        setClassScheduleRows([]);
+        setClassScheduleMeta({
+          source: '',
+          sheet: '',
+          error: missing ? '' : message,
+          missing
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fetchClassSchedule, isHastingsCollegeInstance]);
 
   useEffect(() => {
     let cancelled = false;
@@ -23080,6 +23388,12 @@ useEffect(() => {
       }
       return;
     }
+    if (isSarpyPublicReadonlyMode) {
+      setCampusRooms(airtableRooms);
+      setCampusRoomsLoaded(true);
+      setDashboardError(null);
+      return;
+    }
     if (!floorplansEnabled) {
       setCampusRooms(airtableRooms);
       setCampusRoomsLoaded(true);
@@ -23176,7 +23490,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms, floorplansEnabled]);
+  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
@@ -26082,6 +26396,28 @@ useEffect(() => {
             </div>
           `
           : '';
+        const scheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
+          ? getRoomScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
+          : null;
+        const scheduleLines = scheduleSnapshot?.activeEntries?.length
+          ? scheduleSnapshot.activeEntries.slice(0, 2).map((entry) => (
+            `<div style="margin-top:4px;"><b>Now:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
+          ))
+          : scheduleSnapshot?.upcomingEntries?.length
+            ? scheduleSnapshot.upcomingEntries.slice(0, 2).map((entry, idx) => (
+              `<div style="margin-top:4px;"><b>${idx === 0 ? 'Next' : 'Later'}:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
+            ))
+            : [];
+        const scheduleHtml = isClassroomType && isHastingsCollegeInstance
+          ? `
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e4e7ec;">
+              <div style="font-weight:700;font-size:12px;">Today's Class Schedule</div>
+              ${scheduleLines.length
+                ? scheduleLines.join('')
+                : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No more classes are scheduled for this room today.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
+            </div>
+          `
+          : '';
 
         const selectionCountHtml = canEditRoom && selectionCount
           ? `<div style="font-size:11px;color:#555;margin-top:6px;">Rooms selected: ${selectionCount}</div>`
@@ -26099,6 +26435,7 @@ useEffect(() => {
               ${seatCountRowHtml}
               ${occupancyRowHtml}
               ${utilizationHtml}
+              ${scheduleHtml}
               ${selectionCountHtml}
               ${editButtonHtml}
             </div>
@@ -26313,7 +26650,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -29774,7 +30111,7 @@ useEffect(() => {
                   )}
                 </div>
 
-                {!stakeholderWorkflowActive && !technicalMode && planningScenarioControlsEnabled && (
+                {!stakeholderWorkflowActive && !technicalMode && publicPlanningScenarioAllowed && (
                   <div style={{ marginTop: 8 }}>
                     <button
                       className="mf-btn"
@@ -29843,7 +30180,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {mode === 'admin' && (
+                  {(mode === 'admin' || publicAirtableControlsAllowed) && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -29859,19 +30196,19 @@ useEffect(() => {
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && airtableRefreshMessage && (
+                {(mode === 'admin' || publicAirtableControlsAllowed) && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
+                {(mode === 'admin' || publicAirtableControlsAllowed) && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
                   </div>
                 )}
-                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
+                {(mode === 'admin' || publicAirtableControlsAllowed) && (
                   <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
                     Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
@@ -30034,7 +30371,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {(mode === 'admin' || isSharedPublicPlanningMode) && (
+            {(mode === 'admin' || publicPlanningScenarioAllowed) && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}
