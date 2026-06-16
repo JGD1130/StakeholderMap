@@ -1,0 +1,26 @@
+{
+  "universityId": "cherokee-mental-health",
+  "universityName": "Cherokee Mental Health",
+  "enableDrawingEntry": true,
+  "enableFloorplans": false,
+  "floorplanCampus": "CherokeeMentalHealth",
+  "technicalAssessmentSaveMode": "per-assessor",
+  "style": "mapbox://styles/mapbox/streets-v12",
+  "initialCenter": [-95.573222, 42.756854],
+  "initialZoom": 16.8,
+  "lng": -95.573222,
+  "lat": 42.756854,
+  "zoom": 17.3,
+  "pitch": 39,
+  "bearing": 0,
+  "boundaryFitPadding": {
+    "top": 70,
+    "right": 320,
+    "bottom": 70,
+    "left": 300
+  },
+  "boundaryFitMaxZoom": 17.4,
+  "logos": {
+    "clarkEnersen": "Clark_Enersen_Logo.png"
+  }
+}

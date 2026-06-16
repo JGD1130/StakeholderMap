@@ -20,7 +20,10 @@ service cloud.firestore {
         || universityId == 'hastings-demo'
         || universityId == 'sarpy-county'
         || universityId == 'sarpy'
-        || universityId == 'sarpy-ne';
+        || universityId == 'sarpy-ne'
+        || universityId == 'cherokee-mental-health'
+        || universityId == 'cherokee'
+        || universityId == 'cherokee-mh';
     }
 
     function canCreateEngagementMarker(universityId) {

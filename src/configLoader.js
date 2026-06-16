@@ -1,6 +1,7 @@
 import hastingsConfigData from './Configs/Hastings.json';
 import rockhurstConfigData from './Configs/Rockhurst.json';
 import sarpyCountyConfigData from './Configs/SarpyCounty.json';
+import cherokeeMentalHealthConfigData from './Configs/CherokeeMentalHealth.json';
 
 // Import raw GeoJSONs and parse them
 import hastingsBuildingsRaw from './Configs/geojson/Hastings_College_Buildings.geojson?raw';
@@ -11,6 +12,8 @@ import rockhurstBuildingsRaw from './Configs/geojson/RockhurstU_Buildings.geojso
 import rockhurstBoundaryRaw from './Configs/geojson/RockhurstU_Boundary.geojson?raw';
 import sarpyCountyBuildingsRaw from './Configs/geojson/SarpyCounty_Buildings.json?raw';
 import sarpyCountyBoundaryRaw from './Configs/geojson/SarpyCounty_Boundary.json?raw';
+import cherokeeMentalHealthBuildingsRaw from './Configs/geojson/Cherokee_Mental_Health_Buildings.geojson?raw';
+import cherokeeMentalHealthBoundaryRaw from './Configs/geojson/Cherokee_Mental_Health_Boundary.geojson?raw';
 
 function stripBom(text) {
   return (typeof text === 'string') ? text.replace(/^\uFEFF/, '') : text;
@@ -24,6 +27,8 @@ const rockhurstBuildings = JSON.parse(stripBom(rockhurstBuildingsRaw));
 const rockhurstBoundary = JSON.parse(stripBom(rockhurstBoundaryRaw));
 const sarpyCountyBuildings = JSON.parse(stripBom(sarpyCountyBuildingsRaw));
 const sarpyCountyBoundary = JSON.parse(stripBom(sarpyCountyBoundaryRaw));
+const cherokeeMentalHealthBuildings = JSON.parse(stripBom(cherokeeMentalHealthBuildingsRaw));
+const cherokeeMentalHealthBoundary = JSON.parse(stripBom(cherokeeMentalHealthBoundaryRaw));
 
 function asConfig(objOrArray) {
   if (Array.isArray(objOrArray)) {
@@ -71,6 +76,7 @@ function normalizeBuildingFeatureCollection(input, fallbackPrefix = 'Building') 
 const hastingsBase = asConfig(hastingsConfigData);
 const rockhurstBase = asConfig(rockhurstConfigData);
 const sarpyCountyBase = asConfig(sarpyCountyConfigData);
+const cherokeeMentalHealthBase = asConfig(cherokeeMentalHealthConfigData);
 
 const emptyFeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -95,6 +101,13 @@ const finalSarpyCountyConfig = {
   outdoorSpaces: emptyFeatureCollection,
 };
 
+const finalCherokeeMentalHealthConfig = {
+  ...cherokeeMentalHealthBase,
+  buildings: normalizeBuildingFeatureCollection(cherokeeMentalHealthBuildings, 'Cherokee Building'),
+  boundary: cherokeeMentalHealthBoundary,
+  outdoorSpaces: emptyFeatureCollection,
+};
+
 const universityConfigs = {
   hastings: finalHastingsConfig,
   'hastings-demo': finalHastingsConfig,
@@ -102,6 +115,9 @@ const universityConfigs = {
   'sarpy-county': finalSarpyCountyConfig,
   sarpy: finalSarpyCountyConfig,
   'sarpy-ne': finalSarpyCountyConfig,
+  'cherokee-mental-health': finalCherokeeMentalHealthConfig,
+  cherokee: finalCherokeeMentalHealthConfig,
+  'cherokee-mh': finalCherokeeMentalHealthConfig,
 };
 
 export function getConfig(universityId) {
