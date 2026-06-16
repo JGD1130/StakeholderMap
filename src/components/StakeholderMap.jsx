@@ -585,6 +585,24 @@ function getAiBaseUrl() {
   return '';
 }
 
+function isAiBackendConfigErrorMessage(message = '') {
+  const text = String(message || '').toLowerCase();
+  return (
+    text.includes('ai backend openai credentials are invalid') ||
+    text.includes('ai backend is missing openai_api_key') ||
+    text.includes('update openai_api_key on the backend host') ||
+    text.includes('backend environment variable and restart the ai server')
+  );
+}
+
+function normalizeAiClientErrorMessage(error) {
+  const message = String(error?.message || error || '').trim();
+  if (isAiBackendConfigErrorMessage(message)) {
+    return 'AI is temporarily unavailable because the backend OpenAI credential needs to be refreshed.';
+  }
+  return message;
+}
+
 function isStaticGithubHost() {
   return typeof window !== 'undefined' && window.location.hostname.includes('github.io');
 }
@@ -2778,6 +2796,289 @@ function isDrawingFeature(props = {}) {
   return props.interactive === false;
 }
 
+function getFloorFeatureLayerName(props = {}) {
+  if (!props) return '';
+  return String(
+    props.Layer ??
+    props.layer ??
+    props.FeatureClass ??
+    props.featureClass ??
+    ''
+  ).trim();
+}
+
+function shouldEnableSyntheticUnassignedFallback({ buildingLabel = '', buildingId = '', floorBasePath = '' } = {}) {
+  const folderName = floorBasePath ? getBuildingFolderFromBasePath(floorBasePath) : '';
+  const keys = [buildingLabel, buildingId, folderName]
+    .map((value) => normalizeSnapKey(value))
+    .filter(Boolean);
+  return keys.some((key) => SYNTHETIC_UNASSIGNED_BUILDING_KEYS.has(key));
+}
+
+function shouldUseDrawingForSyntheticUnassigned(props = {}) {
+  if (!isDrawingFeature(props)) return false;
+  const layer = getFloorFeatureLayerName(props).toUpperCase();
+  if (!layer) return true;
+  if (layer.includes('GRID') || layer.includes('AREA-BNDY') || layer.includes('AREA BNDY')) return false;
+  if (
+    layer.includes('FURN') ||
+    layer.includes('PNLS') ||
+    layer.includes('CASE') ||
+    layer.includes('FIXT')
+  ) {
+    return false;
+  }
+  return (
+    layer.includes('WALL') ||
+    layer.includes('DOOR') ||
+    layer.includes('GLAZ') ||
+    layer.includes('STRS') ||
+    layer.includes('STAIR') ||
+    layer.includes('SHAFT') ||
+    layer.includes('CORE') ||
+    layer.includes('ELEV')
+  );
+}
+
+function pushSyntheticUnassignedLinework(target, feature) {
+  if (!Array.isArray(target) || !feature?.geometry?.type) return;
+  const geomType = feature.geometry.type;
+  try {
+    if (geomType === 'LineString' || geomType === 'MultiLineString') {
+      const flat = turf.flatten(feature)?.features || [feature];
+      flat.forEach((line) => {
+        if (line?.geometry?.type === 'LineString' || line?.geometry?.type === 'MultiLineString') {
+          target.push({ type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(line.geometry) });
+        }
+      });
+      return;
+    }
+    if (geomType === 'Polygon' || geomType === 'MultiPolygon') {
+      const boundary = turf.polygonToLine(feature);
+      const flat = turf.flatten(boundary)?.features || [];
+      flat.forEach((line) => {
+        if (line?.geometry?.type === 'LineString' || line?.geometry?.type === 'MultiLineString') {
+          target.push({ type: 'Feature', properties: {}, geometry: cloneGeoJsonValue(line.geometry) });
+        }
+      });
+    }
+  } catch {}
+}
+
+function bboxArraysIntersect(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 4 || b.length < 4) return false;
+  return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+}
+
+function deriveSyntheticUnassignedAreaScale(roomFeatures = []) {
+  const ratios = [];
+  for (const feature of roomFeatures) {
+    if (ratios.length >= 80) break;
+    const areaSf = resolvePatchedArea(feature?.properties || {});
+    if (!Number.isFinite(areaSf) || areaSf <= 0) continue;
+    try {
+      const geomArea = Number(turf.area(feature) || 0);
+      if (!Number.isFinite(geomArea) || geomArea <= 1e-8) continue;
+      const ratio = areaSf / geomArea;
+      if (Number.isFinite(ratio) && ratio > 0.01 && ratio < 1000000) ratios.push(ratio);
+    } catch {}
+  }
+  if (!ratios.length) return SYNTHETIC_UNASSIGNED_GEOM_AREA_TO_SF;
+  ratios.sort((a, b) => a - b);
+  return ratios[Math.floor(ratios.length / 2)] || SYNTHETIC_UNASSIGNED_GEOM_AREA_TO_SF;
+}
+
+function computePlanarRingMetrics(ring = []) {
+  if (!Array.isArray(ring) || ring.length < 4) return { area: 0, perimeter: 0 };
+  let twiceArea = 0;
+  let perimeter = 0;
+  for (let i = 0; i < ring.length - 1; i += 1) {
+    const start = ring[i];
+    const end = ring[i + 1];
+    if (!Array.isArray(start) || !Array.isArray(end)) continue;
+    const x1 = Number(start[0]);
+    const y1 = Number(start[1]);
+    const x2 = Number(end[0]);
+    const y2 = Number(end[1]);
+    if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+    twiceArea += (x1 * y2) - (x2 * y1);
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    perimeter += Math.sqrt((dx * dx) + (dy * dy));
+  }
+  return { area: Math.abs(twiceArea) / 2, perimeter };
+}
+
+function computePlanarCompactness(feature) {
+  const geomType = feature?.geometry?.type || '';
+  const coords = feature?.geometry?.coordinates;
+  if (!coords) return 0;
+  let area = 0;
+  let perimeter = 0;
+  const polygons = geomType === 'Polygon'
+    ? [coords]
+    : (geomType === 'MultiPolygon' ? coords : []);
+  polygons.forEach((polygon) => {
+    if (!Array.isArray(polygon) || !polygon.length) return;
+    polygon.forEach((ring, idx) => {
+      const metrics = computePlanarRingMetrics(ring);
+      perimeter += metrics.perimeter;
+      area += idx === 0 ? metrics.area : -metrics.area;
+    });
+  });
+  if (!Number.isFinite(area) || !Number.isFinite(perimeter) || area <= 0 || perimeter <= 0) return 0;
+  return (4 * Math.PI * area) / (perimeter * perimeter);
+}
+
+function injectSyntheticUnassignedRooms(fc, context = {}) {
+  if (!fc?.features?.length || fc.__mfSyntheticUnassignedApplied) return fc;
+  if (!shouldEnableSyntheticUnassignedFallback(context)) return fc;
+  if (fc.features.some((feature) => feature?.properties?.__syntheticUnassigned)) {
+    return { ...fc, __mfSyntheticUnassignedApplied: true };
+  }
+
+  const roomFeatures = fc.features.filter((feature) => featureLooksLikeRoom(feature));
+  const drawingFeatures = fc.features.filter((feature) => shouldUseDrawingForSyntheticUnassigned(feature?.properties || {}));
+  if (!roomFeatures.length || !drawingFeatures.length) return fc;
+
+  const lineInputs = [];
+  roomFeatures.forEach((feature) => pushSyntheticUnassignedLinework(lineInputs, feature));
+  drawingFeatures.forEach((feature) => pushSyntheticUnassignedLinework(lineInputs, feature));
+  if (lineInputs.length < 4) return fc;
+
+  let polygonizedPieces = [];
+  try {
+    polygonizedPieces = turf.polygonize(turf.featureCollection(lineInputs))?.features || [];
+  } catch {
+    polygonizedPieces = [];
+  }
+  if (!polygonizedPieces.length) return fc;
+
+  const areaScale = deriveSyntheticUnassignedAreaScale(roomFeatures);
+  const roomIndex = roomFeatures.map((feature) => {
+    try {
+      const bbox = turf.bbox(feature);
+      return Array.isArray(bbox) && bbox.length === 4 && bbox.every(Number.isFinite)
+        ? { feature, bbox }
+        : null;
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+
+  const candidates = [];
+  polygonizedPieces.forEach((piece) => {
+    const geomType = piece?.geometry?.type || '';
+    if (geomType !== 'Polygon' && geomType !== 'MultiPolygon') return;
+    let centroid = null;
+    let bbox = null;
+    let areaGeom = 0;
+    try {
+      areaGeom = Math.max(0, Number(turf.area(piece) || 0));
+      centroid = turf.centroid(piece);
+      bbox = turf.bbox(piece);
+    } catch {
+      return;
+    }
+    if (!areaGeom || !centroid?.geometry?.coordinates || !Array.isArray(bbox) || bbox.length < 4) return;
+
+    const areaSf = Math.max(0, Math.round(areaGeom * areaScale));
+    if (areaSf < SYNTHETIC_UNASSIGNED_MIN_AREA_SF) return;
+    const compactness = computePlanarCompactness(piece);
+    if (compactness < SYNTHETIC_UNASSIGNED_MIN_COMPACTNESS) return;
+
+    const nearbyRooms = roomIndex.filter((entry) => bboxArraysIntersect(entry.bbox, bbox));
+    let overlapArea = 0;
+    let centroidInsideRoom = false;
+    for (const entry of nearbyRooms) {
+      try {
+        if (turf.booleanPointInPolygon(centroid, entry.feature)) {
+          centroidInsideRoom = true;
+          break;
+        }
+      } catch {}
+      try {
+        const intersection = turf.intersect(turf.featureCollection([piece, entry.feature]));
+        if (intersection) {
+          overlapArea += Math.max(0, Number(turf.area(intersection) || 0));
+          if ((overlapArea / areaGeom) > SYNTHETIC_UNASSIGNED_MAX_ROOM_OVERLAP_RATIO) break;
+        }
+      } catch {}
+    }
+    if (centroidInsideRoom) return;
+    if ((overlapArea / areaGeom) > SYNTHETIC_UNASSIGNED_MAX_ROOM_OVERLAP_RATIO) return;
+
+    candidates.push({
+      piece,
+      areaSf,
+      centroid: centroid.geometry.coordinates
+    });
+  });
+
+  if (!candidates.length) return fc;
+
+  candidates.sort((a, b) => {
+    if (b.areaSf !== a.areaSf) return b.areaSf - a.areaSf;
+    if ((a.centroid?.[1] || 0) !== (b.centroid?.[1] || 0)) return (b.centroid?.[1] || 0) - (a.centroid?.[1] || 0);
+    return (a.centroid?.[0] || 0) - (b.centroid?.[0] || 0);
+  });
+
+  const floorId = String(context?.floorId || context?.floor || '').trim();
+  const buildingName = String(context?.buildingId || context?.buildingLabel || '').trim();
+  const syntheticFeatures = candidates.map((candidate, idx) => {
+    const syntheticId = `synthetic-unassigned-${normalizeSnapKey(buildingName || 'building')}-${normalizeSnapKey(floorId || 'floor')}-${idx + 1}`;
+    const roomNumber = `UA-${idx + 1}`;
+    return {
+      type: 'Feature',
+      id: syntheticId,
+      properties: {
+        Element: 'Room',
+        Name: 'Unassigned',
+        Room: 'Unassigned',
+        Label: 'Unassigned',
+        Type: 'Unassigned',
+        type: 'Unassigned',
+        NCES_Type: 'Unassigned',
+        'Room Type': 'Unassigned',
+        'Room Type Description': 'Unassigned',
+        department: 'Unassigned',
+        Department: 'Unassigned',
+        NCES_Department: 'Unassigned',
+        occupancyStatus: 'Unassigned',
+        OccupancyStatus: 'Unassigned',
+        'Occupancy Status': 'Unassigned',
+        Area_SF: candidate.areaSf,
+        Area: candidate.areaSf,
+        areaSF: candidate.areaSf,
+        area: candidate.areaSf,
+        __areaSf: candidate.areaSf,
+        __dept: 'Unassigned',
+        __roomType: 'Unassigned',
+        __roomCategory: 'Unassigned',
+        Number: roomNumber,
+        RoomNumber: roomNumber,
+        roomNumber,
+        RevitId: syntheticId,
+        revitId: syntheticId,
+        roomGuid: syntheticId,
+        'Room GUID': syntheticId,
+        Building: buildingName,
+        building: buildingName,
+        Floor: floorId,
+        floor: floorId,
+        __syntheticUnassigned: true
+      },
+      geometry: cloneGeoJsonValue(candidate.piece.geometry)
+    };
+  });
+
+  return {
+    ...fc,
+    __mfSyntheticUnassignedApplied: true,
+    features: [...fc.features, ...syntheticFeatures]
+  };
+}
+
 function snapToNearestVertex(feature, fallback) {
   if (!feature?.geometry || !Array.isArray(fallback)) return fallback;
   const pts = extractLngLatPairs(feature.geometry, 4000);
@@ -3016,6 +3317,15 @@ const DEBUG_OVERLAY_LOGS = false;
 const ENABLE_DOOR_STAIR_OVERLAY = false;
 const ENABLE_WALLS_OVERLAY = false;
 const ROOMS_ONLY_FILTER = ['==', ['get', 'Element'], 'Room'];
+const SYNTHETIC_UNASSIGNED_BUILDING_KEYS = new Set([
+  normalizeSnapKey('Administration/Courthouse'),
+  normalizeSnapKey('Administration Courthouse'),
+  normalizeSnapKey('AdministrationCourthouse')
+]);
+const SYNTHETIC_UNASSIGNED_MIN_AREA_SF = 24;
+const SYNTHETIC_UNASSIGNED_MIN_COMPACTNESS = 0.035;
+const SYNTHETIC_UNASSIGNED_MAX_ROOM_OVERLAP_RATIO = 0.08;
+const SYNTHETIC_UNASSIGNED_GEOM_AREA_TO_SF = 10.76391041671;
 
 async function fetchJSON(url) {
   try {
@@ -5232,10 +5542,17 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       };
     });
     patchedFC = { ...fc, features: patchedFeatures };
-    if (typeof onOptionsCollected === 'function') {
-      const { typeOptions, deptOptions } = collectFloorOptions(patchedFeatures);
-      onOptionsCollected({ typeOptions, deptOptions });
-    }
+  }
+  patchedFC = injectSyntheticUnassignedRooms(patchedFC, {
+    buildingLabel: affineBuildingLabel || buildingId || '',
+    buildingId,
+    floor: floorId || floor || '',
+    floorId: floorId || floor || '',
+    floorBasePath
+  });
+  if ((canUseRoomPatches || canUseAirtable) && typeof onOptionsCollected === 'function') {
+    const { typeOptions, deptOptions } = collectFloorOptions(patchedFC?.features || []);
+    onOptionsCollected({ typeOptions, deptOptions });
   }
   if (currentFloorContextRef && typeof currentFloorContextRef === 'object') {
     currentFloorContextRef.current = {
@@ -8133,6 +8450,89 @@ const parseUtilizationCsv = (csvText = '') => {
   return { buildings, rooms, campus };
 };
 
+const normalizeClassScheduleRoomKey = (buildingName, roomLabel) => {
+  const resolvedBuilding = resolveBuildingNameFromInput(buildingName) || String(buildingName || '').trim();
+  const buildingKey = normalizeDashboardKey(resolvedBuilding);
+  const roomKey = normalizeUtilizationRoomKey(roomLabel);
+  if (!buildingKey || !roomKey) return '';
+  return `${buildingKey}||${roomKey}`;
+};
+
+const getScheduleDayTokensForDate = (date = new Date()) => {
+  switch (date.getDay()) {
+    case 0: return ['SU'];
+    case 1: return ['M'];
+    case 2: return ['T', 'TU'];
+    case 3: return ['W'];
+    case 4: return ['R', 'TH'];
+    case 5: return ['F'];
+    case 6: return ['SA'];
+    default: return [];
+  }
+};
+
+const isCurrentEmptyClassroomQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  const asksForCurrentAvailability =
+    /\b(currently|right now|at the moment|now)\b/.test(text) ||
+    (/\b(empty|available|open|vacant)\b/.test(text) && /\b(find|show|list|which|what)\b/.test(text));
+  if (!asksForCurrentAvailability) return false;
+  if (/\bclassroom(s)?\b|\bteaching room(s)?\b/.test(text)) return true;
+  return /\bclass(es)?\b/.test(text) && /\broom(s)?\b|\bseat(s)?\b|\bcapacity\b/.test(text);
+};
+
+const extractMinimumSeatCountFromQuestion = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  const patterns = [
+    /\bat least\s+(\d+)\s+seat(s)?\b/,
+    /\bminimum\s+of\s+(\d+)\s+seat(s)?\b/,
+    /\bminimum\s+(\d+)\s+seat(s)?\b/,
+    /\bwith\s+(\d+)\+?\s+seat(s)?\b/,
+    /\b(\d+)\+?\s+seat(s)?\b/,
+    /\bcapacity\s+(of\s+)?(\d+)\b/
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const numericGroup = match.slice(1).find((value) => /^\d+$/.test(String(value || '')));
+    const parsed = Number(numericGroup);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+};
+
+const isScheduleEntryActiveAt = (entry, date = new Date()) => {
+  if (!entry) return false;
+  const dayTokens = Array.isArray(entry.dayTokens) ? entry.dayTokens : [];
+  if (dayTokens.length) {
+    const todaysTokens = getScheduleDayTokensForDate(date);
+    if (!todaysTokens.some((token) => dayTokens.includes(token))) return false;
+  }
+  const startMinutes = Number(entry.startMinutes);
+  const endMinutes = Number(entry.endMinutes);
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) return false;
+  const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+  return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+};
+
+const getScheduleEntriesForToday = (entries = [], date = new Date()) => {
+  const todaysTokens = getScheduleDayTokensForDate(date);
+  return (entries || []).filter((entry) => {
+    const dayTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
+    if (!dayTokens.length) return true;
+    return todaysTokens.some((token) => dayTokens.includes(token));
+  });
+};
+
+const formatScheduleEntryTime = (entry) => {
+  const timeText = String(entry?.timeText || '').trim();
+  if (timeText) return timeText;
+  const startText = String(entry?.startTime || '').trim();
+  const endText = String(entry?.endTime || '').trim();
+  if (startText && endText) return `${startText} - ${endText}`;
+  return startText || endText || 'Time TBD';
+};
+
 const BUILDING_SNAP_CORNERS = {
   [normalizeSnapKey('Babcock Hall')]: 'nw',
   [normalizeSnapKey('Babcock Hall Residence')]: 'nw',
@@ -9575,18 +9975,18 @@ async function loadRooms(db, campusId, buildingId, floorId) {
 }
 
 const stakeholderConditionConfig = {
-  '5': { label: '5 = Excellent condition', color: '#4CAF50' },
-  '4': { label: '4 = Good condition', color: '#8BC34A' },
-  '3': { label: '3 = Adequate condition', color: '#FFEB3B' },
-  '2': { label: '2 = Poor condition', color: '#FF9800' },
-  '1': { label: '1 = Very poor condition', color: '#F44336' }
+  '5': { label: '5 = Excellent condition', color: '#166534' },
+  '4': { label: '4 = Good condition', color: '#16a34a' },
+  '3': { label: '3 = Adequate condition', color: '#d97706' },
+  '2': { label: '2 = Poor condition', color: '#ea580c' },
+  '1': { label: '1 = Very poor condition', color: '#b91c1c' }
 };
 
 const progressColors = {
-  0: '#85474b',
-  1: '#aed6f1',
-  2: '#5dade2',
-  3: '#2e86c1'
+  0: '#6b7280',
+  1: '#dc2626',
+  2: '#d97706',
+  3: '#15803d'
 };
 const TECHNICAL_BUILDING_COLOR_MODE = {
   STAGE_COMPLETED: 'stage-completed',
@@ -9784,11 +10184,11 @@ const computeTechnicalAverageScore = (scores = {}) => {
 };
 const technicalScoreColorForAverage = (averageScore, scoredFields = 0) => {
   if (!Number.isFinite(averageScore) || Number(scoredFields) <= 0) return progressColors[0];
-  if (averageScore >= 4.5) return '#4CAF50';
-  if (averageScore >= 3.5) return '#8BC34A';
-  if (averageScore >= 2.5) return '#FFEB3B';
-  if (averageScore >= 1.5) return '#FF9800';
-  return '#F44336';
+  if (averageScore >= 4.5) return '#166534';
+  if (averageScore >= 3.5) return '#16a34a';
+  if (averageScore >= 2.5) return '#d97706';
+  if (averageScore >= 1.5) return '#ea580c';
+  return '#b91c1c';
 };
 
 const defaultBuildingColor = '#85474b';
@@ -10303,6 +10703,128 @@ const toTimestampIso = (value) => {
     return '';
   }
 };
+
+const TECHNICAL_ASSESSOR_NAME_STORAGE_PREFIX = 'mf:technical-assessor-name';
+const TECHNICAL_ASSESSOR_DEVICE_STORAGE_PREFIX = 'mf:technical-assessor-device';
+
+const sanitizeTechnicalAssessorToken = (value) => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+);
+
+const buildTechnicalAssessorStorageKey = (prefix, universityId) => {
+  const uni = String(canon(universityId || '') || universityId || '').trim().toLowerCase();
+  if (!prefix || !uni) return '';
+  return `${prefix}:${uni}`;
+};
+
+const loadStoredTechnicalText = (storageKey) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return '';
+  try {
+    return String(window.localStorage.getItem(storageKey) || '').trim();
+  } catch {
+    return '';
+  }
+};
+
+const persistStoredTechnicalText = (storageKey, value) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const text = String(value || '').trim();
+    if (text) window.localStorage.setItem(storageKey, text);
+    else window.localStorage.removeItem(storageKey);
+  } catch {}
+};
+
+const ensureStoredTechnicalDeviceId = (storageKey) => {
+  const fallback = `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return fallback;
+  try {
+    const existing = sanitizeTechnicalAssessorToken(window.localStorage.getItem(storageKey) || '');
+    if (existing) return existing;
+    const generated = sanitizeTechnicalAssessorToken(fallback) || fallback;
+    window.localStorage.setItem(storageKey, generated);
+    return generated;
+  } catch {
+    return fallback;
+  }
+};
+
+const buildTechnicalAssessorKey = (assessorName, deviceId) => {
+  const nameToken = sanitizeTechnicalAssessorToken(assessorName);
+  const deviceToken = sanitizeTechnicalAssessorToken(deviceId);
+  if (!nameToken || !deviceToken) return '';
+  return `${nameToken}__${deviceToken}`;
+};
+
+const getAssessmentEntryBuildingKey = (assessment = {}, docId = '') => {
+  const originalId = String(assessment?.originalId || '').trim();
+  if (originalId) return originalId;
+  const rawDocId = String(docId || assessment?.__docId || '').trim();
+  if (!rawDocId) return '';
+  return rawDocId.replace(/__/g, '/');
+};
+
+const getAssessmentDocSortMs = (assessment = {}) => (
+  parseFirestoreTimestampMs(assessment?.updatedAt) ||
+  Number(assessment?.updatedAtClientMs || 0) ||
+  parseFirestoreTimestampMs(assessment?.createdAt) ||
+  0
+);
+
+const isPerAssessorAssessmentRecord = (assessment = {}) => (
+  String(assessment?.assessmentSaveMode || '').trim().toLowerCase() === 'per-assessor' ||
+  Boolean(String(assessment?.assessorKey || '').trim())
+);
+
+const buildAssessmentMapFromEntries = (
+  entries = [],
+  {
+    technicalMode = false,
+    perAssessorMode = false,
+    assessorKey = ''
+  } = {}
+) => {
+  const byBuilding = new Map();
+  const byLegacyBuilding = new Map();
+  const normalizedAssessorKey = String(assessorKey || '').trim();
+  (entries || []).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const buildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+    if (!buildingKey) return;
+    const sortMs = getAssessmentDocSortMs(entry);
+    const prefersOwnEntry =
+      perAssessorMode &&
+      technicalMode &&
+      normalizedAssessorKey &&
+      String(entry?.assessorKey || '').trim() === normalizedAssessorKey;
+    if (prefersOwnEntry) {
+      const prev = byBuilding.get(buildingKey);
+      if (!prev || sortMs >= getAssessmentDocSortMs(prev)) {
+        byBuilding.set(buildingKey, { ...entry, originalId: buildingKey });
+      }
+      return;
+    }
+    if (perAssessorMode && technicalMode && isPerAssessorAssessmentRecord(entry)) {
+      return;
+    }
+    const targetMap = (!perAssessorMode || !technicalMode) ? byBuilding : byLegacyBuilding;
+    const prev = targetMap.get(buildingKey);
+    if (!prev || sortMs >= getAssessmentDocSortMs(prev)) {
+      targetMap.set(buildingKey, { ...entry, originalId: buildingKey });
+    }
+  });
+  if (perAssessorMode && technicalMode) {
+    byLegacyBuilding.forEach((entry, key) => {
+      if (!byBuilding.has(key)) byBuilding.set(key, entry);
+    });
+  }
+  return Object.fromEntries(byBuilding.entries());
+};
 const isMarkerArchived = (marker) => {
   if (!marker || typeof marker !== 'object') return false;
   if (marker.isArchived === true) return true;
@@ -10345,6 +10867,7 @@ const StakeholderMap = ({
   const [markers, setMarkers] = useState([]); // Paths feature removed
   const [buildingConditions, setBuildingConditions] = useState({});
   const [buildingAssessments, setBuildingAssessments] = useState({});
+  const [technicalAssessmentEntries, setTechnicalAssessmentEntries] = useState([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
@@ -10504,9 +11027,14 @@ const StakeholderMap = ({
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
-  const isSharedPublicPlanningMode = isSarpyCountyInstance && isDemoPublicMode;
+  const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
+  const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
+  const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
   const defaultMapView = isTechnicalOnlyMode
@@ -10613,8 +11141,9 @@ const StakeholderMap = ({
       subtitle: 'Campus space visualization view.'
     };
   }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
-  const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
   useEffect(() => {
     if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
       setMapView(MAP_VIEWS.TECHNICAL);
@@ -10761,6 +11290,13 @@ const StakeholderMap = ({
     detail: 'Run Refresh Airtable Data to validate scope.'
   }));
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
+  const [classScheduleRows, setClassScheduleRows] = useState([]);
+  const [classScheduleMeta, setClassScheduleMeta] = useState({
+    source: '',
+    sheet: '',
+    error: '',
+    missing: false
+  });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
   const [strategicTargetUtilization, setStrategicTargetUtilization] = useState(STRATEGIC_DEFAULT_TARGET_UTILIZATION);
@@ -10805,6 +11341,83 @@ const StakeholderMap = ({
     const key = buildUtilizationKey(resolved, roomLabel);
     return utilizationByRoom[key] || null;
   }, [utilizationByRoom]);
+  const classScheduleByRoom = useMemo(() => {
+    const grouped = new Map();
+    (classScheduleRows || []).forEach((entry) => {
+      const key = normalizeClassScheduleRoomKey(entry?.building, entry?.room);
+      if (!key) return;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(entry);
+    });
+    grouped.forEach((entries, key) => {
+      grouped.set(key, [...entries].sort((a, b) => {
+        const aStart = Number(a?.startMinutes);
+        const bStart = Number(b?.startMinutes);
+        if (Number.isFinite(aStart) && Number.isFinite(bStart) && aStart !== bStart) return aStart - bStart;
+        return String(a?.courseCode || a?.title || '').localeCompare(String(b?.courseCode || b?.title || ''));
+      }));
+    });
+    return grouped;
+  }, [classScheduleRows]);
+  const getScheduleEntriesForRoom = useCallback((buildingName, roomLabel) => {
+    const key = normalizeClassScheduleRoomKey(buildingName, roomLabel);
+    return key ? (classScheduleByRoom.get(key) || []) : [];
+  }, [classScheduleByRoom]);
+  const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
+    const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
+    const todaysEntries = getScheduleEntriesForToday(entries, date);
+    const activeEntries = todaysEntries.filter((entry) => isScheduleEntryActiveAt(entry, date));
+    const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+    const upcomingEntries = todaysEntries.filter((entry) => {
+      const startMinutes = Number(entry?.startMinutes);
+      return Number.isFinite(startMinutes) && startMinutes >= nowMinutes;
+    });
+    return {
+      entries,
+      todaysEntries,
+      activeEntries,
+      upcomingEntries
+    };
+  }, [getScheduleEntriesForRoom]);
+  const buildCurrentlyAvailableClassroomRows = useCallback((rooms = [], options = {}) => {
+    const now = options?.now instanceof Date ? options.now : new Date();
+    const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
+    const rows = [];
+    const seen = new Set();
+    (rooms || []).forEach((room) => {
+      if (!isScheduledTeachingTypeLabel(room?.type ?? room?.roomType ?? '')) return;
+      const seatCount = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
+      if (minimumSeats && (!Number.isFinite(seatCount) || seatCount < minimumSeats)) return;
+      const building = String(getRoomBuildingLabel(room) || '').trim();
+      const roomNumber = getDisplayRoomNumber(room);
+      if (!building || !roomNumber) return;
+      const dedupeKey = `${normalizeDashboardKey(building)}|${normalizeUtilizationRoomKey(roomNumber)}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      const schedule = getRoomScheduleSnapshot(building, roomNumber, now);
+      if (schedule.activeEntries.length) return;
+      const nextEntry = schedule.upcomingEntries[0] || null;
+      rows.push({
+        Building: building,
+        'Room Number': roomNumber,
+        Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
+        'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
+        Status: nextEntry
+          ? `Available now | Next: ${formatScheduleEntryTime(nextEntry)}`
+          : 'Available now',
+        'Next Class': nextEntry
+          ? `${String(nextEntry?.courseCode || nextEntry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(nextEntry)})`
+          : 'No more classes today'
+      });
+    });
+    return rows.sort((a, b) => {
+      const seatDiff = Number(b?.Seats || 0) - Number(a?.Seats || 0);
+      if (seatDiff !== 0) return seatDiff;
+      const buildingCompare = String(a?.Building || '').localeCompare(String(b?.Building || ''));
+      if (buildingCompare !== 0) return buildingCompare;
+      return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
+    });
+  }, [getRoomScheduleSnapshot]);
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
@@ -11439,18 +12052,27 @@ const StakeholderMap = ({
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
+    const preferSarpyPublicFloorAsset =
+      isSarpyPublicReadonlyMode &&
+      floorplanCampus === 'SarpyCounty';
+    const toPreferredAssetUrl = (candidateUrl) => {
+      if (!candidateUrl) return candidateUrl;
+      const resolved = /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
+      if (!preferSarpyPublicFloorAsset) return resolved;
+      return resolved.replace(/_Dept_Rooms\.geojson(\?.*)?$/i, '_Dept_Rooms_Public.geojson$1');
+    };
     const floors = getAvailableFloors(folderKey);
     if (!floors.includes(normalizedFloorId)) return null;
     const urlMap = availableFloorUrlsByBuildingRef.current.get(folderKey);
     const manifestUrl = urlMap?.get(normalizedFloorId);
     if (manifestUrl) {
-      return /^https?:\/\//i.test(manifestUrl) ? manifestUrl : assetUrl(manifestUrl);
+      return toPreferredAssetUrl(manifestUrl);
     }
     const campusSeg = encodeURIComponent(floorplanCampus);
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(normalizedFloorId);
-    return assetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
-  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled]);
+    return toPreferredAssetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
+  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled, isSarpyPublicReadonlyMode]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
     if (!floorplansEnabled) return [];
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
@@ -11572,6 +12194,15 @@ const StakeholderMap = ({
     roomEditSelection.length,
     clearRoomEditSelection
   ]);
+  useEffect(() => {
+    if (aiEnabledForCurrentView) return;
+    setAskOpen(false);
+    setAiInfoOpen(false);
+    setAiOpen(false);
+    setAiBuildingOpen(false);
+    setAiCampusOpen(false);
+    setAiCreateScenarioOpen(false);
+  }, [aiEnabledForCurrentView]);
   useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
@@ -11778,12 +12409,12 @@ const StakeholderMap = ({
     resetScenarioModeState();
   }, [resetScenarioModeState]);
   useEffect(() => {
-    const planningScenarioAllowed = showFullMapfluenceControls || isDemoPublicMode;
+    const planningScenarioAllowed = showFullMapfluenceControls || publicPlanningScenarioAllowed;
     if (planningScenarioAllowed) return;
     if (!moveScenarioMode) return;
     setMoveScenarioMode(false);
     clearScenario();
-  }, [showFullMapfluenceControls, isDemoPublicMode, moveScenarioMode, clearScenario]);
+  }, [showFullMapfluenceControls, publicPlanningScenarioAllowed, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
@@ -15856,6 +16487,41 @@ const StakeholderMap = ({
   // Auth / role
   const [authUser, setAuthUser] = useState(null);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const technicalAssessmentSaveMode = String(config?.technicalAssessmentSaveMode || 'building').trim().toLowerCase() === 'per-assessor'
+    ? 'per-assessor'
+    : 'building';
+  const technicalAssessorNameStorageKey = useMemo(
+    () => buildTechnicalAssessorStorageKey(TECHNICAL_ASSESSOR_NAME_STORAGE_PREFIX, universityId),
+    [universityId]
+  );
+  const technicalAssessorDeviceStorageKey = useMemo(
+    () => buildTechnicalAssessorStorageKey(TECHNICAL_ASSESSOR_DEVICE_STORAGE_PREFIX, universityId),
+    [universityId]
+  );
+  const [technicalAssessorName, setTechnicalAssessorName] = useState('');
+  const [technicalAssessorDeviceId, setTechnicalAssessorDeviceId] = useState('');
+  useEffect(() => {
+    setTechnicalAssessorName(loadStoredTechnicalText(technicalAssessorNameStorageKey));
+    setTechnicalAssessorDeviceId(ensureStoredTechnicalDeviceId(technicalAssessorDeviceStorageKey));
+  }, [technicalAssessorNameStorageKey, technicalAssessorDeviceStorageKey]);
+  useEffect(() => {
+    persistStoredTechnicalText(technicalAssessorNameStorageKey, technicalAssessorName);
+  }, [technicalAssessorNameStorageKey, technicalAssessorName]);
+  const technicalAssessorLabel = useMemo(() => {
+    if (technicalAssessmentSaveMode !== 'per-assessor') return '';
+    const adminEmail = String(authUser?.email || '').trim();
+    if (isAdminMode && adminEmail) return adminEmail;
+    return String(technicalAssessorName || '').trim();
+  }, [technicalAssessmentSaveMode, authUser?.email, isAdminMode, technicalAssessorName]);
+  const technicalAssessorKey = useMemo(() => {
+    if (technicalAssessmentSaveMode !== 'per-assessor') return '';
+    const adminEmail = String(authUser?.email || '').trim();
+    if (isAdminMode && adminEmail) {
+      const adminToken = sanitizeTechnicalAssessorToken(adminEmail);
+      return adminToken ? `admin__${adminToken}` : '';
+    }
+    return buildTechnicalAssessorKey(technicalAssessorName, technicalAssessorDeviceId);
+  }, [technicalAssessmentSaveMode, authUser?.email, isAdminMode, technicalAssessorName, technicalAssessorDeviceId]);
   const adminCombinedPrefsStorageKey = useMemo(() => {
     if (!isAdminCombinedMode || !universityId) return '';
     const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
@@ -17104,7 +17770,10 @@ const StakeholderMap = ({
     if (!floorId && floorIdRaw && floorOverrideValue && buildingKey && (!buildingFloors || buildingFloors.length === 0)) {
       floorId = floorIdRaw;
       const campusSeg = encodeURIComponent(floorplanCampus);
-      floorUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
+      const baseFallbackUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
+      floorUrl = (isSarpyPublicReadonlyMode && floorplanCampus === 'SarpyCounty')
+        ? baseFallbackUrl.replace(/_Dept_Rooms\.geojson$/i, '_Dept_Rooms_Public.geojson')
+        : baseFallbackUrl;
       if (buildingFloors && !buildingFloors.includes(floorId)) {
         buildingFloors = [...buildingFloors, floorId];
         availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
@@ -17529,6 +18198,19 @@ const StakeholderMap = ({
     return json;
   }, []);
 
+  const fetchClassSchedule = useCallback(async () => {
+    const res = await guardedAiFetch('/ai/class-schedule', {
+      cache: 'no-store',
+      timeoutMs: 12000
+    });
+
+    const raw = await res.text();
+    let json = null;
+    try { json = JSON.parse(raw); } catch {}
+    if (!res.ok) throw new Error(json?.error || raw || `HTTP ${res.status}`);
+    return json;
+  }, []);
+
   const explainBuilding = useCallback(async ({ context, buildingStats, panelStats }) => {
     const res = await guardedAiFetch('/ai/explain-building', {
       method: 'POST',
@@ -17565,7 +18247,9 @@ const StakeholderMap = ({
       setAiResult(out);
       setAiOpen(true);
     } catch (e) {
-      setAiErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiErr(message);
     } finally {
       setAiLoading(false);
     }
@@ -17611,7 +18295,9 @@ const StakeholderMap = ({
       setAiCampusResult(out);
       setAiCampusOpen(true);
     } catch (e) {
-      setAiCampusErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiCampusErr(message);
     } finally {
       setAiCampusLoading(false);
     }
@@ -17740,7 +18426,9 @@ const StakeholderMap = ({
         });
       } catch {}
     } catch (e) {
-      setAiScenarioErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiScenarioErr(message);
     } finally {
       setAiScenarioLoading(false);
     }
@@ -17792,7 +18480,9 @@ const StakeholderMap = ({
       setAiBuildingResult(out);
       setAiBuildingOpen(true);
     } catch (e) {
-      setAiBuildingErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiBuildingErr(message);
     } finally {
       setAiBuildingLoading(false);
     }
@@ -17809,7 +18499,10 @@ const StakeholderMap = ({
     const ping = async () => {
       try {
         const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: 3000 });
-        setAiStatus(r.ok ? 'ok' : 'down');
+        const raw = await r.text();
+        let data = null;
+        try { data = JSON.parse(raw); } catch {}
+        setAiStatus(r.ok && data?.aiReady !== false ? 'ok' : 'down');
       } catch {
         setAiStatus('down');
       }
@@ -18917,7 +19610,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setAiCreateScenarioResult(nextResult);
       setAiCreateScenarioOpen(false);
     } catch (e) {
-      const errMessage = String(e?.message || e || '');
+      const errMessage = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(errMessage)) setAiStatus('down');
       const shouldAutoRetryRelaxed = (
         aiCreateScenarioMode === 'copilot' &&
         !forceRelaxed &&
@@ -19100,6 +19794,47 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
         return;
       }
+      if (isHastingsCollegeInstance && isCurrentEmptyClassroomQuery(q)) {
+        if (!classScheduleRows.length) {
+          setAskResult({
+            answer: 'Class schedule data is not loaded for Hastings College yet.',
+            bullets: [
+              classScheduleMeta.missing
+                ? 'No class schedule workbook was found on the AI server.'
+                : (classScheduleMeta.error || 'Schedule data needs to be loaded before this query can run.')
+            ],
+            resultType: 'none',
+            columns: [],
+            rows: [],
+            dataUsed: [],
+            missingData: ['Class schedule workbook']
+          });
+          return;
+        }
+        const minimumSeats = extractMinimumSeatCountFromQuestion(q);
+        const rows = buildCurrentlyAvailableClassroomRows(scopeRooms, {
+          minimumSeats,
+          now: new Date()
+        });
+        const scopeLabel = forceCampusScope
+          ? 'campus'
+          : (inferredBuilding ? inferredBuilding : 'selected scope');
+        const answer = rows.length
+          ? `Found ${rows.length.toLocaleString()} currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
+          : `No currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`;
+        setAskResult({
+          answer,
+          bullets: [
+            'Availability is based on the current local time, the loaded class schedule workbook, and classroom seat counts from the room inventory.'
+          ],
+          resultType: rows.length ? 'table' : 'none',
+          columns: rows.length ? ['Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class'] : [],
+          rows: rows.slice(0, 100),
+          dataUsed: ['roomRows', 'classScheduleRows'],
+          missingData: []
+        });
+        return;
+      }
       if (isVacantOfficeCountQuery(q)) {
         const rows = buildVacantOfficeListRows(scopeRooms);
         const scopeLabel = forceCampusScope
@@ -19268,6 +20003,29 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           roomRowsPayload = null;
         }
       }
+      let classScheduleRowsPayload = null;
+      if (isHastingsCollegeInstance && classScheduleRows.length) {
+        const roomKeys = new Set(
+          scopeRooms
+            .map((room) => normalizeClassScheduleRoomKey(getRoomBuildingLabel(room), getDisplayRoomNumber(room)))
+            .filter(Boolean)
+        );
+        const filteredScheduleRows = roomKeys.size
+          ? classScheduleRows.filter((entry) => roomKeys.has(normalizeClassScheduleRoomKey(entry?.building, entry?.room)))
+          : classScheduleRows;
+        classScheduleRowsPayload = filteredScheduleRows.slice(0, 150).map((entry) => ({
+          building: String(entry?.building || '').trim(),
+          room: String(entry?.room || '').trim(),
+          courseCode: String(entry?.courseCode || '').trim(),
+          section: String(entry?.section || '').trim(),
+          title: String(entry?.title || '').trim(),
+          instructor: String(entry?.instructor || '').trim(),
+          days: String(entry?.daysText || '').trim(),
+          time: formatScheduleEntryTime(entry),
+          enrollment: Number.isFinite(Number(entry?.enrollment)) ? Number(entry.enrollment) : '',
+          capacity: Number.isFinite(Number(entry?.capacity)) ? Number(entry.capacity) : ''
+        }));
+      }
       const data = {
         campusStats,
         buildingStats: (!forceCampusScope && inferredBuilding && !shouldUseFloorScope)
@@ -19276,13 +20034,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         floorStats: shouldUseFloorScope ? (floorFallback || undefined) : undefined,
         dashboardMetrics: undefined,
         scopeSummary: fallbackSummary || undefined,
-        roomRows: roomRowsPayload || undefined
+        roomRows: roomRowsPayload || undefined,
+        classScheduleRows: classScheduleRowsPayload || undefined
       };
 
       const out = await askMapfluence({ question: q, context, data });
       setAskResult(out);
     } catch (e) {
-      setAskErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAskErr(message);
     } finally {
       setAskLoading(false);
     }
@@ -19303,7 +20064,11 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     loadedSingleFloor,
     askMapfluence,
     resolveBuildingNameFromInput,
-    collectSpaceRows
+    collectSpaceRows,
+    isHastingsCollegeInstance,
+    classScheduleRows,
+    classScheduleMeta,
+    buildCurrentlyAvailableClassroomRows
   ]);
 
   const onExportAskResultPdf = useCallback(() => {
@@ -19854,6 +20619,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     try {
       setBuildingConditions({});
       setBuildingAssessments({});
+      setTechnicalAssessmentEntries([]);
     } catch {}
   }, []);
 
@@ -20987,6 +21753,16 @@ const permanentlyDeleteArchivedSelectedMarkers = useCallback(async () => {
     setMarkerToolBusy(false);
   }
 }, [isAdminUser, markerToolBusy, markerToolUndoBusy, markerToolSelectedArchivedRows, markersCollection]);
+const technicalSubmissionCounts = useMemo(() => {
+  const counts = new Map();
+  (technicalAssessmentEntries || []).forEach((entry) => {
+    if (!isPerAssessorAssessmentRecord(entry)) return;
+    const buildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+    if (!buildingKey) return;
+    counts.set(buildingKey, (counts.get(buildingKey) || 0) + 1);
+  });
+  return counts;
+}, [technicalAssessmentEntries]);
 const technicalProgressRows = useMemo(() => {
   const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
   const rows = [];
@@ -21039,6 +21815,10 @@ const technicalProgressRows = useMemo(() => {
       ? Math.max(0, Math.min(100, Math.round((answeredFields / totalFields) * 100)))
       : 0;
     const isComplete = answeredFields >= totalFields && totalFields > 0;
+    const submissionCount =
+      technicalSubmissionCounts.get(row.id) ||
+      technicalSubmissionCounts.get(String(assessment?.originalId || row.id || '').trim()) ||
+      0;
     return {
       ...row,
       completionPct,
@@ -21049,7 +21829,8 @@ const technicalProgressRows = useMemo(() => {
       missingFieldCount,
       missingFieldLabels,
       isComplete,
-      color: progressColors[startedSections] || progressColors[0]
+      color: progressColors[startedSections] || progressColors[0],
+      submissionCount
     };
   });
 
@@ -21058,7 +21839,7 @@ const technicalProgressRows = useMemo(() => {
     if (a.completionPct !== b.completionPct) return a.completionPct - b.completionPct;
     return a.name.localeCompare(b.name);
   });
-}, [config, buildingAssessments]);
+}, [config, buildingAssessments, technicalSubmissionCounts]);
 const technicalProgressSummary = useMemo(() => {
   const total = technicalProgressRows.length;
   const complete = technicalProgressRows.filter((row) => row.isComplete).length;
@@ -21123,7 +21904,19 @@ const exportTechnicalMissingItemsCsv = useCallback(() => {
 }, [technicalProgressRows, universityId]);
 const exportTechnicalAssessmentCsv = useCallback(() => {
   const rows = technicalProgressRows || [];
-  if (!rows.length) {
+  const exportableEntries = (technicalAssessmentEntries || [])
+    .map((entry) => {
+      const buildingId = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+      return {
+        ...entry,
+        originalId: buildingId,
+        buildingId,
+        buildingName: String(entry?.buildingName || buildingId || '').trim() || buildingId
+      };
+    })
+    .filter((entry) => entry.buildingId);
+  const exportPerAssessor = technicalAssessmentSaveMode === 'per-assessor' && exportableEntries.length > 0;
+  if (!rows.length && !exportPerAssessor) {
     setTechnicalProgressMessage('No technical assessment data to export.');
     return;
   }
@@ -21132,6 +21925,98 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
     const text = String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
+  if (exportPerAssessor) {
+    const headers = [
+      'BuildingId',
+      'BuildingName',
+      'Assessor',
+      'UpdatedAt',
+      'Category',
+      'SubCategory',
+      'Score',
+      'CompletionPct',
+      'ScoredFields',
+      'Notes'
+    ];
+    const title = `Technical Assessment Detail - ${String(universityId || 'Campus')}`;
+    const lines = [
+      [esc(title), esc(''), esc(''), esc(''), esc(''), esc(''), esc(''), esc(''), esc(''), esc('')].join(','),
+      '',
+      headers.join(',')
+    ];
+    let detailCount = 0;
+    const sortedEntries = [...exportableEntries].sort((a, b) => {
+      const buildingCompare = String(a?.buildingName || a?.buildingId || '').localeCompare(String(b?.buildingName || b?.buildingId || ''));
+      if (buildingCompare !== 0) return buildingCompare;
+      const assessorCompare = String(a?.assessorName || '').localeCompare(String(b?.assessorName || ''));
+      if (assessorCompare !== 0) return assessorCompare;
+      return getAssessmentDocSortMs(b) - getAssessmentDocSortMs(a);
+    });
+    sortedEntries.forEach((entry) => {
+      const scores = entry?.scores && typeof entry.scores === 'object' ? entry.scores : {};
+      const notes = String(entry?.notes || '').trim();
+      const progress = computeTechnicalProgressFromScores(scores);
+      const completionPct = progress.totalFields > 0
+        ? Math.max(0, Math.min(100, Math.round((progress.answeredFields / progress.totalFields) * 100)))
+        : 0;
+      const scoreSummary = computeTechnicalAverageScore(scores);
+      const avgScore = Number.isFinite(scoreSummary.averageScore)
+        ? (Math.round(scoreSummary.averageScore * 100) / 100)
+        : '';
+      const updatedAtIso = toTimestampIso(entry?.updatedAt) || (Number(entry?.updatedAtClientMs || 0) > 0
+        ? new Date(Number(entry.updatedAtClientMs)).toISOString()
+        : '');
+      const assessorLabel = String(entry?.assessorName || entry?.assessorKey || '').trim();
+      let firstDetailRow = true;
+      TECHNICAL_SECTION_CONFIG.forEach((section) => {
+        const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
+          ? scores[section.key]
+          : {};
+        section.fields.forEach((fieldKey) => {
+          const scoreValue = readTechnicalScoreValue(sectionScores, fieldKey);
+          lines.push([
+            esc(entry.buildingId),
+            esc(firstDetailRow ? entry.buildingName : ''),
+            esc(firstDetailRow ? assessorLabel : ''),
+            esc(firstDetailRow ? updatedAtIso : ''),
+            esc(section.key),
+            esc(fieldKey),
+            esc(scoreValue > 0 ? scoreValue : ''),
+            esc(''),
+            esc(''),
+            esc(firstDetailRow ? notes : '')
+          ].join(','));
+          firstDetailRow = false;
+          detailCount += 1;
+        });
+      });
+      lines.push([
+        esc(entry.buildingId),
+        esc(entry.buildingName),
+        esc(assessorLabel),
+        esc(updatedAtIso),
+        esc('summary'),
+        esc('overall'),
+        esc(avgScore),
+        esc(completionPct),
+        esc(scoreSummary.scoredFields),
+        esc('')
+      ].join(','));
+      lines.push('');
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `${base}-technical-assessment-detail-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    setTechnicalProgressMessage(`Exported ${detailCount.toLocaleString()} technical rows from ${sortedEntries.length.toLocaleString()} assessor submissions.`);
+    return;
+  }
   const canonicalAssessment = new Map();
   Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
     const canonicalId = bId(rawId || assessment?.originalId || '');
@@ -21211,7 +22096,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   setTechnicalProgressMessage(`Exported ${detailCount.toLocaleString()} technical rows + ${summaryCount.toLocaleString()} building summaries.`);
-}, [technicalProgressRows, buildingAssessments, universityId]);
+}, [technicalProgressRows, buildingAssessments, universityId, technicalAssessmentEntries, technicalAssessmentSaveMode]);
 
 const focusTechnicalBuilding = useCallback((buildingId) => {
   const id = String(buildingId || '').trim();
@@ -21725,6 +22610,14 @@ useEffect(() => {
             setAirtableLastSyncedAt(new Date());
             recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
           }
+          if (isSarpyPublicReadonlyMode) {
+            if (!cancelled) {
+              setCampusRooms(scopedRooms);
+              setCampusRoomsLoaded(true);
+              setDashboardError(null);
+            }
+            return;
+          }
           if (scopedRooms.some(hasDashboardRoomArea)) {
             return;
           }
@@ -21739,7 +22632,7 @@ useEffect(() => {
         }
         throw new Error('Rooms payload missing or invalid');
       } catch (err) {
-        if (!floorplansEnabled) {
+        if (!floorplansEnabled || isSarpyPublicReadonlyMode) {
           if (!cancelled) {
             setCampusRooms([]);
             setCampusRoomsLoaded(true);
@@ -21771,15 +22664,60 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck]);
+  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode]);
 
   useEffect(() => {
+    if (isSarpyPublicReadonlyMode) return undefined;
     const intervalMs = 30 * 60 * 1000;
     const id = setInterval(() => {
       refreshCampusRoomsFromApi();
     }, intervalMs);
     return () => clearInterval(id);
-  }, [refreshCampusRoomsFromApi]);
+  }, [refreshCampusRoomsFromApi, isSarpyPublicReadonlyMode]);
+
+  useEffect(() => {
+    if (!isHastingsCollegeInstance) {
+      setClassScheduleRows([]);
+      setClassScheduleMeta({
+        source: '',
+        sheet: '',
+        error: '',
+        missing: false
+      });
+      return undefined;
+    }
+    let cancelled = false;
+    setClassScheduleMeta((prev) => ({
+      ...prev,
+      error: '',
+      missing: false
+    }));
+    (async () => {
+      try {
+        const data = await fetchClassSchedule();
+        if (cancelled) return;
+        setClassScheduleRows(Array.isArray(data?.rows) ? data.rows : []);
+        setClassScheduleMeta({
+          source: String(data?.source || ''),
+          sheet: String(data?.sheet || ''),
+          error: '',
+          missing: false
+        });
+      } catch (err) {
+        if (cancelled) return;
+        const message = normalizeAiClientErrorMessage(err);
+        const missing = /no class schedule workbook found/i.test(message) || /http 404/i.test(message);
+        setClassScheduleRows([]);
+        setClassScheduleMeta({
+          source: '',
+          sheet: '',
+          error: missing ? '' : message,
+          missing
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fetchClassSchedule, isHastingsCollegeInstance]);
 
   useEffect(() => {
     let cancelled = false;
@@ -22240,6 +23178,12 @@ useEffect(() => {
       }
       return;
     }
+    if (isSarpyPublicReadonlyMode) {
+      setCampusRooms(airtableRooms);
+      setCampusRoomsLoaded(true);
+      setDashboardError(null);
+      return;
+    }
     if (!floorplansEnabled) {
       setCampusRooms(airtableRooms);
       setCampusRoomsLoaded(true);
@@ -22336,7 +23280,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms, floorplansEnabled]);
+  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
@@ -22758,6 +23702,7 @@ useEffect(() => {
         const shouldLoadMaintenance = mode === 'admin' || isDemoPublicMode;
         if (!shouldLoadConditions && !shouldLoadAssessments && !shouldLoadMaintenance) {
           setBuildingConditions({});
+          setTechnicalAssessmentEntries([]);
           setBuildingAssessments({});
           setMaintenanceIssues([]);
           return;
@@ -22782,13 +23727,28 @@ useEffect(() => {
         }
 
         if (shouldLoadAssessments && assessmentSnap) {
-          const assessmentData = {};
-          assessmentSnap.forEach((docx) => {
-            const key = docx.data().originalId || docx.id.replace(/__/g, '/');
-            assessmentData[key] = docx.data();
+          const loadedEntries = assessmentSnap.docs.map((docx) => {
+            const data = docx.data() || {};
+            const originalId = getAssessmentEntryBuildingKey(data, docx.id);
+            return {
+              __docId: docx.id,
+              ...data,
+              originalId
+            };
           });
+          const assessmentData = buildAssessmentMapFromEntries(loadedEntries, {
+            technicalMode,
+            perAssessorMode: technicalAssessmentSaveMode === 'per-assessor',
+            assessorKey: technicalAssessorKey
+          });
+          const visibleEntries =
+            technicalAssessmentSaveMode === 'per-assessor' && technicalMode
+              ? Object.values(assessmentData || {})
+              : loadedEntries;
+          setTechnicalAssessmentEntries(visibleEntries);
           setBuildingAssessments(assessmentData);
         } else {
+          setTechnicalAssessmentEntries([]);
           setBuildingAssessments({});
         }
 
@@ -22827,11 +23787,25 @@ useEffect(() => {
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setBuildingConditions({});
+        setTechnicalAssessmentEntries([]);
         setBuildingAssessments({});
         setMaintenanceIssues([]);
       }
     })();
-  }, [mode, engagementMode, technicalMode, isDemoPublicMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection, maintenanceIssuesCollection]);
+  }, [
+    mode,
+    engagementMode,
+    technicalMode,
+    isDemoPublicMode,
+    universityId,
+    persona,
+    markersCollection,
+    conditionsCollection,
+    assessmentsCollection,
+    maintenanceIssuesCollection,
+    technicalAssessmentSaveMode,
+    technicalAssessorKey
+  ]);
 
 // Keep floorplan building input in sync with map selection (convenience)
 useEffect(() => {
@@ -25242,6 +26216,28 @@ useEffect(() => {
             </div>
           `
           : '';
+        const scheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
+          ? getRoomScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
+          : null;
+        const scheduleLines = scheduleSnapshot?.activeEntries?.length
+          ? scheduleSnapshot.activeEntries.slice(0, 2).map((entry) => (
+            `<div style="margin-top:4px;"><b>Now:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
+          ))
+          : scheduleSnapshot?.upcomingEntries?.length
+            ? scheduleSnapshot.upcomingEntries.slice(0, 2).map((entry, idx) => (
+              `<div style="margin-top:4px;"><b>${idx === 0 ? 'Next' : 'Later'}:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
+            ))
+            : [];
+        const scheduleHtml = isClassroomType && isHastingsCollegeInstance
+          ? `
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e4e7ec;">
+              <div style="font-weight:700;font-size:12px;">Today's Class Schedule</div>
+              ${scheduleLines.length
+                ? scheduleLines.join('')
+                : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No more classes are scheduled for this room today.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
+            </div>
+          `
+          : '';
 
         const selectionCountHtml = canEditRoom && selectionCount
           ? `<div style="font-size:11px;color:#555;margin-top:6px;">Rooms selected: ${selectionCount}</div>`
@@ -25259,6 +26255,7 @@ useEffect(() => {
               ${seatCountRowHtml}
               ${occupancyRowHtml}
               ${utilizationHtml}
+              ${scheduleHtml}
               ${selectionCountHtml}
               ${editButtonHtml}
             </div>
@@ -25473,7 +26470,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -25523,12 +26520,28 @@ useEffect(() => {
       ''
     ).trim();
     if (!buildingKey) return;
+    const nextAssessment = {
+      ...(savedAssessment || {}),
+      originalId: buildingKey
+    };
+    setTechnicalAssessmentEntries((prev) => {
+      const prior = Array.isArray(prev) ? prev : [];
+      const currentDocId = String(nextAssessment?.__docId || '').trim();
+      const currentAssessorKey = String(nextAssessment?.assessorKey || '').trim();
+      const filtered = prior.filter((entry) => {
+        const entryBuildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+        if (entryBuildingKey !== buildingKey) return true;
+        if (currentDocId && String(entry?.__docId || '').trim() === currentDocId) return false;
+        if (currentAssessorKey && String(entry?.assessorKey || '').trim() === currentAssessorKey) return false;
+        return true;
+      });
+      return [...filtered, nextAssessment];
+    });
     setBuildingAssessments((prev) => ({
       ...(prev || {}),
       [buildingKey]: {
         ...(prev?.[buildingKey] || {}),
-        ...(savedAssessment || {}),
-        originalId: buildingKey
+        ...nextAssessment
       }
     }));
   }, [selectedBuildingId]);
@@ -25879,7 +26892,7 @@ useEffect(() => {
       </div>
     )}
 
-    {showAuthAccessControls && !presentationMode && (
+    {showControlsToggle && (
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
       </button>
@@ -26401,6 +27414,12 @@ useEffect(() => {
             panelPos={technicalPanelPos || panelAnchor}
             isAdminRole={isAdminUser}
             canWriteCloud={isTechnicalOnlyMode ? true : isAdminUser}
+            assessmentSaveMode={technicalAssessmentSaveMode}
+            assessorName={technicalAssessorLabel}
+            assessorKey={technicalAssessorKey}
+            draftOwnerKey={technicalAssessmentSaveMode === 'per-assessor' ? (technicalAssessorDeviceId || technicalAssessorKey) : ''}
+            onAssessorNameChange={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode ? setTechnicalAssessorName : undefined}
+            allowAssessorEdit={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode}
             panelRef={technicalPanelRef}
             dragHandleProps={technicalPanelDragHandleProps}
             onClose={() => {
@@ -26504,9 +27523,9 @@ useEffect(() => {
                 setPopupMode('building');
               }}
               onExportPDF={handleExportBuilding}
-              onExplainBuilding={onExplainBuilding}
+              onExplainBuilding={aiEnabledForCurrentView ? onExplainBuilding : null}
               explainBuildingLoading={aiBuildingLoading}
-              explainBuildingDisabled={aiIsDown || !buildingStats}
+              explainBuildingDisabled={!aiEnabledForCurrentView || aiIsDown || !buildingStats}
               explainBuildingError={aiBuildingErr}
               dragHandleProps={spacePanelDragHandleProps}
             />
@@ -26561,9 +27580,9 @@ useEffect(() => {
                 setPopupMode('building');
               }}
               onExportPDF={handleExportFloor}
-              onExplainFloor={onExplain}
+              onExplainFloor={aiEnabledForCurrentView ? onExplain : null}
               explainLoading={aiLoading}
-              explainDisabled={aiIsDown || !floorStats}
+              explainDisabled={!aiEnabledForCurrentView || aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
@@ -27892,6 +28911,39 @@ useEffect(() => {
                   <option value={TECHNICAL_BUILDING_COLOR_MODE.TECHNICAL_SCORE}>Technical Score</option>
                 </select>
               </div>
+              <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#475569' }}>Stage Legend</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  {[
+                    { label: 'No progress', color: progressColors[0] },
+                    { label: 'Started', color: progressColors[1] },
+                    { label: 'Partial', color: progressColors[2] },
+                    { label: 'All sections', color: progressColors[3] }
+                  ].map((item) => (
+                    <div
+                      key={`technical-stage-${item.label}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 10.5,
+                        color: '#334155'
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 999,
+                          background: item.color,
+                          flexShrink: 0
+                        }}
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
                 <button
                   className="btn"
@@ -27970,7 +29022,7 @@ useEffect(() => {
                                 padding: '1px 6px',
                                 borderRadius: 999,
                                 background: '#dcfce7',
-                                border: '1px solid #86efac',
+                                border: '1px solid #16a34a',
                                 color: '#166534',
                                 fontWeight: 700
                               }}
@@ -27993,6 +29045,7 @@ useEffect(() => {
                       <div style={{ marginTop: 5, fontSize: 10.5, color: '#475569' }}>
                         {row.answeredFields}/{row.totalFields} scored, {row.startedSections}/3 sections started
                         {row.missingFieldCount > 0 ? `, ${row.missingFieldCount} fields missing` : ''}
+                        {row.submissionCount > 1 ? `, ${row.submissionCount} submissions` : ''}
                       </div>
                       <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {row.missingSections.length ? row.missingSections.map((missing) => (
@@ -28015,8 +29068,8 @@ useEffect(() => {
                               fontSize: 10,
                               padding: '2px 6px',
                               borderRadius: 999,
-                              background: '#ecfdf5',
-                              border: '1px solid #bbf7d0',
+                              background: '#dcfce7',
+                              border: '1px solid #16a34a',
                               color: '#166534'
                             }}
                           >
@@ -28610,7 +29663,7 @@ useEffect(() => {
                   )}
                 </div>
 
-                {!stakeholderWorkflowActive && !technicalMode && (
+                {!stakeholderWorkflowActive && !technicalMode && publicPlanningScenarioAllowed && (
                   <div style={{ marginTop: 8 }}>
                     <button
                       className="mf-btn"
@@ -28679,7 +29732,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
+                  {(mode === 'admin' || publicAirtableControlsAllowed) && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -28695,19 +29748,19 @@ useEffect(() => {
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && airtableRefreshMessage && (
+                {(mode === 'admin' || publicAirtableControlsAllowed) && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
+                {(mode === 'admin' || publicAirtableControlsAllowed) && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
                   </div>
                 )}
-                {(mode === 'admin' || (isDemoPublicMode && !isSharedPublicPlanningMode)) && (
+                {(mode === 'admin' || publicAirtableControlsAllowed) && (
                   <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
                     Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
@@ -28728,7 +29781,7 @@ useEffect(() => {
           */}
 
 
-            {!stakeholderWorkflowActive && !technicalMode && (
+            {!stakeholderWorkflowActive && !technicalMode && aiEnabledForCurrentView && (
             <div
               style={{
                 marginTop: 4,
@@ -28870,7 +29923,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {(mode === 'admin' || isSharedPublicPlanningMode) && (
+            {(mode === 'admin' || publicPlanningScenarioAllowed) && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}

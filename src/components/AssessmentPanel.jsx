@@ -94,11 +94,13 @@ const cloneAssessment = (source, buildingNameFallback = '') => {
   };
 };
 
-const buildDraftStorageKey = (universityId, buildingId) => {
+const buildDraftStorageKey = (universityId, buildingId, ownerKey = '') => {
   const uni = String(universityId || '').trim();
   const bld = String(buildingId || '').trim();
   if (!uni || !bld) return '';
-  return `mf:technical-assessment-draft:${uni}:${bld.replace(/\//g, '__')}`;
+  const baseKey = `mf:technical-assessment-draft:${uni}:${bld.replace(/\//g, '__')}`;
+  const owner = String(ownerKey || '').trim();
+  return owner ? `${baseKey}:${owner}` : baseKey;
 };
 
 const formatSavedTime = (timestampMs) => {
@@ -110,16 +112,44 @@ const formatSavedTime = (timestampMs) => {
   }
 };
 
-const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityId, panelPos, panelRef, dragHandleProps, isAdminRole, canWriteCloud }) => {
+const AssessmentPanel = ({
+  buildingId,
+  assessments,
+  onClose,
+  onSave,
+  universityId,
+  panelPos,
+  panelRef,
+  dragHandleProps,
+  isAdminRole,
+  canWriteCloud,
+  assessmentSaveMode = 'building',
+  assessorName = '',
+  assessorKey = '',
+  draftOwnerKey = '',
+  onAssessorNameChange,
+  allowAssessorEdit = true
+}) => {
   const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
   const [saveState, setSaveState] = useState({ kind: 'idle', timestamp: 0, message: '' });
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const autosaveTimerRef = useRef(null);
   const initializedRef = useRef(false);
-  const draftStorageKey = useMemo(() => buildDraftStorageKey(universityId, buildingId), [universityId, buildingId]);
+  const isPerAssessorSaveMode = String(assessmentSaveMode || '').trim().toLowerCase() === 'per-assessor';
+  const normalizedAssessorName = String(assessorName || '').trim();
+  const normalizedAssessorKey = String(assessorKey || '').trim();
+  const normalizedDraftOwnerKey = String(draftOwnerKey || '').trim();
+  const draftStorageKey = useMemo(
+    () => buildDraftStorageKey(universityId, buildingId, normalizedDraftOwnerKey),
+    [universityId, buildingId, normalizedDraftOwnerKey]
+  );
   const canSaveToCloud = useMemo(
     () => (typeof canWriteCloud === 'boolean' ? canWriteCloud : Boolean(isAdminRole)),
     [canWriteCloud, isAdminRole]
+  );
+  const canSaveAssessment = useMemo(
+    () => canSaveToCloud && (!isPerAssessorSaveMode || (normalizedAssessorName && normalizedAssessorKey)),
+    [canSaveToCloud, isPerAssessorSaveMode, normalizedAssessorName, normalizedAssessorKey]
   );
 
   const clearAutosaveTimer = useCallback(() => {
@@ -221,20 +251,39 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
       alert('Cloud save is disabled in this mode. Local draft autosave remains active.');
       return;
     }
+    if (isPerAssessorSaveMode && (!normalizedAssessorName || !normalizedAssessorKey)) {
+      setSaveState({ kind: 'error', timestamp: Date.now(), message: 'Enter your name or initials before saving.' });
+      alert('Enter your name or initials before saving this assessment.');
+      return;
+    }
     if (!buildingId || !universityId) return;
     const sanitizedId = buildingId.replace(/\//g, '__');
-    const ref = doc(db, 'universities', universityId, 'buildingAssessments', sanitizedId);
+    const docId = isPerAssessorSaveMode
+      ? `${sanitizedId}__${normalizedAssessorKey}`
+      : sanitizedId;
+    const ref = doc(db, 'universities', universityId, 'buildingAssessments', docId);
     clearAutosaveTimer();
+    const updatedAtClientMs = Date.now();
     const dataToSave = {
       ...localAssessment,
       originalId: buildingId,
       buildingName: localAssessment.buildingName || buildingId,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      updatedAtClientMs,
+      assessmentSaveMode: isPerAssessorSaveMode ? 'per-assessor' : 'building',
+      assessorName: isPerAssessorSaveMode ? normalizedAssessorName : '',
+      assessorKey: isPerAssessorSaveMode ? normalizedAssessorKey : '',
+      isAssessorScoped: isPerAssessorSaveMode
     };
     setSaveState({ kind: 'saving-cloud', timestamp: 0, message: '' });
     try {
       await setDoc(ref, dataToSave, { merge: true });
-      if (typeof onSave === 'function') onSave(dataToSave);
+      if (typeof onSave === 'function') {
+        onSave({
+          ...dataToSave,
+          __docId: docId
+        });
+      }
       if (draftStorageKey) {
         try { window.localStorage?.removeItem(draftStorageKey); } catch {}
       }
@@ -278,9 +327,12 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
       case 'error':
         return { tone: 'error', text: saveState.message || 'Save failed' };
       default:
+        if (isPerAssessorSaveMode && !normalizedAssessorName) {
+          return { tone: 'warning', text: 'Enter your name or initials to enable cloud save' };
+        }
         return { tone: 'muted', text: canSaveToCloud ? 'No unsaved changes' : 'Local draft autosave enabled' };
     }
-  }, [saveState, canSaveToCloud]);
+  }, [saveState, canSaveToCloud, isPerAssessorSaveMode, normalizedAssessorName]);
   const assessmentProgress = useMemo(() => {
     const scores = localAssessment?.scores && typeof localAssessment.scores === 'object'
       ? localAssessment.scores
@@ -331,6 +383,23 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
         <div className={`save-status save-status--${saveStatus.tone}`}>
           <span>{saveStatus.text}</span>
         </div>
+        {isPerAssessorSaveMode && (
+          <div className="assessment-identity">
+            <h5>Assessor</h5>
+            <input
+              type="text"
+              value={normalizedAssessorName}
+              onChange={(e) => {
+                if (typeof onAssessorNameChange === 'function') onAssessorNameChange(e?.target?.value ?? '');
+              }}
+              placeholder="Name or initials"
+              disabled={!allowAssessorEdit}
+            />
+            <div className="save-hint">
+              Each assessor saves a separate record for this building, so teammates will not overwrite one another.
+            </div>
+          </div>
+        )}
         <div className="assessment-progress">
           <div>
             <b>{assessmentProgress.answered}</b> / {assessmentProgress.total} scored
@@ -373,8 +442,14 @@ const AssessmentPanel = ({ buildingId, assessments, onClose, onSave, universityI
         <button
           className="save-button"
           onClick={handleSaveChanges}
-          disabled={!canSaveToCloud || saveState.kind === 'saving-cloud'}
-          title={!canSaveToCloud ? 'Cloud save disabled in this mode.' : 'Save assessment to cloud'}
+          disabled={!canSaveAssessment || saveState.kind === 'saving-cloud'}
+          title={
+            !canSaveToCloud
+              ? 'Cloud save disabled in this mode.'
+              : (isPerAssessorSaveMode && !normalizedAssessorName)
+                ? 'Enter your name or initials first.'
+                : 'Save assessment to cloud'
+          }
         >
           {saveState.kind === 'saving-cloud' ? 'Saving...' : 'Save to Cloud'}
         </button>
