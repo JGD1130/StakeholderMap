@@ -10997,12 +10997,14 @@ const StakeholderMap = ({
   const demoEditingEnabled = DEMO_EDITING_ENABLED;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
+  const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const planningScenarioControlsEnabled = showFullMapfluenceControls || (publicPlanningScenarioAllowed && demoEditingEnabled);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
@@ -12401,6 +12403,13 @@ const StakeholderMap = ({
     setAiCampusOpen(false);
     setAiCreateScenarioOpen(false);
   }, [aiEnabledForCurrentView]);
+  useEffect(() => {
+    if (aiCreatePlanningScenarioAllowed) return;
+    setAiCreateScenarioOpen(false);
+    setAiCreateScenarioLoading(false);
+    setAiCreateScenarioResult(null);
+    setAiCreateScenarioErr('');
+  }, [aiCreatePlanningScenarioAllowed]);
   useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
@@ -30384,7 +30393,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {(mode === 'admin' || publicPlanningScenarioAllowed) && (
+            {aiCreatePlanningScenarioAllowed && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}
@@ -31172,7 +31181,7 @@ useEffect(() => {
         </div>
       );
     })()}
-    {aiCreateScenarioOpen && (
+    {aiCreatePlanningScenarioAllowed && aiCreateScenarioOpen && (
       <div
         style={{
           position: 'fixed',
