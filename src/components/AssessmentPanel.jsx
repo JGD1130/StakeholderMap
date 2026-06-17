@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './AssessmentPanel.css';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebaseConfig';
 
 const scoreOptions = [
   { value: 5, label: '5 - Excellent' },
@@ -86,6 +87,7 @@ const cloneAssessment = (source, buildingNameFallback = '') => {
     ...base,
     buildingName: String(base.buildingName || buildingNameFallback || '').trim(),
     notes: String(base.notes || ''),
+    photoUrls: Array.isArray(base.photoUrls) ? base.photoUrls : [],
     scores: {
       architecture: normalizeScoreSection(architecture, assessmentTemplate.scores.architecture),
       engineering: normalizeScoreSection(engineering, assessmentTemplate.scores.engineering),
@@ -128,13 +130,16 @@ const AssessmentPanel = ({
   assessorKey = '',
   draftOwnerKey = '',
   onAssessorNameChange,
-  allowAssessorEdit = true
+  allowAssessorEdit = true,
+  enablePhotoUpload = false
 }) => {
   const [localAssessment, setLocalAssessment] = useState(assessmentTemplate);
   const [saveState, setSaveState] = useState({ kind: 'idle', timestamp: 0, message: '' });
   const [isDraftDirty, setIsDraftDirty] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const autosaveTimerRef = useRef(null);
   const initializedRef = useRef(false);
+  const fileInputRef = useRef(null);
   const isPerAssessorSaveMode = String(assessmentSaveMode || '').trim().toLowerCase() === 'per-assessor';
   const normalizedAssessorName = String(assessorName || '').trim();
   const normalizedAssessorKey = String(assessorKey || '').trim();
@@ -244,6 +249,31 @@ const AssessmentPanel = ({
   const handleNotesChange = (e) => {
     const nextValue = e?.target?.value ?? '';
     onAssessmentChange((prev) => ({ ...prev, notes: nextValue }));
+  };
+
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setPhotoUploading(true);
+    try {
+      const sanitizedBuilding = (localAssessment.buildingName || buildingId)
+        .replace(/[^a-zA-Z0-9-_]/g, '_').replace(/_+/g, '_');
+      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `cherokee-mental-health/buildings/${sanitizedBuilding}/photos/${Date.now()}_${sanitizedFilename}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      onAssessmentChange((prev) => ({
+        ...prev,
+        photoUrls: [...(Array.isArray(prev.photoUrls) ? prev.photoUrls : []), url]
+      }));
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      alert('Photo upload failed. Please try again.');
+    } finally {
+      setPhotoUploading(false);
+    }
   };
 
   const handleSaveChanges = async () => {
@@ -438,6 +468,36 @@ const AssessmentPanel = ({
           <h5>Notes</h5>
           <textarea value={localAssessment.notes || ''} onChange={handleNotesChange} rows="4" />
         </div>
+
+        {enablePhotoUpload && (
+          <div className="photos-section">
+            <h5>Photos</h5>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handlePhotoSelect}
+            />
+            <button
+              type="button"
+              className="photo-upload-button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={photoUploading}
+            >
+              {photoUploading ? 'Uploading...' : '+ Add Photo'}
+            </button>
+            {Array.isArray(localAssessment.photoUrls) && localAssessment.photoUrls.length > 0 && (
+              <div className="photo-thumbnails">
+                {localAssessment.photoUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`Photo ${i + 1}`} className="photo-thumb" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           className="save-button"

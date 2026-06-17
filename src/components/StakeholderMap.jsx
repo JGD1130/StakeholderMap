@@ -27856,6 +27856,7 @@ useEffect(() => {
             draftOwnerKey={technicalAssessmentSaveMode === 'per-assessor' ? (technicalAssessorDeviceId || technicalAssessorKey) : ''}
             onAssessorNameChange={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode ? setTechnicalAssessorName : undefined}
             allowAssessorEdit={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode}
+            enablePhotoUpload={universityId === 'cherokee-mental-health'}
             panelRef={technicalPanelRef}
             dragHandleProps={technicalPanelDragHandleProps}
             onClose={() => {
