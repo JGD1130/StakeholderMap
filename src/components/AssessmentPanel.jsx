@@ -19,7 +19,7 @@ const assessmentTemplate = {
   scores: {
     architecture: { exterior: 0, entrances: 0, interiorFinishes: 0, lifeSafety: 0, codesAndAccessibility: 0 },
     engineering: { superstructure: 0, conveyingSystems: 0, fireProtection: 0, plumbing: 0, mechanical: 0, power: 0, lighting: 0 },
-    functionality: { telecomm: 0, fireAlarm: 0, spaceSize: 0, technology: 0 },
+    functionality: { fireAlarm: 0, spaceSize: 0, technology: 0 },
   },
 };
 const TECHNICAL_FIELD_ALIASES = {
@@ -35,7 +35,6 @@ const TECHNICAL_FIELD_ALIASES = {
   mechanical: ['hvac'],
   power: ['electricalPower', 'electrical'],
   lighting: ['lights'],
-  telecomm: ['telecom', 'telecommunications'],
   fireAlarm: ['fireAlarms'],
   spaceSize: ['space', 'size'],
   technology: ['it', 'av']
@@ -65,7 +64,6 @@ const CATEGORY_LABELS = {
   functionality: 'Functionality'
 };
 const FIELD_LABELS = {
-  telecomm: 'Telecomm',
   fireAlarm: 'Fire Alarm',
   spaceSize: 'Space Size',
   codesAndAccessibility: 'Codes and Accessibility',

@@ -10234,7 +10234,7 @@ const TECHNICAL_SECTION_CONFIG = [
   {
     key: 'functionality',
     label: 'Functionality',
-    fields: ['telecomm', 'fireAlarm', 'spaceSize', 'technology']
+    fields: ['fireAlarm', 'spaceSize', 'technology']
   }
 ];
 const TECHNICAL_FIELD_ALIASES = {
@@ -10250,7 +10250,6 @@ const TECHNICAL_FIELD_ALIASES = {
   mechanical: ['hvac'],
   power: ['electricalPower', 'electrical'],
   lighting: ['lights'],
-  telecomm: ['telecom', 'telecommunications'],
   fireAlarm: ['fireAlarms'],
   spaceSize: ['space', 'size'],
   technology: ['it', 'av']
