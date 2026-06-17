@@ -10781,6 +10781,35 @@ const isPerAssessorAssessmentRecord = (assessment = {}) => (
   Boolean(String(assessment?.assessorKey || '').trim())
 );
 
+const compareTechnicalAssessmentProgress = (current = {}, candidate = {}) => {
+  const currentScores = current?.scores && typeof current.scores === 'object' ? current.scores : {};
+  const candidateScores = candidate?.scores && typeof candidate.scores === 'object' ? candidate.scores : {};
+  const currentProgress = computeTechnicalProgressFromScores(currentScores);
+  const candidateProgress = computeTechnicalProgressFromScores(candidateScores);
+  const currentPct = currentProgress.totalFields > 0
+    ? Math.max(0, Math.min(100, Math.round((currentProgress.answeredFields / currentProgress.totalFields) * 100)))
+    : 0;
+  const candidatePct = candidateProgress.totalFields > 0
+    ? Math.max(0, Math.min(100, Math.round((candidateProgress.answeredFields / candidateProgress.totalFields) * 100)))
+    : 0;
+  const currentScoreSummary = computeTechnicalAverageScore(currentScores);
+  const candidateScoreSummary = computeTechnicalAverageScore(candidateScores);
+
+  if (candidateProgress.answeredFields !== currentProgress.answeredFields) {
+    return candidateProgress.answeredFields - currentProgress.answeredFields;
+  }
+  if (candidatePct !== currentPct) {
+    return candidatePct - currentPct;
+  }
+  if (candidateProgress.startedSections !== currentProgress.startedSections) {
+    return candidateProgress.startedSections - currentProgress.startedSections;
+  }
+  if (candidateScoreSummary.scoredFields !== currentScoreSummary.scoredFields) {
+    return candidateScoreSummary.scoredFields - currentScoreSummary.scoredFields;
+  }
+  return getAssessmentDocSortMs(candidate) - getAssessmentDocSortMs(current);
+};
+
 const buildAssessmentMapFromEntries = (
   entries = [],
   {
@@ -10823,6 +10852,20 @@ const buildAssessmentMapFromEntries = (
       if (!byBuilding.has(key)) byBuilding.set(key, entry);
     });
   }
+  return Object.fromEntries(byBuilding.entries());
+};
+
+const buildSharedTechnicalAssessmentMapFromEntries = (entries = []) => {
+  const byBuilding = new Map();
+  (entries || []).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const buildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+    if (!buildingKey) return;
+    const prev = byBuilding.get(buildingKey);
+    if (!prev || compareTechnicalAssessmentProgress(prev, entry) < 0) {
+      byBuilding.set(buildingKey, { ...entry, originalId: buildingKey });
+    }
+  });
   return Object.fromEntries(byBuilding.entries());
 };
 const isMarkerArchived = (marker) => {
@@ -10894,9 +10937,14 @@ const StakeholderMap = ({
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
   const showStrategicDashboard = !isSarpyCountyInstance;
+  const hasConfiguredUniversityLogo = Boolean(
+    config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
+  );
   const universityLogoFile = String(
-    config?.logos?.university || (isSarpyCountyInstance ? 'SarpyCounty_logo.png' : 'HC_image.png')
-  ).trim() || 'HC_image.png';
+    hasConfiguredUniversityLogo
+      ? (config?.logos?.university || '')
+      : (isSarpyCountyInstance ? 'SarpyCounty_logo.png' : 'HC_image.png')
+  ).trim();
   const universityLogoAlt = isSarpyCountyInstance ? 'Sarpy County' : (universityName || 'University');
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
@@ -16552,6 +16600,10 @@ const StakeholderMap = ({
   const [technicalProgressShowIncompleteOnly, setTechnicalProgressShowIncompleteOnly] = useState(false);
   const [technicalProgressMessage, setTechnicalProgressMessage] = useState('');
   const [technicalBuildingColorMode, setTechnicalBuildingColorMode] = useState(TECHNICAL_BUILDING_COLOR_MODE.STAGE_COMPLETED);
+  const sharedTechnicalBuildingAssessments = useMemo(
+    () => buildSharedTechnicalAssessmentMapFromEntries(technicalAssessmentEntries),
+    [technicalAssessmentEntries]
+  );
 
 
   const resolveBuildingPlanKey = useCallback((idOrName) => {
@@ -21768,7 +21820,7 @@ const technicalProgressRows = useMemo(() => {
   const rows = [];
   const seen = new Set();
   const assessmentByCanonical = new Map();
-  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+  Object.entries(sharedTechnicalBuildingAssessments || {}).forEach(([rawId, assessment]) => {
     const canonical = bId(rawId || assessment?.originalId || '');
     if (canonical) assessmentByCanonical.set(canonical, assessment);
   });
@@ -21785,7 +21837,7 @@ const technicalProgressRows = useMemo(() => {
     });
   });
 
-  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+  Object.entries(sharedTechnicalBuildingAssessments || {}).forEach(([rawId, assessment]) => {
     const id = String(assessment?.originalId || rawId || '').trim();
     if (!id || seen.has(id)) return;
     seen.add(id);
@@ -21797,7 +21849,7 @@ const technicalProgressRows = useMemo(() => {
   });
 
   const withStats = rows.map((row) => {
-    const directAssessment = buildingAssessments?.[row.id];
+    const directAssessment = sharedTechnicalBuildingAssessments?.[row.id];
     const canonicalAssessment = assessmentByCanonical.get(bId(row.id || ''));
     const assessment = directAssessment || canonicalAssessment || null;
     const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
@@ -21839,7 +21891,7 @@ const technicalProgressRows = useMemo(() => {
     if (a.completionPct !== b.completionPct) return a.completionPct - b.completionPct;
     return a.name.localeCompare(b.name);
   });
-}, [config, buildingAssessments, technicalSubmissionCounts]);
+}, [config, sharedTechnicalBuildingAssessments, technicalSubmissionCounts]);
 const technicalProgressSummary = useMemo(() => {
   const total = technicalProgressRows.length;
   const complete = technicalProgressRows.filter((row) => row.isComplete).length;
@@ -22018,7 +22070,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
     return;
   }
   const canonicalAssessment = new Map();
-  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+  Object.entries(sharedTechnicalBuildingAssessments || {}).forEach(([rawId, assessment]) => {
     const canonicalId = bId(rawId || assessment?.originalId || '');
     if (!canonicalId) return;
     canonicalAssessment.set(canonicalId, assessment || {});
@@ -22043,7 +22095,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
   const summaryCount = rows.length;
 
   rows.forEach((row) => {
-    const direct = buildingAssessments?.[row.id] || null;
+    const direct = sharedTechnicalBuildingAssessments?.[row.id] || null;
     const assessment = direct || canonicalAssessment.get(bId(row.id || '')) || {};
     const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
     const notes = String(assessment?.notes || '').trim();
@@ -22096,7 +22148,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   setTechnicalProgressMessage(`Exported ${detailCount.toLocaleString()} technical rows + ${summaryCount.toLocaleString()} building summaries.`);
-}, [technicalProgressRows, buildingAssessments, universityId, technicalAssessmentEntries, technicalAssessmentSaveMode]);
+}, [technicalProgressRows, sharedTechnicalBuildingAssessments, universityId, technicalAssessmentEntries, technicalAssessmentSaveMode]);
 
 const focusTechnicalBuilding = useCallback((buildingId) => {
   const id = String(buildingId || '').trim();
@@ -23741,11 +23793,7 @@ useEffect(() => {
             perAssessorMode: technicalAssessmentSaveMode === 'per-assessor',
             assessorKey: technicalAssessorKey
           });
-          const visibleEntries =
-            technicalAssessmentSaveMode === 'per-assessor' && technicalMode
-              ? Object.values(assessmentData || {})
-              : loadedEntries;
-          setTechnicalAssessmentEntries(visibleEntries);
+          setTechnicalAssessmentEntries(loadedEntries);
           setBuildingAssessments(assessmentData);
         } else {
           setTechnicalAssessmentEntries([]);
@@ -25189,8 +25237,8 @@ useEffect(() => {
           hasEntries = true;
         }
       });
-    } else if ((mode === 'admin' || technicalMode) && technicalWorkflowActive && Object.keys(buildingAssessments).length > 0) {
-      Object.entries(buildingAssessments).forEach((tuple) => {
+    } else if ((mode === 'admin' || technicalMode) && technicalWorkflowActive && Object.keys(sharedTechnicalBuildingAssessments).length > 0) {
+      Object.entries(sharedTechnicalBuildingAssessments).forEach((tuple) => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
         const sc = assessment && assessment.scores ? assessment.scores : {};
@@ -25223,7 +25271,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -27321,13 +27369,15 @@ useEffect(() => {
       {!presentationMode && !maintenanceWorkflowActive && (
       <div className="mf-right-rail">
         <div className="mf-right-logos">
-          <div className="logo-box">
-            <img
-              className="mf-logo mf-logo--hc"
-              src={assetUrl(universityLogoFile)}
-              alt={universityLogoAlt}
-            />
-          </div>
+          {universityLogoFile && (
+            <div className="logo-box">
+              <img
+                className="mf-logo mf-logo--hc"
+                src={assetUrl(universityLogoFile)}
+                alt={universityLogoAlt}
+              />
+            </div>
+          )}
           <div className="logo-box">
             <div className="mapfluence-title">MAPFLUENCE</div>
             <img

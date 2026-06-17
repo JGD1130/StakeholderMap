@@ -7,10 +7,10 @@
   "technicalAssessmentSaveMode": "per-assessor",
   "style": "mapbox://styles/mapbox/streets-v12",
   "initialCenter": [-95.573222, 42.756854],
-  "initialZoom": 16.8,
+  "initialZoom": 16.2,
   "lng": -95.573222,
   "lat": 42.756854,
-  "zoom": 17.3,
+  "zoom": 16.7,
   "pitch": 39,
   "bearing": 0,
   "boundaryFitPadding": {
@@ -19,8 +19,9 @@
     "bottom": 70,
     "left": 300
   },
-  "boundaryFitMaxZoom": 17.4,
+  "boundaryFitMaxZoom": 16.6,
   "logos": {
+    "university": "",
     "clarkEnersen": "Clark_Enersen_Logo.png"
   }
 }
