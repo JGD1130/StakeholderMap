@@ -23975,20 +23975,16 @@ useEffect(() => {
         }
 
         const shouldLoadConditions = mode === 'admin';
-        const shouldLoadAssessments = mode === 'admin' || technicalMode;
         const shouldLoadMaintenance = mode === 'admin' || isDemoPublicMode;
-        if (!shouldLoadConditions && !shouldLoadAssessments && !shouldLoadMaintenance) {
+        if (!shouldLoadConditions && !shouldLoadMaintenance) {
           setBuildingConditions({});
-          setTechnicalAssessmentEntries([]);
-          setBuildingAssessments({});
           setMaintenanceIssues([]);
           return;
         }
 
-        // Load condition + assessment + maintenance docs by mode.
-        const [condSnap, assessmentSnap, maintenanceSnap] = await Promise.all([
+        // Load condition + maintenance docs by mode (assessments handled by onSnapshot effect below).
+        const [condSnap, maintenanceSnap] = await Promise.all([
           shouldLoadConditions ? getDocs(conditionsCollection) : Promise.resolve(null),
-          shouldLoadAssessments ? getDocs(assessmentsCollection) : Promise.resolve(null),
           shouldLoadMaintenance ? getDocs(maintenanceIssuesCollection) : Promise.resolve(null)
         ]);
 
@@ -24001,28 +23997,6 @@ useEffect(() => {
           setBuildingConditions(condData);
         } else {
           setBuildingConditions({});
-        }
-
-        if (shouldLoadAssessments && assessmentSnap) {
-          const loadedEntries = assessmentSnap.docs.map((docx) => {
-            const data = docx.data() || {};
-            const originalId = getAssessmentEntryBuildingKey(data, docx.id);
-            return {
-              __docId: docx.id,
-              ...data,
-              originalId
-            };
-          });
-          const assessmentData = buildAssessmentMapFromEntries(loadedEntries, {
-            technicalMode,
-            perAssessorMode: technicalAssessmentSaveMode === 'per-assessor',
-            assessorKey: technicalAssessorKey
-          });
-          setTechnicalAssessmentEntries(loadedEntries);
-          setBuildingAssessments(assessmentData);
-        } else {
-          setTechnicalAssessmentEntries([]);
-          setBuildingAssessments({});
         }
 
         if (shouldLoadMaintenance && maintenanceSnap) {
@@ -24060,8 +24034,6 @@ useEffect(() => {
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setBuildingConditions({});
-        setTechnicalAssessmentEntries([]);
-        setBuildingAssessments({});
         setMaintenanceIssues([]);
       }
     })();
@@ -24074,8 +24046,43 @@ useEffect(() => {
     persona,
     markersCollection,
     conditionsCollection,
+    maintenanceIssuesCollection
+  ]);
+
+  useEffect(() => {
+    const shouldLoadAssessments = mode === 'admin' || technicalMode;
+    if (!shouldLoadAssessments) {
+      setTechnicalAssessmentEntries([]);
+      setBuildingAssessments({});
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      assessmentsCollection,
+      (snap) => {
+        const loadedEntries = snap.docs.map((docx) => {
+          const data = docx.data() || {};
+          const originalId = getAssessmentEntryBuildingKey(data, docx.id);
+          return { __docId: docx.id, ...data, originalId };
+        });
+        const assessmentData = buildAssessmentMapFromEntries(loadedEntries, {
+          technicalMode,
+          perAssessorMode: technicalAssessmentSaveMode === 'per-assessor',
+          assessorKey: technicalAssessorKey
+        });
+        setTechnicalAssessmentEntries(loadedEntries);
+        setBuildingAssessments(assessmentData);
+      },
+      (err) => {
+        console.error('Failed to subscribe to assessments:', err);
+        setTechnicalAssessmentEntries([]);
+        setBuildingAssessments({});
+      }
+    );
+    return () => unsubscribe();
+  }, [
+    mode,
+    technicalMode,
     assessmentsCollection,
-    maintenanceIssuesCollection,
     technicalAssessmentSaveMode,
     technicalAssessorKey
   ]);
