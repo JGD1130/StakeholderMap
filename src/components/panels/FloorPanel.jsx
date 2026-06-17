@@ -16,6 +16,10 @@ export default function FloorPanel({
   onClose,
   onExportPDF,
   onExportCSV,
+  onOpenDeferredMaintenance,
+  deferredMaintenanceAvailable = false,
+  onOpenRemodelScenarios,
+  remodelScenariosAvailable = false,
   onOpenProgramTestFit,
   colorMode = 'department',
   onChangeColorMode,
@@ -170,6 +174,24 @@ export default function FloorPanel({
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
           <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
           {onExportCSV ? <button className="btn" onClick={onExportCSV}>Export CSV</button> : null}
+          {onOpenDeferredMaintenance ? (
+            <button
+              className="btn"
+              onClick={onOpenDeferredMaintenance}
+              disabled={!deferredMaintenanceAvailable}
+            >
+              Deferred + Condition
+            </button>
+          ) : null}
+          {onOpenRemodelScenarios ? (
+            <button
+              className="btn"
+              onClick={onOpenRemodelScenarios}
+              disabled={!remodelScenariosAvailable}
+            >
+              Planning Docs
+            </button>
+          ) : null}
           {onOpenProgramTestFit ? <button className="btn" onClick={onOpenProgramTestFit}>Program Test Fit</button> : null}
           <button
             className="btn"

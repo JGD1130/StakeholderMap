@@ -1,0 +1,1828 @@
+{
+  "updatedAt": "2026-04-01",
+  "buildings": [
+    {
+      "building": "1882",
+      "aliases": [
+        "1882",
+        "The 1882 Residence Hall",
+        "The 1882 (new residence hall opening 2026)"
+      ],
+      "deferredMaintenance": null,
+      "conditionAssessment": {
+        "averageScore": 5,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Under Construction",
+        "architecture": {
+          "exterior": 5,
+          "entrances": 5,
+          "interiorFinishes": 5,
+          "lifeSafety": 5,
+          "codesAccessibility": 5,
+          "superstructure": 5,
+          "conveyingSystems": 5
+        },
+        "engineering": {
+          "fireProtection": 5,
+          "plumbing": 5,
+          "mechanical": 5,
+          "power": 5,
+          "lighting": 5,
+          "telecomm": 5,
+          "fireAlarm": 5
+        },
+        "functionality": {
+          "spaceSize": 5,
+          "technology": 5
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Altman Hall",
+      "aliases": [
+        "Altman Hall",
+        "Altman Hall Residency",
+        "Altman Hall Co-ed First-Year Residence"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $743,478.",
+        "priority": "Medium",
+        "totalCost": 743477.63,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 14247,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 498949.3,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 194631.33000000002,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 35650,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.7142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Old Boiler, Fan Coils and AHU",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 3,
+          "interiorFinishes": 2,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 2,
+          "mechanical": 1,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 4
+        },
+        "functionality": {
+          "spaceSize": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Babcock Hall",
+      "aliases": [
+        "Babcock Hall",
+        "Babcock Hall Residence",
+        "Babcock Hall Co-ed Residence"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $262,186.",
+        "priority": "Low",
+        "totalCost": 262185.86,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 11224,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 66233.86,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 184728,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.0714285714285716,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Some compressor issues, older HW heater",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 4,
+          "plumbing": 2,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 4
+        },
+        "functionality": {
+          "spaceSize": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Barrett Alumni",
+      "aliases": [
+        "Barrett Alumni",
+        "Barrett Alumni Center"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $51,249.",
+        "priority": "Low",
+        "totalCost": 51248.659999999996,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 1600,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 18745.44,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 5156,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 25747.219999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2857142857142856,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "No Fire Alarm, Not Sprinkled",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 4,
+          "interiorFinishes": 3,
+          "lifeSafety": 4,
+          "codesAccessibility": 4,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3
+        },
+        "functionality": {
+          "spaceSize": 4,
+          "technology": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Batchelder Services Bldg",
+      "aliases": [
+        "Batchelder Services Bldg",
+        "Batchelder",
+        "Batchelder General Services",
+        "Batchelder General Serices"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $27,989.",
+        "priority": "Low",
+        "totalCost": 27988.8,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Roofing",
+            "cost": 27988.8,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.6,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 3,
+          "interiorFinishes": 2,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 3,
+          "power": 4,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 3,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronc Hall",
+      "aliases": [
+        "Bronc Hall",
+        "Bronc Hall Residence",
+        "Bronc Hall Men's Residence",
+        "Bronc Hall Mens Residence",
+        "Bronc Hall Men’s Residence"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,459,170.",
+        "priority": "High",
+        "totalCost": 1459169.85,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 862340.85,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 389475,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 173130,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 34224,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.0714285714285716,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Need mixing valve on tank",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 4,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 3,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 2,
+          "mechanical": 1,
+          "power": 4,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 4
+        },
+        "functionality": {
+          "spaceSize": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronco Village Apt 911",
+      "aliases": [
+        "Bronco Village Apt 911",
+        "Bronco Village Apartments"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,800,180. This figure is currently tracked at the Bronco Village complex level and is shown for each Bronco Village apartment building.",
+        "priority": "High",
+        "totalCost": 1800180.18,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 16394,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 406543.19999999995,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 1171186,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 206056.97999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Building 917 & 923 not remodeled Assessment currently provided at the Bronco Village complex level.",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronco Village Apt 915",
+      "aliases": [
+        "Bronco Village Apt 915",
+        "Bronco Village Apartments"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,800,180. This figure is currently tracked at the Bronco Village complex level and is shown for each Bronco Village apartment building.",
+        "priority": "High",
+        "totalCost": 1800180.18,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 16394,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 406543.19999999995,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 1171186,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 206056.97999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Building 917 & 923 not remodeled Assessment currently provided at the Bronco Village complex level.",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronco Village Apt 917",
+      "aliases": [
+        "Bronco Village Apt 917",
+        "Bronco Village Apartments"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,800,180. This figure is currently tracked at the Bronco Village complex level and is shown for each Bronco Village apartment building.",
+        "priority": "High",
+        "totalCost": 1800180.18,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 16394,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 406543.19999999995,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 1171186,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 206056.97999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Building 917 & 923 not remodeled Assessment currently provided at the Bronco Village complex level.",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronco Village Apt 919",
+      "aliases": [
+        "Bronco Village Apt 919",
+        "Bronco Village Apartments"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,800,180. This figure is currently tracked at the Bronco Village complex level and is shown for each Bronco Village apartment building.",
+        "priority": "High",
+        "totalCost": 1800180.18,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 16394,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 406543.19999999995,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 1171186,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 206056.97999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Building 917 & 923 not remodeled Assessment currently provided at the Bronco Village complex level.",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronco Village Apt 921",
+      "aliases": [
+        "Bronco Village Apt 921",
+        "Bronco Village Apartments"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,800,180. This figure is currently tracked at the Bronco Village complex level and is shown for each Bronco Village apartment building.",
+        "priority": "High",
+        "totalCost": 1800180.18,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 16394,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 406543.19999999995,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 1171186,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 206056.97999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Building 917 & 923 not remodeled Assessment currently provided at the Bronco Village complex level.",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Bronco Village Apt 923",
+      "aliases": [
+        "Bronco Village Apt 923",
+        "Bronco Village Apartments"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,800,180. This figure is currently tracked at the Bronco Village complex level and is shown for each Bronco Village apartment building.",
+        "priority": "High",
+        "totalCost": 1800180.18,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 16394,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 406543.19999999995,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 1171186,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 206056.97999999998,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.2142857142857144,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Building 917 & 923 not remodeled Assessment currently provided at the Bronco Village complex level.",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 4
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 4,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Calvin H. French Chapel",
+      "aliases": [
+        "Calvin H. French Chapel",
+        "Calvin French Chapel",
+        "Calvin H. French Memorial Chapel",
+        "Calvin H. French Memorila Chapel"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $703,273.",
+        "priority": "Medium",
+        "totalCost": 703272.97,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 226780,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 246960,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 158140.66999999998,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 71392.3,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.1333333333333333,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "New lighting & rigging scheduled, Not Sprinkled, Fire hose, front stage",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 2,
+          "codesAccessibility": 1,
+          "superstructure": 2
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 1,
+          "power": 2,
+          "lighting": 2,
+          "telecomm": 3,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 2,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Daugherty Student Engagement Center",
+      "aliases": [
+        "Daugherty Student Engagement Center",
+        "Daugherty",
+        "Admissions-Daugherty Student Engagement Center",
+        "Admissions / Daugherty Student Engagement Center"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $389,979.",
+        "priority": "Medium",
+        "totalCost": 389979.44,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 128097,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 226440.44,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 35442,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.5625,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 4,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 3,
+          "conveyingSystems": 2
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 3,
+          "power": 5,
+          "lighting": 5,
+          "telecomm": 5,
+          "fireAlarm": 5
+        },
+        "functionality": {
+          "spaceSize": 5,
+          "technology": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Existing vs Proposed (Image)",
+          "description": "Daugherty Student Engagement Center planning comparison: current condition versus proposed renovation concept.",
+          "url": "floorplans/Hastings/Daugherty/Scenarios/Daugherty-ISO-existing-vs-proposed.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Farrell-Fleharty",
+      "aliases": [
+        "Farrell-Fleharty",
+        "Fleharty",
+        "Lynn Farrell Arena",
+        "Fleharty Educational Center",
+        "Farrell Arena Fleharty Educational Center",
+        "Lynn Farrell Arena/Fleharty Educational Center"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $2,880,168.",
+        "priority": "Very High",
+        "totalCost": 2880167.94,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 192709,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 2129264.28,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 263488,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 294706.66000000003,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.75,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "In process of updating units, ERUs need updated",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 4,
+          "interiorFinishes": 5,
+          "lifeSafety": 5,
+          "codesAccessibility": 4,
+          "superstructure": 4,
+          "conveyingSystems": 4
+        },
+        "engineering": {
+          "fireProtection": 5,
+          "plumbing": 3,
+          "mechanical": 3,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 4,
+          "technology": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "Farrell-Fleharty planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/Fleharty/Scenarios/Farrell Arena - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Gray Center",
+      "aliases": [
+        "Gray Center"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $670,078.",
+        "priority": "Medium",
+        "totalCost": 670078.28,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 76144,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 354159.78,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 239774.5,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.466666666666667,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled, WH 2022",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 3,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 2,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "Gray Center planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/Gray Center/Scenarios/Gray Center - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Hazelrigg Student Union",
+      "aliases": [
+        "Hazelrigg Student Union",
+        "Hazzelrig",
+        "Hazelrig Student Union",
+        "Hazzelrig Student Union",
+        "Hazelrigg Student Union / Studio 200"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $345,538.",
+        "priority": "Medium",
+        "totalCost": 345538.13,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 164766,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 168407.5,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 12364.630000000001,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.875,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Under Renovation, Not enough strobes, kitchen is new including HVAC",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 4,
+          "interiorFinishes": 3,
+          "lifeSafety": 2,
+          "codesAccessibility": 3,
+          "superstructure": 4,
+          "conveyingSystems": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 2,
+          "mechanical": 1,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 4,
+          "technology": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "Hazelrigg Student Union planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/Hazzelrig/Scenarios/Hazelrigg - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Hurley-McDonald Hall",
+      "aliases": [
+        "Hurley-McDonald Hall",
+        "HurleyMcDonald"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $1,192,510.",
+        "priority": "High",
+        "totalCost": 1192510.3,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 618795.5,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 344303.47,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 229411.33000000002,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.25,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 3,
+          "interiorFinishes": 2,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 3,
+          "conveyingSystems": 2
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 2,
+          "mechanical": 2,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 2,
+          "technology": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "Hurley-McDonald Hall planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/HurleyMcDonald/Scenarios/Hurley McDonald - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Jackson Dinsdale Art Center",
+      "aliases": [
+        "Jackson Dinsdale Art Center",
+        "Jackson Dinsdale"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $250,271.",
+        "priority": "Low",
+        "totalCost": 250271.37,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 223,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 80803.7,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 78284,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 90960.67,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 4.6,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "HVAC has control issues",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 4,
+          "interiorFinishes": 5,
+          "lifeSafety": 5,
+          "codesAccessibility": 5,
+          "superstructure": 5
+        },
+        "engineering": {
+          "fireProtection": 5,
+          "plumbing": 5,
+          "mechanical": 4,
+          "power": 5,
+          "lighting": 5,
+          "telecomm": 4,
+          "fireAlarm": 5
+        },
+        "functionality": {
+          "spaceSize": 4,
+          "technology": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Kiewit Building",
+      "aliases": [
+        "Kiewit Building",
+        "Kiewit"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $2,633,090.",
+        "priority": "Very High",
+        "totalCost": 2633089.6,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 150779.6,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 2301621.66,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 127451,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 53237.34,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.3333333333333335,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Sprinkled, Had a leak in ceiling around sprinkler head.",
+        "architecture": {
+          "exterior": 3,
+          "entrances": 2,
+          "interiorFinishes": 3,
+          "lifeSafety": 2,
+          "codesAccessibility": 1,
+          "superstructure": 2
+        },
+        "engineering": {
+          "fireProtection": 3,
+          "plumbing": 3,
+          "mechanical": 3,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 1,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "Kiewit Building planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/Kiewit/Scenarios/Kiewit - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Lloyd Wilson Stadium",
+      "aliases": [
+        "Lloyd Wilson Stadium",
+        "Lloyd Wilson Field-Stadium",
+        "Lloyd Wilson Field/Stadium"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $410,750.",
+        "priority": "Medium",
+        "totalCost": 410750,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 135464,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 85920,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 89546,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 99820,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 3.125,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Water problems, Locker Rooms not sprinkled, No HVAC on 3rd",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 4,
+          "interiorFinishes": 4,
+          "lifeSafety": 4,
+          "codesAccessibility": 4,
+          "superstructure": 3,
+          "conveyingSystems": 3
+        },
+        "engineering": {
+          "fireProtection": 2,
+          "plumbing": 2,
+          "mechanical": 2,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 3,
+          "technology": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "McCormick Hall",
+      "aliases": [
+        "McCormick Hall",
+        "McCormick"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $364,081.",
+        "priority": "Medium",
+        "totalCost": 364081.36,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 207317,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 84372.36,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 72392,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.125,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 2,
+          "interiorFinishes": 2,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 2,
+          "conveyingSystems": 2
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 1,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 2,
+          "technology": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "McCormick Hall planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/McCormick/Scenarios/McCormick - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Morrison-Reeves Science Center",
+      "aliases": [
+        "Morrison-Reeves Science Center",
+        "Morrison Reeves"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $680,534.",
+        "priority": "Medium",
+        "totalCost": 680533.81,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 133554,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 357037.14,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 189942.67,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 4.0625,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Pressure Issues, nearing life expectancy on systems, need DHW circ pump",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 4,
+          "interiorFinishes": 4,
+          "lifeSafety": 4,
+          "codesAccessibility": 5,
+          "superstructure": 5,
+          "conveyingSystems": 5
+        },
+        "engineering": {
+          "fireProtection": 5,
+          "plumbing": 3,
+          "mechanical": 3,
+          "power": 4,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 5,
+          "technology": 4
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Perkins Library",
+      "aliases": [
+        "Perkins Library",
+        "Perkins"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $789,288.",
+        "priority": "Medium",
+        "totalCost": 789287.7399999999,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 180558,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 517964.41,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 90765.33,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.25,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled, Unisex restrooms getting updated",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 3,
+          "interiorFinishes": 3,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 3,
+          "conveyingSystems": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 1,
+          "power": 2,
+          "lighting": 2,
+          "telecomm": 2,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 3,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": [
+        {
+          "label": "Master Plan Scenario (Image)",
+          "description": "Perkins Library planning scenario visual from Revit/master plan export.",
+          "url": "floorplans/Hastings/Perkins/Scenarios/Perkins Library - ISO.jpg"
+        }
+      ]
+    },
+    {
+      "building": "Physical Fitness Facility",
+      "aliases": [
+        "Physical Fitness Facility"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $671,669.",
+        "priority": "Medium",
+        "totalCost": 671669.39,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 316056,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 270870,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 69810,
+            "priority": ""
+          },
+          {
+            "label": "Parking",
+            "cost": 14933.390000000001,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.466666666666667,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled, Unit Heaters Damaged, WH 2014",
+        "architecture": {
+          "exterior": 4,
+          "entrances": 3,
+          "interiorFinishes": 2,
+          "lifeSafety": 3,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 3,
+          "mechanical": 1,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 2,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Scott Studio Theater",
+      "aliases": [
+        "Scott Studio Theater",
+        "Scott Theater",
+        "Scott Theatre",
+        "Scott Studio Theatre"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $297,480.",
+        "priority": "Low",
+        "totalCost": 297479.68,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 76402,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 157487.68,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 63590,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.2666666666666666,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled, improper slope in waste pipe",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 3,
+          "interiorFinishes": 2,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 2,
+          "mechanical": 1,
+          "power": 2,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 3,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Stone Health Center",
+      "aliases": [
+        "Stone Health Center",
+        "The Stone Health Center"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $17,758.",
+        "priority": "Low",
+        "totalCost": 17758.08,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Roofing",
+            "cost": 9166.08,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 8592,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.2,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled, HVAC R22 Units",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 2,
+          "interiorFinishes": 2,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 3
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 2,
+          "mechanical": 1,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 2,
+          "technology": 2
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Taylor Hall",
+      "aliases": [
+        "Taylor Hall",
+        "Taylor Hall Women's Residence",
+        "Taylor Hall Womens Residence",
+        "Taylor Hall Women’s Residence"
+      ],
+      "deferredMaintenance": {
+        "summary": "Master-plan deferred maintenance total estimate: $276,830.",
+        "priority": "Low",
+        "totalCost": 276830.2,
+        "sourceLabel": "Hastings College Deferred Maint.xlsx",
+        "updatedAt": "2026-04-01",
+        "items": [
+          {
+            "label": "Deferred maintenance items",
+            "cost": 78285,
+            "priority": ""
+          },
+          {
+            "label": "Roofing",
+            "cost": 66182.2,
+            "priority": ""
+          },
+          {
+            "label": "Mechanical",
+            "cost": 132363,
+            "priority": ""
+          }
+        ]
+      },
+      "conditionAssessment": {
+        "averageScore": 2.0714285714285716,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Not Sprinkled",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 2,
+          "interiorFinishes": 2,
+          "lifeSafety": 2,
+          "codesAccessibility": 2,
+          "superstructure": 2
+        },
+        "engineering": {
+          "fireProtection": 1,
+          "plumbing": 2,
+          "mechanical": 1,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 4,
+          "fireAlarm": 2
+        },
+        "functionality": {
+          "spaceSize": 1
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    },
+    {
+      "building": "Wilson Center",
+      "aliases": [
+        "Wilson Center",
+        "WilsonCenter"
+      ],
+      "deferredMaintenance": null,
+      "conditionAssessment": {
+        "averageScore": 3.1875,
+        "scale": "1 (very poor) to 5 (excellent)",
+        "notes": "Water issues around perimeter",
+        "architecture": {
+          "exterior": 2,
+          "entrances": 4,
+          "interiorFinishes": 3,
+          "lifeSafety": 4,
+          "codesAccessibility": 3,
+          "superstructure": 3,
+          "conveyingSystems": 2
+        },
+        "engineering": {
+          "fireProtection": 4,
+          "plumbing": 4,
+          "mechanical": 4,
+          "power": 3,
+          "lighting": 3,
+          "telecomm": 3,
+          "fireAlarm": 3
+        },
+        "functionality": {
+          "spaceSize": 3,
+          "technology": 3
+        },
+        "sourceLabel": "HC MP - Building Assessment Scoring MP.xlsx",
+        "updatedAt": "2026-04-01"
+      },
+      "scenarioPdfs": []
+    }
+  ]
+}

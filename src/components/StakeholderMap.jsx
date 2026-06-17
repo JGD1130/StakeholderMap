@@ -3312,6 +3312,7 @@ const DRAWING_ALIGN_POINT_LIMIT = 12000;
 const PUBLIC_BASE = (import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : '/';
 const assetUrl = (path) => `${PUBLIC_BASE}${path}`.replace(/\/{2,}/g, '/');
 const FLOORPLAN_MANIFEST_URL = assetUrl('floorplans/manifest.json');
+const BUILDING_RESOURCES_URL = assetUrl('Data/building-resources.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
 const DEBUG_OVERLAY_LOGS = false;
 const ENABLE_DOOR_STAIR_OVERLAY = false;
@@ -6960,6 +6961,142 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
     return localFC;
   }
 }
+
+const toFiniteNumberOrNull = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const normalizeBuildingResourceDoc = (doc, idx = 0) => {
+  if (!doc) return null;
+  if (typeof doc === 'string') {
+    const url = String(doc).trim();
+    if (!url) return null;
+    return {
+      label: `Open file ${idx + 1}`,
+      description: '',
+      url
+    };
+  }
+  if (typeof doc !== 'object') return null;
+  const url = String(doc.url || doc.href || doc.path || '').trim();
+  if (!url) return null;
+  return {
+    label: String(doc.label || doc.title || `Open file ${idx + 1}`).trim() || `Open file ${idx + 1}`,
+    description: String(doc.description || doc.notes || '').trim(),
+    url
+  };
+};
+
+const normalizeConditionSectionScores = (section) => {
+  if (!section || typeof section !== 'object') return {};
+  return Object.entries(section).reduce((acc, [key, value]) => {
+    const score = toFiniteNumberOrNull(value);
+    if (score != null) acc[key] = score;
+    return acc;
+  }, {});
+};
+
+const normalizeBuildingResourcesCatalog = (rawCatalog) => {
+  const rows = Array.isArray(rawCatalog?.buildings)
+    ? rawCatalog.buildings
+    : (Array.isArray(rawCatalog) ? rawCatalog : []);
+
+  return {
+    updatedAt: String(rawCatalog?.updatedAt || rawCatalog?.lastUpdated || '').trim(),
+    buildings: rows
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null;
+        const deferredRaw = row.deferredMaintenance || row.deferred || row.maintenance || null;
+        const conditionRaw = row.conditionAssessment || row.assessment || row.condition || row.facilityCondition || null;
+        const planningRaw = row.scenarioPdfs || row.remodelPdfs || row.planningDocs || row.planningScenarios || row.documents || [];
+        const aliasSet = new Set(
+          [
+            row.building,
+            row.buildingName,
+            row.name,
+            row.id,
+            ...(Array.isArray(row.aliases) ? row.aliases : [])
+          ]
+            .map((value) => String(canon(value || '') || '').trim().toLowerCase())
+            .filter(Boolean)
+        );
+
+        return {
+          building: String(row.building || row.buildingName || row.name || row.id || '').trim(),
+          aliases: Array.from(aliasSet),
+          deferredMaintenance: deferredRaw ? {
+            summary: String(deferredRaw.summary || '').trim(),
+            priority: String(deferredRaw.priority || '').trim(),
+            totalCost: toFiniteNumberOrNull(deferredRaw.totalCost ?? deferredRaw.total),
+            totalLow: toFiniteNumberOrNull(deferredRaw.totalLow),
+            totalHigh: toFiniteNumberOrNull(deferredRaw.totalHigh),
+            sourceLabel: String(deferredRaw.sourceLabel || '').trim(),
+            sourceUrl: String(deferredRaw.sourceUrl || '').trim(),
+            updatedAt: String(deferredRaw.updatedAt || deferredRaw.lastUpdated || '').trim(),
+            items: (Array.isArray(deferredRaw.items) ? deferredRaw.items : [])
+              .map((item) => {
+                if (!item) return null;
+                if (typeof item === 'string') {
+                  const label = item.trim();
+                  return label ? { label, priority: '', cost: null } : null;
+                }
+                const label = String(item.label || item.name || '').trim();
+                if (!label) return null;
+                return {
+                  label,
+                  priority: String(item.priority || '').trim(),
+                  cost: toFiniteNumberOrNull(item.cost)
+                };
+              })
+              .filter(Boolean)
+          } : null,
+          conditionAssessment: conditionRaw ? {
+            averageScore: toFiniteNumberOrNull(conditionRaw.averageScore ?? conditionRaw.avgScore ?? conditionRaw.average ?? conditionRaw.score),
+            scale: String(conditionRaw.scale || '').trim(),
+            notes: String(conditionRaw.notes || '').trim(),
+            sourceLabel: String(conditionRaw.sourceLabel || '').trim(),
+            sourceUrl: String(conditionRaw.sourceUrl || '').trim(),
+            updatedAt: String(conditionRaw.updatedAt || conditionRaw.lastUpdated || '').trim(),
+            architecture: normalizeConditionSectionScores(conditionRaw.architecture),
+            engineering: normalizeConditionSectionScores(conditionRaw.engineering),
+            functionality: normalizeConditionSectionScores(conditionRaw.functionality)
+          } : null,
+          remodelPdfs: (Array.isArray(planningRaw) ? planningRaw : [planningRaw])
+            .map((doc, idx) => normalizeBuildingResourceDoc(doc, idx))
+            .filter(Boolean)
+        };
+      })
+      .filter(Boolean)
+  };
+};
+
+const hasConditionAssessmentContent = (condition) => {
+  if (!condition) return false;
+  return Boolean(
+    condition.averageScore != null ||
+    condition.notes ||
+    condition.scale ||
+    condition.sourceUrl ||
+    condition.sourceLabel ||
+    Object.keys(condition.architecture || {}).length ||
+    Object.keys(condition.engineering || {}).length ||
+    Object.keys(condition.functionality || {}).length
+  );
+};
+
+const isImageResourceUrl = (url) => /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(String(url || '').trim());
+
+const formatDeferredCostSummary = (deferred, formatCurrency) => {
+  if (!deferred) return '';
+  if (deferred.totalCost != null) return formatCurrency(deferred.totalCost);
+  if (deferred.totalLow != null && deferred.totalHigh != null) {
+    return `${formatCurrency(deferred.totalLow)} - ${formatCurrency(deferred.totalHigh)}`;
+  }
+  if (deferred.totalLow != null) return formatCurrency(deferred.totalLow);
+  if (deferred.totalHigh != null) return formatCurrency(deferred.totalHigh);
+  return '';
+};
 
 // Fit a rooms FeatureCollection to a building feature by scaling to bbox and aligning centroids
 function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
@@ -10912,6 +11049,8 @@ const StakeholderMap = ({
   const [buildingAssessments, setBuildingAssessments] = useState({});
   const [technicalAssessmentEntries, setTechnicalAssessmentEntries] = useState([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [buildingResourcesCatalog, setBuildingResourcesCatalog] = useState({ updatedAt: '', buildings: [] });
+  const [buildingResourceModal, setBuildingResourceModal] = useState({ open: false, kind: 'deferred', entry: null, buildingName: '' });
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
   const normalizedUniversityId = String(canon(universityId || config?.universityId || '') || '').trim().toLowerCase();
@@ -11083,6 +11222,37 @@ const StakeholderMap = ({
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
+  const formatMaintenanceCurrency = useCallback((value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    }).format(amount);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isHastingsCollegeInstance) {
+      setBuildingResourcesCatalog({ updatedAt: '', buildings: [] });
+      setBuildingResourceModal({ open: false, kind: 'deferred', entry: null, buildingName: '' });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    (async () => {
+      const raw = await fetchJSON(BUILDING_RESOURCES_URL);
+      if (cancelled) return;
+      setBuildingResourcesCatalog(normalizeBuildingResourcesCatalog(raw));
+    })().catch(() => {
+      if (!cancelled) setBuildingResourcesCatalog({ updatedAt: '', buildings: [] });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHastingsCollegeInstance]);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
   const defaultMapView = isTechnicalOnlyMode
@@ -12038,6 +12208,61 @@ const StakeholderMap = ({
     'Building';
   const activeBuildingId = selectedBuildingId || selectedBuilding || '';
   const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
+  const activeBuildingResourceEntry = useMemo(() => {
+    if (!isHastingsCollegeInstance) return null;
+    const entries = Array.isArray(buildingResourcesCatalog?.buildings) ? buildingResourcesCatalog.buildings : [];
+    if (!entries.length) return null;
+    const matchKeys = Array.from(new Set(
+      [
+        activeBuildingId,
+        activeBuildingName,
+        selectedBuilding,
+        selectedBuildingId
+      ]
+        .map((value) => String(canon(value || '') || '').trim().toLowerCase())
+        .filter(Boolean)
+    ));
+    if (!matchKeys.length) return null;
+    return entries.find((entry) => (
+      Array.isArray(entry?.aliases) &&
+      entry.aliases.some((alias) => matchKeys.includes(alias))
+    )) || null;
+  }, [isHastingsCollegeInstance, buildingResourcesCatalog, activeBuildingId, activeBuildingName, selectedBuilding, selectedBuildingId]);
+  const hasDeferredMaintenanceForActiveBuilding = useMemo(() => {
+    const deferred = activeBuildingResourceEntry?.deferredMaintenance;
+    const hasDeferred = Boolean(
+      deferred &&
+      (
+        deferred.summary ||
+        deferred.priority ||
+        deferred.sourceUrl ||
+        deferred.items?.length ||
+        deferred.totalCost != null ||
+        deferred.totalLow != null ||
+        deferred.totalHigh != null
+      )
+    );
+    const condition = activeBuildingResourceEntry?.conditionAssessment;
+    return hasDeferred || hasConditionAssessmentContent(condition);
+  }, [activeBuildingResourceEntry]);
+  const hasRemodelPdfsForActiveBuilding = Boolean(activeBuildingResourceEntry?.remodelPdfs?.length);
+  const resolveBuildingResourceHref = useCallback((url) => {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    return /^https?:\/\//i.test(raw) ? raw : assetUrl(raw);
+  }, []);
+  const openBuildingResourceModal = useCallback((kind) => {
+    if (!isHastingsCollegeInstance || !activeBuildingResourceEntry) return;
+    setBuildingResourceModal({
+      open: true,
+      kind: kind === 'remodel' ? 'remodel' : 'deferred',
+      entry: activeBuildingResourceEntry,
+      buildingName: String(activeBuildingName || activeBuildingId || 'Building').trim() || 'Building'
+    });
+  }, [isHastingsCollegeInstance, activeBuildingResourceEntry, activeBuildingName, activeBuildingId]);
+  const closeBuildingResourceModal = useCallback(() => {
+    setBuildingResourceModal((prev) => ({ ...prev, open: false }));
+  }, []);
   const openProgramTestFitForBuilding = useCallback(() => {
     const availableSf = Number(buildingStats?.totalSf || 0) || 0;
     if (!availableSf) {
@@ -27366,6 +27591,160 @@ useEffect(() => {
       </div>
     )}
 
+    {buildingResourceModal.open && isHastingsCollegeInstance && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10005,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.35)'
+        }}
+      >
+        <div
+          className="mf-ai-modal-panel"
+          style={{
+            width: 'min(760px, 94vw)',
+            maxHeight: '84vh',
+            overflowY: 'auto',
+            padding: 14
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              {buildingResourceModal.kind === 'remodel' ? 'Planning / Remodel Docs' : 'Deferred Maintenance + Condition'}
+              <div style={{ marginTop: 2, fontSize: 12, color: '#475467', fontWeight: 500 }}>
+                {buildingResourceModal.buildingName || activeBuildingName}
+              </div>
+            </div>
+            <button className="btn" onClick={closeBuildingResourceModal}>Close</button>
+          </div>
+
+          {buildingResourceModal.kind === 'remodel' ? (
+            <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+              {(buildingResourceModal.entry?.remodelPdfs || []).length ? (
+                buildingResourceModal.entry.remodelPdfs.map((doc, idx) => {
+                  const href = resolveBuildingResourceHref(doc?.url);
+                  const isImage = isImageResourceUrl(href);
+                  return (
+                    <div
+                      key={`building-resource-remodel-${idx}`}
+                      style={{
+                        border: '1px solid #d0d5dd',
+                        borderRadius: 8,
+                        padding: 10,
+                        background: '#f8fafc'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{doc?.label || `Planning Doc ${idx + 1}`}</div>
+                      {doc?.description ? (
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#475467' }}>{doc.description}</div>
+                      ) : null}
+                      <div style={{ marginTop: 6 }}>
+                        <a href={href} target="_blank" rel="noreferrer">Open file</a>
+                      </div>
+                      {isImage ? (
+                        <div style={{ marginTop: 8 }}>
+                          <img
+                            src={href}
+                            alt={doc?.label || `Planning Doc ${idx + 1}`}
+                            style={{ width: '100%', borderRadius: 6, border: '1px solid #d0d5dd' }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ marginTop: 10, fontSize: 13, color: '#475467' }}>
+                  No planning documents are currently linked for this building.
+                </div>
+              )}
+            </div>
+          ) : (
+            (() => {
+              const deferred = buildingResourceModal.entry?.deferredMaintenance || null;
+              const condition = buildingResourceModal.entry?.conditionAssessment || null;
+              const costSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
+              const conditionSections = [
+                { label: 'Architecture', scores: condition?.architecture || {} },
+                { label: 'Engineering', scores: condition?.engineering || {} },
+                { label: 'Functionality', scores: condition?.functionality || {} }
+              ].filter((section) => Object.keys(section.scores || {}).length > 0);
+              return (
+                <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                  {deferred ? (
+                    <div style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: 10, background: '#fffdf7' }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>Deferred Maintenance</div>
+                      {deferred.summary ? <div><b>Summary:</b> {deferred.summary}</div> : null}
+                      {deferred.priority ? <div><b>Priority:</b> {deferred.priority}</div> : null}
+                      {costSummary ? <div><b>Cost:</b> {costSummary}</div> : null}
+                      {deferred.sourceLabel ? <div><b>Source:</b> {deferred.sourceLabel}</div> : null}
+                      {deferred.updatedAt ? <div><b>Updated:</b> {deferred.updatedAt}</div> : null}
+                      {deferred.sourceUrl ? (
+                        <div style={{ marginTop: 4 }}>
+                          <a href={resolveBuildingResourceHref(deferred.sourceUrl)} target="_blank" rel="noreferrer">Open source file</a>
+                        </div>
+                      ) : null}
+                      {deferred.items?.length ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>Top Items</div>
+                          <div style={{ display: 'grid', gap: 4 }}>
+                            {deferred.items.map((item, idx) => (
+                              <div key={`deferred-item-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
+                                <span>{item.label}</span>
+                                <span style={{ whiteSpace: 'nowrap' }}>
+                                  {item.cost != null ? formatMaintenanceCurrency(item.cost) : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {hasConditionAssessmentContent(condition) ? (
+                    <div style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: 10, background: '#f8fbff' }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>Condition Assessment</div>
+                      {condition?.averageScore != null ? <div><b>Average Score:</b> {Number(condition.averageScore).toFixed(2)}</div> : null}
+                      {condition?.scale ? <div><b>Scale:</b> {condition.scale}</div> : null}
+                      {condition?.notes ? <div><b>Notes:</b> {condition.notes}</div> : null}
+                      {condition?.sourceLabel ? <div><b>Source:</b> {condition.sourceLabel}</div> : null}
+                      {condition?.updatedAt ? <div><b>Updated:</b> {condition.updatedAt}</div> : null}
+                      {condition?.sourceUrl ? (
+                        <div style={{ marginTop: 4 }}>
+                          <a href={resolveBuildingResourceHref(condition.sourceUrl)} target="_blank" rel="noreferrer">Open source file</a>
+                        </div>
+                      ) : null}
+                      {conditionSections.length ? (
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                          {conditionSections.map((section) => (
+                            <div key={`condition-section-${section.label}`}>
+                              <div style={{ fontWeight: 600, marginBottom: 4 }}>{section.label}</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 4, fontSize: 12 }}>
+                                {Object.entries(section.scores).map(([key, value]) => (
+                                  <React.Fragment key={`${section.label}-${key}`}>
+                                    <span>{formatTechnicalFieldLabel(key)}</span>
+                                    <span>{value}</span>
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </div>
+    )}
+
       {!presentationMode && !maintenanceWorkflowActive && (
       <div className="mf-right-rail">
         <div className="mf-right-logos">
@@ -27559,6 +27938,10 @@ useEffect(() => {
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onOpenDeferredMaintenance={hasDeferredMaintenanceForActiveBuilding ? () => openBuildingResourceModal('deferred') : undefined}
+              deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
+              onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
+              remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               onClose={() => {
                 setIsBuildingPanelCollapsed(true);
                 setSelectedBuildingId(null);
@@ -27602,6 +27985,10 @@ useEffect(() => {
               onLoadFloorplan={loadSelectedFloor}
               onUnloadFloorplan={handleUnloadFloorplan}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onOpenDeferredMaintenance={hasDeferredMaintenanceForActiveBuilding ? () => openBuildingResourceModal('deferred') : undefined}
+              deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
+              onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
+              remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               colorMode={floorColorMode}
               onChangeColorMode={(mode) => {
                 setFloorColorMode(mode);
