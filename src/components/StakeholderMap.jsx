@@ -3,7 +3,8 @@ const { useRef, useEffect, useState, useCallback, useMemo, useLayoutEffect } = R
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import jsPDF from 'jspdf';
-import { db } from '../firebaseConfig';
+import { db, storage } from '../firebaseConfig';
+import { ref as storageRef, listAll, getDownloadURL } from 'firebase/storage';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, setDoc, deleteDoc, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import './StakeholderMap.css';
@@ -11410,12 +11411,14 @@ const StakeholderMap = ({
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
+  const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return '';
@@ -11633,6 +11636,8 @@ const StakeholderMap = ({
   const [exportSpaceMode, setExportSpaceMode] = useState('rooms');
   const [exportingSpaceData, setExportingSpaceData] = useState(false);
   const [exportSpaceMessage, setExportSpaceMessage] = useState('');
+  const [exportingCherokeePhotos, setExportingCherokeePhotos] = useState(false);
+  const [cherokeePhotoExportMessage, setCherokeePhotoExportMessage] = useState('');
   const [aiOpen, setAiOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiErr, setAiErr] = useState('');
@@ -12671,6 +12676,13 @@ const StakeholderMap = ({
     setAiCampusOpen(false);
     setAiCreateScenarioOpen(false);
   }, [aiEnabledForCurrentView]);
+  useEffect(() => {
+    if (aiCreatePlanningScenarioAllowed) return;
+    setAiCreateScenarioOpen(false);
+    setAiCreateScenarioLoading(false);
+    setAiCreateScenarioResult(null);
+    setAiCreateScenarioErr('');
+  }, [aiCreatePlanningScenarioAllowed]);
   useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
@@ -21009,6 +21021,72 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setMoveScenarioMode,
     setScenarioAssignedDept
   ]);
+
+  const handleExportCherokeePhotos = useCallback(async () => {
+    setExportingCherokeePhotos(true);
+    setCherokeePhotoExportMessage('');
+    try {
+      // List all building folders directly from Firebase Storage
+      const buildingsRef = storageRef(storage, 'cherokee-mental-health/buildings');
+      const buildingsList = await listAll(buildingsRef);
+      const byBuilding = {};
+      await Promise.all(buildingsList.prefixes.map(async (buildingFolder) => {
+        const buildingName = buildingFolder.name;
+        const photosRef = storageRef(storage, `${buildingFolder.fullPath}/photos`);
+        try {
+          const photosList = await listAll(photosRef);
+          if (photosList.items.length) byBuilding[buildingName] = photosList.items;
+        } catch {
+          // no photos folder for this building
+        }
+      }));
+      const totalPhotos = Object.values(byBuilding).reduce((sum, items) => sum + items.length, 0);
+      if (!totalPhotos) {
+        setCherokeePhotoExportMessage('No photos found in any assessment.');
+        setExportingCherokeePhotos(false);
+        return;
+      }
+      // Build file list with download URLs — SDK call, no CORS issue
+      const files = [];
+      await Promise.all(
+        Object.entries(byBuilding).map(async ([building, items]) => {
+          await Promise.all(items.map(async (item) => {
+            try {
+              const url = await getDownloadURL(item);
+              const ext = item.name.includes('.') ? '' : '.jpg';
+              files.push({ url, filename: `${item.name}${ext}`, folder: building });
+            } catch {
+              // skip
+            }
+          }));
+        })
+      );
+      if (!files.length) {
+        setCherokeePhotoExportMessage('Could not resolve download URLs.');
+        setExportingCherokeePhotos(false);
+        return;
+      }
+      // Server-side fetch + ZIP to avoid CORS on direct storage downloads
+      const zipResp = await fetch(resolveAiUrl('/ai/api/photo-export'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files }),
+      });
+      if (!zipResp.ok) throw new Error(`Server returned ${zipResp.status}`);
+      const zipBlob = await zipResp.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(zipBlob);
+      link.download = 'Cherokee_Assessment_Photos.zip';
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setCherokeePhotoExportMessage(`Downloaded ${files.length} photo${files.length !== 1 ? 's' : ''}.`);
+    } catch (err) {
+      console.error('Cherokee photo export failed:', err);
+      setCherokeePhotoExportMessage('Export failed — see console for details.');
+    } finally {
+      setExportingCherokeePhotos(false);
+    }
+  }, []);
 
   const exportSpaceCsv = useCallback(async (explicitBuilding, modeOverride) => {
     const buildingArg = (explicitBuilding && typeof explicitBuilding === 'object') ? null : explicitBuilding;
@@ -30026,6 +30104,23 @@ useEffect(() => {
               >
                 Export Missing Items CSV
               </button>
+              {universityId === 'cherokee-mental-health' && (
+                <>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', marginTop: 6 }}
+                    onClick={handleExportCherokeePhotos}
+                    disabled={exportingCherokeePhotos}
+                  >
+                    {exportingCherokeePhotos ? 'Building ZIP...' : 'Export All Photos (ZIP)'}
+                  </button>
+                  {cherokeePhotoExportMessage && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#5b6677' }}>
+                      {cherokeePhotoExportMessage}
+                    </div>
+                  )}
+                </>
+              )}
               {!!technicalProgressMessage && (
                 <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
                   {technicalProgressMessage}
@@ -30971,7 +31066,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {(mode === 'admin' || publicPlanningScenarioAllowed) && (
+            {aiCreatePlanningScenarioAllowed && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}

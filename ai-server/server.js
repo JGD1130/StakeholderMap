@@ -80,7 +80,20 @@ const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
 };
+const classScheduleCache = {
+  filePath: "",
+  mtimeMs: 0,
+  payload: null
+};
 const requestContextStorage = new AsyncLocalStorage();
+const aiRuntimeHealth = {
+  keyPresent: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
+  lastOkAt: 0,
+  lastErrorAt: 0,
+  lastErrorCode: "",
+  lastErrorMessage: "",
+  lastAuthErrorAt: 0
+};
 
 app.use((req, res, next) => {
   requestContextStorage.run(
@@ -147,11 +160,95 @@ function makeAiUsageRecord({ model, payload, startedAt, status, response, error 
   };
 }
 
+function getAiErrorMessage(error) {
+  return String(error?.error?.message || error?.message || error || "").trim();
+}
+
+function sanitizeAiErrorMessage(message = "") {
+  return String(message || "").replace(/sk-[a-z0-9_-]+/gi, "[redacted-openai-key]");
+}
+
+function isMissingOpenAiApiKeyError(error) {
+  const message = getAiErrorMessage(error).toLowerCase();
+  return message.includes("openai_api_key environment variable is missing or empty");
+}
+
+function isOpenAiAuthError(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? error?.error?.status ?? 0);
+  const code = String(error?.code ?? error?.error?.code ?? "").toLowerCase();
+  const type = String(error?.type ?? error?.error?.type ?? "").toLowerCase();
+  const message = getAiErrorMessage(error).toLowerCase();
+  return (
+    status === 401 ||
+    code.includes("invalid_api_key") ||
+    type.includes("authentication") ||
+    message.includes("incorrect api key") ||
+    message.includes("invalid api key")
+  );
+}
+
+function toClientFacingAiErrorMessage(error) {
+  if (isMissingOpenAiApiKeyError(error)) {
+    return "AI backend is missing OPENAI_API_KEY. Update the backend environment variable and restart the AI server.";
+  }
+  if (isOpenAiAuthError(error)) {
+    return "AI backend OpenAI credentials are invalid. Update OPENAI_API_KEY on the backend host and restart the AI server.";
+  }
+  const sanitized = sanitizeAiErrorMessage(getAiErrorMessage(error));
+  return sanitized || "AI request failed";
+}
+
+function normalizeAiServerError(error) {
+  const normalized = new Error(toClientFacingAiErrorMessage(error));
+  normalized.status = Number(error?.status ?? error?.statusCode ?? error?.error?.status ?? 500) || 500;
+  normalized.code = String(error?.code ?? error?.error?.code ?? "");
+  normalized.aiAuthError = isOpenAiAuthError(error);
+  normalized.aiConfigError = normalized.aiAuthError || isMissingOpenAiApiKeyError(error);
+  normalized.rawMessage = sanitizeAiErrorMessage(getAiErrorMessage(error));
+  return normalized;
+}
+
+function markAiRequestSuccess() {
+  aiRuntimeHealth.keyPresent = Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+  aiRuntimeHealth.lastOkAt = Date.now();
+  aiRuntimeHealth.lastErrorCode = "";
+  aiRuntimeHealth.lastErrorMessage = "";
+  aiRuntimeHealth.lastAuthErrorAt = 0;
+}
+
+function markAiRequestFailure(error) {
+  aiRuntimeHealth.keyPresent = Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+  aiRuntimeHealth.lastErrorAt = Date.now();
+  aiRuntimeHealth.lastErrorCode = String(error?.code ?? error?.error?.code ?? "");
+  aiRuntimeHealth.lastErrorMessage = sanitizeAiErrorMessage(getAiErrorMessage(error));
+  if (isOpenAiAuthError(error) || isMissingOpenAiApiKeyError(error)) {
+    aiRuntimeHealth.lastAuthErrorAt = Date.now();
+  }
+}
+
+function getAiHealthSnapshot() {
+  const keyPresent = Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+  const authFailureActive = keyPresent && aiRuntimeHealth.lastAuthErrorAt > (aiRuntimeHealth.lastOkAt || 0);
+  const ready = keyPresent && !authFailureActive;
+  return {
+    ok: ready,
+    commit: SERVER_COMMIT || "unknown",
+    aiConfigured: keyPresent,
+    aiReady: ready,
+    reason: !keyPresent ? "missing_openai_api_key" : (authFailureActive ? "openai_auth_failed" : "ok"),
+    lastOkAt: aiRuntimeHealth.lastOkAt || null,
+    lastErrorAt: aiRuntimeHealth.lastErrorAt || null,
+    lastErrorCode: aiRuntimeHealth.lastErrorCode || "",
+    lastError: authFailureActive ? "OpenAI authentication failed on the backend." : ""
+  };
+}
+
 const rawResponsesCreate = client.responses.create.bind(client.responses);
 client.responses.create = async function patchedResponsesCreate(payload, ...rest) {
   const startedAt = Date.now();
   try {
     const response = await rawResponsesCreate(payload, ...rest);
+    markAiRequestSuccess();
     await appendAiUsageRecord(
       makeAiUsageRecord({
         payload,
@@ -162,6 +259,7 @@ client.responses.create = async function patchedResponsesCreate(payload, ...rest
     );
     return response;
   } catch (error) {
+    markAiRequestFailure(error);
     await appendAiUsageRecord(
       makeAiUsageRecord({
         payload,
@@ -170,7 +268,7 @@ client.responses.create = async function patchedResponsesCreate(payload, ...rest
         error
       })
     );
-    throw error;
+    throw normalizeAiServerError(error);
   }
 };
 
@@ -733,6 +831,7 @@ function normalizeScheduleDayTokens(value) {
   const add = (token) => {
     if (token) tokens.add(token);
   };
+
   if (/TBA|ARR|ONLINE|ASYNCH/i.test(upper)) return [];
   if (/[MTWRFSU]{2,}/.test(upper) && !/\s/.test(upper)) {
     const chars = upper.split("");
@@ -752,6 +851,7 @@ function normalizeScheduleDayTokens(value) {
     }
     return Array.from(tokens);
   }
+
   const normalized = upper.replace(/[^A-Z0-9]+/g, " ");
   if (/\bMON(DAY)?\b/.test(normalized)) add("M");
   if (/\bTUE(S|SDAY)?\b/.test(normalized)) add("TU");
@@ -771,7 +871,9 @@ function normalizeScheduleDayTokens(value) {
 function parseTimeToMinutes(value) {
   if (value == null || value === "") return null;
   if (typeof value === "number" && Number.isFinite(value)) {
-    if (value >= 0 && value < 1) return Math.round(value * 24 * 60);
+    if (value >= 0 && value < 1) {
+      return Math.round(value * 24 * 60);
+    }
     if (value >= 100 && value <= 2359) {
       const hours = Math.floor(value / 100);
       const minutes = value % 100;
@@ -779,6 +881,9 @@ function parseTimeToMinutes(value) {
         return (hours * 60) + minutes;
       }
     }
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return (value.getHours() * 60) + value.getMinutes();
   }
   const raw = String(value).trim();
   if (!raw) return null;
@@ -791,7 +896,10 @@ function parseTimeToMinutes(value) {
   if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes < 0 || minutes > 59) return null;
   if (meridiem === "PM" && hours < 12) hours += 12;
   if (meridiem === "AM" && hours === 12) hours = 0;
-  if (!meridiem && hours < 8 && compact.includes(":")) hours += 12;
+  if (!meridiem && hours < 8 && compact.includes(":")) {
+    // Treat ambiguous 1:00-7:59 values as afternoon if exported without AM/PM.
+    hours += 12;
+  }
   if (hours < 0 || hours > 23) return null;
   return (hours * 60) + minutes;
 }
@@ -810,6 +918,7 @@ function parseTimeRange(startValue, endValue, rangeValue) {
   let startMinutes = parseTimeToMinutes(startValue);
   let endMinutes = parseTimeToMinutes(endValue);
   let timeText = String(rangeValue || "").trim();
+
   if ((!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) && timeText) {
     const parts = timeText.split(/\s*(?:-|–|—|to)\s*/i);
     if (parts.length >= 2) {
@@ -817,9 +926,11 @@ function parseTimeRange(startValue, endValue, rangeValue) {
       endMinutes = parseTimeToMinutes(parts[1]);
     }
   }
+
   if (!timeText && Number.isFinite(startMinutes) && Number.isFinite(endMinutes)) {
     timeText = `${buildTimeLabel(startMinutes)} - ${buildTimeLabel(endMinutes)}`;
   }
+
   return {
     startMinutes: Number.isFinite(startMinutes) ? startMinutes : null,
     endMinutes: Number.isFinite(endMinutes) ? endMinutes : null,
@@ -832,19 +943,29 @@ function parseTimeRange(startValue, endValue, rangeValue) {
 function splitScheduleBuildingAndRoom(value) {
   const raw = String(value || "").trim();
   if (!raw) return { building: "", room: "" };
-  for (const delimiter of [" / ", " - ", " – ", ", "]) {
+
+  const explicitDelimiters = [" / ", " - ", " – ", ", "];
+  for (const delimiter of explicitDelimiters) {
     if (!raw.includes(delimiter)) continue;
     const [left, ...rightParts] = raw.split(delimiter);
     const right = rightParts.join(delimiter).trim();
-    if (left.trim() && right) return { building: left.trim(), room: right };
+    if (left.trim() && right) {
+      return { building: left.trim(), room: right };
+    }
   }
+
   const tokens = raw.split(/\s+/).filter(Boolean);
   if (tokens.length < 2) return { building: "", room: raw };
   let roomStart = tokens.length - 1;
-  while (roomStart > 0 && /[0-9]/.test(tokens[roomStart - 1])) roomStart -= 1;
-  const room = tokens.slice(roomStart).join(" ").trim();
-  const building = tokens.slice(0, roomStart).join(" ").trim();
-  return building && room ? { building, room } : { building: "", room: raw };
+  while (roomStart > 0 && /[0-9]/.test(tokens[roomStart - 1])) {
+    roomStart -= 1;
+  }
+  const roomTokens = tokens.slice(roomStart);
+  const buildingTokens = tokens.slice(0, roomStart);
+  const room = roomTokens.join(" ").trim();
+  const building = buildingTokens.join(" ").trim();
+  if (building && room) return { building, room };
+  return { building: "", room: raw };
 }
 
 function detectClassScheduleHeader(rows) {
@@ -878,21 +999,29 @@ function detectClassScheduleHeader(rows) {
     if (headerMap.days >= 0) score += 2;
     if (headerMap.start >= 0 || headerMap.time >= 0) score += 2;
     if (headerMap.course >= 0 || headerMap.title >= 0) score += 1;
-    if (score >= 6 && (!best || score > best.score)) best = { rowIndex, headerMap, score };
+    if (score >= 6 && (!best || score > best.score)) {
+      best = { rowIndex, headerMap, score };
+    }
   }
   return best;
 }
 
 function parseClassScheduleSheet(sheet, sheetName) {
-  const rows = XLSX_API.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+  const rows = XLSX_API.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: false,
+    defval: ""
+  });
   if (!Array.isArray(rows) || !rows.length) return [];
   const detected = detectClassScheduleHeader(rows);
   if (!detected) return [];
   const { rowIndex, headerMap } = detected;
   const records = [];
+
   for (let i = rowIndex + 1; i < rows.length; i += 1) {
     const row = Array.isArray(rows[i]) ? rows[i] : [];
     if (!row.some((cell) => String(cell || "").trim())) continue;
+
     const directBuilding = String(row[headerMap.building] || "").trim();
     const directRoom = String(row[headerMap.room] || "").trim();
     const combinedLocation = String(row[headerMap.combinedLocation] || "").trim();
@@ -915,8 +1044,10 @@ function parseClassScheduleSheet(sheet, sheetName) {
     const courseCode = courseField || [subject, number].filter(Boolean).join(" ");
     const enrollment = parseScheduleNumber(row[headerMap.enrollment]);
     const capacity = parseScheduleNumber(row[headerMap.capacity]);
+
     if (!building || !room) continue;
     if (!courseCode && !title && !timeText && !daysText) continue;
+
     records.push({
       building,
       room,
@@ -936,6 +1067,7 @@ function parseClassScheduleSheet(sheet, sheetName) {
       sheet: sheetName
     });
   }
+
   return records;
 }
 
@@ -947,6 +1079,7 @@ async function resolveClassScheduleFilePath() {
       if (st.isFile()) return preferredPath;
     } catch {}
   }
+
   try {
     const entries = await fsp.readdir(AI_DOCS_DIR, { withFileTypes: true });
     const hit = entries.find((entry) =>
@@ -965,6 +1098,7 @@ async function loadClassScheduleData() {
   }
   const filePath = await resolveClassScheduleFilePath();
   if (!filePath) return null;
+
   const stat = await fsp.stat(filePath);
   if (
     classScheduleCache.payload &&
@@ -973,6 +1107,7 @@ async function loadClassScheduleData() {
   ) {
     return classScheduleCache.payload;
   }
+
   const workbook = XLSX_API.readFile(filePath, { cellDates: false });
   const preferredSheetNames = [];
   if (CLASS_SCHEDULE_SHEET_NAME && workbook.Sheets[CLASS_SCHEDULE_SHEET_NAME]) {
@@ -981,6 +1116,7 @@ async function loadClassScheduleData() {
   (workbook.SheetNames || []).forEach((name) => {
     if (!preferredSheetNames.includes(name)) preferredSheetNames.push(name);
   });
+
   let bestSheet = "";
   let bestRows = [];
   for (const sheetName of preferredSheetNames) {
@@ -992,7 +1128,11 @@ async function loadClassScheduleData() {
       bestSheet = sheetName;
     }
   }
-  if (!bestRows.length) throw new Error("Unable to parse building/room schedule rows from workbook");
+
+  if (!bestRows.length) {
+    throw new Error("Unable to parse building/room schedule rows from workbook");
+  }
+
   const payload = {
     source: path.basename(filePath),
     sheet: bestSheet,
@@ -6635,12 +6775,10 @@ app.get("/enrollment-projections", async (req, res) => {
   }
 });
 
-app.get("/health", (req, res) =>
-  res.json({
-    ok: true,
-    commit: SERVER_COMMIT || "unknown"
-  })
-);
+app.get("/health", (req, res) => {
+  const snapshot = getAiHealthSnapshot();
+  res.status(snapshot.ok ? 200 : 503).json(snapshot);
+});
 
 app.get("/ai/usage-summary", async (req, res) => {
   try {
@@ -6648,6 +6786,37 @@ app.get("/ai/usage-summary", async (req, res) => {
     res.json(summary);
   } catch (err) {
     res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+app.post("/api/photo-export", async (req, res) => {
+  const { files } = req.body || {};
+  if (!Array.isArray(files) || !files.length) {
+    return res.status(400).json({ error: "No files provided." });
+  }
+  try {
+    const archiver = (await import("archiver")).default;
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", 'attachment; filename="Cherokee_Assessment_Photos.zip"');
+    archive.pipe(res);
+    for (const { url, filename, folder } of files) {
+      if (!url || !filename) continue;
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const buf = Buffer.from(await resp.arrayBuffer());
+        const safePath = `${String(folder || "Unknown").replace(/[^a-zA-Z0-9 _-]/g, "_")}/${filename}`;
+        archive.append(buf, { name: safePath });
+      } catch {
+        // skip files that fail to download
+      }
+    }
+    await archive.finalize();
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ error: String(err?.message || err) });
+    }
   }
 });
 
