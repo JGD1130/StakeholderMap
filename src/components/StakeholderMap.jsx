@@ -11442,6 +11442,8 @@ const StakeholderMap = ({
   const [exportSpaceMode, setExportSpaceMode] = useState('rooms');
   const [exportingSpaceData, setExportingSpaceData] = useState(false);
   const [exportSpaceMessage, setExportSpaceMessage] = useState('');
+  const [exportingCherokeePhotos, setExportingCherokeePhotos] = useState(false);
+  const [cherokeePhotoExportMessage, setCherokeePhotoExportMessage] = useState('');
   const [aiOpen, setAiOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiErr, setAiErr] = useState('');
@@ -20732,6 +20734,67 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setMoveScenarioMode,
     setScenarioAssignedDept
   ]);
+
+  const handleExportCherokeePhotos = useCallback(async () => {
+    setExportingCherokeePhotos(true);
+    setCherokeePhotoExportMessage('');
+    try {
+      const { default: JSZip } = await import('jszip');
+      const byBuilding = {};
+      Object.values(buildingAssessments).forEach((assessment) => {
+        const urls = Array.isArray(assessment.photoUrls) ? assessment.photoUrls : [];
+        if (!urls.length) return;
+        const name = String(assessment.buildingName || assessment.originalId || 'Unknown').trim();
+        if (!byBuilding[name]) byBuilding[name] = [];
+        urls.forEach((url) => {
+          if (url && !byBuilding[name].includes(url)) byBuilding[name].push(url);
+        });
+      });
+      const totalPhotos = Object.values(byBuilding).reduce((sum, urls) => sum + urls.length, 0);
+      if (!totalPhotos) {
+        setCherokeePhotoExportMessage('No photos found in any assessment.');
+        setExportingCherokeePhotos(false);
+        return;
+      }
+      const zip = new JSZip();
+      let fetched = 0;
+      let failed = 0;
+      for (const [building, urls] of Object.entries(byBuilding)) {
+        const safeName = building.replace(/[^a-zA-Z0-9 _-]/g, '_');
+        const folder = zip.folder(safeName);
+        for (let i = 0; i < urls.length; i++) {
+          try {
+            const resp = await fetch(urls[i]);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const blob = await resp.blob();
+            const urlPath = urls[i].split('?')[0];
+            const rawName = urlPath.split('/').pop() || `photo_${i + 1}`;
+            const ext = rawName.includes('.') ? '' : '.jpg';
+            folder.file(`${rawName}${ext}`, blob);
+            fetched++;
+          } catch {
+            failed++;
+          }
+        }
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(zipBlob);
+      link.download = 'Cherokee_Assessment_Photos.zip';
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setCherokeePhotoExportMessage(
+        failed > 0
+          ? `Downloaded ${fetched} photo${fetched !== 1 ? 's' : ''} (${failed} failed).`
+          : `Downloaded ${fetched} photo${fetched !== 1 ? 's' : ''}.`
+      );
+    } catch (err) {
+      console.error('Cherokee photo export failed:', err);
+      setCherokeePhotoExportMessage('Export failed — see console for details.');
+    } finally {
+      setExportingCherokeePhotos(false);
+    }
+  }, [buildingAssessments]);
 
   const exportSpaceCsv = useCallback(async (explicitBuilding, modeOverride) => {
     const buildingArg = (explicitBuilding && typeof explicitBuilding === 'object') ? null : explicitBuilding;
@@ -30222,6 +30285,36 @@ useEffect(() => {
                 )}
               </div>
               )}
+
+            {universityId === 'cherokee-mental-health' && isAdminMode && (
+              <div
+                className="floorplans-section"
+                style={{
+                  marginTop: 8,
+                  padding: 6,
+                  borderRadius: 8,
+                  border: '1px solid rgba(0,0,0,0.25)',
+                  background: 'linear-gradient(180deg, rgba(235,245,255,0.9), rgba(220,235,255,0.9))'
+                }}
+              >
+                <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Assessment Photos</h4>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <button
+                    className="btn"
+                    style={{ width: '100%' }}
+                    onClick={handleExportCherokeePhotos}
+                    disabled={exportingCherokeePhotos}
+                  >
+                    {exportingCherokeePhotos ? 'Building ZIP...' : 'Export All Photos (ZIP)'}
+                  </button>
+                </div>
+                {cherokeePhotoExportMessage && (
+                  <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>
+                    {cherokeePhotoExportMessage}
+                  </div>
+                )}
+              </div>
+            )}
 
           {/* Mode */}
           {/*
