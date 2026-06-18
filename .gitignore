@@ -33,3 +33,18 @@ firebase-debug.log
 ai-server/.env
 MyTools/
 ai-server/Docs/~$*
+
+# Root scratch, temp, and log files
+/*.txt
+/*.tmp
+/~*.tmp
+/temp*.json
+/tmp*
+/*.err.log
+/*.out.log
+/*.mb
+/git
+/404.html.html
+/stakeholder.css
+/hastings-floor-adjustments-*.json
+/.codex-*.log
