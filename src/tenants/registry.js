@@ -6,7 +6,8 @@ const TENANT_DEFS = [
     status: 'active',
     features: {
       // Hook: can be enabled per tenant later without touching shared logic.
-      enableEngagementTechnicalAssessment: false
+      enableEngagementTechnicalAssessment: false,
+      enablePublicAiCreatePlanningScenario: false
     }
   },
   {

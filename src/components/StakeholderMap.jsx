@@ -11217,12 +11217,14 @@ const StakeholderMap = ({
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
+  const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return '';
@@ -12477,6 +12479,13 @@ const StakeholderMap = ({
     setAiCampusOpen(false);
     setAiCreateScenarioOpen(false);
   }, [aiEnabledForCurrentView]);
+  useEffect(() => {
+    if (aiCreatePlanningScenarioAllowed) return;
+    setAiCreateScenarioOpen(false);
+    setAiCreateScenarioLoading(false);
+    setAiCreateScenarioResult(null);
+    setAiCreateScenarioErr('');
+  }, [aiCreatePlanningScenarioAllowed]);
   useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
@@ -30369,7 +30378,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {(mode === 'admin' || publicPlanningScenarioAllowed) && (
+            {aiCreatePlanningScenarioAllowed && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}
@@ -31157,7 +31166,7 @@ useEffect(() => {
         </div>
       );
     })()}
-    {aiCreateScenarioOpen && (
+    {aiCreatePlanningScenarioAllowed && aiCreateScenarioOpen && (
       <div
         style={{
           position: 'fixed',
