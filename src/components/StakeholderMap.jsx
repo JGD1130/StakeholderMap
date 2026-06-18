@@ -3699,13 +3699,14 @@ async function loadGeoJsonWithFallbacks(urls) {
   return { url: urls?.[0] || "", data: null };
 }
 
-async function loadRoomsFC({ basePath, floorId, skipAffine = false }) {
-  const candidates = [
+async function loadRoomsFC({ basePath, floorId, skipAffine = false, preferredUrl = '' }) {
+  const candidates = Array.from(new Set([
+    preferredUrl,
     `${basePath}/Rooms/${floorId}_Dept_Rooms.geojson`,
     `${basePath}/Rooms/${floorId}_Dept.geojson`,
     `${basePath}/${floorId}_Dept_Rooms.geojson`,
     `${basePath}/${floorId}_Dept.geojson`,
-  ];
+  ].filter(Boolean)));
 
   const [{ data: raw }, affine] = await Promise.all([
     loadGeoJsonWithFallbacks(candidates),
@@ -5192,7 +5193,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   if (!data) {
     if (floorBasePath && floorId) {
-      const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId, skipAffine });
+      const roomsLoad = await loadRoomsFC({ basePath: floorBasePath, floorId, skipAffine, preferredUrl: url });
       if (!roomsLoad.rawFC) {
         console.debug('Floor summary: no data returned', `${floorBasePath}/${floorId}_Dept.geojson`);
         return;
