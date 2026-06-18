@@ -80,11 +80,6 @@ const aiDocsCache = {
   signature: "",
   docs: [] // [{ name, fullPath, fileId }]
 };
-const classScheduleCache = {
-  filePath: "",
-  mtimeMs: 0,
-  payload: null
-};
 const requestContextStorage = new AsyncLocalStorage();
 
 app.use((req, res, next) => {

@@ -1,6 +1,3 @@
 {
-  "floors": [
-    "BASEMENT",
-    "LEVEL_1"
-  ]
+  "floors": ["BASEMENT", "LEVEL_1"]
 }

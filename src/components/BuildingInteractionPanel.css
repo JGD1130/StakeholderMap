@@ -46,6 +46,28 @@
   border: 1px solid #ccc;
 }
 
+.condition-legend {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  font-size: 11px;
+}
+
+.condition-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+}
+
+.condition-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
 /* This will style all buttons directly inside the panel */
 .interaction-panel > button, 
 .interaction-panel .button-row > button {

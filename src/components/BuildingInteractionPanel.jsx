@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import './BuildingInteractionPanel.css';
 
+const conditionLegend = [
+  { value: '5', label: 'Excellent', color: '#166534' },
+  { value: '4', label: 'Good', color: '#16a34a' },
+  { value: '3', label: 'Adequate', color: '#d97706' },
+  { value: '2', label: 'Poor', color: '#ea580c' },
+  { value: '1', label: 'Very Poor', color: '#b91c1c' }
+];
+
 const BuildingInteractionPanel = ({
   buildingId,
   buildingName,
@@ -44,6 +52,14 @@ const BuildingInteractionPanel = ({
           <option value="2">2 = Poor</option>
           <option value="1">1 = Very Poor</option>
         </select>
+        <div className="condition-legend">
+          {conditionLegend.map((item) => (
+            <div key={item.value} className="condition-legend-item">
+              <span className="condition-legend-swatch" style={{ backgroundColor: item.color }} />
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
 
         <div className="button-row" style={{ marginTop: 8 }}>
           <button

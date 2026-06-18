@@ -18,6 +18,15 @@ const TENANT_DEFS = [
     features: {
       enableEngagementTechnicalAssessment: false
     }
+  },
+  {
+    id: 'cherokee-mental-health',
+    configId: 'cherokee-mental-health',
+    aliases: ['cherokee-mental-health', 'cherokee', 'cherokee-mh'],
+    status: 'active',
+    features: {
+      enableEngagementTechnicalAssessment: false
+    }
   }
 ];
 

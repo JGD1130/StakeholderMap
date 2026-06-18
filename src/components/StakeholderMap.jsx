@@ -585,6 +585,24 @@ function getAiBaseUrl() {
   return '';
 }
 
+function isAiBackendConfigErrorMessage(message = '') {
+  const text = String(message || '').toLowerCase();
+  return (
+    text.includes('ai backend openai credentials are invalid') ||
+    text.includes('ai backend is missing openai_api_key') ||
+    text.includes('update openai_api_key on the backend host') ||
+    text.includes('backend environment variable and restart the ai server')
+  );
+}
+
+function normalizeAiClientErrorMessage(error) {
+  const message = String(error?.message || error || '').trim();
+  if (isAiBackendConfigErrorMessage(message)) {
+    return 'AI is temporarily unavailable because the backend OpenAI credential needs to be refreshed.';
+  }
+  return message;
+}
+
 function isStaticGithubHost() {
   return typeof window !== 'undefined' && window.location.hostname.includes('github.io');
 }
@@ -1147,11 +1165,6 @@ function getDeptFromProps(props = {}) {
 function getTypeFromProps(props = {}) {
   return normalizeRoomTypeDisplayLabel(
     (
-    props.__roomType ||
-    props.NCES_Type_Desc ||
-    props["NCES_Type_Desc"] ||
-    props["NCES Type Description"] ||
-    props["NCES Type Description Short"] ||
     props["Room Type Description"] ||
     props.RoomTypeDescription ||
     props.roomTypeDescription ||
@@ -6941,6 +6954,142 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
   }
 }
 
+const toFiniteNumberOrNull = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const normalizeBuildingResourceDoc = (doc, idx = 0) => {
+  if (!doc) return null;
+  if (typeof doc === 'string') {
+    const url = String(doc).trim();
+    if (!url) return null;
+    return {
+      label: `Open file ${idx + 1}`,
+      description: '',
+      url
+    };
+  }
+  if (typeof doc !== 'object') return null;
+  const url = String(doc.url || doc.href || doc.path || '').trim();
+  if (!url) return null;
+  return {
+    label: String(doc.label || doc.title || `Open file ${idx + 1}`).trim() || `Open file ${idx + 1}`,
+    description: String(doc.description || doc.notes || '').trim(),
+    url
+  };
+};
+
+const normalizeConditionSectionScores = (section) => {
+  if (!section || typeof section !== 'object') return {};
+  return Object.entries(section).reduce((acc, [key, value]) => {
+    const score = toFiniteNumberOrNull(value);
+    if (score != null) acc[key] = score;
+    return acc;
+  }, {});
+};
+
+const normalizeBuildingResourcesCatalog = (rawCatalog) => {
+  const rows = Array.isArray(rawCatalog?.buildings)
+    ? rawCatalog.buildings
+    : (Array.isArray(rawCatalog) ? rawCatalog : []);
+
+  return {
+    updatedAt: String(rawCatalog?.updatedAt || rawCatalog?.lastUpdated || '').trim(),
+    buildings: rows
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null;
+        const deferredRaw = row.deferredMaintenance || row.deferred || row.maintenance || null;
+        const conditionRaw = row.conditionAssessment || row.assessment || row.condition || row.facilityCondition || null;
+        const planningRaw = row.scenarioPdfs || row.remodelPdfs || row.planningDocs || row.planningScenarios || row.documents || [];
+        const aliasSet = new Set(
+          [
+            row.building,
+            row.buildingName,
+            row.name,
+            row.id,
+            ...(Array.isArray(row.aliases) ? row.aliases : [])
+          ]
+            .map((value) => String(canon(value || '') || '').trim().toLowerCase())
+            .filter(Boolean)
+        );
+
+        return {
+          building: String(row.building || row.buildingName || row.name || row.id || '').trim(),
+          aliases: Array.from(aliasSet),
+          deferredMaintenance: deferredRaw ? {
+            summary: String(deferredRaw.summary || '').trim(),
+            priority: String(deferredRaw.priority || '').trim(),
+            totalCost: toFiniteNumberOrNull(deferredRaw.totalCost ?? deferredRaw.total),
+            totalLow: toFiniteNumberOrNull(deferredRaw.totalLow),
+            totalHigh: toFiniteNumberOrNull(deferredRaw.totalHigh),
+            sourceLabel: String(deferredRaw.sourceLabel || '').trim(),
+            sourceUrl: String(deferredRaw.sourceUrl || '').trim(),
+            updatedAt: String(deferredRaw.updatedAt || deferredRaw.lastUpdated || '').trim(),
+            items: (Array.isArray(deferredRaw.items) ? deferredRaw.items : [])
+              .map((item) => {
+                if (!item) return null;
+                if (typeof item === 'string') {
+                  const label = item.trim();
+                  return label ? { label, priority: '', cost: null } : null;
+                }
+                const label = String(item.label || item.name || '').trim();
+                if (!label) return null;
+                return {
+                  label,
+                  priority: String(item.priority || '').trim(),
+                  cost: toFiniteNumberOrNull(item.cost)
+                };
+              })
+              .filter(Boolean)
+          } : null,
+          conditionAssessment: conditionRaw ? {
+            averageScore: toFiniteNumberOrNull(conditionRaw.averageScore ?? conditionRaw.avgScore ?? conditionRaw.average ?? conditionRaw.score),
+            scale: String(conditionRaw.scale || '').trim(),
+            notes: String(conditionRaw.notes || '').trim(),
+            sourceLabel: String(conditionRaw.sourceLabel || '').trim(),
+            sourceUrl: String(conditionRaw.sourceUrl || '').trim(),
+            updatedAt: String(conditionRaw.updatedAt || conditionRaw.lastUpdated || '').trim(),
+            architecture: normalizeConditionSectionScores(conditionRaw.architecture),
+            engineering: normalizeConditionSectionScores(conditionRaw.engineering),
+            functionality: normalizeConditionSectionScores(conditionRaw.functionality)
+          } : null,
+          remodelPdfs: (Array.isArray(planningRaw) ? planningRaw : [planningRaw])
+            .map((doc, idx) => normalizeBuildingResourceDoc(doc, idx))
+            .filter(Boolean)
+        };
+      })
+      .filter(Boolean)
+  };
+};
+
+const hasConditionAssessmentContent = (condition) => {
+  if (!condition) return false;
+  return Boolean(
+    condition.averageScore != null ||
+    condition.notes ||
+    condition.scale ||
+    condition.sourceUrl ||
+    condition.sourceLabel ||
+    Object.keys(condition.architecture || {}).length ||
+    Object.keys(condition.engineering || {}).length ||
+    Object.keys(condition.functionality || {}).length
+  );
+};
+
+const isImageResourceUrl = (url) => /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(String(url || '').trim());
+
+const formatDeferredCostSummary = (deferred, formatCurrency) => {
+  if (!deferred) return '';
+  if (deferred.totalCost != null) return formatCurrency(deferred.totalCost);
+  if (deferred.totalLow != null && deferred.totalHigh != null) {
+    return `${formatCurrency(deferred.totalLow)} - ${formatCurrency(deferred.totalHigh)}`;
+  }
+  if (deferred.totalLow != null) return formatCurrency(deferred.totalLow);
+  if (deferred.totalHigh != null) return formatCurrency(deferred.totalHigh);
+  return '';
+};
+
 // Fit a rooms FeatureCollection to a building feature by scaling to bbox and aligning centroids
 function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
   try {
@@ -10154,18 +10303,22 @@ async function loadRooms(db, campusId, buildingId, floorId) {
 }
 
 const stakeholderConditionConfig = {
-  '5': { label: '5 = Excellent condition', color: '#4CAF50' },
-  '4': { label: '4 = Good condition', color: '#8BC34A' },
-  '3': { label: '3 = Adequate condition', color: '#FFEB3B' },
-  '2': { label: '2 = Poor condition', color: '#FF9800' },
-  '1': { label: '1 = Very poor condition', color: '#F44336' }
+  '5': { label: '5 = Excellent condition', color: '#166534' },
+  '4': { label: '4 = Good condition', color: '#16a34a' },
+  '3': { label: '3 = Adequate condition', color: '#d97706' },
+  '2': { label: '2 = Poor condition', color: '#ea580c' },
+  '1': { label: '1 = Very poor condition', color: '#b91c1c' }
 };
 
 const progressColors = {
-  0: '#85474b',
-  1: '#aed6f1',
-  2: '#5dade2',
-  3: '#2e86c1'
+  0: '#6b7280',
+  1: '#dc2626',
+  2: '#d97706',
+  3: '#15803d'
+};
+const TECHNICAL_BUILDING_COLOR_MODE = {
+  STAGE_COMPLETED: 'stage-completed',
+  TECHNICAL_SCORE: 'technical-score'
 };
 const TECHNICAL_BUILDING_COLOR_MODE = {
   STAGE_COMPLETED: 'stage-completed',
@@ -10276,7 +10429,7 @@ const TECHNICAL_SECTION_CONFIG = [
   {
     key: 'functionality',
     label: 'Functionality',
-    fields: ['telecomm', 'fireAlarm', 'spaceSize', 'technology']
+    fields: ['fireAlarm', 'spaceSize', 'technology']
   }
 ];
 const TECHNICAL_FIELD_ALIASES = {
@@ -10292,7 +10445,6 @@ const TECHNICAL_FIELD_ALIASES = {
   mechanical: ['hvac'],
   power: ['electricalPower', 'electrical'],
   lighting: ['lights'],
-  telecomm: ['telecom', 'telecommunications'],
   fireAlarm: ['fireAlarms'],
   spaceSize: ['space', 'size'],
   technology: ['it', 'av']
@@ -10363,11 +10515,11 @@ const computeTechnicalAverageScore = (scores = {}) => {
 };
 const technicalScoreColorForAverage = (averageScore, scoredFields = 0) => {
   if (!Number.isFinite(averageScore) || Number(scoredFields) <= 0) return progressColors[0];
-  if (averageScore >= 4.5) return '#4CAF50';
-  if (averageScore >= 3.5) return '#8BC34A';
-  if (averageScore >= 2.5) return '#FFEB3B';
-  if (averageScore >= 1.5) return '#FF9800';
-  return '#F44336';
+  if (averageScore >= 4.5) return '#166534';
+  if (averageScore >= 3.5) return '#16a34a';
+  if (averageScore >= 2.5) return '#d97706';
+  if (averageScore >= 1.5) return '#ea580c';
+  return '#b91c1c';
 };
 
 const defaultBuildingColor = '#85474b';
@@ -10882,6 +11034,171 @@ const toTimestampIso = (value) => {
     return '';
   }
 };
+
+const TECHNICAL_ASSESSOR_NAME_STORAGE_PREFIX = 'mf:technical-assessor-name';
+const TECHNICAL_ASSESSOR_DEVICE_STORAGE_PREFIX = 'mf:technical-assessor-device';
+
+const sanitizeTechnicalAssessorToken = (value) => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+);
+
+const buildTechnicalAssessorStorageKey = (prefix, universityId) => {
+  const uni = String(canon(universityId || '') || universityId || '').trim().toLowerCase();
+  if (!prefix || !uni) return '';
+  return `${prefix}:${uni}`;
+};
+
+const loadStoredTechnicalText = (storageKey) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return '';
+  try {
+    return String(window.localStorage.getItem(storageKey) || '').trim();
+  } catch {
+    return '';
+  }
+};
+
+const persistStoredTechnicalText = (storageKey, value) => {
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const text = String(value || '').trim();
+    if (text) window.localStorage.setItem(storageKey, text);
+    else window.localStorage.removeItem(storageKey);
+  } catch {}
+};
+
+const ensureStoredTechnicalDeviceId = (storageKey) => {
+  const fallback = `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!storageKey || typeof window === 'undefined' || !window.localStorage) return fallback;
+  try {
+    const existing = sanitizeTechnicalAssessorToken(window.localStorage.getItem(storageKey) || '');
+    if (existing) return existing;
+    const generated = sanitizeTechnicalAssessorToken(fallback) || fallback;
+    window.localStorage.setItem(storageKey, generated);
+    return generated;
+  } catch {
+    return fallback;
+  }
+};
+
+const buildTechnicalAssessorKey = (assessorName, deviceId) => {
+  const nameToken = sanitizeTechnicalAssessorToken(assessorName);
+  const deviceToken = sanitizeTechnicalAssessorToken(deviceId);
+  if (!nameToken || !deviceToken) return '';
+  return `${nameToken}__${deviceToken}`;
+};
+
+const getAssessmentEntryBuildingKey = (assessment = {}, docId = '') => {
+  const originalId = String(assessment?.originalId || '').trim();
+  if (originalId) return originalId;
+  const rawDocId = String(docId || assessment?.__docId || '').trim();
+  if (!rawDocId) return '';
+  return rawDocId.replace(/__/g, '/');
+};
+
+const getAssessmentDocSortMs = (assessment = {}) => (
+  parseFirestoreTimestampMs(assessment?.updatedAt) ||
+  Number(assessment?.updatedAtClientMs || 0) ||
+  parseFirestoreTimestampMs(assessment?.createdAt) ||
+  0
+);
+
+const isPerAssessorAssessmentRecord = (assessment = {}) => (
+  String(assessment?.assessmentSaveMode || '').trim().toLowerCase() === 'per-assessor' ||
+  Boolean(String(assessment?.assessorKey || '').trim())
+);
+
+const compareTechnicalAssessmentProgress = (current = {}, candidate = {}) => {
+  const currentScores = current?.scores && typeof current.scores === 'object' ? current.scores : {};
+  const candidateScores = candidate?.scores && typeof candidate.scores === 'object' ? candidate.scores : {};
+  const currentProgress = computeTechnicalProgressFromScores(currentScores);
+  const candidateProgress = computeTechnicalProgressFromScores(candidateScores);
+  const currentPct = currentProgress.totalFields > 0
+    ? Math.max(0, Math.min(100, Math.round((currentProgress.answeredFields / currentProgress.totalFields) * 100)))
+    : 0;
+  const candidatePct = candidateProgress.totalFields > 0
+    ? Math.max(0, Math.min(100, Math.round((candidateProgress.answeredFields / candidateProgress.totalFields) * 100)))
+    : 0;
+  const currentScoreSummary = computeTechnicalAverageScore(currentScores);
+  const candidateScoreSummary = computeTechnicalAverageScore(candidateScores);
+
+  if (candidateProgress.answeredFields !== currentProgress.answeredFields) {
+    return candidateProgress.answeredFields - currentProgress.answeredFields;
+  }
+  if (candidatePct !== currentPct) {
+    return candidatePct - currentPct;
+  }
+  if (candidateProgress.startedSections !== currentProgress.startedSections) {
+    return candidateProgress.startedSections - currentProgress.startedSections;
+  }
+  if (candidateScoreSummary.scoredFields !== currentScoreSummary.scoredFields) {
+    return candidateScoreSummary.scoredFields - currentScoreSummary.scoredFields;
+  }
+  return getAssessmentDocSortMs(candidate) - getAssessmentDocSortMs(current);
+};
+
+const buildAssessmentMapFromEntries = (
+  entries = [],
+  {
+    technicalMode = false,
+    perAssessorMode = false,
+    assessorKey = ''
+  } = {}
+) => {
+  const byBuilding = new Map();
+  const byLegacyBuilding = new Map();
+  const normalizedAssessorKey = String(assessorKey || '').trim();
+  (entries || []).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const buildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+    if (!buildingKey) return;
+    const sortMs = getAssessmentDocSortMs(entry);
+    const prefersOwnEntry =
+      perAssessorMode &&
+      technicalMode &&
+      normalizedAssessorKey &&
+      String(entry?.assessorKey || '').trim() === normalizedAssessorKey;
+    if (prefersOwnEntry) {
+      const prev = byBuilding.get(buildingKey);
+      if (!prev || sortMs >= getAssessmentDocSortMs(prev)) {
+        byBuilding.set(buildingKey, { ...entry, originalId: buildingKey });
+      }
+      return;
+    }
+    if (perAssessorMode && technicalMode && isPerAssessorAssessmentRecord(entry)) {
+      return;
+    }
+    const targetMap = (!perAssessorMode || !technicalMode) ? byBuilding : byLegacyBuilding;
+    const prev = targetMap.get(buildingKey);
+    if (!prev || sortMs >= getAssessmentDocSortMs(prev)) {
+      targetMap.set(buildingKey, { ...entry, originalId: buildingKey });
+    }
+  });
+  if (perAssessorMode && technicalMode) {
+    byLegacyBuilding.forEach((entry, key) => {
+      if (!byBuilding.has(key)) byBuilding.set(key, entry);
+    });
+  }
+  return Object.fromEntries(byBuilding.entries());
+};
+
+const buildSharedTechnicalAssessmentMapFromEntries = (entries = []) => {
+  const byBuilding = new Map();
+  (entries || []).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const buildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+    if (!buildingKey) return;
+    const prev = byBuilding.get(buildingKey);
+    if (!prev || compareTechnicalAssessmentProgress(prev, entry) < 0) {
+      byBuilding.set(buildingKey, { ...entry, originalId: buildingKey });
+    }
+  });
+  return Object.fromEntries(byBuilding.entries());
+};
 const isMarkerArchived = (marker) => {
   if (!marker || typeof marker !== 'object') return false;
   if (marker.isArchived === true) return true;
@@ -10924,7 +11241,10 @@ const StakeholderMap = ({
   const [markers, setMarkers] = useState([]); // Paths feature removed
   const [buildingConditions, setBuildingConditions] = useState({});
   const [buildingAssessments, setBuildingAssessments] = useState({});
+  const [technicalAssessmentEntries, setTechnicalAssessmentEntries] = useState([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [buildingResourcesCatalog, setBuildingResourcesCatalog] = useState({ updatedAt: '', buildings: [] });
+  const [buildingResourceModal, setBuildingResourceModal] = useState({ open: false, kind: 'deferred', entry: null, buildingName: '' });
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
   const normalizedUniversityId = String(canon(universityId || config?.universityId || '') || '').trim().toLowerCase();
@@ -10950,9 +11270,14 @@ const StakeholderMap = ({
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
   const showStrategicDashboard = !isSarpyCountyInstance;
+  const hasConfiguredUniversityLogo = Boolean(
+    config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
+  );
   const universityLogoFile = String(
-    config?.logos?.university || (isSarpyCountyInstance ? 'SarpyCounty_logo.png' : 'HC_image.png')
-  ).trim() || 'HC_image.png';
+    hasConfiguredUniversityLogo
+      ? (config?.logos?.university || '')
+      : (isSarpyCountyInstance ? 'SarpyCounty_logo.png' : 'HC_image.png')
+  ).trim();
   const universityLogoAlt = isSarpyCountyInstance ? 'Sarpy County' : (universityName || 'University');
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
@@ -10983,6 +11308,95 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const configuredDashboardBuildingKeys = useMemo(() => {
+    const out = new Set();
+    (config?.buildings?.features || []).forEach((feature) => {
+      const props = feature?.properties || {};
+      [
+        props.id,
+        props.name,
+        props.Name,
+        props.BUILDING,
+        props.Building,
+        props.building
+      ].forEach((raw) => {
+        const key = normalizeDashboardKey(raw);
+        if (key) out.add(key);
+      });
+    });
+    return out;
+  }, [config]);
+  const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
+    if (!Array.isArray(rooms) || !rooms.length) return [];
+
+    // For floorplan-enabled campuses (Hastings), the rooms API is already campus-scoped.
+    // Avoid additional client-side filtering that can undercount valid Airtable rows.
+    if (floorplansEnabled) return rooms;
+
+    const allowedCampusKeys = new Set(
+      [
+        universityId,
+        config?.universityId,
+        floorplanCampus,
+        universityName,
+        activeUniversityName
+      ]
+        .map((value) => canon(value || ''))
+        .filter((value) => value && value !== 'na')
+    );
+
+    return rooms.filter((room) => {
+      if (!room || typeof room !== 'object') return false;
+
+      const explicitCampusKeys = [
+        room.campus,
+        room.campusId,
+        room.campus_id,
+        room.universityId,
+        room.university_id,
+        room.university,
+        room.tenant,
+        room.tenantId,
+        room.organization,
+        room.org
+      ]
+        .map((value) => canon(value || ''))
+        .filter((value) => value && value !== 'na');
+
+      const roomBuildingKey = normalizeDashboardKey(
+        room.building ??
+          room.buildingName ??
+          room.Building ??
+          room.BuildingName ??
+          room['Building Name'] ??
+          ''
+      );
+      const hasConfiguredBuildings = configuredDashboardBuildingKeys.size > 0;
+      const buildingInScope = (roomBuildingKey && hasConfiguredBuildings)
+        ? configuredDashboardBuildingKeys.has(roomBuildingKey)
+        : null;
+
+      if (explicitCampusKeys.length) {
+        const campusMatch = explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
+        if (campusMatch) return true;
+        // If campus tags are noisy/inconsistent, trust known in-scope building labels.
+        if (buildingInScope !== null) return buildingInScope;
+        return false;
+      }
+
+      if (buildingInScope !== null) return buildingInScope;
+
+      return floorplansEnabled;
+    });
+  }, [
+    universityId,
+    config,
+    floorplanCampus,
+    universityName,
+    activeUniversityName,
+    configuredDashboardBuildingKeys,
+    floorplansEnabled
+  ]);
   // ---- Map view modes ----
   const MAP_VIEWS = {
     SPACE_DATA: 'space-data',
@@ -10994,18 +11408,45 @@ const StakeholderMap = ({
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
-  const demoEditingEnabled = DEMO_EDITING_ENABLED;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
-  const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
-  const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
-  const planningScenarioControlsEnabled = showFullMapfluenceControls || (publicPlanningScenarioAllowed && demoEditingEnabled);
+  const formatMaintenanceCurrency = useCallback((value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    }).format(amount);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isHastingsCollegeInstance) {
+      setBuildingResourcesCatalog({ updatedAt: '', buildings: [] });
+      setBuildingResourceModal({ open: false, kind: 'deferred', entry: null, buildingName: '' });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    (async () => {
+      const raw = await fetchJSON(BUILDING_RESOURCES_URL);
+      if (cancelled) return;
+      setBuildingResourcesCatalog(normalizeBuildingResourcesCatalog(raw));
+    })().catch(() => {
+      if (!cancelled) setBuildingResourcesCatalog({ updatedAt: '', buildings: [] });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHastingsCollegeInstance]);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
   const showAuthAccessControls = isAdminMode;
   const defaultMapView = isTechnicalOnlyMode
@@ -11112,8 +11553,9 @@ const StakeholderMap = ({
       subtitle: 'Campus space visualization view.'
     };
   }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
-  const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
   useEffect(() => {
     if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
       setMapView(MAP_VIEWS.TECHNICAL);
@@ -11259,13 +11701,6 @@ const StakeholderMap = ({
     label: 'Not checked',
     detail: 'Run Refresh Airtable Data to validate scope.'
   }));
-  const [buildingResourcesCatalog, setBuildingResourcesCatalog] = useState(() => ({ updatedAt: '', byBuildingKey: new Map() }));
-  const [buildingResourceModal, setBuildingResourceModal] = useState({
-    open: false,
-    kind: 'deferred',
-    buildingName: '',
-    entry: null
-  });
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
   const [classScheduleRows, setClassScheduleRows] = useState([]);
   const [classScheduleMeta, setClassScheduleMeta] = useState({
@@ -11967,37 +12402,26 @@ const StakeholderMap = ({
     'Building';
   const activeBuildingId = selectedBuildingId || selectedBuilding || '';
   const panelSelectedFloor = selectedFloor ?? (availableFloors?.[0] || '');
-  const campusBuildingKeySet = useMemo(() => {
-    const keys = new Set();
-    const add = (value) => {
-      const key = normalizeDashboardKey(value);
-      if (key) keys.add(key);
-    };
-    (config?.buildings?.features || []).forEach((feature) => {
-      const props = feature?.properties || {};
-      add(props.id);
-      add(props.name);
-      add(props.Name);
-    });
-    return keys;
-  }, [config]);
   const activeBuildingResourceEntry = useMemo(() => {
-    const lookup = buildingResourcesCatalog?.byBuildingKey;
-    if (!(lookup instanceof Map) || !lookup.size) return null;
-    const keys = [
-      activeBuildingName,
-      activeBuildingId,
-      selectedBuilding,
-      selectedBuildingId
-    ]
-      .map((value) => normalizeDashboardKey(value))
-      .filter(Boolean);
-    for (const key of keys) {
-      const hit = lookup.get(key);
-      if (hit) return hit;
-    }
-    return null;
-  }, [buildingResourcesCatalog, activeBuildingName, activeBuildingId, selectedBuilding, selectedBuildingId]);
+    if (!isHastingsCollegeInstance) return null;
+    const entries = Array.isArray(buildingResourcesCatalog?.buildings) ? buildingResourcesCatalog.buildings : [];
+    if (!entries.length) return null;
+    const matchKeys = Array.from(new Set(
+      [
+        activeBuildingId,
+        activeBuildingName,
+        selectedBuilding,
+        selectedBuildingId
+      ]
+        .map((value) => String(canon(value || '') || '').trim().toLowerCase())
+        .filter(Boolean)
+    ));
+    if (!matchKeys.length) return null;
+    return entries.find((entry) => (
+      Array.isArray(entry?.aliases) &&
+      entry.aliases.some((alias) => matchKeys.includes(alias))
+    )) || null;
+  }, [isHastingsCollegeInstance, buildingResourcesCatalog, activeBuildingId, activeBuildingName, selectedBuilding, selectedBuildingId]);
   const hasDeferredMaintenanceForActiveBuilding = useMemo(() => {
     const deferred = activeBuildingResourceEntry?.deferredMaintenance;
     const hasDeferred = Boolean(
@@ -12013,182 +12437,26 @@ const StakeholderMap = ({
       )
     );
     const condition = activeBuildingResourceEntry?.conditionAssessment;
-    const hasCondition = hasConditionAssessmentContent(condition);
-    return hasDeferred || hasCondition;
+    return hasDeferred || hasConditionAssessmentContent(condition);
   }, [activeBuildingResourceEntry]);
   const hasRemodelPdfsForActiveBuilding = Boolean(activeBuildingResourceEntry?.remodelPdfs?.length);
+  const resolveBuildingResourceHref = useCallback((url) => {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    return /^https?:\/\//i.test(raw) ? raw : assetUrl(raw);
+  }, []);
   const openBuildingResourceModal = useCallback((kind) => {
-    if (!activeBuildingResourceEntry) return;
-    const normalizedKind = kind === 'remodel' ? 'remodel' : 'deferred';
+    if (!isHastingsCollegeInstance || !activeBuildingResourceEntry) return;
     setBuildingResourceModal({
       open: true,
-      kind: normalizedKind,
-      buildingName: activeBuildingName || activeBuildingId || selectedBuilding || selectedBuildingId || 'Building',
-      entry: activeBuildingResourceEntry
+      kind: kind === 'remodel' ? 'remodel' : 'deferred',
+      entry: activeBuildingResourceEntry,
+      buildingName: String(activeBuildingName || activeBuildingId || 'Building').trim() || 'Building'
     });
-  }, [activeBuildingResourceEntry, activeBuildingName, activeBuildingId, selectedBuilding, selectedBuildingId]);
+  }, [isHastingsCollegeInstance, activeBuildingResourceEntry, activeBuildingName, activeBuildingId]);
   const closeBuildingResourceModal = useCallback(() => {
     setBuildingResourceModal((prev) => ({ ...prev, open: false }));
   }, []);
-  const formatMaintenanceCurrency = useCallback((value) => {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return '';
-    try {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
-    } catch {
-      return `$${Math.round(num).toLocaleString()}`;
-    }
-  }, []);
-  const onExportBuildingResourcePdf = useCallback(() => {
-    if (!buildingResourceModal?.entry) return;
-    try {
-      const doc = new jsPDF('p', 'pt', 'letter');
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 24;
-      const maxWidth = pageWidth - margin * 2;
-      const lineHeight = 14;
-      let y = margin;
-
-      const ensureSpace = (required = lineHeight) => {
-        if (y + required <= pageHeight - margin) return;
-        doc.addPage();
-        y = margin;
-      };
-      const addWrapped = (text, options = {}) => {
-        const value = String(text ?? '').trim();
-        if (!value) return;
-        const fontStyle = options.fontStyle || 'normal';
-        const fontSize = options.fontSize || 11;
-        doc.setFont(undefined, fontStyle);
-        doc.setFontSize(fontSize);
-        const lines = doc.splitTextToSize(value, maxWidth);
-        lines.forEach((line) => {
-          ensureSpace(lineHeight);
-          doc.text(line, margin, y);
-          y += lineHeight;
-        });
-      };
-      const addSpacer = (height = 8) => {
-        ensureSpace(height);
-        y += height;
-      };
-
-      const buildingName = String(
-        buildingResourceModal?.buildingName ||
-        activeBuildingName ||
-        'Building'
-      ).trim() || 'Building';
-      const isRemodel = buildingResourceModal?.kind === 'remodel';
-      const title = isRemodel ? 'Planning / Remodel Docs' : 'Deferred Maintenance + Condition';
-
-      addWrapped(title, { fontStyle: 'bold', fontSize: 15 });
-      addSpacer(2);
-      addWrapped(buildingName, { fontStyle: 'bold', fontSize: 12 });
-      addSpacer(8);
-
-      if (isRemodel) {
-        const docs = Array.isArray(buildingResourceModal?.entry?.remodelPdfs)
-          ? buildingResourceModal.entry.remodelPdfs
-          : [];
-        if (!docs.length) {
-          addWrapped('No planning/remodel documents are currently linked for this building.');
-        } else {
-          docs.forEach((item, idx) => {
-            addWrapped(`${idx + 1}. ${String(item?.label || `Document ${idx + 1}`).trim()}`, { fontStyle: 'bold' });
-            if (item?.description) addWrapped(String(item.description));
-            if (item?.url) addWrapped(String(item.url), { fontSize: 10 });
-            addSpacer(4);
-          });
-        }
-      } else {
-        const deferred = buildingResourceModal?.entry?.deferredMaintenance || null;
-        const condition = buildingResourceModal?.entry?.conditionAssessment || null;
-        const deferredSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
-        const hasDeferred = Boolean(
-          deferred &&
-          (
-            deferred.summary ||
-            deferred.priority ||
-            deferred.items?.length ||
-            deferred.sourceUrl ||
-            deferred.sourceLabel ||
-            deferredSummary
-          )
-        );
-        const hasCondition = hasConditionAssessmentContent(condition);
-
-        if (!hasDeferred && !hasCondition) {
-          addWrapped('No deferred maintenance or condition data is currently linked for this building.');
-        }
-
-        if (hasDeferred) {
-          addWrapped('Deferred Maintenance', { fontStyle: 'bold' });
-          if (deferred?.summary) addWrapped(`Summary: ${deferred.summary}`);
-          if (deferred?.priority) addWrapped(`Priority: ${deferred.priority}`);
-          if (deferredSummary) addWrapped(`Estimated Cost: ${deferredSummary}`);
-          if (Array.isArray(deferred?.items) && deferred.items.length) {
-            addSpacer(2);
-            addWrapped('Top Items:', { fontStyle: 'bold', fontSize: 10 });
-            deferred.items.slice(0, 12).forEach((item) => {
-              const costText = Number.isFinite(Number(item?.cost))
-                ? formatMaintenanceCurrency(item.cost)
-                : '';
-              const priText = item?.priority ? ` (${item.priority})` : '';
-              addWrapped(`- ${String(item?.label || '').trim()}${priText}${costText ? `: ${costText}` : ''}`, { fontSize: 10 });
-            });
-          }
-          if (deferred?.sourceLabel || deferred?.sourceUrl) {
-            addSpacer(2);
-            if (deferred?.sourceLabel) addWrapped(`Source: ${deferred.sourceLabel}`, { fontSize: 10 });
-            if (deferred?.sourceUrl) addWrapped(String(deferred.sourceUrl), { fontSize: 10 });
-          }
-          addSpacer(6);
-        }
-
-        if (hasCondition) {
-          addWrapped('Condition Assessment', { fontStyle: 'bold' });
-          if (condition?.averageScore != null) {
-            const scoreText = formatConditionScore(condition.averageScore);
-            const scaleText = condition?.scale ? ` (${condition.scale})` : '';
-            addWrapped(`Average Score: ${scoreText}${scaleText}`);
-          }
-          if (condition?.notes) addWrapped(`Notes: ${condition.notes}`);
-          const sections = [
-            { label: 'Architecture', scores: condition?.architecture || null },
-            { label: 'Engineering', scores: condition?.engineering || null },
-            { label: 'Functionality', scores: condition?.functionality || null }
-          ];
-          sections.forEach((section) => {
-            if (!section.scores || !Object.keys(section.scores).length) return;
-            addSpacer(2);
-            addWrapped(section.label, { fontStyle: 'bold', fontSize: 10 });
-            Object.entries(section.scores).forEach(([metric, score]) => {
-              addWrapped(
-                `- ${formatConditionMetricLabel(metric)}: ${formatConditionScore(score)}`,
-                { fontSize: 10 }
-              );
-            });
-          });
-          if (condition?.sourceLabel || condition?.sourceUrl) {
-            addSpacer(2);
-            if (condition?.sourceLabel) addWrapped(`Source: ${condition.sourceLabel}`, { fontSize: 10 });
-            if (condition?.sourceUrl) addWrapped(String(condition.sourceUrl), { fontSize: 10 });
-          }
-        }
-      }
-
-      const fileName = `${title}-${buildingName}`
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 80) || 'building-resource';
-      doc.save(`${fileName}.pdf`);
-    } catch (err) {
-      console.error('Building resource PDF export failed', err);
-      alert('PDF export failed - see console for details.');
-    }
-  }, [buildingResourceModal, activeBuildingName, formatMaintenanceCurrency]);
   const openProgramTestFitForBuilding = useCallback(() => {
     const availableSf = Number(buildingStats?.totalSf || 0) || 0;
     if (!availableSf) {
@@ -12404,13 +12672,6 @@ const StakeholderMap = ({
     setAiCreateScenarioOpen(false);
   }, [aiEnabledForCurrentView]);
   useEffect(() => {
-    if (aiCreatePlanningScenarioAllowed) return;
-    setAiCreateScenarioOpen(false);
-    setAiCreateScenarioLoading(false);
-    setAiCreateScenarioResult(null);
-    setAiCreateScenarioErr('');
-  }, [aiCreatePlanningScenarioAllowed]);
-  useEffect(() => {
     if (!drawingAlignState) return;
     setDrawingAlignState(null);
     setDrawingAlignNotice('');
@@ -12616,11 +12877,12 @@ const StakeholderMap = ({
     resetScenarioModeState();
   }, [resetScenarioModeState]);
   useEffect(() => {
-    if (planningScenarioControlsEnabled) return;
+    const planningScenarioAllowed = showFullMapfluenceControls || publicPlanningScenarioAllowed;
+    if (planningScenarioAllowed) return;
     if (!moveScenarioMode) return;
     setMoveScenarioMode(false);
     clearScenario();
-  }, [planningScenarioControlsEnabled, moveScenarioMode, clearScenario]);
+  }, [showFullMapfluenceControls, publicPlanningScenarioAllowed, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
@@ -16693,6 +16955,41 @@ const StakeholderMap = ({
   // Auth / role
   const [authUser, setAuthUser] = useState(null);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const technicalAssessmentSaveMode = String(config?.technicalAssessmentSaveMode || 'building').trim().toLowerCase() === 'per-assessor'
+    ? 'per-assessor'
+    : 'building';
+  const technicalAssessorNameStorageKey = useMemo(
+    () => buildTechnicalAssessorStorageKey(TECHNICAL_ASSESSOR_NAME_STORAGE_PREFIX, universityId),
+    [universityId]
+  );
+  const technicalAssessorDeviceStorageKey = useMemo(
+    () => buildTechnicalAssessorStorageKey(TECHNICAL_ASSESSOR_DEVICE_STORAGE_PREFIX, universityId),
+    [universityId]
+  );
+  const [technicalAssessorName, setTechnicalAssessorName] = useState('');
+  const [technicalAssessorDeviceId, setTechnicalAssessorDeviceId] = useState('');
+  useEffect(() => {
+    setTechnicalAssessorName(loadStoredTechnicalText(technicalAssessorNameStorageKey));
+    setTechnicalAssessorDeviceId(ensureStoredTechnicalDeviceId(technicalAssessorDeviceStorageKey));
+  }, [technicalAssessorNameStorageKey, technicalAssessorDeviceStorageKey]);
+  useEffect(() => {
+    persistStoredTechnicalText(technicalAssessorNameStorageKey, technicalAssessorName);
+  }, [technicalAssessorNameStorageKey, technicalAssessorName]);
+  const technicalAssessorLabel = useMemo(() => {
+    if (technicalAssessmentSaveMode !== 'per-assessor') return '';
+    const adminEmail = String(authUser?.email || '').trim();
+    if (isAdminMode && adminEmail) return adminEmail;
+    return String(technicalAssessorName || '').trim();
+  }, [technicalAssessmentSaveMode, authUser?.email, isAdminMode, technicalAssessorName]);
+  const technicalAssessorKey = useMemo(() => {
+    if (technicalAssessmentSaveMode !== 'per-assessor') return '';
+    const adminEmail = String(authUser?.email || '').trim();
+    if (isAdminMode && adminEmail) {
+      const adminToken = sanitizeTechnicalAssessorToken(adminEmail);
+      return adminToken ? `admin__${adminToken}` : '';
+    }
+    return buildTechnicalAssessorKey(technicalAssessorName, technicalAssessorDeviceId);
+  }, [technicalAssessmentSaveMode, authUser?.email, isAdminMode, technicalAssessorName, technicalAssessorDeviceId]);
   const adminCombinedPrefsStorageKey = useMemo(() => {
     if (!isAdminCombinedMode || !universityId) return '';
     const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
@@ -16723,6 +17020,10 @@ const StakeholderMap = ({
   const [technicalProgressShowIncompleteOnly, setTechnicalProgressShowIncompleteOnly] = useState(false);
   const [technicalProgressMessage, setTechnicalProgressMessage] = useState('');
   const [technicalBuildingColorMode, setTechnicalBuildingColorMode] = useState(TECHNICAL_BUILDING_COLOR_MODE.STAGE_COMPLETED);
+  const sharedTechnicalBuildingAssessments = useMemo(
+    () => buildSharedTechnicalAssessmentMapFromEntries(technicalAssessmentEntries),
+    [technicalAssessmentEntries]
+  );
 
 
   const resolveBuildingPlanKey = useCallback((idOrName) => {
@@ -17097,89 +17398,6 @@ const StakeholderMap = ({
       });
   }, [buildLegendForMode, stakeholderWorkflowActive, fetchFloorSummaryByUrl, floorColorMode, selectedFloor]);
 
-  const buildRoomsApiPath = useCallback(() => {
-    const params = new URLSearchParams();
-    const campusId = String(universityId || '').trim();
-    const campusLabel = String(floorplanCampus || '').trim();
-    if (campusId) params.set('campus', campusId);
-    if (campusLabel) params.set('floorplanCampus', campusLabel);
-    const query = params.toString();
-    return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
-  }, [universityId, floorplanCampus]);
-  const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
-    if (!Array.isArray(rooms) || !rooms.length) return [];
-
-    // For floorplan-enabled campuses (Hastings), the rooms API is already campus-scoped.
-    // Avoid additional client-side filtering that can undercount valid Airtable rows.
-    if (floorplansEnabled) return rooms;
-
-    const allowedCampusKeys = new Set(
-      [
-        universityId,
-        config?.universityId,
-        floorplanCampus,
-        universityName,
-        activeUniversityName
-      ]
-        .map((value) => canon(value || ''))
-        .filter((value) => value && value !== 'na')
-    );
-
-    const scoped = rooms.filter((room) => {
-      if (!room || typeof room !== 'object') return false;
-
-      const explicitCampusKeys = [
-        room.campus,
-        room.campusId,
-        room.campus_id,
-        room.universityId,
-        room.university_id,
-        room.university,
-        room.tenant,
-        room.tenantId,
-        room.organization,
-        room.org
-      ]
-        .map((value) => canon(value || ''))
-        .filter((value) => value && value !== 'na');
-
-      const roomKeys = [
-        room?.building,
-        room?.buildingName,
-        room?.buildingLabel,
-        room?.buildingId
-      ]
-        .map((value) => normalizeDashboardKey(value))
-        .filter(Boolean);
-      const hasConfiguredBuildings = campusBuildingKeySet.size > 0;
-      const buildingInScope = (roomKeys.length && hasConfiguredBuildings)
-        ? roomKeys.some((key) => campusBuildingKeySet.has(key))
-        : null;
-
-      if (explicitCampusKeys.length) {
-        const campusMatch = explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
-        if (campusMatch) return true;
-        // If campus tags are noisy/inconsistent, trust known in-scope building labels.
-        if (buildingInScope !== null) return buildingInScope;
-        return false;
-      }
-
-      if (buildingInScope !== null) return buildingInScope;
-
-      return floorplansEnabled;
-    });
-
-    if (scoped.length) return scoped;
-    return floorplansEnabled ? rooms : [];
-  }, [
-    universityId,
-    config,
-    floorplanCampus,
-    universityName,
-    activeUniversityName,
-    campusBuildingKeySet,
-    floorplansEnabled
-  ]);
   const recordAirtableScopeCheck = useCallback((sourceLabel, rawRooms = [], scopedRooms = []) => {
     const rawCount = Array.isArray(rawRooms) ? rawRooms.length : 0;
     const scopedCount = Array.isArray(scopedRooms) ? scopedRooms.length : 0;
@@ -17226,7 +17444,7 @@ const StakeholderMap = ({
       detail: 'Airtable sync failed before scope validation.'
     });
     return false;
-  }, [buildRoomsApiPath, filterRoomsToConfiguredCampus, recordAirtableScopeCheck]);
+  }, [filterRoomsToConfiguredCampus, recordAirtableScopeCheck]);
 
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
@@ -18501,7 +18719,9 @@ const StakeholderMap = ({
       setAiResult(out);
       setAiOpen(true);
     } catch (e) {
-      setAiErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiErr(message);
     } finally {
       setAiLoading(false);
     }
@@ -18547,7 +18767,9 @@ const StakeholderMap = ({
       setAiCampusResult(out);
       setAiCampusOpen(true);
     } catch (e) {
-      setAiCampusErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiCampusErr(message);
     } finally {
       setAiCampusLoading(false);
     }
@@ -18676,7 +18898,9 @@ const StakeholderMap = ({
         });
       } catch {}
     } catch (e) {
-      setAiScenarioErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiScenarioErr(message);
     } finally {
       setAiScenarioLoading(false);
     }
@@ -18728,7 +18952,9 @@ const StakeholderMap = ({
       setAiBuildingResult(out);
       setAiBuildingOpen(true);
     } catch (e) {
-      setAiBuildingErr(String(e?.message || e));
+      const message = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(message)) setAiStatus('down');
+      setAiBuildingErr(message);
     } finally {
       setAiBuildingLoading(false);
     }
@@ -18745,7 +18971,10 @@ const StakeholderMap = ({
     const ping = async () => {
       try {
         const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: 3000 });
-        setAiStatus(r.ok ? 'ok' : 'down');
+        const raw = await r.text();
+        let data = null;
+        try { data = JSON.parse(raw); } catch {}
+        setAiStatus(r.ok && data?.aiReady !== false ? 'ok' : 'down');
       } catch {
         setAiStatus('down');
       }
@@ -19853,7 +20082,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setAiCreateScenarioResult(nextResult);
       setAiCreateScenarioOpen(false);
     } catch (e) {
-      const errMessage = String(e?.message || e || '');
+      const errMessage = normalizeAiClientErrorMessage(e);
+      if (isAiBackendConfigErrorMessage(errMessage)) setAiStatus('down');
       const shouldAutoRetryRelaxed = (
         aiCreateScenarioMode === 'copilot' &&
         !forceRelaxed &&
@@ -20953,6 +21183,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     try {
       setBuildingConditions({});
       setBuildingAssessments({});
+      setTechnicalAssessmentEntries([]);
     } catch {}
   }, []);
 
@@ -21198,9 +21429,7 @@ const canCreateEngagementMarker = useMemo(() => {
       || campusKey === 'sarpycounty'
   );
 }, [isAdminUser, campusKey]);
-const maintenanceCanWrite = useMemo(() => {
-  return Boolean(isAdminUser && (showFullMapfluenceControls || (isDemoPublicMode && demoEditingEnabled)));
-}, [isAdminUser, showFullMapfluenceControls, isDemoPublicMode, demoEditingEnabled]);
+const maintenanceCanWrite = useMemo(() => canCreateEngagementMarker, [canCreateEngagementMarker]);
 const maintenanceIssueTypeOptions = useMemo(() => {
   const dynamic = new Set(MAINTENANCE_ISSUE_TYPES);
   (maintenanceIssues || []).forEach((issue) => {
@@ -22088,12 +22317,22 @@ const permanentlyDeleteArchivedSelectedMarkers = useCallback(async () => {
     setMarkerToolBusy(false);
   }
 }, [isAdminUser, markerToolBusy, markerToolUndoBusy, markerToolSelectedArchivedRows, markersCollection]);
+const technicalSubmissionCounts = useMemo(() => {
+  const counts = new Map();
+  (technicalAssessmentEntries || []).forEach((entry) => {
+    if (!isPerAssessorAssessmentRecord(entry)) return;
+    const buildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+    if (!buildingKey) return;
+    counts.set(buildingKey, (counts.get(buildingKey) || 0) + 1);
+  });
+  return counts;
+}, [technicalAssessmentEntries]);
 const technicalProgressRows = useMemo(() => {
   const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
   const rows = [];
   const seen = new Set();
   const assessmentByCanonical = new Map();
-  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+  Object.entries(sharedTechnicalBuildingAssessments || {}).forEach(([rawId, assessment]) => {
     const canonical = bId(rawId || assessment?.originalId || '');
     if (canonical) assessmentByCanonical.set(canonical, assessment);
   });
@@ -22110,7 +22349,7 @@ const technicalProgressRows = useMemo(() => {
     });
   });
 
-  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+  Object.entries(sharedTechnicalBuildingAssessments || {}).forEach(([rawId, assessment]) => {
     const id = String(assessment?.originalId || rawId || '').trim();
     if (!id || seen.has(id)) return;
     seen.add(id);
@@ -22122,7 +22361,7 @@ const technicalProgressRows = useMemo(() => {
   });
 
   const withStats = rows.map((row) => {
-    const directAssessment = buildingAssessments?.[row.id];
+    const directAssessment = sharedTechnicalBuildingAssessments?.[row.id];
     const canonicalAssessment = assessmentByCanonical.get(bId(row.id || ''));
     const assessment = directAssessment || canonicalAssessment || null;
     const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
@@ -22140,6 +22379,10 @@ const technicalProgressRows = useMemo(() => {
       ? Math.max(0, Math.min(100, Math.round((answeredFields / totalFields) * 100)))
       : 0;
     const isComplete = answeredFields >= totalFields && totalFields > 0;
+    const submissionCount =
+      technicalSubmissionCounts.get(row.id) ||
+      technicalSubmissionCounts.get(String(assessment?.originalId || row.id || '').trim()) ||
+      0;
     return {
       ...row,
       completionPct,
@@ -22150,7 +22393,8 @@ const technicalProgressRows = useMemo(() => {
       missingFieldCount,
       missingFieldLabels,
       isComplete,
-      color: progressColors[startedSections] || progressColors[0]
+      color: progressColors[startedSections] || progressColors[0],
+      submissionCount
     };
   });
 
@@ -22159,7 +22403,7 @@ const technicalProgressRows = useMemo(() => {
     if (a.completionPct !== b.completionPct) return a.completionPct - b.completionPct;
     return a.name.localeCompare(b.name);
   });
-}, [config, buildingAssessments]);
+}, [config, sharedTechnicalBuildingAssessments, technicalSubmissionCounts]);
 const technicalProgressSummary = useMemo(() => {
   const total = technicalProgressRows.length;
   const complete = technicalProgressRows.filter((row) => row.isComplete).length;
@@ -22224,7 +22468,19 @@ const exportTechnicalMissingItemsCsv = useCallback(() => {
 }, [technicalProgressRows, universityId]);
 const exportTechnicalAssessmentCsv = useCallback(() => {
   const rows = technicalProgressRows || [];
-  if (!rows.length) {
+  const exportableEntries = (technicalAssessmentEntries || [])
+    .map((entry) => {
+      const buildingId = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+      return {
+        ...entry,
+        originalId: buildingId,
+        buildingId,
+        buildingName: String(entry?.buildingName || buildingId || '').trim() || buildingId
+      };
+    })
+    .filter((entry) => entry.buildingId);
+  const exportPerAssessor = technicalAssessmentSaveMode === 'per-assessor' && exportableEntries.length > 0;
+  if (!rows.length && !exportPerAssessor) {
     setTechnicalProgressMessage('No technical assessment data to export.');
     return;
   }
@@ -22233,8 +22489,100 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
     const text = String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
+  if (exportPerAssessor) {
+    const headers = [
+      'BuildingId',
+      'BuildingName',
+      'Assessor',
+      'UpdatedAt',
+      'Category',
+      'SubCategory',
+      'Score',
+      'CompletionPct',
+      'ScoredFields',
+      'Notes'
+    ];
+    const title = `Technical Assessment Detail - ${String(universityId || 'Campus')}`;
+    const lines = [
+      [esc(title), esc(''), esc(''), esc(''), esc(''), esc(''), esc(''), esc(''), esc(''), esc('')].join(','),
+      '',
+      headers.join(',')
+    ];
+    let detailCount = 0;
+    const sortedEntries = [...exportableEntries].sort((a, b) => {
+      const buildingCompare = String(a?.buildingName || a?.buildingId || '').localeCompare(String(b?.buildingName || b?.buildingId || ''));
+      if (buildingCompare !== 0) return buildingCompare;
+      const assessorCompare = String(a?.assessorName || '').localeCompare(String(b?.assessorName || ''));
+      if (assessorCompare !== 0) return assessorCompare;
+      return getAssessmentDocSortMs(b) - getAssessmentDocSortMs(a);
+    });
+    sortedEntries.forEach((entry) => {
+      const scores = entry?.scores && typeof entry.scores === 'object' ? entry.scores : {};
+      const notes = String(entry?.notes || '').trim();
+      const progress = computeTechnicalProgressFromScores(scores);
+      const completionPct = progress.totalFields > 0
+        ? Math.max(0, Math.min(100, Math.round((progress.answeredFields / progress.totalFields) * 100)))
+        : 0;
+      const scoreSummary = computeTechnicalAverageScore(scores);
+      const avgScore = Number.isFinite(scoreSummary.averageScore)
+        ? (Math.round(scoreSummary.averageScore * 100) / 100)
+        : '';
+      const updatedAtIso = toTimestampIso(entry?.updatedAt) || (Number(entry?.updatedAtClientMs || 0) > 0
+        ? new Date(Number(entry.updatedAtClientMs)).toISOString()
+        : '');
+      const assessorLabel = String(entry?.assessorName || entry?.assessorKey || '').trim();
+      let firstDetailRow = true;
+      TECHNICAL_SECTION_CONFIG.forEach((section) => {
+        const sectionScores = scores?.[section.key] && typeof scores[section.key] === 'object'
+          ? scores[section.key]
+          : {};
+        section.fields.forEach((fieldKey) => {
+          const scoreValue = readTechnicalScoreValue(sectionScores, fieldKey);
+          lines.push([
+            esc(entry.buildingId),
+            esc(firstDetailRow ? entry.buildingName : ''),
+            esc(firstDetailRow ? assessorLabel : ''),
+            esc(firstDetailRow ? updatedAtIso : ''),
+            esc(section.key),
+            esc(fieldKey),
+            esc(scoreValue > 0 ? scoreValue : ''),
+            esc(''),
+            esc(''),
+            esc(firstDetailRow ? notes : '')
+          ].join(','));
+          firstDetailRow = false;
+          detailCount += 1;
+        });
+      });
+      lines.push([
+        esc(entry.buildingId),
+        esc(entry.buildingName),
+        esc(assessorLabel),
+        esc(updatedAtIso),
+        esc('summary'),
+        esc('overall'),
+        esc(avgScore),
+        esc(completionPct),
+        esc(scoreSummary.scoredFields),
+        esc('')
+      ].join(','));
+      lines.push('');
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const base = (universityId || 'campus').replace(/\s+/g, '-').toLowerCase();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `${base}-technical-assessment-detail-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    setTechnicalProgressMessage(`Exported ${detailCount.toLocaleString()} technical rows from ${sortedEntries.length.toLocaleString()} assessor submissions.`);
+    return;
+  }
   const canonicalAssessment = new Map();
-  Object.entries(buildingAssessments || {}).forEach(([rawId, assessment]) => {
+  Object.entries(sharedTechnicalBuildingAssessments || {}).forEach(([rawId, assessment]) => {
     const canonicalId = bId(rawId || assessment?.originalId || '');
     if (!canonicalId) return;
     canonicalAssessment.set(canonicalId, assessment || {});
@@ -22259,7 +22607,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
   const summaryCount = rows.length;
 
   rows.forEach((row) => {
-    const direct = buildingAssessments?.[row.id] || null;
+    const direct = sharedTechnicalBuildingAssessments?.[row.id] || null;
     const assessment = direct || canonicalAssessment.get(bId(row.id || '')) || {};
     const scores = assessment?.scores && typeof assessment.scores === 'object' ? assessment.scores : {};
     const notes = String(assessment?.notes || '').trim();
@@ -22312,7 +22660,7 @@ const exportTechnicalAssessmentCsv = useCallback(() => {
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   setTechnicalProgressMessage(`Exported ${detailCount.toLocaleString()} technical rows + ${summaryCount.toLocaleString()} building summaries.`);
-}, [technicalProgressRows, buildingAssessments, universityId]);
+}, [technicalProgressRows, sharedTechnicalBuildingAssessments, universityId, technicalAssessmentEntries, technicalAssessmentSaveMode]);
 
 const focusTechnicalBuilding = useCallback((buildingId) => {
   const id = String(buildingId || '').trim();
@@ -22760,23 +23108,6 @@ useEffect(() => {
     })();
   }, [universityId, isSarpyCountyInstance, selectedBuilding]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rawCatalog = await fetchJSON(BUILDING_RESOURCES_URL);
-        if (cancelled) return;
-        const normalized = normalizeBuildingResourceCatalog(rawCatalog);
-        setBuildingResourcesCatalog(normalized);
-      } catch {
-        if (!cancelled) {
-          setBuildingResourcesCatalog({ updatedAt: '', byBuildingKey: new Map() });
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [universityId]);
-
   // ---------- Load floor manifest when building changes ----------
   useEffect(() => {
     let cancelled = false;
@@ -22897,7 +23228,8 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, buildRoomsApiPath, filterRoomsToConfiguredCampus, defaultDashboardTitle, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode]);
+  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode]);
+
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
     const intervalMs = 30 * 60 * 1000;
@@ -23930,19 +24262,16 @@ useEffect(() => {
         }
 
         const shouldLoadConditions = mode === 'admin';
-        const shouldLoadAssessments = mode === 'admin' || technicalMode;
         const shouldLoadMaintenance = mode === 'admin' || isDemoPublicMode;
-        if (!shouldLoadConditions && !shouldLoadAssessments && !shouldLoadMaintenance) {
+        if (!shouldLoadConditions && !shouldLoadMaintenance) {
           setBuildingConditions({});
-          setBuildingAssessments({});
           setMaintenanceIssues([]);
           return;
         }
 
-        // Load condition + assessment + maintenance docs by mode.
-        const [condSnap, assessmentSnap, maintenanceSnap] = await Promise.all([
+        // Load condition + maintenance docs by mode (assessments handled by onSnapshot effect below).
+        const [condSnap, maintenanceSnap] = await Promise.all([
           shouldLoadConditions ? getDocs(conditionsCollection) : Promise.resolve(null),
-          shouldLoadAssessments ? getDocs(assessmentsCollection) : Promise.resolve(null),
           shouldLoadMaintenance ? getDocs(maintenanceIssuesCollection) : Promise.resolve(null)
         ]);
 
@@ -23955,17 +24284,6 @@ useEffect(() => {
           setBuildingConditions(condData);
         } else {
           setBuildingConditions({});
-        }
-
-        if (shouldLoadAssessments && assessmentSnap) {
-          const assessmentData = {};
-          assessmentSnap.forEach((docx) => {
-            const key = docx.data().originalId || docx.id.replace(/__/g, '/');
-            assessmentData[key] = docx.data();
-          });
-          setBuildingAssessments(assessmentData);
-        } else {
-          setBuildingAssessments({});
         }
 
         if (shouldLoadMaintenance && maintenanceSnap) {
@@ -24003,11 +24321,58 @@ useEffect(() => {
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setBuildingConditions({});
-        setBuildingAssessments({});
         setMaintenanceIssues([]);
       }
     })();
-  }, [mode, engagementMode, technicalMode, isDemoPublicMode, universityId, persona, markersCollection, conditionsCollection, assessmentsCollection, maintenanceIssuesCollection]);
+  }, [
+    mode,
+    engagementMode,
+    technicalMode,
+    isDemoPublicMode,
+    universityId,
+    persona,
+    markersCollection,
+    conditionsCollection,
+    maintenanceIssuesCollection
+  ]);
+
+  useEffect(() => {
+    const shouldLoadAssessments = mode === 'admin' || technicalMode;
+    if (!shouldLoadAssessments) {
+      setTechnicalAssessmentEntries([]);
+      setBuildingAssessments({});
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      assessmentsCollection,
+      (snap) => {
+        const loadedEntries = snap.docs.map((docx) => {
+          const data = docx.data() || {};
+          const originalId = getAssessmentEntryBuildingKey(data, docx.id);
+          return { __docId: docx.id, ...data, originalId };
+        });
+        const assessmentData = buildAssessmentMapFromEntries(loadedEntries, {
+          technicalMode,
+          perAssessorMode: technicalAssessmentSaveMode === 'per-assessor',
+          assessorKey: technicalAssessorKey
+        });
+        setTechnicalAssessmentEntries(loadedEntries);
+        setBuildingAssessments(assessmentData);
+      },
+      (err) => {
+        console.error('Failed to subscribe to assessments:', err);
+        setTechnicalAssessmentEntries([]);
+        setBuildingAssessments({});
+      }
+    );
+    return () => unsubscribe();
+  }, [
+    mode,
+    technicalMode,
+    assessmentsCollection,
+    technicalAssessmentSaveMode,
+    technicalAssessorKey
+  ]);
 
 // Keep floorplan building input in sync with map selection (convenience)
 useEffect(() => {
@@ -25391,8 +25756,8 @@ useEffect(() => {
           hasEntries = true;
         }
       });
-    } else if ((mode === 'admin' || technicalMode) && technicalWorkflowActive && Object.keys(buildingAssessments).length > 0) {
-      Object.entries(buildingAssessments).forEach((tuple) => {
+    } else if ((mode === 'admin' || technicalMode) && technicalWorkflowActive && Object.keys(sharedTechnicalBuildingAssessments).length > 0) {
+      Object.entries(sharedTechnicalBuildingAssessments).forEach((tuple) => {
         const buildingId = tuple[0];
         const assessment = tuple[1];
         const sc = assessment && assessment.scores ? assessment.scores : {};
@@ -25425,7 +25790,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, buildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -26722,12 +27087,28 @@ useEffect(() => {
       ''
     ).trim();
     if (!buildingKey) return;
+    const nextAssessment = {
+      ...(savedAssessment || {}),
+      originalId: buildingKey
+    };
+    setTechnicalAssessmentEntries((prev) => {
+      const prior = Array.isArray(prev) ? prev : [];
+      const currentDocId = String(nextAssessment?.__docId || '').trim();
+      const currentAssessorKey = String(nextAssessment?.assessorKey || '').trim();
+      const filtered = prior.filter((entry) => {
+        const entryBuildingKey = getAssessmentEntryBuildingKey(entry, entry?.__docId);
+        if (entryBuildingKey !== buildingKey) return true;
+        if (currentDocId && String(entry?.__docId || '').trim() === currentDocId) return false;
+        if (currentAssessorKey && String(entry?.assessorKey || '').trim() === currentAssessorKey) return false;
+        return true;
+      });
+      return [...filtered, nextAssessment];
+    });
     setBuildingAssessments((prev) => ({
       ...(prev || {}),
       [buildingKey]: {
         ...(prev?.[buildingKey] || {}),
-        ...(savedAssessment || {}),
-        originalId: buildingKey
+        ...nextAssessment
       }
     }));
   }, [selectedBuildingId]);
@@ -27078,7 +27459,7 @@ useEffect(() => {
       </div>
     )}
 
-    {showAuthAccessControls && !presentationMode && (
+    {showControlsToggle && (
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
       </button>
@@ -27820,16 +28201,172 @@ useEffect(() => {
       </div>
     )}
 
+    {buildingResourceModal.open && isHastingsCollegeInstance && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10005,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.35)'
+        }}
+      >
+        <div
+          className="mf-ai-modal-panel"
+          style={{
+            width: 'min(760px, 94vw)',
+            maxHeight: '84vh',
+            overflowY: 'auto',
+            padding: 14
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              {buildingResourceModal.kind === 'remodel' ? 'Planning / Remodel Docs' : 'Deferred Maintenance + Condition'}
+              <div style={{ marginTop: 2, fontSize: 12, color: '#475467', fontWeight: 500 }}>
+                {buildingResourceModal.buildingName || activeBuildingName}
+              </div>
+            </div>
+            <button className="btn" onClick={closeBuildingResourceModal}>Close</button>
+          </div>
+
+          {buildingResourceModal.kind === 'remodel' ? (
+            <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+              {(buildingResourceModal.entry?.remodelPdfs || []).length ? (
+                buildingResourceModal.entry.remodelPdfs.map((doc, idx) => {
+                  const href = resolveBuildingResourceHref(doc?.url);
+                  const isImage = isImageResourceUrl(href);
+                  return (
+                    <div
+                      key={`building-resource-remodel-${idx}`}
+                      style={{
+                        border: '1px solid #d0d5dd',
+                        borderRadius: 8,
+                        padding: 10,
+                        background: '#f8fafc'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{doc?.label || `Planning Doc ${idx + 1}`}</div>
+                      {doc?.description ? (
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#475467' }}>{doc.description}</div>
+                      ) : null}
+                      <div style={{ marginTop: 6 }}>
+                        <a href={href} target="_blank" rel="noreferrer">Open file</a>
+                      </div>
+                      {isImage ? (
+                        <div style={{ marginTop: 8 }}>
+                          <img
+                            src={href}
+                            alt={doc?.label || `Planning Doc ${idx + 1}`}
+                            style={{ width: '100%', borderRadius: 6, border: '1px solid #d0d5dd' }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ marginTop: 10, fontSize: 13, color: '#475467' }}>
+                  No planning documents are currently linked for this building.
+                </div>
+              )}
+            </div>
+          ) : (
+            (() => {
+              const deferred = buildingResourceModal.entry?.deferredMaintenance || null;
+              const condition = buildingResourceModal.entry?.conditionAssessment || null;
+              const costSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
+              const conditionSections = [
+                { label: 'Architecture', scores: condition?.architecture || {} },
+                { label: 'Engineering', scores: condition?.engineering || {} },
+                { label: 'Functionality', scores: condition?.functionality || {} }
+              ].filter((section) => Object.keys(section.scores || {}).length > 0);
+              return (
+                <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                  {deferred ? (
+                    <div style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: 10, background: '#fffdf7' }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>Deferred Maintenance</div>
+                      {deferred.summary ? <div><b>Summary:</b> {deferred.summary}</div> : null}
+                      {deferred.priority ? <div><b>Priority:</b> {deferred.priority}</div> : null}
+                      {costSummary ? <div><b>Cost:</b> {costSummary}</div> : null}
+                      {deferred.sourceLabel ? <div><b>Source:</b> {deferred.sourceLabel}</div> : null}
+                      {deferred.updatedAt ? <div><b>Updated:</b> {deferred.updatedAt}</div> : null}
+                      {deferred.sourceUrl ? (
+                        <div style={{ marginTop: 4 }}>
+                          <a href={resolveBuildingResourceHref(deferred.sourceUrl)} target="_blank" rel="noreferrer">Open source file</a>
+                        </div>
+                      ) : null}
+                      {deferred.items?.length ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>Top Items</div>
+                          <div style={{ display: 'grid', gap: 4 }}>
+                            {deferred.items.map((item, idx) => (
+                              <div key={`deferred-item-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
+                                <span>{item.label}</span>
+                                <span style={{ whiteSpace: 'nowrap' }}>
+                                  {item.cost != null ? formatMaintenanceCurrency(item.cost) : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {hasConditionAssessmentContent(condition) ? (
+                    <div style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: 10, background: '#f8fbff' }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>Condition Assessment</div>
+                      {condition?.averageScore != null ? <div><b>Average Score:</b> {Number(condition.averageScore).toFixed(2)}</div> : null}
+                      {condition?.scale ? <div><b>Scale:</b> {condition.scale}</div> : null}
+                      {condition?.notes ? <div><b>Notes:</b> {condition.notes}</div> : null}
+                      {condition?.sourceLabel ? <div><b>Source:</b> {condition.sourceLabel}</div> : null}
+                      {condition?.updatedAt ? <div><b>Updated:</b> {condition.updatedAt}</div> : null}
+                      {condition?.sourceUrl ? (
+                        <div style={{ marginTop: 4 }}>
+                          <a href={resolveBuildingResourceHref(condition.sourceUrl)} target="_blank" rel="noreferrer">Open source file</a>
+                        </div>
+                      ) : null}
+                      {conditionSections.length ? (
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                          {conditionSections.map((section) => (
+                            <div key={`condition-section-${section.label}`}>
+                              <div style={{ fontWeight: 600, marginBottom: 4 }}>{section.label}</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 4, fontSize: 12 }}>
+                                {Object.entries(section.scores).map(([key, value]) => (
+                                  <React.Fragment key={`${section.label}-${key}`}>
+                                    <span>{formatTechnicalFieldLabel(key)}</span>
+                                    <span>{value}</span>
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </div>
+    )}
+
       {!presentationMode && !maintenanceWorkflowActive && (
       <div className="mf-right-rail">
         <div className="mf-right-logos">
-          <div className="logo-box">
-            <img
-              className="mf-logo mf-logo--hc"
-              src={assetUrl(universityLogoFile)}
-              alt={universityLogoAlt}
-            />
-          </div>
+          {universityLogoFile && (
+            <div className="logo-box">
+              <img
+                className="mf-logo mf-logo--hc"
+                src={assetUrl(universityLogoFile)}
+                alt={universityLogoAlt}
+              />
+            </div>
+          )}
           <div className="logo-box">
             <div className="mapfluence-title">MAPFLUENCE</div>
             <img
@@ -27916,6 +28453,13 @@ useEffect(() => {
             panelPos={technicalPanelPos || panelAnchor}
             isAdminRole={isAdminUser}
             canWriteCloud={isTechnicalOnlyMode ? true : isAdminUser}
+            assessmentSaveMode={technicalAssessmentSaveMode}
+            assessorName={technicalAssessorLabel}
+            assessorKey={technicalAssessorKey}
+            draftOwnerKey={technicalAssessmentSaveMode === 'per-assessor' ? (technicalAssessorDeviceId || technicalAssessorKey) : ''}
+            onAssessorNameChange={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode ? setTechnicalAssessorName : undefined}
+            allowAssessorEdit={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode}
+            enablePhotoUpload={universityId === 'cherokee-mental-health'}
             panelRef={technicalPanelRef}
             dragHandleProps={technicalPanelDragHandleProps}
             onClose={() => {
@@ -28005,9 +28549,9 @@ useEffect(() => {
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
-              onOpenDeferredMaintenance={() => openBuildingResourceModal('deferred')}
+              onOpenDeferredMaintenance={hasDeferredMaintenanceForActiveBuilding ? () => openBuildingResourceModal('deferred') : undefined}
               deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
-              onOpenRemodelScenarios={() => openBuildingResourceModal('remodel')}
+              onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
               remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               onClose={() => {
                 setIsBuildingPanelCollapsed(true);
@@ -28052,9 +28596,9 @@ useEffect(() => {
               onLoadFloorplan={loadSelectedFloor}
               onUnloadFloorplan={handleUnloadFloorplan}
               onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
-              onOpenDeferredMaintenance={() => openBuildingResourceModal('deferred')}
+              onOpenDeferredMaintenance={hasDeferredMaintenanceForActiveBuilding ? () => openBuildingResourceModal('deferred') : undefined}
               deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
-              onOpenRemodelScenarios={() => openBuildingResourceModal('remodel')}
+              onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
               remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               colorMode={floorColorMode}
               onChangeColorMode={(mode) => {
@@ -29415,6 +29959,39 @@ useEffect(() => {
                   <option value={TECHNICAL_BUILDING_COLOR_MODE.TECHNICAL_SCORE}>Technical Score</option>
                 </select>
               </div>
+              <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#475569' }}>Stage Legend</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  {[
+                    { label: 'No progress', color: progressColors[0] },
+                    { label: 'Started', color: progressColors[1] },
+                    { label: 'Partial', color: progressColors[2] },
+                    { label: 'All sections', color: progressColors[3] }
+                  ].map((item) => (
+                    <div
+                      key={`technical-stage-${item.label}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 10.5,
+                        color: '#334155'
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 999,
+                          background: item.color,
+                          flexShrink: 0
+                        }}
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
                 <button
                   className="btn"
@@ -29493,7 +30070,7 @@ useEffect(() => {
                                 padding: '1px 6px',
                                 borderRadius: 999,
                                 background: '#dcfce7',
-                                border: '1px solid #86efac',
+                                border: '1px solid #16a34a',
                                 color: '#166534',
                                 fontWeight: 700
                               }}
@@ -29516,6 +30093,7 @@ useEffect(() => {
                       <div style={{ marginTop: 5, fontSize: 10.5, color: '#475569' }}>
                         {row.answeredFields}/{row.totalFields} scored, {row.startedSections}/3 sections started
                         {row.missingFieldCount > 0 ? `, ${row.missingFieldCount} fields missing` : ''}
+                        {row.submissionCount > 1 ? `, ${row.submissionCount} submissions` : ''}
                       </div>
                       <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {row.missingSections.length ? row.missingSections.map((missing) => (
@@ -29538,8 +30116,8 @@ useEffect(() => {
                               fontSize: 10,
                               padding: '2px 6px',
                               borderRadius: 999,
-                              background: '#ecfdf5',
-                              border: '1px solid #bbf7d0',
+                              background: '#dcfce7',
+                              border: '1px solid #16a34a',
                               color: '#166534'
                             }}
                           >
@@ -30393,7 +30971,7 @@ useEffect(() => {
               </button>
             </div>
 
-            {aiCreatePlanningScenarioAllowed && (
+            {(mode === 'admin' || publicPlanningScenarioAllowed) && (
               <div style={{ marginTop: 6 }}>
                 <button
                   disabled={aiIsDown}
@@ -31731,5 +32309,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
 
