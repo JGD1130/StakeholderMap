@@ -11,6 +11,7 @@ import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
 import { fileURLToPath } from "url";
 import { validateAiQuery } from "./validateAiQuery.js";
+import archiver from "archiver";
 
 const app = express();
 app.use(cors({
@@ -6795,7 +6796,6 @@ app.post("/api/photo-export", async (req, res) => {
     return res.status(400).json({ error: "No files provided." });
   }
   try {
-    const archiver = (await import("archiver")).default;
     const archive = archiver("zip", { zlib: { level: 6 } });
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", 'attachment; filename="Cherokee_Assessment_Photos.zip"');
@@ -6804,16 +6804,20 @@ app.post("/api/photo-export", async (req, res) => {
       if (!url || !filename) continue;
       try {
         const resp = await fetch(url);
-        if (!resp.ok) continue;
+        if (!resp.ok) {
+          console.warn(`[photo-export] skip ${filename}: HTTP ${resp.status}`);
+          continue;
+        }
         const buf = Buffer.from(await resp.arrayBuffer());
         const safePath = `${String(folder || "Unknown").replace(/[^a-zA-Z0-9 _-]/g, "_")}/${filename}`;
         archive.append(buf, { name: safePath });
-      } catch {
-        // skip files that fail to download
+      } catch (fileErr) {
+        console.warn(`[photo-export] skip ${filename}:`, fileErr.message);
       }
     }
     await archive.finalize();
   } catch (err) {
+    console.error("[photo-export] error:", err);
     if (!res.headersSent) {
       res.status(500).json({ error: String(err?.message || err) });
     }
