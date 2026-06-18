@@ -8306,6 +8306,7 @@ const BUILDINGS_LIST = [
   { name: 'Taylor Hall', folder: 'Taylor Hall' },
   { name: 'Wilson Center', folder: 'WilsonCenter' },
   { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
+  { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
 
   // add more as you add folders...
 ];
