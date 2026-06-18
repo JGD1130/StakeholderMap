@@ -4,7 +4,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import jsPDF from 'jspdf';
 import { db, storage } from '../firebaseConfig';
-import { ref as storageRef, listAll, getDownloadURL } from 'firebase/storage';
+import { ref as storageRef, listAll, getBlob } from 'firebase/storage';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, setDoc, deleteDoc, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import './StakeholderMap.css';
@@ -20748,18 +20748,14 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       await Promise.all(buildingsList.prefixes.map(async (buildingFolder) => {
         const buildingName = buildingFolder.name;
         const photosRef = storageRef(storage, `${buildingFolder.fullPath}/photos`);
-        let photoItems;
         try {
           const photosList = await listAll(photosRef);
-          photoItems = photosList.items;
+          if (photosList.items.length) byBuilding[buildingName] = photosList.items;
         } catch {
-          return; // no photos folder for this building
+          // no photos folder for this building
         }
-        if (!photoItems.length) return;
-        const urls = await Promise.all(photoItems.map((item) => getDownloadURL(item)));
-        byBuilding[buildingName] = urls.filter(Boolean);
       }));
-      const totalPhotos = Object.values(byBuilding).reduce((sum, urls) => sum + urls.length, 0);
+      const totalPhotos = Object.values(byBuilding).reduce((sum, items) => sum + items.length, 0);
       if (!totalPhotos) {
         setCherokeePhotoExportMessage('No photos found in any assessment.');
         setExportingCherokeePhotos(false);
@@ -20768,18 +20764,14 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       const zip = new JSZip();
       let fetched = 0;
       let failed = 0;
-      for (const [building, urls] of Object.entries(byBuilding)) {
+      for (const [building, items] of Object.entries(byBuilding)) {
         const safeName = building.replace(/[^a-zA-Z0-9 _-]/g, '_');
         const folder = zip.folder(safeName);
-        for (let i = 0; i < urls.length; i++) {
+        for (const item of items) {
           try {
-            const resp = await fetch(urls[i]);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const blob = await resp.blob();
-            const urlPath = urls[i].split('?')[0];
-            const rawName = urlPath.split('/').pop() || `photo_${i + 1}`;
-            const ext = rawName.includes('.') ? '' : '.jpg';
-            folder.file(`${rawName}${ext}`, blob);
+            const blob = await getBlob(item);
+            const ext = item.name.includes('.') ? '' : '.jpg';
+            folder.file(`${item.name}${ext}`, blob);
             fetched++;
           } catch {
             failed++;
