@@ -1,5 +1,0 @@
-  const onPanelLoadFloor = useCallback(async () => {
-    const loaded = await handleLoadFloorplan();
-    if (loaded) setIsBuildingPanelCollapsed(true);
-  }, [handleLoadFloorplan]);
-
