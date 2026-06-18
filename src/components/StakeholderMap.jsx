@@ -4,7 +4,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import jsPDF from 'jspdf';
 import { db, storage } from '../firebaseConfig';
-import { ref as storageRef, listAll, getBlob } from 'firebase/storage';
+import { ref as storageRef, listAll, getDownloadURL } from 'firebase/storage';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, setDoc, deleteDoc, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import './StakeholderMap.css';
@@ -20740,7 +20740,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setExportingCherokeePhotos(true);
     setCherokeePhotoExportMessage('');
     try {
-      const { default: JSZip } = await import('jszip');
       // List all building folders directly from Firebase Storage
       const buildingsRef = storageRef(storage, 'cherokee-mental-health/buildings');
       const buildingsList = await listAll(buildingsRef);
@@ -20761,34 +20760,41 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         setExportingCherokeePhotos(false);
         return;
       }
-      const zip = new JSZip();
-      let fetched = 0;
-      let failed = 0;
-      for (const [building, items] of Object.entries(byBuilding)) {
-        const safeName = building.replace(/[^a-zA-Z0-9 _-]/g, '_');
-        const folder = zip.folder(safeName);
-        for (const item of items) {
-          try {
-            const blob = await getBlob(item);
-            const ext = item.name.includes('.') ? '' : '.jpg';
-            folder.file(`${item.name}${ext}`, blob);
-            fetched++;
-          } catch {
-            failed++;
-          }
-        }
+      // Build file list with download URLs — SDK call, no CORS issue
+      const files = [];
+      await Promise.all(
+        Object.entries(byBuilding).map(async ([building, items]) => {
+          await Promise.all(items.map(async (item) => {
+            try {
+              const url = await getDownloadURL(item);
+              const ext = item.name.includes('.') ? '' : '.jpg';
+              files.push({ url, filename: `${item.name}${ext}`, folder: building });
+            } catch {
+              // skip
+            }
+          }));
+        })
+      );
+      if (!files.length) {
+        setCherokeePhotoExportMessage('Could not resolve download URLs.');
+        setExportingCherokeePhotos(false);
+        return;
       }
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      // Server-side fetch + ZIP to avoid CORS on direct storage downloads
+      const aiBase = getAiBaseUrl();
+      const zipResp = await fetch(`${aiBase}/ai/api/photo-export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files }),
+      });
+      if (!zipResp.ok) throw new Error(`Server returned ${zipResp.status}`);
+      const zipBlob = await zipResp.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(zipBlob);
       link.download = 'Cherokee_Assessment_Photos.zip';
       link.click();
       URL.revokeObjectURL(link.href);
-      setCherokeePhotoExportMessage(
-        failed > 0
-          ? `Downloaded ${fetched} photo${fetched !== 1 ? 's' : ''} (${failed} failed).`
-          : `Downloaded ${fetched} photo${fetched !== 1 ? 's' : ''}.`
-      );
+      setCherokeePhotoExportMessage(`Downloaded ${files.length} photo${files.length !== 1 ? 's' : ''}.`);
     } catch (err) {
       console.error('Cherokee photo export failed:', err);
       setCherokeePhotoExportMessage('Export failed — see console for details.');
