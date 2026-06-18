@@ -11,7 +11,7 @@ import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
 import { fileURLToPath } from "url";
 import { validateAiQuery } from "./validateAiQuery.js";
-import archiver from "archiver";
+const archiver = require('archiver');
 
 const app = express();
 app.use(cors({
