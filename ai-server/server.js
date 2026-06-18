@@ -667,13 +667,13 @@ async function buildUserContentWithAiDocs(payload, { warnLabel = "ai", includeDo
 function isDocPriorityQuestion(question) {
   const q = String(question || "").trim().toLowerCase();
   if (!q) return false;
-  return /(history|historic|origin|background|founded|founded in|built|construction|renovation|renovated|named after|namesake|timeline|master plan|facilities plan|strategic plan|mission|vision|deferred maintenance|facility condition|building condition|condition score|assessment score|capital renewal|roofing cost|mechanical cost)/i.test(q);
+  return /(history|historic|origin|background|founded|founded in|built|construction|renovation|renovated|named after|namesake|timeline|master plan|facilities plan|strategic plan|mission|vision)/i.test(q);
 }
 
 function isDocDependentQuantQuestion(question) {
   const q = String(question || "").trim().toLowerCase();
   if (!q) return false;
-  return /(enrollment|projected|projection|forecast|headcount|fte|admissions|demographic|program growth|program decline|gain or lose|grow or shrink|deferred maintenance|facility condition|condition score|assessment score|roofing|mechanical)/i.test(q);
+  return /(enrollment|projected|projection|forecast|headcount|fte|admissions|demographic|program growth|program decline|gain or lose|grow or shrink)/i.test(q);
 }
 
 function parseYearCell(value) {
@@ -1180,12 +1180,6 @@ const AIRTABLE_ROOM_TYPE_TABLE = process.env.AIRTABLE_ROOM_TYPE_TABLE || "";
 const AIRTABLE_ROOM_TYPE_PRIMARY_FIELD = process.env.AIRTABLE_ROOM_TYPE_PRIMARY_FIELD || "";
 const AIRTABLE_DEPT_TABLE = process.env.AIRTABLE_DEPT_TABLE || "";
 const AIRTABLE_DEPT_PRIMARY_FIELD = process.env.AIRTABLE_DEPT_PRIMARY_FIELD || "";
-const AIRTABLE_CAMPUS_FIELD = process.env.AIRTABLE_CAMPUS_FIELD || "Campus";
-const AIRTABLE_CAMPUS_FILTER_FIELDS = String(process.env.AIRTABLE_CAMPUS_FILTER_FIELDS || "")
-  .split(",")
-  .map((v) => v.trim())
-  .filter(Boolean);
-const AIRTABLE_VIEW_BY_CAMPUS = String(process.env.AIRTABLE_VIEW_BY_CAMPUS || "").trim();
 
 const linkedRecordCache = new Map();
 const tablePrimaryFieldCache = new Map();
@@ -1243,7 +1237,7 @@ async function fetchAirtableRows(filterFormula, viewOverride) {
   }
 }
 
-async function fetchAirtableAllRecords({ table, view, fields, filterFormula }) {
+async function fetchAirtableAllRecords({ table, view, fields }) {
   const records = [];
   let offset = null;
 
@@ -1256,7 +1250,6 @@ async function fetchAirtableAllRecords({ table, view, fields, filterFormula }) {
           if (field) params.append("fields[]", field);
         });
       }
-      if (filterFormula) params.set("filterByFormula", filterFormula);
       params.set("pageSize", "100");
       if (offset) params.set("offset", offset);
 
@@ -1337,75 +1330,6 @@ function uniqueStrings(values = []) {
   return out;
 }
 
-function normalizeCampusToken(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function parseCampusViewMap(raw = "") {
-  const out = new Map();
-  String(raw || "")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .forEach((entry) => {
-      const eqIdx = entry.indexOf("=");
-      if (eqIdx < 1) return;
-      const campus = normalizeCampusToken(entry.slice(0, eqIdx));
-      const view = entry.slice(eqIdx + 1).trim();
-      if (!campus || !view) return;
-      out.set(campus, view);
-    });
-  return out;
-}
-
-const AIRTABLE_VIEW_BY_CAMPUS_MAP = parseCampusViewMap(AIRTABLE_VIEW_BY_CAMPUS);
-
-function normalizeCampusValues(values = []) {
-  const input = Array.isArray(values) ? values : [values];
-  const out = new Set();
-  input.forEach((value) => {
-    const raw = String(value || "").trim();
-    if (!raw) return;
-    out.add(raw);
-    out.add(raw.toLowerCase());
-    const token = normalizeCampusToken(raw);
-    if (token) out.add(token);
-    if (token.includes("-")) out.add(token.replace(/-/g, " "));
-  });
-  return Array.from(out);
-}
-
-function resolveAirtableViewForCampus(values = []) {
-  if (!AIRTABLE_VIEW_BY_CAMPUS_MAP.size) return "";
-  const normalized = normalizeCampusValues(values);
-  for (const value of normalized) {
-    const key = normalizeCampusToken(value);
-    if (!key) continue;
-    const mapped = AIRTABLE_VIEW_BY_CAMPUS_MAP.get(key);
-    if (mapped) return mapped;
-  }
-  return "";
-}
-
-function buildCampusFilterFormula(values = []) {
-  const normalizedValues = normalizeCampusValues(values);
-  if (!normalizedValues.length) return "";
-  const fieldCandidates = uniqueStrings([
-    AIRTABLE_CAMPUS_FIELD,
-    ...AIRTABLE_CAMPUS_FILTER_FIELDS,
-    "Campus",
-    "Campus ID",
-    "CampusId",
-    "Campus Name"
-  ]);
-  if (!fieldCandidates.length) return "";
-  return buildFieldEqualsClause(fieldCandidates, normalizedValues);
-}
-
 function buildFieldEqualsClause(fields = [], values = []) {
   const fieldList = uniqueStrings(fields);
   const valueList = uniqueStrings(values);
@@ -1424,11 +1348,6 @@ function buildFieldEqualsClause(fields = [], values = []) {
   });
   if (!clauses.length) return null;
   return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
-}
-
-function isAirtableInvalidFilterError(err) {
-  const msg = String(err?.message || err || "");
-  return /(INVALID_FILTER_BY_FORMULA|Unknown field names|formula for filtering records is invalid|invalid formula)/i.test(msg);
 }
 
 async function fetchAirtableTableRecords(tableName, { filterFormula, view } = {}) {
@@ -1659,13 +1578,7 @@ function expandFloorValues(values = []) {
 app.get("/api/rooms", async (req, res) => {
   try {
     const table = AIRTABLE_TABLE || "Rooms";
-    const campusQueryValues = uniqueStrings([
-      ...(Array.isArray(req?.query?.campus) ? req.query.campus : [req?.query?.campus]),
-      ...(Array.isArray(req?.query?.floorplanCampus) ? req.query.floorplanCampus : [req?.query?.floorplanCampus])
-    ]);
-    const campusViewOverride = resolveAirtableViewForCampus(campusQueryValues);
-    const view = req.query.view || campusViewOverride || AIRTABLE_VIEW || "Mapfluence_Rooms";
-    const campusFilterFormula = buildCampusFilterFormula(campusQueryValues);
+    const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
 
     if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !table) {
       return res.status(500).json({ ok: false, error: "Missing Airtable config." });
@@ -1718,30 +1631,11 @@ app.get("/api/rooms", async (req, res) => {
         ? uniqueStrings([...explicitFields, ...requiredFields])
         : null;
 
-    let records;
-    try {
-      records = await fetchAirtableAllRecords({
-        table,
-        view,
-        fields: requestFields && requestFields.length ? requestFields : null,
-        filterFormula: campusFilterFormula || null
-      });
-    } catch (err) {
-      const canRetryWithoutFormula = Boolean(campusFilterFormula) && isAirtableInvalidFilterError(err);
-      if (!canRetryWithoutFormula) {
-        throw err;
-      }
-      console.warn(
-        "[api/rooms] campus filter formula failed; retrying without filterByFormula.",
-        { formula: campusFilterFormula, error: err?.message || String(err) }
-      );
-      records = await fetchAirtableAllRecords({
-        table,
-        view,
-        fields: requestFields && requestFields.length ? requestFields : null,
-        filterFormula: null
-      });
-    }
+    const records = await fetchAirtableAllRecords({
+      table,
+      view,
+      fields: requestFields && requestFields.length ? requestFields : null
+    });
 
     const rooms = records.map((r) => {
       const f = r.fields || {};
