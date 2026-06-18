@@ -8,7 +8,7 @@ Mapfluence is a multi-tenant geospatial intelligence platform built for higher e
 
 Mapfluence serves three distinct user types from the same deployment:
 
-**Facilities administrators and planners** get an interactive 3D campus map with building footprints, room-level floor plans, and a full suite of AI tools: natural-language space explanations at any zoom level, what-if relocation scenarios, and open Q&A against the live campus data. Real-time Firestore listeners mean annotations and assessment changes appear instantly for all collaborators.
+**Facilities administrators and planners** get an interactive campus map with building footprints, room-level floor plans, and a full suite of AI tools: natural-language space explanations at any zoom level, what-if relocation scenarios, and open Q&A against the live campus data. Real-time Firestore listeners mean annotations and assessment changes appear instantly for all collaborators.
 
 **Public and stakeholder audiences** see a curated, read-only view of the campus — department occupancy, enrollment projections, and space summaries — with embedded survey flows for collecting facility feedback.
 
