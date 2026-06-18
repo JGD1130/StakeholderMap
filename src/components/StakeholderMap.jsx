@@ -3,7 +3,8 @@ const { useRef, useEffect, useState, useCallback, useMemo, useLayoutEffect } = R
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import jsPDF from 'jspdf';
-import { db } from '../firebaseConfig';
+import { db, storage } from '../firebaseConfig';
+import { ref as storageRef, listAll, getDownloadURL } from 'firebase/storage';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, setDoc, deleteDoc, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import './StakeholderMap.css';
@@ -20740,16 +20741,24 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setCherokeePhotoExportMessage('');
     try {
       const { default: JSZip } = await import('jszip');
+      // List all building folders directly from Firebase Storage
+      const buildingsRef = storageRef(storage, 'cherokee-mental-health/buildings');
+      const buildingsList = await listAll(buildingsRef);
       const byBuilding = {};
-      Object.values(buildingAssessments).forEach((assessment) => {
-        const urls = Array.isArray(assessment.photoUrls) ? assessment.photoUrls : [];
-        if (!urls.length) return;
-        const name = String(assessment.buildingName || assessment.originalId || 'Unknown').trim();
-        if (!byBuilding[name]) byBuilding[name] = [];
-        urls.forEach((url) => {
-          if (url && !byBuilding[name].includes(url)) byBuilding[name].push(url);
-        });
-      });
+      await Promise.all(buildingsList.prefixes.map(async (buildingFolder) => {
+        const buildingName = buildingFolder.name;
+        const photosRef = storageRef(storage, `${buildingFolder.fullPath}/photos`);
+        let photoItems;
+        try {
+          const photosList = await listAll(photosRef);
+          photoItems = photosList.items;
+        } catch {
+          return; // no photos folder for this building
+        }
+        if (!photoItems.length) return;
+        const urls = await Promise.all(photoItems.map((item) => getDownloadURL(item)));
+        byBuilding[buildingName] = urls.filter(Boolean);
+      }));
       const totalPhotos = Object.values(byBuilding).reduce((sum, urls) => sum + urls.length, 0);
       if (!totalPhotos) {
         setCherokeePhotoExportMessage('No photos found in any assessment.');
@@ -20794,7 +20803,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     } finally {
       setExportingCherokeePhotos(false);
     }
-  }, [buildingAssessments]);
+  }, []);
 
   const exportSpaceCsv = useCallback(async (explicitBuilding, modeOverride) => {
     const buildingArg = (explicitBuilding && typeof explicitBuilding === 'object') ? null : explicitBuilding;
