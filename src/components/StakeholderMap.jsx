@@ -29496,6 +29496,23 @@ useEffect(() => {
               >
                 Export Missing Items CSV
               </button>
+              {universityId === 'cherokee-mental-health' && (
+                <>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', marginTop: 6 }}
+                    onClick={handleExportCherokeePhotos}
+                    disabled={exportingCherokeePhotos}
+                  >
+                    {exportingCherokeePhotos ? 'Building ZIP...' : 'Export All Photos (ZIP)'}
+                  </button>
+                  {cherokeePhotoExportMessage && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#5b6677' }}>
+                      {cherokeePhotoExportMessage}
+                    </div>
+                  )}
+                </>
+              )}
               {!!technicalProgressMessage && (
                 <div style={{ marginTop: 6, fontSize: 11, color: '#5b6677' }}>
                   {technicalProgressMessage}
@@ -30285,36 +30302,6 @@ useEffect(() => {
                 )}
               </div>
               )}
-
-            {universityId === 'cherokee-mental-health' && isAdminMode && (
-              <div
-                className="floorplans-section"
-                style={{
-                  marginTop: 8,
-                  padding: 6,
-                  borderRadius: 8,
-                  border: '1px solid rgba(0,0,0,0.25)',
-                  background: 'linear-gradient(180deg, rgba(235,245,255,0.9), rgba(220,235,255,0.9))'
-                }}
-              >
-                <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Assessment Photos</h4>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <button
-                    className="btn"
-                    style={{ width: '100%' }}
-                    onClick={handleExportCherokeePhotos}
-                    disabled={exportingCherokeePhotos}
-                  >
-                    {exportingCherokeePhotos ? 'Building ZIP...' : 'Export All Photos (ZIP)'}
-                  </button>
-                </div>
-                {cherokeePhotoExportMessage && (
-                  <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>
-                    {cherokeePhotoExportMessage}
-                  </div>
-                )}
-              </div>
-            )}
 
           {/* Mode */}
           {/*
