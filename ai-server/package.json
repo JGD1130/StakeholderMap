@@ -1,7 +1,8 @@
 {
   "name": "mapfluence-ai-server",
   "private": true,
-"scripts": {
+  "type": "module",
+  "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
