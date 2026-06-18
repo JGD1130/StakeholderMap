@@ -20781,8 +20781,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         return;
       }
       // Server-side fetch + ZIP to avoid CORS on direct storage downloads
-      const aiBase = getAiBaseUrl();
-      const zipResp = await fetch(`${aiBase}/ai/api/photo-export`, {
+      const zipResp = await fetch(resolveAiUrl('/ai/api/photo-export'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files }),

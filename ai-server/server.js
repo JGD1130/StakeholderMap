@@ -6683,7 +6683,7 @@ app.get("/ai/usage-summary", async (req, res) => {
   }
 });
 
-app.post("/ai/api/photo-export", async (req, res) => {
+app.post("/api/photo-export", async (req, res) => {
   const { files } = req.body || {};
   if (!Array.isArray(files) || !files.length) {
     return res.status(400).json({ error: "No files provided." });
