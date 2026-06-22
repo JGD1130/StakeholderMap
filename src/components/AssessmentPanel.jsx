@@ -22,6 +22,11 @@ const assessmentTemplate = {
     functionality: { fireAlarm: 0, spaceSize: 0, technology: 0 },
   },
 };
+const CHEROKEE_EXTRA_FUNCTIONALITY = { physicalSecurity: 0, ligatureResistance: 0, techAbledSpaces: 0 };
+const getEffectiveFunctionalityTemplate = (universityId) =>
+  universityId === 'cherokee-mental-health'
+    ? { ...assessmentTemplate.scores.functionality, ...CHEROKEE_EXTRA_FUNCTIONALITY }
+    : assessmentTemplate.scores.functionality;
 const TECHNICAL_FIELD_ALIASES = {
   exterior: ['buildingExterior'],
   entrances: ['entry', 'entrys', 'entries'],
@@ -66,6 +71,9 @@ const CATEGORY_LABELS = {
 const FIELD_LABELS = {
   fireAlarm: 'Fire Alarm',
   spaceSize: 'Space Size',
+  physicalSecurity: 'Physical Security',
+  ligatureResistance: 'Ligature-Resistance',
+  techAbledSpaces: 'Tech-Abled Spaces',
   codesAndAccessibility: 'Codes and Accessibility',
   lifeSafety: 'Life Safety',
   interiorFinishes: 'Interior Finishes',
@@ -74,7 +82,8 @@ const FIELD_LABELS = {
 const formatCategoryLabel = (key) => CATEGORY_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '');
 const formatFieldLabel = (key) => FIELD_LABELS[key] || key.replace(/([A-Z])/g, ' $1').trim();
 
-const cloneAssessment = (source, buildingNameFallback = '') => {
+const cloneAssessment = (source, buildingNameFallback = '', universityId = '') => {
+  const functionalityTemplate = getEffectiveFunctionalityTemplate(universityId);
   const base = source && typeof source === 'object' ? source : {};
   const scores = base.scores && typeof base.scores === 'object' ? base.scores : {};
   const architecture = scores.architecture && typeof scores.architecture === 'object' ? scores.architecture : {};
@@ -89,7 +98,7 @@ const cloneAssessment = (source, buildingNameFallback = '') => {
     scores: {
       architecture: normalizeScoreSection(architecture, assessmentTemplate.scores.architecture),
       engineering: normalizeScoreSection(engineering, assessmentTemplate.scores.engineering),
-      functionality: normalizeScoreSection(functionality, assessmentTemplate.scores.functionality)
+      functionality: normalizeScoreSection(functionality, functionalityTemplate)
     }
   };
 };
@@ -163,7 +172,7 @@ const AssessmentPanel = ({
 
   useEffect(() => {
     if (!buildingId) return;
-    const baseAssessment = cloneAssessment(assessments?.[buildingId], buildingId);
+    const baseAssessment = cloneAssessment(assessments?.[buildingId], buildingId, universityId);
     let restoredDraft = null;
     if (draftStorageKey) {
       try {
@@ -172,7 +181,7 @@ const AssessmentPanel = ({
           const parsed = JSON.parse(raw);
           if (parsed && parsed.assessment) {
             restoredDraft = {
-              assessment: cloneAssessment(parsed.assessment, buildingId),
+              assessment: cloneAssessment(parsed.assessment, buildingId, universityId),
               savedAt: Number(parsed.savedAt) || 0
             };
           }
@@ -232,7 +241,7 @@ const AssessmentPanel = ({
   const onAssessmentChange = useCallback((updater) => {
     setLocalAssessment((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      return cloneAssessment(next, buildingId);
+      return cloneAssessment(next, buildingId, universityId);
     });
     markDraftDirty();
   }, [markDraftDirty, buildingId]);
@@ -368,7 +377,7 @@ const AssessmentPanel = ({
     const sections = [
       { key: 'architecture', fields: Object.keys(assessmentTemplate.scores.architecture || {}) },
       { key: 'engineering', fields: Object.keys(assessmentTemplate.scores.engineering || {}) },
-      { key: 'functionality', fields: Object.keys(assessmentTemplate.scores.functionality || {}) }
+      { key: 'functionality', fields: Object.keys(getEffectiveFunctionalityTemplate(universityId)) }
     ];
     let total = 0;
     let answered = 0;
@@ -392,7 +401,7 @@ const AssessmentPanel = ({
     });
     const pct = total ? Math.round((answered / total) * 100) : 0;
     return { total, answered, started, missingSections, pct };
-  }, [localAssessment]);
+  }, [localAssessment, universityId]);
 
   if (!buildingId) return null;
 
