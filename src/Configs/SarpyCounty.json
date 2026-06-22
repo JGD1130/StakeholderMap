@@ -1,6 +1,7 @@
 {
   "universityId": "sarpy-county",
   "universityName": "Sarpy County, NE",
+  "aiServerUrl": "",
   "enableDrawingEntry": true,
   "enableFloorplans": true,
   "floorplanCampus": "SarpyCounty",

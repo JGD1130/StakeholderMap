@@ -577,7 +577,12 @@ function computeProgramTestFitQuality(summary, target = {}) {
   };
 }
 
+let _runtimeAiBaseUrl = null;
+function setRuntimeAiBaseUrl(url) {
+  _runtimeAiBaseUrl = url ? String(url).trim() : null;
+}
 function getAiBaseUrl() {
+  if (_runtimeAiBaseUrl) return _runtimeAiBaseUrl;
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
   if (envBase) return envBase;
   if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
@@ -11236,6 +11241,10 @@ const StakeholderMap = ({
       maximumFractionDigits: 0
     }).format(amount);
   }, []);
+  useEffect(() => {
+    setRuntimeAiBaseUrl(config?.aiServerUrl || null);
+  }, [config?.aiServerUrl]);
+
   useEffect(() => {
     let cancelled = false;
     if (!isHastingsCollegeInstance) {
