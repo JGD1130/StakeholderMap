@@ -12351,14 +12351,9 @@ const StakeholderMap = ({
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
-    const preferSarpyPublicFloorAsset =
-      isSarpyPublicReadonlyMode &&
-      floorplanCampus === 'SarpyCounty';
     const toPreferredAssetUrl = (candidateUrl) => {
       if (!candidateUrl) return candidateUrl;
-      const resolved = /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
-      if (!preferSarpyPublicFloorAsset) return resolved;
-      return resolved.replace(/_Dept_Rooms\.geojson(\?.*)?$/i, '_Dept_Rooms_Public.geojson$1');
+      return /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
     };
     const floors = getAvailableFloors(folderKey);
     if (!floors.includes(normalizedFloorId)) return null;
@@ -18081,9 +18076,7 @@ const StakeholderMap = ({
       floorId = floorIdRaw;
       const campusSeg = encodeURIComponent(floorplanCampus);
       const baseFallbackUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
-      floorUrl = (isSarpyPublicReadonlyMode && floorplanCampus === 'SarpyCounty')
-        ? baseFallbackUrl.replace(/_Dept_Rooms\.geojson$/i, '_Dept_Rooms_Public.geojson')
-        : baseFallbackUrl;
+      floorUrl = baseFallbackUrl;
       if (buildingFloors && !buildingFloors.includes(floorId)) {
         buildingFloors = [...buildingFloors, floorId];
         availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
