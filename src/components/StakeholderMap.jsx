@@ -16829,8 +16829,8 @@ const StakeholderMap = ({
     return buildAdminCombinedPrefsStorageKey(universityId, userKey);
   }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
   const roomEditCanWrite = useMemo(
-    () => Boolean(isAdminUser && (showFullMapfluenceControls || isDemoPublicMode)),
-    [isAdminUser, showFullMapfluenceControls, isDemoPublicMode]
+    () => Boolean(isAdminUser && showFullMapfluenceControls),
+    [isAdminUser, showFullMapfluenceControls]
   );
 
   // Marker filters (admin)
