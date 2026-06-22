@@ -33,16 +33,20 @@ from Autodesk.Revit.Exceptions import OperationCanceledException
 from Autodesk.Revit.DB import (
     FilteredElementCollector, BuiltInCategory, BuiltInParameter,
     SpatialElementBoundaryOptions, SpatialElementBoundaryLocation,
-    ViewPlan, ViewType, Phase, StorageType, DXFExportOptions, ElementId
+    ViewPlan, ViewType, Phase, StorageType, DXFExportOptions, ElementId, XYZ
 )
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-TARGET_PHASE_NAME = "Existing"
+TARGET_PHASE_NAMES = ["Existing", "New Construction"]
 RESTRICT_TO_PHASE = True
 RESTRICT_TO_LEVELS = True
-ALLOWED_LEVELS = ["BASEMENT", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"]
+ALLOWED_LEVELS = [
+    "BASEMENT",
+    "LEVEL 1", "LEVEL 1 - OVERALL", "LEVEL 1 - AREA A", "LEVEL 1 - AREA B",
+    "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5",
+]
 FILENAME_MAP = {
     "BASEMENT": "BASEMENT_Dept", "LEVEL 1": "LEVEL_1_Dept", 
     "LEVEL 2": "LEVEL_2_Dept", "LEVEL 3": "LEVEL_3_Dept",
@@ -58,18 +62,23 @@ OGR2OGR_CANDIDATES = [
     r"C:\Program Files\QGIS 3.36.0\bin\ogr2ogr.exe",
     r"C:\Program Files\QGIS 3.38.0\bin\ogr2ogr.exe",
 ]
-PREFERRED_KEYWORDS = ["Map Export"]
+PREFERRED_KEYWORDS = ["Overall", "Map Export"]
 EXCLUDE_KEYWORDS = ["Area", "Working", "Demo", "New", "Furniture"]
 EXPORT_ROOM_LEVELS_ONLY = True
-KEEP_INTERIOR_FURNITURE = False
+KEEP_INTERIOR_FURNITURE = True
 DRAWING_BBOX_PAD_FEET = 25.0
+VIEW_CROP_BBOX_PAD_FEET = 5.0
 DXF_INCLUDE_LAYERS = set([
     "A-DOOR",
     "A-GLAZ-CURT",
     "A-GLAZ-CWMG",
     "A-WALL",
     "A-WALL-PATT",
+    "I-FURN",
+    "I-FURN-PNLS",
     "I-WALL",
+    "P-SANR-FIXT",
+    "Q-CASE",
     "S-STRS",
 ])
 DXF_INCLUDE_LAYER_PREFIXES = [
@@ -83,7 +92,6 @@ DXF_EXCLUDE_LAYERS = set([
     "A-AREA-IDEN",
     "A-DETL",
     "G-IMPT",
-    "I-FURN-PNLS",
     "Q-SPCQ",
 ])
 DXF_EXCLUDE_GEOMETRY_TYPES = set(["Point", "MultiPoint"])
@@ -275,6 +283,20 @@ def expand_bounds(bounds, pad):
         "max_y": bounds["max_y"] + pad,
     }
 
+def union_bounds(a, b):
+    if a and b:
+        return {
+            "min_x": min(a["min_x"], b["min_x"]),
+            "min_y": min(a["min_y"], b["min_y"]),
+            "max_x": max(a["max_x"], b["max_x"]),
+            "max_y": max(a["max_y"], b["max_y"]),
+        }
+    if a:
+        return dict(a)
+    if b:
+        return dict(b)
+    return None
+
 def bounds_intersect(a, b):
     if not a or not b:
         return False
@@ -375,6 +397,11 @@ def write_feature_collection(path, title, features):
 def is_better_view(new_view, current_view):
     new_name = new_view.Name.lower() if new_view.Name else ""
     cur_name = current_view.Name.lower() if current_view.Name else ""
+    active_view_id = element_id_to_int(view.Id) if view else -1
+    if element_id_to_int(new_view.Id) == active_view_id:
+        return True
+    if element_id_to_int(current_view.Id) == active_view_id:
+        return False
     for bad in EXCLUDE_KEYWORDS:
         if bad.lower() in new_name:
             return False
@@ -389,10 +416,17 @@ def is_better_view(new_view, current_view):
 # =============================================================================
 # PHASE CHECK
 # =============================================================================
-TARGET_PHASE = get_phase_by_name(doc, TARGET_PHASE_NAME) if RESTRICT_TO_PHASE else None
-if RESTRICT_TO_PHASE and not TARGET_PHASE:
-    TaskDialog.Show("Mapfluence Export", "Phase '%s' not found." % TARGET_PHASE_NAME)
-    raise SystemExit
+TARGET_PHASES = []
+TARGET_PHASE_IDS = set()
+if RESTRICT_TO_PHASE:
+    for _pname in TARGET_PHASE_NAMES:
+        _ph = get_phase_by_name(doc, _pname)
+        if _ph:
+            TARGET_PHASES.append(_ph)
+            TARGET_PHASE_IDS.add(element_id_to_int(_ph.Id))
+    if not TARGET_PHASES:
+        TaskDialog.Show("Mapfluence Export", "None of these phases found:\n%s" % "\n".join(TARGET_PHASE_NAMES))
+        raise SystemExit
 
 # =============================================================================
 # OUTPUT FOLDER SELECTION
@@ -426,6 +460,33 @@ ax, ay = anchor.X, anchor.Y
 def ft_to_local(x, y):
     return [x - ax, y - ay]
 
+def view_crop_local_bounds(view_plan, pad=0.0):
+    try:
+        if not view_plan or not getattr(view_plan, "CropBoxActive", False):
+            return None
+        crop = view_plan.CropBox
+        if not crop:
+            return None
+        tf = getattr(crop, "Transform", None)
+        pts = []
+        for x in [crop.Min.X, crop.Max.X]:
+            for y in [crop.Min.Y, crop.Max.Y]:
+                pt = XYZ(x, y, crop.Min.Z)
+                if tf:
+                    pt = tf.OfPoint(pt)
+                pts.append(ft_to_local(pt.X, pt.Y))
+        if not pts:
+            return None
+        bounds = {
+            "min_x": min(pt[0] for pt in pts),
+            "min_y": min(pt[1] for pt in pts),
+            "max_x": max(pt[0] for pt in pts),
+            "max_y": max(pt[1] for pt in pts),
+        }
+        return expand_bounds(bounds, pad) if pad else bounds
+    except:
+        return None
+
 def ring_ft_to_local(ring):
     return [ft_to_local(x, y) for x, y in ring]
 
@@ -451,7 +512,7 @@ for r in rooms:
     if RESTRICT_TO_PHASE:
         try:
             ph_param = r.get_Parameter(BuiltInParameter.ROOM_PHASE)
-            if not ph_param or ph_param.AsElementId() != TARGET_PHASE.Id:
+            if not ph_param or element_id_to_int(ph_param.AsElementId()) not in TARGET_PHASE_IDS:
                 continue
         except:
             continue
@@ -564,7 +625,9 @@ if not os.path.exists(dxf_dir):
 
 # ✅ FIXED: Store view + level name TOGETHER
 views_by_level = {}
+view_bounds_by_level = {}
 room_level_names = set(by_level.keys())
+active_view_id = element_id_to_int(view.Id) if view else -1
 for v in FilteredElementCollector(doc).OfClass(ViewPlan):
     if v.ViewType != ViewType.FloorPlan or v.IsTemplate:
         continue
@@ -572,7 +635,7 @@ for v in FilteredElementCollector(doc).OfClass(ViewPlan):
     if not phase_param:
         continue
     phase = doc.GetElement(phase_param.AsElementId())
-    if not phase or (RESTRICT_TO_PHASE and phase.Name != TARGET_PHASE_NAME):
+    if not phase or (RESTRICT_TO_PHASE and phase.Name not in TARGET_PHASE_NAMES):
         continue
     lvl = v.GenLevel
     if not lvl:
@@ -581,8 +644,17 @@ for v in FilteredElementCollector(doc).OfClass(ViewPlan):
     lvl_name = lvl.Name          # ✅ FIXED: Store level name
     if EXPORT_ROOM_LEVELS_ONLY and room_level_names and lvl_name not in room_level_names:
         continue
+    if element_id_to_int(v.Id) == active_view_id:
+        views_by_level[lvl_id] = (v, lvl_name)
+        crop_bounds = view_crop_local_bounds(v, VIEW_CROP_BBOX_PAD_FEET)
+        if crop_bounds:
+            view_bounds_by_level[lvl_name] = crop_bounds
+        continue
     if lvl_id not in views_by_level or is_better_view(v, views_by_level[lvl_id][0]):
         views_by_level[lvl_id] = (v, lvl_name)  # ✅ FIXED: Store tuple (view, level_name)
+        crop_bounds = view_crop_local_bounds(v, VIEW_CROP_BBOX_PAD_FEET)
+        if crop_bounds:
+            view_bounds_by_level[lvl_name] = crop_bounds
 
 views = list(views_by_level.values())
 opts = DXFExportOptions()
@@ -739,6 +811,9 @@ for dxf_path, known_level in exported_dxf_files:
 
         if known_level in by_level:
             padded_room_bounds = expand_bounds(room_bounds_by_level.get(known_level), DRAWING_BBOX_PAD_FEET)
+            # Detached wings can be visible in the export view even when rooms are sparse
+            # or missing there, so union the room envelope with the active view crop.
+            merge_clip_bounds = union_bounds(padded_room_bounds, view_bounds_by_level.get(known_level))
             for feat in data.get("features", []):
                 if not feat.get("geometry"):
                     continue
@@ -749,7 +824,8 @@ for dxf_path, known_level in exported_dxf_files:
                 props["interactive"] = False
                 feat["properties"] = props
                 feat_bounds = geometry_bounds(feat.get("geometry"))
-                if should_keep_dxf_feature(feat) and bounds_intersect(feat_bounds, padded_room_bounds):
+                within_clip_bounds = True if not merge_clip_bounds else bounds_intersect(feat_bounds, merge_clip_bounds)
+                if should_keep_dxf_feature(feat) and within_clip_bounds:
                     by_level[known_level].append(feat)
                     dxf_features_kept += 1
                 else:
