@@ -5712,7 +5712,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   // When drawing features were split out of the Rooms GeoJSON into a companion
   // LEVEL_N_Walls.geojson, auto-load them into WALLS_SOURCE without blocking room display.
-  if (!options?.enableWalls && !hasDrawingFeatures && floorBasePath && floorId) {
+  if (!options?.enableWalls && !options?.suppressAutoWalls && !hasDrawingFeatures && floorBasePath && floorId) {
     tryLoadWallsOverlay({
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,
@@ -18226,6 +18226,7 @@ const StakeholderMap = ({
         floorId
       );
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
+      const suppressAutoWalls = config?.enableWallsOverlay === false;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
@@ -18235,6 +18236,7 @@ const StakeholderMap = ({
         roomsBasePath: basePath,
         roomsFloorId: floorId,
         enableWalls: allowOptionalOverlays,
+        suppressAutoWalls,
         wallsBasePath: basePath,
         wallsFloorId: floorId,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
