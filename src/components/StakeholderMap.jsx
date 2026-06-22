@@ -5710,6 +5710,16 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   // ---- end walls overlay ----
 
+  // When drawing features were split out of the Rooms GeoJSON into a companion
+  // LEVEL_N_Walls.geojson, auto-load them into WALLS_SOURCE without blocking room display.
+  if (!options?.enableWalls && !hasDrawingFeatures && floorBasePath && floorId) {
+    tryLoadWallsOverlay({
+      basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
+      affine, rotationOverride,
+      fitTransform: fitTransform || cachedTransform.fitTransform || null
+    }).catch(() => {});
+  }
+
   // ---- DOORS + STAIRS OVERLAY (optional) ----
     const overlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
     const overlayBuildingLabel =
