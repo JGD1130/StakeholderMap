@@ -8309,6 +8309,7 @@ const BUILDINGS_LIST = [
   { name: 'Wilson Center', folder: 'WilsonCenter' },
   { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
   { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
+  { name: 'Juvenile Justice Center', folder: 'Juvenile Justice Center', campus: 'SarpyCounty' },
 
   // add more as you add folders...
 ];
@@ -20780,13 +20781,30 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         setExportingCherokeePhotos(false);
         return;
       }
-      // Server-side fetch + ZIP to avoid CORS on direct storage downloads
-      const zipResp = await fetch(resolveAiUrl('/ai/api/photo-export'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files }),
-      });
-      if (!zipResp.ok) throw new Error(`Server returned ${zipResp.status}`);
+      // Server-side fetch + ZIP to avoid CORS on direct storage downloads.
+      // 90s timeout to survive Render free-tier cold starts (~30-60s).
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), 90000);
+      let zipResp;
+      try {
+        zipResp = await fetch(resolveAiUrl('/ai/api/photo-export'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files }),
+          signal: controller.signal,
+        });
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') {
+          throw new Error('Export server timed out (>90s) — it may be cold-starting. Wait 30s and try again.');
+        }
+        throw new Error(`Cannot reach export server: ${fetchErr.message}`);
+      } finally {
+        clearTimeout(abortTimer);
+      }
+      if (!zipResp.ok) {
+        const body = await zipResp.text().catch(() => '');
+        throw new Error(`Export server returned ${zipResp.status}: ${body}`);
+      }
       const zipBlob = await zipResp.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(zipBlob);
@@ -20795,8 +20813,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       URL.revokeObjectURL(link.href);
       setCherokeePhotoExportMessage(`Downloaded ${files.length} photo${files.length !== 1 ? 's' : ''}.`);
     } catch (err) {
-      console.error('Cherokee photo export failed:', err);
-      setCherokeePhotoExportMessage('Export failed — see console for details.');
+      console.error('[Cherokee photo export] failed:', err.message, err);
+      setCherokeePhotoExportMessage(`Export failed: ${err.message}`);
     } finally {
       setExportingCherokeePhotos(false);
     }
