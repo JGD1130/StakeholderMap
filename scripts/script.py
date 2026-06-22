@@ -549,14 +549,17 @@ for r in rooms:
 
     geom = {"type": "Polygon", "coordinates": polys[0]} if len(polys) == 1 else {"type": "MultiPolygon", "coordinates": polys}
     
+    _occ_raw = get_param_any(r, "NCES_Occupancy Status") or get_param_any(r, "Occupancy Status")
     props = {
         "Element": "Room",
         "Number": get_str_param(r, BuiltInParameter.ROOM_NUMBER),
         "Name": get_str_param(r, BuiltInParameter.ROOM_NAME),
         "NCES_Type": get_param_any(r, "NCES Types"),
         "NCES_Department": get_param_any(r, "NCES_Dept"),
-        "NCES_Occupancy Status": get_param_any(r, "NCES_Occupancy Status"),
-        "occupancyStatus": get_param_any(r, "NCES_Occupancy Status"),
+        "NCES_Occupancy Status": _occ_raw,
+        "occupancyStatus": _occ_raw if _occ_raw else "Occupied",
+        "Workstations": get_param_any(r, "NCES_Workstations") or get_param_any(r, "Workstations"),
+        "Seat Count": get_param_any(r, "Seat Count"),
         "Level": lvl_name,
         "Area_SF": round(r.Area, 2),
         "RevitId": element_id_to_int(r.Id),
