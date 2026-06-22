@@ -1,7 +1,7 @@
 {
   "universityId": "sarpy-county",
   "universityName": "Sarpy County, NE",
-  "aiServerUrl": "",
+  "aiServerUrl": "https://mapfluence-sarpy-ai.onrender.com",
   "enableDrawingEntry": true,
   "enableFloorplans": true,
   "floorplanCampus": "SarpyCounty",
