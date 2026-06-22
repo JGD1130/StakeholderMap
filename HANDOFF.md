@@ -240,7 +240,46 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
-## Recent Changes (2026-06-22)
+## Recent Changes (2026-06-22, session 4)
+
+| Commit | What changed and why |
+|---|---|
+| `9a1c1c4` | **Fix Edit button on public maps** — `roomEditCanWrite` had `\|\| isDemoPublicMode` in its condition, causing the Edit button to appear for signed-in admins on `/hastings` and `/sarpy-county`. Removed `isDemoPublicMode`; Edit is now gated on `isAdminUser && showFullMapfluenceControls` only, which requires `isAdminMode && !engagementMode && !technicalMode` — `/*/admin` URLs only. |
+| `44a9482` | **Remove `_Public` GeoJSON substitution** — Public map was loading stale `_Dept_Rooms_Public.geojson` files (created Jun 18, pre rooms/walls split) with bad geometry/whitespace gaps. Removed both substitution points in `StakeholderMap.jsx` (`getFloorUrlForBuilding` and fallback URL path). Deleted `LEVEL_1_Dept_Rooms_Public.geojson` and `BASEMENT_Dept_Rooms_Public.geojson`. Public mode now uses the same files as admin. Airtable suppression for public mode is unchanged (`isSarpyPublicReadonlyMode` still gates all data-fetch paths). |
+| `78e9cfc` | **Disable walls overlay for Sarpy County** — `LEVEL_1_Walls.geojson` was causing visual issues on the Admin/Courthouse floor plan. Added `"enableWallsOverlay": false` to `SarpyCounty.json`. `loadFloorGeojson` now accepts a `suppressAutoWalls` option (derived from `config?.enableWallsOverlay === false`) that skips the `tryLoadWallsOverlay` auto-detect call. Other tenants unaffected. |
+| `2fd0a39` | **Split courthouse GeoJSON: rooms only** — Moved 7,761 wall/drawing features into `public/floorplans/SarpyCounty/AdministrationCourthouse/LEVEL_1_Walls.geojson`. `LEVEL_1_Dept_Rooms.geojson` now contains only the 454 room polygons (297 KB). Added auto-detect lazy-wall-loading to `loadFloorGeojson` (fires when drawing features absent from rooms file). |
+
+### Airtable sync tooling added (scripts only — not committed)
+
+**`scripts/sync-airtable-rooms.cjs`** — syncs a CSV (from `geojson_to_airtable_csv.cjs`) into the Sarpy Airtable base. Three-way match logic:
+- Room GUID already in Airtable → skip
+- Room ID found with blank GUID → PATCH just the GUID field
+- No match → create with all fields
+
+Run:
+```
+node scripts/sync-airtable-rooms.cjs --dry-run --env ai-server/.env.sarpy --csv "C:\temp\Sarpy\Admin_Courthouse\AdminCourthouse_Airtable_Import.csv"
+# Remove --dry-run to apply
+```
+
+Credentials file `ai-server/.env.sarpy` (never commit):
+```
+AIRTABLE_TOKEN=patwl95Uy4003YY3u...
+AIRTABLE_BASE_ID=appmlFbql4ktdsPxc
+AIRTABLE_TABLE=Rooms
+```
+
+Admin/Courthouse sync result (2026-06-22): 68 skipped (already had GUID), 321 GUIDs patched, 60 new records created. All 454 courthouse rooms now in Airtable.
+
+**`scripts/geojson_to_airtable_csv.cjs`** — joins a Revit-exported GeoJSON with an NCES Excel export on `Revit UniqueId`, outputs a CSV ready for Airtable import. Run with:
+```
+node scripts/geojson_to_airtable_csv.cjs
+```
+Paths are hardcoded at the top of the file. Update `EXCEL_PATH` and `GEOJSON_PATH` per project. Uses `xlsx` from `ai-server/node_modules/`.
+
+---
+
+## Recent Changes (2026-06-22, session 3)
 
 | Commit | What changed and why |
 |---|---|
@@ -249,14 +288,6 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 | `56aef93` | **JJC floorplan added** — `public/floorplans/SarpyCounty/Juvenile Justice Center/Rooms/LEVEL_1_Dept_Rooms.geojson` + `manifest.json`. Registered in `BUILDINGS_LIST` in `StakeholderMap.jsx`. Building footprint was already present in `SarpyCounty_Buildings.json`. |
 | `d357517` | **Per-tenant AI server URL** — `getAiBaseUrl()` now supports a runtime override via `setRuntimeAiBaseUrl()`. `StakeholderMap` reads `config.aiServerUrl` on mount and sets it. Fixes Sarpy admin showing Hastings departments and failing saves. Hastings is unaffected (no `aiServerUrl` → falls through to hardcoded default). |
 | `c9ed4ef` | **Sarpy AI server wired** — `SarpyCounty.json` gets `"aiServerUrl": "https://mapfluence-sarpy-ai.onrender.com"`. |
-
-### Airtable import tooling added (not committed — one-off scripts)
-
-`scripts/geojson_to_airtable_csv.cjs` — joins a Revit-exported GeoJSON with an NCES Excel export on `Revit UniqueId`, outputs a CSV ready for Airtable import. Run with:
-```
-node scripts/geojson_to_airtable_csv.cjs
-```
-Paths are hardcoded at the top of the file. Update `EXCEL_PATH` and `GEOJSON_PATH` per project. Uses `xlsx` from `ai-server/node_modules/`.
 
 ---
 
@@ -296,9 +327,9 @@ copy scripts\script.py "C:\Users\jdohrman\AppData\Roaming\pyRevit\extensions\Map
 ```
 pyRevit picks up changes immediately — no Revit restart needed.
 
-### Sarpy AI server not yet seeded with room data
+### BASEMENT_Dept_Rooms.geojson not yet split
 
-`mapfluence-sarpy-ai.onrender.com` is deployed and wired into `SarpyCounty.json`, but the Sarpy Airtable base needs the JJC room records imported before the admin panel room edit flow will work end-to-end. The import CSV is at `C:\temp\Sarpy\Juvenile Justice Center\JJC_Airtable_Import.csv` (137 rooms, all GUIDs attached). Import it into the Sarpy Airtable base before testing admin room saves.
+`public/floorplans/SarpyCounty/AdministrationCourthouse/Rooms/BASEMENT_Dept_Rooms.geojson` is 7 MB and still contains mixed room + wall/drawing features (same problem LEVEL 1 had before the Jun 22 split). If the Basement floor is opened, it will load slowly. Fix: run the same rooms/walls split process used for LEVEL 1 against the basement file, then place the walls output at `AdministrationCourthouse/BASEMENT_Walls.geojson`.
 
 ### Sarpy admin bootstrap — first admin role must be set via Firebase Console
 
@@ -513,4 +544,4 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ---
 
-*Last updated: 2026-06-22 (session 3) — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-06-22 (session 4) — update this file whenever the architecture, client list, or critical behavior changes.*
