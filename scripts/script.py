@@ -180,6 +180,28 @@ def get_param_any(elem, pname):
         pass
     return ""
 
+def get_param_value(p):
+    try:
+        if p.StorageType == StorageType.String:
+            return p.AsString() or ""
+        if p.StorageType == StorageType.Integer:
+            return str(p.AsInteger())
+        if p.StorageType == StorageType.Double:
+            return str(p.AsDouble())
+        if p.StorageType == StorageType.ElementId:
+            eid = p.AsElementId()
+            ref = doc.GetElement(eid)
+            return ref.Name if ref else ""
+    except:
+        pass
+    return ""
+
+def get_param_by_name(elem, pname):
+    params = elem.GetParameters(pname)
+    if params:
+        return get_param_value(params[0])
+    return ""
+
 def get_first_prop(props, keys):
     for key in keys:
         try:
@@ -559,7 +581,7 @@ for r in rooms:
         "NCES_Occupancy Status": _occ_raw,
         "occupancyStatus": _occ_raw if _occ_raw else "Occupied",
         "Workstations": get_param_any(r, "NCES_Workstations") or get_param_any(r, "Workstations"),
-        "Seat Count": get_param_any(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
+        "Seat Count": get_param_by_name(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
         "Level": lvl_name,
         "Area_SF": round(r.Area, 2),
         "RevitId": element_id_to_int(r.Id),
