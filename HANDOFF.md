@@ -306,16 +306,11 @@ Excel exports used: Sheriff's Office `Sarpy_MP_NCES_20260623_101721.xlsx`, Court
 
 `geojson_to_airtable_csv.cjs` / `.py` fixed: `Workstations` and `Seat Count` were collapsed into one column — now separate. `sync-airtable-rooms.cjs` updated to add `Workstations` field and use always-overwrite correction mode for numeric fields (Room Type stays fill-blank-only). `scripts/add-room-type-options.cjs` added — Meta API script to bulk-add Room Type dropdown options; persistent 422 errors blocked programmatic update, user added 5 missing options manually via Airtable UI.
 
-### ⚠️ Open issue: Hastings AI server "Refresh Airtable Data" failing
+### Hastings AI server "Refresh Airtable Data" — cold start issue (resolved/understood)
 
-Error shown in UI: `"Airtable sync failed before scope validation."` This is the catch-all from `refreshCampusRoomsFromApi` (StakeholderMap.jsx line 17274) — the real error is silently swallowed.
+Error `"Airtable sync failed before scope validation."` was a Render free-tier cold start. The server spins down after 15 min of inactivity; the frontend `timeoutMs: 8000` aborts before the server warms up (~15–30s). Confirmed: refreshing a second time succeeded once the server was warm.
 
-**Three likely causes (check Render logs at `github-stakeholder-ai` → Logs tab):**
-1. **Cold start timeout** — Render free tier spins down after 15 min; frontend has `timeoutMs: 8000` which aborts before server warms up (~15–30s). Test by clicking Refresh twice — second click usually succeeds.
-2. **Server startup crash** — Recent archiver ESM/CJS fix commits (`1ad26b8`, `5d9710c`) may not be on the deployed branch. Look for uncaught exception on boot in Render logs.
-3. **Airtable view missing** — Server defaults to view `"Mapfluence_Rooms"`; if that view doesn't exist in the Hastings base the API returns 422. Render logs would show `GET /api/rooms failed` with the Airtable error detail.
-
-Not fixed this session — needs Render log access to confirm root cause.
+**No code fix needed** — this is expected Render free-tier behavior. If it becomes a recurring complaint, options are: (1) upgrade to Render paid tier (always-on), or (2) increase `timeoutMs` on the rooms fetch to 30s+.
 
 ---
 
