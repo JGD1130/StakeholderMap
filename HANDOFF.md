@@ -240,6 +240,61 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-06-23)
+
+| Commit | What changed and why |
+|---|---|
+| `bfd6afe` | **Sheriff's Office floorplan added** — `public/floorplans/SarpyCounty/Sheriff's Office/Rooms/LEVEL_1_Dept_Rooms.geojson` + `manifest.json`. 41 MB Revit GeoJSON filtered to 170 room features (compact JSON, 6-decimal coordinates, no RDP), output 100 KB. Registered in `BUILDINGS_LIST` in `StakeholderMap.jsx`. |
+
+### Airtable sync — Sheriff's Office (scripts only, not committed)
+
+**CSV generation** (`scripts/geojson_to_airtable_csv.cjs` and `.py`): Fixed Workstations/Seat Count separation — these were previously collapsed into one field. Now:
+- `Workstations` → reads GeoJSON `Workstations` then `NCES_Workstations` (79/170 rooms have values)
+- `Seat Count` → reads GeoJSON `Seat Count` separately (all 170 rooms are empty for Sheriff's Office)
+
+**`sync-airtable-rooms.cjs` updates:** Added `Workstations` field (mapped via `AIRTABLE_WORKSTATIONS_FIELD`). Backfill logic changed from "fill blank fields" to always overwrite `Workstations` and `Seat Count` from CSV (correction mode), while leaving `Room Type` fill-blank-only to preserve manual edits.
+
+**Sheriff's Office sync result:**
+- Initial run: 40 rooms created, then 422 error (`INVALID_MULTIPLE_CHOICE_OPTIONS` on `Room Type` — Airtable's dropdown had restricted options)
+- Workaround: set `AIRTABLE_TYPE_FIELD=` (empty) in `ai-server/.env.sarpy` to skip Room Type writes; completed 130 remaining rooms
+- `scripts/add-room-type-options.cjs` (new): Meta API script to add all 82 Room Type options at once. Encountered persistent 422 on PATCH despite adding `schema.bases:write` scope to PAT — user manually added 5 missing options via Airtable UI instead
+- Removed `AIRTABLE_TYPE_FIELD=` workaround from `.env.sarpy`; re-ran sync to backfill Room Type (158 patches, 12 skipped)
+- Correction sync: all 170 records patched — `Workstations` set to correct values, `Seat Count` cleared to null
+
+**Excel export used:** `Sarpy_MP_NCES_20260623_101721.xlsx` (re-export after confirming NCES fields populated)
+
+### PyRevit export script update
+
+Updated both `scripts/script.py` and the live copy at `C:\Users\jdohrman\AppData\Roaming\pyRevit\extensions\Mapfluence.extension\Mapfluence.tab\Export.panel\GeoJSON Export.pushbutton\script.py` to read `NCES_Seat Count` as the primary Revit parameter, falling back to `Seat Count`:
+
+```python
+"Seat Count": get_param_any(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
+```
+
+`Workstations` (`NCES_Workstations` → `Workstations`) and `NCES_Occupancy Status` (`NCES_Occupancy Status` → `Occupancy Status`) were already correct from session 3.
+
+### ⚠️ Open bug: NCES_Seat Count not exporting
+
+`NCES_Seat Count` parameter exists in Revit (confirmed: room 1102 has value 42) but `LookupParameter("NCES_Seat Count")` returns `None` in the PyRevit script — the field exports as blank for all rooms. This suggests the parameter may be defined on a non-Room category (e.g., Walls, Floors, or a different family) even though it appears in the Room Properties UI.
+
+**Next session:** Replace `LookupParameter` with `GetParameters` for this field:
+
+```python
+# Instead of:
+"Seat Count": get_param_any(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
+
+# Try: GetParameters returns ALL parameters with that name regardless of category
+def get_param_by_name(elem, pname):
+    params = elem.GetParameters(pname)
+    if params:
+        return get_param_value(params[0])   # adapt get_param_any logic
+    return ""
+```
+
+`GetParameters(name)` searches all parameters on the element regardless of how they were attached (shared parameter group, category binding, etc.), whereas `LookupParameter(name)` only finds parameters bound to the element's category.
+
+---
+
 ## Recent Changes (2026-06-22, session 4)
 
 | Commit | What changed and why |

@@ -559,7 +559,7 @@ for r in rooms:
         "NCES_Occupancy Status": _occ_raw,
         "occupancyStatus": _occ_raw if _occ_raw else "Occupied",
         "Workstations": get_param_any(r, "NCES_Workstations") or get_param_any(r, "Workstations"),
-        "Seat Count": get_param_any(r, "Seat Count"),
+        "Seat Count": get_param_any(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
         "Level": lvl_name,
         "Area_SF": round(r.Area, 2),
         "RevitId": element_id_to_int(r.Id),
