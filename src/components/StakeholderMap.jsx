@@ -2068,6 +2068,7 @@ function resolveNcesCategory(p = {}) {
 
 function resolveAreaSf(p = {}) {
   const v =
+    p.areaSF ??
     p.Area_SF ??
     p['Area_SF'] ??
     p.area ??
