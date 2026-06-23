@@ -244,54 +244,78 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 | Commit | What changed and why |
 |---|---|
-| `bfd6afe` | **Sheriff's Office floorplan added** — `public/floorplans/SarpyCounty/Sheriff's Office/Rooms/LEVEL_1_Dept_Rooms.geojson` + `manifest.json`. 41 MB Revit GeoJSON filtered to 170 room features (compact JSON, 6-decimal coordinates, no RDP), output 100 KB. Registered in `BUILDINGS_LIST` in `StakeholderMap.jsx`. |
+| `bfd6afe` | **Sheriff's Office floorplan added** — `public/floorplans/SarpyCounty/Sheriff's Office/Rooms/LEVEL_1_Dept_Rooms.geojson` + `manifest.json`. 41 MB Revit GeoJSON filtered to 170 room features (compact JSON, 6-decimal coordinates), output 100 KB. Registered in `BUILDINGS_LIST`. |
+| `bfee11d` | **Sheriff's Office re-export: NCES_Seat Count fix confirmed** — PyRevit script now uses `get_param_by_name()` (see below). Room 1102 confirmed at Seat Count 42. GeoJSON re-optimized. Airtable: 170 records patched (12 Seat Count values written, 158 cleared to null). |
+| `13eee58` | **Courthouse re-export + basement added** — Both floors re-exported with fixed PyRevit script. BASEMENT added for the first time: 117 rooms. Level 1: 454 rooms. Airtable: 441 patched, 130 created (117 basement new, 13 Level 1 re-keyed). Seat Count: 10 rooms. Workstations: 183. |
+| `c146239` | **JJC re-export** — 137 rooms, 19 MB → 83 KB. Airtable: 137 patched. Seat Count: 12 rooms. Workstations: 24. |
+| `f3d7c79` | **1102 Building re-export** — 192 rooms, 11 MB → 119 KB. First building with NCES_Occupancy Status data: 25 rooms Vacant. Airtable: 192 patched. Seat Count: 4 rooms. Workstations: 117. |
 
-### Airtable sync — Sheriff's Office (scripts only, not committed)
+### PyRevit export script fixes (`scripts/script.py` + live copy)
 
-**CSV generation** (`scripts/geojson_to_airtable_csv.cjs` and `.py`): Fixed Workstations/Seat Count separation — these were previously collapsed into one field. Now:
-- `Workstations` → reads GeoJSON `Workstations` then `NCES_Workstations` (79/170 rooms have values)
-- `Seat Count` → reads GeoJSON `Seat Count` separately (all 170 rooms are empty for Sheriff's Office)
+Two bugs fixed where `LookupParameter(name)` returned `None` for NCES-prefixed parameters defined on a non-Room Revit category. Root cause: `LookupParameter` only finds parameters bound to the element's own category; `GetParameters` searches all bindings.
 
-**`sync-airtable-rooms.cjs` updates:** Added `Workstations` field (mapped via `AIRTABLE_WORKSTATIONS_FIELD`). Backfill logic changed from "fill blank fields" to always overwrite `Workstations` and `Seat Count` from CSV (correction mode), while leaving `Room Type` fill-blank-only to preserve manual edits.
-
-**Sheriff's Office sync result:**
-- Initial run: 40 rooms created, then 422 error (`INVALID_MULTIPLE_CHOICE_OPTIONS` on `Room Type` — Airtable's dropdown had restricted options)
-- Workaround: set `AIRTABLE_TYPE_FIELD=` (empty) in `ai-server/.env.sarpy` to skip Room Type writes; completed 130 remaining rooms
-- `scripts/add-room-type-options.cjs` (new): Meta API script to add all 82 Room Type options at once. Encountered persistent 422 on PATCH despite adding `schema.bases:write` scope to PAT — user manually added 5 missing options via Airtable UI instead
-- Removed `AIRTABLE_TYPE_FIELD=` workaround from `.env.sarpy`; re-ran sync to backfill Room Type (158 patches, 12 skipped)
-- Correction sync: all 170 records patched — `Workstations` set to correct values, `Seat Count` cleared to null
-
-**Excel export used:** `Sarpy_MP_NCES_20260623_101721.xlsx` (re-export after confirming NCES fields populated)
-
-### PyRevit export script update
-
-Updated both `scripts/script.py` and the live copy at `C:\Users\jdohrman\AppData\Roaming\pyRevit\extensions\Mapfluence.extension\Mapfluence.tab\Export.panel\GeoJSON Export.pushbutton\script.py` to read `NCES_Seat Count` as the primary Revit parameter, falling back to `Seat Count`:
+**New helpers added** (between `get_param_any` and `get_first_prop`):
 
 ```python
-"Seat Count": get_param_any(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
-```
+def get_param_value(p):
+    try:
+        if p.StorageType == StorageType.String:  return p.AsString() or ""
+        if p.StorageType == StorageType.Integer: return str(p.AsInteger())
+        if p.StorageType == StorageType.Double:  return str(p.AsDouble())
+        if p.StorageType == StorageType.ElementId:
+            ref = doc.GetElement(p.AsElementId())
+            return ref.Name if ref else ""
+    except: pass
+    return ""
 
-`Workstations` (`NCES_Workstations` → `Workstations`) and `NCES_Occupancy Status` (`NCES_Occupancy Status` → `Occupancy Status`) were already correct from session 3.
-
-### ⚠️ Open bug: NCES_Seat Count not exporting
-
-`NCES_Seat Count` parameter exists in Revit (confirmed: room 1102 has value 42) but `LookupParameter("NCES_Seat Count")` returns `None` in the PyRevit script — the field exports as blank for all rooms. This suggests the parameter may be defined on a non-Room category (e.g., Walls, Floors, or a different family) even though it appears in the Room Properties UI.
-
-**Next session:** Replace `LookupParameter` with `GetParameters` for this field:
-
-```python
-# Instead of:
-"Seat Count": get_param_any(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
-
-# Try: GetParameters returns ALL parameters with that name regardless of category
 def get_param_by_name(elem, pname):
     params = elem.GetParameters(pname)
     if params:
-        return get_param_value(params[0])   # adapt get_param_any logic
+        return get_param_value(params[0])
     return ""
 ```
 
-`GetParameters(name)` searches all parameters on the element regardless of how they were attached (shared parameter group, category binding, etc.), whereas `LookupParameter(name)` only finds parameters bound to the element's category.
+**Props block — two lines changed:**
+
+```python
+# Occupancy Status: now uses get_param_by_name (was get_param_any → returned "" for all rooms)
+_occ_raw = get_param_by_name(r, "NCES_Occupancy Status") or get_param_any(r, "Occupancy Status")
+
+# Seat Count: now uses get_param_by_name (was get_param_any → returned "" for all rooms)
+"Seat Count": get_param_by_name(r, "NCES_Seat Count") or get_param_any(r, "Seat Count"),
+```
+
+`Workstations` (`get_param_any(r, "NCES_Workstations")`) was already working — left unchanged.
+
+Occupancy Status logic: null/blank → `occupancyStatus` defaults to `"Occupied"`. Only rooms explicitly tagged `"Vacant"` in Revit export non-default values. 1102 Building confirmed: 25 rooms Vacant, 167 Occupied.
+
+### Airtable sync results — all 4 Sarpy buildings (2026-06-23)
+
+All buildings re-exported from Revit and re-synced to Airtable after script fixes. CSV generation for multi-floor buildings (Courthouse) done via inline Node.js merging both GeoJSONs; single-floor buildings use `scripts/geojson_to_airtable_csv.cjs`.
+
+| Building | Rooms | Seat Count rooms | Workstations rooms | Vacant rooms | Airtable result |
+|---|---|---|---|---|---|
+| Sheriff's Office | 170 | 12 | 79 | 0 | 170 patched |
+| Administration Courthouse | 571 (BASEMENT + L1) | 10 | 183 | 0 | 441 patched + 130 created |
+| Juvenile Justice Center | 137 | 12 | 24 | 0 | 137 patched |
+| 1102 Building | 192 | 4 | 117 | 25 | 192 patched |
+
+Excel exports used: Sheriff's Office `Sarpy_MP_NCES_20260623_101721.xlsx`, Courthouse `Sarpy_MP_NCES_20260623_111959.xlsx`, JJC `Sarpy_MP_NCES_20260623_113243.xlsx`, 1102 Building `Sarpy_MP_NCES_20260623_113752.xlsx`.
+
+### Sheriff's Office initial sync notes (earlier in session)
+
+`geojson_to_airtable_csv.cjs` / `.py` fixed: `Workstations` and `Seat Count` were collapsed into one column — now separate. `sync-airtable-rooms.cjs` updated to add `Workstations` field and use always-overwrite correction mode for numeric fields (Room Type stays fill-blank-only). `scripts/add-room-type-options.cjs` added — Meta API script to bulk-add Room Type dropdown options; persistent 422 errors blocked programmatic update, user added 5 missing options manually via Airtable UI.
+
+### ⚠️ Open issue: Hastings AI server "Refresh Airtable Data" failing
+
+Error shown in UI: `"Airtable sync failed before scope validation."` This is the catch-all from `refreshCampusRoomsFromApi` (StakeholderMap.jsx line 17274) — the real error is silently swallowed.
+
+**Three likely causes (check Render logs at `github-stakeholder-ai` → Logs tab):**
+1. **Cold start timeout** — Render free tier spins down after 15 min; frontend has `timeoutMs: 8000` which aborts before server warms up (~15–30s). Test by clicking Refresh twice — second click usually succeeds.
+2. **Server startup crash** — Recent archiver ESM/CJS fix commits (`1ad26b8`, `5d9710c`) may not be on the deployed branch. Look for uncaught exception on boot in Render logs.
+3. **Airtable view missing** — Server defaults to view `"Mapfluence_Rooms"`; if that view doesn't exist in the Hastings base the API returns 422. Render logs would show `GET /api/rooms failed` with the Airtable error detail.
+
+Not fixed this session — needs Render log access to confirm root cause.
 
 ---
 
