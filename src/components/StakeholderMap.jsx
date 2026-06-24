@@ -3854,33 +3854,12 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
 
   console.log("[walls] loaded features", fc.features.length);
 
-  function looksLikeLonLat(sampleFC, maxSamples = 20) {
-    let checked = 0;
-
-    const visit = (coords) => {
-      if (!coords || checked >= maxSamples) return true;
-      if (typeof coords[0] === "number" && typeof coords[1] === "number") {
-        const x = coords[0];
-        const y = coords[1];
-        checked += 1;
-        return Math.abs(x) <= 180 && Math.abs(y) <= 90;
-      }
-      for (const c of coords) {
-        const ok = visit(c);
-        if (!ok) return false;
-      }
-      return true;
-    };
-
-    for (const f of sampleFC?.features || []) {
-      const ok = visit(f?.geometry?.coordinates);
-      if (!ok) return false;
-      if (checked >= maxSamples) break;
-    }
-    return checked > 0;
-  }
-
-  const shouldApplyAffine = affine && !looksLikeLonLat(fc);
+  // Use the same isLikelyLonLat span check used by applyAffineIfPresent — it
+  // computes the full bbox and requires span ≤ 0.25°. The previous inline
+  // looksLikeLonLat only sampled 20 points and checked |x|≤180 && |y|≤90,
+  // which Revit local coords (e.g. [-50, 100] ft) pass, causing the affine
+  // to be silently skipped and walls to render misaligned.
+  const shouldApplyAffine = affine && !isLikelyLonLat(fc);
   if (shouldApplyAffine) {
     fc = applyAffineTransform(fc, affine);
     console.log("[walls] applied affine");
