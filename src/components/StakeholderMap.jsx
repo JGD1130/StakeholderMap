@@ -5684,7 +5684,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       roomsFC: patchedFC,
       affine,
       rotationOverride,
-      fitTransform
+      fitTransform: fitTransform || cachedTransform?.fitTransform || null
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -5696,7 +5696,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     tryLoadWallsOverlay({
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,
-      fitTransform: fitTransform || cachedTransform.fitTransform || null
+      fitTransform: fitTransform || cachedTransform?.fitTransform || null
     }).catch(() => {});
   }
 
