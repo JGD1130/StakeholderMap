@@ -5713,7 +5713,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   // When drawing features were split out of the Rooms GeoJSON into a companion
   // LEVEL_N_Walls.geojson, auto-load them into WALLS_SOURCE without blocking room display.
-  if (!options?.enableWalls && !options?.suppressAutoWalls && !hasDrawingFeatures && floorBasePath && floorId) {
+  if (!options?.enableWalls && !options?.suppressAutoWalls && floorBasePath && floorId) {
     tryLoadWallsOverlay({
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,

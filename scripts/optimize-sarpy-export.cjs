@@ -8,8 +8,11 @@
  * What it does:
  *   1. Reads every *.geojson in <src>/ (top level — the main floor files)
  *   2. Splits each file into two outputs:
- *        a. Rooms-only  → <dst>/Rooms/{filename}  (fast initial load)
- *        b. Drawings    → <dst>/{floorId}_Walls.geojson at building root
+ *        a. Rooms + non-wall drawings → <dst>/Rooms/{filename}  (fast initial load)
+ *           Non-wall layers: A-DOOR, A-GLAZ-*, I-FURN, I-FURN-PNLS, P-SANR-FIXT,
+ *                            Q-CASE, S-STRS, S-STRS-*
+ *        b. Wall drawings only → <dst>/{floorId}_Walls.geojson at building root
+ *           Wall layers: A-WALL, A-WALL-*, I-WALL, I-WALL-*
  *           (auto-detected by tryLoadWallsOverlay after rooms render)
  *   3. Rounds coordinates to 6 decimal places, writes compact JSON
  *   4. Copies <src>/Doors/  → <dst>/Doors/  if present
@@ -81,11 +84,34 @@ function extractFloorId(filename) {
   return m ? m[1].toUpperCase() : null;
 }
 
+// Layers that go to the lazy-loaded companion walls file
+// All DXF drawing layers go to the lazy-loaded companion walls file.
+// Every drawing feature has complex polygon geometry (~12–35 KB each);
+// keeping any in the main file pushes it well over the 5 MB target.
+// Rooms stay in the main file (297 KB for LEVEL_1 Courthouse).
+const WALL_LAYERS = new Set([
+  'A-WALL', 'I-WALL',
+  'A-DOOR',
+  'A-GLAZ-CURT', 'A-GLAZ-CWMG',
+  'I-FURN', 'I-FURN-PNLS',
+  'P-SANR-FIXT',
+  'Q-CASE',
+  'S-STRS',
+]);
+const WALL_LAYER_PREFIXES = ['A-WALL-', 'I-WALL-', 'A-GLAZ-', 'S-STRS-'];
+
+function isWallFeature(f) {
+  const layer = ((f.properties && (f.properties.Layer || f.properties.layer)) || '').toUpperCase();
+  if (WALL_LAYERS.has(layer)) return true;
+  for (const p of WALL_LAYER_PREFIXES) { if (layer.startsWith(p)) return true; }
+  return false;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 const roomsDst = path.join(dstAbs, 'Rooms');
 if (!fs.existsSync(roomsDst)) fs.mkdirSync(roomsDst, { recursive: true });
 
-// 1. Process each top-level GeoJSON: split into rooms + walls
+// 1. Process each top-level GeoJSON: split walls out, keep everything else in main
 const geojsonFiles = fs.readdirSync(srcAbs).filter(f => f.endsWith('.geojson'));
 if (!geojsonFiles.length) {
   console.warn('No .geojson files found at top level of', srcAbs);
@@ -97,33 +123,36 @@ for (const file of geojsonFiles) {
   const before  = fc.features.length;
   const srcKB   = (fs.statSync(srcFile).size / 1024).toFixed(1);
 
-  const roomFeatures    = fc.features.filter(f => f.properties && f.properties.Element === 'Room');
-  const drawingFeatures = fc.features.filter(f => f.properties && f.properties.type === 'drawing');
+  const wallFeatures    = fc.features.filter(f => f.properties && f.properties.type === 'drawing' && isWallFeature(f));
+  const nonWallFeatures = fc.features.filter(f => !(f.properties && f.properties.type === 'drawing' && isWallFeature(f)));
 
-  // ── a. Rooms file (fast initial load) ──────────────────────────────────────
-  const roomsFC = { ...fc, features: roomFeatures };
-  applyRoundCoords(roomsFC);
-  const roomsOut  = JSON.stringify(roomsFC);
-  const roomsDst2 = path.join(roomsDst, file);
-  fs.writeFileSync(roomsDst2, roomsOut, 'utf8');
+  // ── a. Main file: rooms + non-wall drawings (doors, glazing, furniture, etc.)
+  const mainFC = { ...fc, features: nonWallFeatures };
+  applyRoundCoords(mainFC);
+  const mainOut  = JSON.stringify(mainFC);
+  const mainDst  = path.join(roomsDst, file);
+  fs.writeFileSync(mainDst, mainOut, 'utf8');
 
-  // ── b. Walls file (lazy-loaded by tryLoadWallsOverlay) ─────────────────────
+  const roomCount    = nonWallFeatures.filter(f => f.properties && f.properties.Element === 'Room').length;
+  const nonWallCount = nonWallFeatures.filter(f => f.properties && f.properties.type === 'drawing').length;
+
+  // ── b. Walls file: A-WALL + I-WALL only (lazy-loaded by tryLoadWallsOverlay)
   const floorId = extractFloorId(file);
   let wallsKB   = '0';
-  if (drawingFeatures.length && floorId) {
-    const wallsFC  = { ...fc, features: drawingFeatures };
+  if (wallFeatures.length && floorId) {
+    const wallsFC  = { ...fc, features: wallFeatures };
     applyRoundCoords(wallsFC);
     const wallsOut  = JSON.stringify(wallsFC);
     const wallsFile = path.join(dstAbs, `${floorId}_Walls.geojson`);
     fs.writeFileSync(wallsFile, wallsOut, 'utf8');
     wallsKB = (wallsOut.length / 1024).toFixed(1);
-  } else if (drawingFeatures.length && !floorId) {
-    console.warn(`  ${file}: could not extract floorId — drawings not written`);
+  } else if (wallFeatures.length && !floorId) {
+    console.warn(`  ${file}: could not extract floorId — wall features not written`);
   }
 
   console.log(
-    `  ${file}: ${before} → ${roomFeatures.length} rooms (${(roomsOut.length/1024).toFixed(1)} KB)` +
-    (drawingFeatures.length ? ` + ${drawingFeatures.length} drawings → ${floorId}_Walls.geojson (${wallsKB} KB)` : '') +
+    `  ${file}: ${before} → ${roomCount} rooms + ${nonWallCount} non-wall drawings (${(mainOut.length/1024).toFixed(1)} KB)` +
+    (wallFeatures.length ? ` | walls → ${floorId}_Walls.geojson (${wallsKB} KB)` : '') +
     ` | src ${srcKB} KB`
   );
 }

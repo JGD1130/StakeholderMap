@@ -4,7 +4,7 @@
   "aiServerUrl": "https://mapfluence-sarpy-ai.onrender.com",
   "enableDrawingEntry": true,
   "enableFloorplans": true,
-  "enableWallsOverlay": false,
+  "enableWallsOverlay": true,
   "floorplanCampus": "SarpyCounty",
   "style": "mapbox://styles/mapbox/streets-v12",
   "initialCenter": [-96.0804, 41.1367],
