@@ -3855,6 +3855,9 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   if (!fc?.features?.length) return;
 
   console.log("[walls] loaded features", fc.features.length);
+  // TEMP DEBUG: raw coordinate before any transform
+  const _rawCoord = fc.features[0]?.geometry?.coordinates?.[0]?.[0] ?? fc.features[0]?.geometry?.coordinates?.[0];
+  console.log("[walls] raw first coord (pre-transform)", _rawCoord, "isLikelyLonLat:", isLikelyLonLat(fc));
 
   // Use the same isLikelyLonLat span check used by applyAffineIfPresent — it
   // computes the full bbox and requires span ≤ 0.25°. The previous inline
@@ -3868,7 +3871,13 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   } else if (affine) {
     console.log("[walls] skipped affine (already lon/lat)");
   }
+  // TEMP DEBUG: coord immediately before applyFloorplanOverlayTransform
+  const _preTransCoord = fc.features[0]?.geometry?.coordinates?.[0]?.[0] ?? fc.features[0]?.geometry?.coordinates?.[0];
+  console.log("[walls] coord pre-overlayTransform", _preTransCoord, "overlayTransformApplied flag:", fc.__mfOverlayTransformApplied);
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
+  // TEMP DEBUG: coord immediately after applyFloorplanOverlayTransform
+  const _postTransCoord = fc.features[0]?.geometry?.coordinates?.[0]?.[0] ?? fc.features[0]?.geometry?.coordinates?.[0];
+  console.log("[walls] coord post-overlayTransform", _postTransCoord);
 
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
