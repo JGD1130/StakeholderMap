@@ -571,7 +571,7 @@ for r in rooms:
 
     geom = {"type": "Polygon", "coordinates": polys[0]} if len(polys) == 1 else {"type": "MultiPolygon", "coordinates": polys}
     
-    _occ_raw = get_param_any(r, "NCES_Occupancy Status") or get_param_any(r, "Occupancy Status")
+    _occ_raw = get_param_by_name(r, "NCES_Occupancy Status") or get_param_any(r, "Occupancy Status")
     props = {
         "Element": "Room",
         "Number": get_str_param(r, BuiltInParameter.ROOM_NUMBER),
