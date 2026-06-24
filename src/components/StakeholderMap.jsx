@@ -3839,6 +3839,8 @@ async function fetchFirstOk(urls) {
 
 async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
   if (!basePath || !floorId || !map) return;
+  // TEMP DEBUG: compare with rooms transform
+  console.log("[walls transform]", { affine, rotationOverride, fitTransform });
 
   const cleanFloor = String(floorId).trim();
   const candidates = [
@@ -4953,12 +4955,16 @@ async function loadIcon(map, name, url) {
 function ensureLayerOrder(map) {
   if (!map) return;
   try {
-    // Make sure walls sit under room fills.
+    // Walls above room fills but below room outlines.
     if (map.getLayer(WALLS_LAYER) && map.getLayer(FLOOR_FILL_ID)) {
-      map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID);
+      if (map.getLayer(FLOOR_LINE_ID)) {
+        map.moveLayer(WALLS_LAYER, FLOOR_LINE_ID);
+      } else {
+        map.moveLayer(WALLS_LAYER);
+      }
     }
 
-    // Keep room outlines above fills.
+    // Keep room outlines above fills and walls.
     if (map.getLayer(FLOOR_LINE_ID) && map.getLayer(FLOOR_FILL_ID)) {
       map.moveLayer(FLOOR_LINE_ID);
     }
@@ -5479,6 +5485,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     cachedTransform.fitTransform = fitTransform;
     floorTransformCache.set(url, cachedTransform);
   }
+  // TEMP DEBUG: compare with walls transform
+  console.log("[rooms transform]", { affine, rotationOverride, fitTransform });
 
   if (fc && Array.isArray(fc.features) && currentFloorContextRef && typeof currentFloorContextRef === 'object') {
     currentFloorContextRef.current = {
