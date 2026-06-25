@@ -240,6 +240,25 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-06-25)
+
+| Commit | What changed and why |
+|---|---|
+| `a7dbb02` | **Fix `tryLoadWallsOverlay` call site 1 fitTransform fallback** — call site 1 (the `enableWalls` branch) was passing a plain `fitTransform` shorthand with no fallback; changed to `fitTransform: fitTransform \|\| cachedTransform?.fitTransform \|\| null` to match call site 2. |
+| `97756f6` | **Fix walls layer order** — `ensureLayerOrder` was calling `map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID)` which placed walls *below* room fills, making them invisible. Changed to `map.moveLayer(WALLS_LAYER, FLOOR_LINE_ID)` so walls render above fills but below room outlines. |
+| `34ceee6` | **Debug logging (temporary, now removed)** — added `[rooms transform]` / `[walls transform]` / raw-coord logs to diagnose walls offset. Confirmed affine is null for both; root cause was coordinate-space mismatch (see below). |
+| `latest` | **Fix walls coordinate-space mismatch in `tryLoadWallsOverlay`** — buildings without an `affine.json` (e.g. Sarpy 1102 Building) have pre-optimized room GeoJSON already in lon/lat. The rooms pipeline takes the geographic fine-tune path (`fitFloorplanToBuilding`) and stores a `fitTransform` with turf geographic ops (rotate/translate/scale). When that same `fitTransform` was applied to the raw Revit walls file (local coordinate space, not lon/lat), it produced garbage output (bbox `[-223, -89, -72, 83]`). Fix: when `!isLikelyLonLat(fc) && !affine && roomsFC` is available, call `fitLocalFloorplanToBuilding(fc, turf.envelope(roomsFC))` to map walls directly into the rooms' already-positioned lon/lat bbox, then set `fitTransform = null` so the geographic fine-tune is not applied on top. Mirrors the rooms Path-1 pipeline (line 5379) but uses the positioned roomsFC extent as the target instead of a campus building polygon. |
+
+### Walls transform pipeline — two paths
+
+`tryLoadWallsOverlay` now handles three coordinate-space cases in order:
+
+1. **Has affine + not lon/lat** → `applyAffineTransform` → `applyFloorplanOverlayTransform` (existing)
+2. **No affine + not lon/lat + roomsFC available** → `fitLocalFloorplanToBuilding(fc, turf.envelope(roomsFC))` then `fitTransform = null` → `applyFloorplanOverlayTransform` with no-op (new)
+3. **Already lon/lat** → affine skipped, local fit skipped → `applyFloorplanOverlayTransform` for fine-tuning (existing)
+
+---
+
 ## Recent Changes (2026-06-23)
 
 | Commit | What changed and why |
@@ -618,4 +637,4 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ---
 
-*Last updated: 2026-06-22 (session 4) — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-06-25 — update this file whenever the architecture, client list, or critical behavior changes.*

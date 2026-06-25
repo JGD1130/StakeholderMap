@@ -3839,9 +3839,6 @@ async function fetchFirstOk(urls) {
 
 async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
   if (!basePath || !floorId || !map) return;
-  // TEMP DEBUG: compare with rooms transform
-  console.log("[walls transform]", { affine, rotationOverride, fitTransform });
-
   const cleanFloor = String(floorId).trim();
   const candidates = [
     `${basePath}/${cleanFloor}_-_Map_Export_Walls_RAW.geojson`,
@@ -3855,9 +3852,6 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   if (!fc?.features?.length) return;
 
   console.log("[walls] loaded features", fc.features.length);
-  // TEMP DEBUG: raw coordinate before any transform
-  const _rawCoord = fc.features[0]?.geometry?.coordinates?.[0]?.[0] ?? fc.features[0]?.geometry?.coordinates?.[0];
-  console.log("[walls] raw first coord (pre-transform)", _rawCoord, "isLikelyLonLat:", isLikelyLonLat(fc));
 
   // Use the same isLikelyLonLat span check used by applyAffineIfPresent — it
   // computes the full bbox and requires span ≤ 0.25°. The previous inline
@@ -3871,13 +3865,24 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   } else if (affine) {
     console.log("[walls] skipped affine (already lon/lat)");
   }
-  // TEMP DEBUG: coord immediately before applyFloorplanOverlayTransform
-  const _preTransCoord = fc.features[0]?.geometry?.coordinates?.[0]?.[0] ?? fc.features[0]?.geometry?.coordinates?.[0];
-  console.log("[walls] coord pre-overlayTransform", _preTransCoord, "overlayTransformApplied flag:", fc.__mfOverlayTransformApplied);
+
+  // When walls are in local/Revit coordinate space and no affine.json exists,
+  // the fitTransform from rooms is geographic-only (rotate/translate/scale in
+  // lon/lat space) and produces garbage when applied to raw Revit coords.
+  // Mirror the rooms Path-1 pipeline: fit walls directly into the rooms' bbox,
+  // which is already in its final lon/lat position, then skip fitTransform.
+  if (!isLikelyLonLat(fc) && !affine && roomsFC?.features?.length) {
+    const envelope = turf.envelope(roomsFC);
+    if (envelope) {
+      const locallyFitted = fitLocalFloorplanToBuilding(fc, envelope);
+      if (locallyFitted?.features?.length) {
+        fc = locallyFitted;
+        fitTransform = null;
+      }
+    }
+  }
+
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
-  // TEMP DEBUG: coord immediately after applyFloorplanOverlayTransform
-  const _postTransCoord = fc.features[0]?.geometry?.coordinates?.[0]?.[0] ?? fc.features[0]?.geometry?.coordinates?.[0];
-  console.log("[walls] coord post-overlayTransform", _postTransCoord);
 
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
@@ -5494,9 +5499,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     cachedTransform.fitTransform = fitTransform;
     floorTransformCache.set(url, cachedTransform);
   }
-  // TEMP DEBUG: compare with walls transform
-  console.log("[rooms transform]", { affine, rotationOverride, fitTransform });
-
   if (fc && Array.isArray(fc.features) && currentFloorContextRef && typeof currentFloorContextRef === 'object') {
     currentFloorContextRef.current = {
       url,
