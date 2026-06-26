@@ -3884,6 +3884,30 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
 
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
 
+  // Drop any features whose coordinates didn't land in valid lon/lat space.
+  // This catches the case where fitLocalFloorplanToBuilding bailed early (bad bbox)
+  // and left raw Revit-space coordinates in the collection.
+  const beforeFilter = fc.features.length;
+  fc = {
+    ...fc,
+    features: fc.features.filter(f => {
+      if (!f?.geometry?.coordinates) return false;
+      const valid = (coords) => {
+        if (!Array.isArray(coords)) return false;
+        if (typeof coords[0] === 'number') {
+          const [lon, lat] = coords;
+          return Number.isFinite(lon) && Number.isFinite(lat) &&
+                 lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90;
+        }
+        return coords.every(valid);
+      };
+      return valid(f.geometry.coordinates);
+    })
+  };
+  if (fc.features.length < beforeFilter) {
+    console.warn(`[walls] dropped ${beforeFilter - fc.features.length} features with out-of-range coordinates`);
+  }
+
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
 
@@ -6932,6 +6956,7 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
     const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(localFC);
     const [bxMin, byMin, bxMax, byMax] = turf.bbox(building);
     if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
+      console.warn('[fitLocalFloorplanToBuilding] non-finite bbox, skipping fit', { rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax });
       return localFC;
     }
 
