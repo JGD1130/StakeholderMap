@@ -3875,6 +3875,22 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   //      This handles: (1) rooms loaded from Airtable (already lon/lat, no Revit
   //      transform), (2) a stale cachedTransform from a previously-loaded building
   //      whose localCenterTo is far from the current rooms centroid.
+  // Compute walls IQR centroid in source (Revit) space for diagnostics.
+  const _wallDiag = (() => {
+    const centroids = (fc.features || []).filter(f => f?.geometry?.coordinates).map(f => {
+      const pts = [];
+      const flat = c => { if (typeof c[0] === 'number') { pts.push(c); } else c.forEach(flat); };
+      flat(f.geometry.coordinates);
+      if (!pts.length) return null;
+      return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+    }).filter(Boolean);
+    if (!centroids.length) return null;
+    const xs = centroids.map(c => c[0]).sort((a, b) => a - b);
+    const ys = centroids.map(c => c[1]).sort((a, b) => a - b);
+    const mid = arr => arr[Math.floor(arr.length / 2)];
+    return { medX: mid(xs), medY: mid(ys) };
+  })();
+
   if (!isLikelyLonLat(fc) && !affine) {
     let usedPathA = false;
     if (fitTransform?.localPlanarFit && roomsFC?.features?.length) {
@@ -3887,7 +3903,18 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
       const distDeg = Math.sqrt((ftx - roomsCx) ** 2 + (fty - roomsCy) ** 2);
       if (distDeg < 0.005) {
         // Path A: transform is for this building — reuse it.
-        console.log('[walls] reusing rooms localPlanarFit for walls alignment');
+        console.log('[walls] Path A: localCenterFrom=', JSON.stringify(fitTransform.localCenterFrom),
+          'localCenterTo=', JSON.stringify(fitTransform.localCenterTo),
+          'scale=', fitTransform.localScale);
+        if (_wallDiag) {
+          const predLon = ftx + (_wallDiag.medX - fitTransform.localCenterFrom[0]) * fitTransform.localScale;
+          const predLat = fty + (_wallDiag.medY - fitTransform.localCenterFrom[1]) * fitTransform.localScale;
+          console.log('[walls] walls source IQR centroid:', _wallDiag.medX.toFixed(3), _wallDiag.medY.toFixed(3),
+            '→ predicted mapped center:', predLon.toFixed(6), predLat.toFixed(6));
+          console.log('[walls] rooms lon/lat bbox center:', roomsCx.toFixed(6), roomsCy.toFixed(6));
+          const offsetM = Math.sqrt(((predLon - roomsCx) * 111320 * Math.cos(roomsCy * Math.PI / 180)) ** 2 + ((predLat - roomsCy) * 110540) ** 2);
+          console.log('[walls] predicted walls center offset from rooms center:', offsetM.toFixed(1), 'm');
+        }
         usedPathA = true;
       } else {
         console.log(`[walls] localPlanarFit target is ${(distDeg * 111000).toFixed(0)}m from rooms centroid — falling back to independent fit`);
@@ -3895,6 +3922,11 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     }
     if (!usedPathA && roomsFC?.features?.length) {
       // Path B: independent fit to the rooms envelope.
+      console.log('[walls] Path B: fitting walls to rooms envelope');
+      if (roomsFC?.features?.length) {
+        const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
+        console.log('[walls] rooms bbox:', rbx0.toFixed(6), rby0.toFixed(6), rbx1.toFixed(6), rby1.toFixed(6));
+      }
       const envelope = turf.envelope(roomsFC);
       if (envelope) {
         const locallyFitted = fitLocalFloorplanToBuilding(fc, envelope);
