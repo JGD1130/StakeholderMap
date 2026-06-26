@@ -3867,18 +3867,34 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   // When walls are in local/Revit coordinate space and no affine.json exists:
-  //   A) If the rooms already produced a localPlanarFit transform, reuse it —
-  //      walls and rooms share the same Revit source coordinate system, so the
-  //      same scale/centerFrom/centerTo maps walls to exactly the rooms' position.
+  //   A) If the rooms produced a localPlanarFit transform AND it points to the
+  //      current building's location, reuse it — walls and rooms share the same
+  //      Revit source coordinate system, so the same scale/centerFrom/centerTo
+  //      maps walls to exactly the rooms' position.
   //   B) Otherwise fall back to an independent fit against the rooms envelope.
-  //      (This path is taken when fitTransform is a geographic-only transform that
-  //      would produce garbage if applied directly to raw Revit coords.)
+  //      This handles: (1) rooms loaded from Airtable (already lon/lat, no Revit
+  //      transform), (2) a stale cachedTransform from a previously-loaded building
+  //      whose localCenterTo is far from the current rooms centroid.
   if (!isLikelyLonLat(fc) && !affine) {
-    if (fitTransform?.localPlanarFit) {
-      // Path A: reuse rooms transform — guarantees walls align to rooms.
-      console.log('[walls] reusing rooms localPlanarFit for walls alignment');
-    } else if (roomsFC?.features?.length) {
-      // Path B: independent fit to the rooms envelope (fallback).
+    let usedPathA = false;
+    if (fitTransform?.localPlanarFit && roomsFC?.features?.length) {
+      // Validate that localCenterTo is near the current rooms centroid.
+      // A stale cached transform from a different building will fail this check.
+      const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
+      const roomsCx = (rbx0 + rbx1) / 2;
+      const roomsCy = (rby0 + rby1) / 2;
+      const [ftx, fty] = fitTransform.localCenterTo;
+      const distDeg = Math.sqrt((ftx - roomsCx) ** 2 + (fty - roomsCy) ** 2);
+      if (distDeg < 0.005) {
+        // Path A: transform is for this building — reuse it.
+        console.log('[walls] reusing rooms localPlanarFit for walls alignment');
+        usedPathA = true;
+      } else {
+        console.log(`[walls] localPlanarFit target is ${(distDeg * 111000).toFixed(0)}m from rooms centroid — falling back to independent fit`);
+      }
+    }
+    if (!usedPathA && roomsFC?.features?.length) {
+      // Path B: independent fit to the rooms envelope.
       const envelope = turf.envelope(roomsFC);
       if (envelope) {
         const locallyFitted = fitLocalFloorplanToBuilding(fc, envelope);
