@@ -3897,7 +3897,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   if (!map.getLayer(WALLS_LAYER)) {
-    const beforeId = map.getLayer(FLOOR_FILL_ID) ? FLOOR_FILL_ID : undefined;
+    const beforeId = map.getLayer(FLOOR_ROOM_LABEL_LAYER) ? FLOOR_ROOM_LABEL_LAYER : undefined;
     map.addLayer({
       id: WALLS_LAYER,
       type: "line",

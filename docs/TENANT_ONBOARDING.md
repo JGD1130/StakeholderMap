@@ -18,8 +18,12 @@ This repo now supports tenant scaffolding via `src/tenants/registry.js`.
 2. Add a tenant config
    - Create `src/Configs/<Tenant>.json`
    - Add `floorplanCampus` (folder name under `public/floorplans/`)
+   - If launch scope is building-level only, set:
+     - `enableFloorplans: false`
    - Add building/boundary geojson imports in `src/configLoader.js`
    - Register config key in `universityConfigs`
+   - If public technical assessments will be collected by multiple staff in the same building, set:
+     - `technicalAssessmentSaveMode: "per-assessor"`
 
 3. Data isolation checklist
    - Firestore path namespace: `universities/<tenant-id>/...`

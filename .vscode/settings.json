@@ -1,3 +1,4 @@
 {
-    "vsintellicode.python.completionsEnabled": false
+    "vsintellicode.python.completionsEnabled": false,
+    "chatgpt.openOnStartup": true
 }
