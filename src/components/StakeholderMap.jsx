@@ -3866,15 +3866,17 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log("[walls] skipped affine (already lon/lat)");
   }
 
-  // When walls are in local/Revit coordinate space and no affine.json exists:
-  //   A) If the rooms produced a localPlanarFit transform AND it points to the
-  //      current building's location, reuse it — walls and rooms share the same
-  //      Revit source coordinate system, so the same scale/centerFrom/centerTo
-  //      maps walls to exactly the rooms' position.
-  //   B) Otherwise fall back to an independent fit against the rooms envelope.
-  //      This handles: (1) rooms loaded from Airtable (already lon/lat, no Revit
-  //      transform), (2) a stale cachedTransform from a previously-loaded building
-  //      whose localCenterTo is far from the current rooms centroid.
+  // When walls are not already lon/lat and no affine.json exists:
+  //   A) rooms used fitLocalFloorplanToBuilding → fitTransform has localPlanarFit.
+  //      Reuse it directly: walls and rooms share the same Revit coordinate system,
+  //      so the same scale/centerFrom/centerTo maps walls to the rooms' position.
+  //   C) rooms used fitFloorplanToBuilding (already lon/lat) → fitTransform has
+  //      geographic fine-tuning but no localPlanarFit. Walls share the same
+  //      coordinate space as rooms, so the identical transform positions them
+  //      correctly. Re-deriving via Path B would discard rotation and nudge.
+  //   B) No usable fitTransform (rooms from Airtable, or stale cached transform
+  //      for a different building): fall back to independent fit against the
+  //      rooms envelope.
   // Compute walls IQR centroid in source (Revit) space for diagnostics.
   const _wallDiag = (() => {
     const centroids = (fc.features || []).filter(f => f?.geometry?.coordinates).map(f => {
@@ -3919,6 +3921,20 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
       } else {
         console.log(`[walls] localPlanarFit target is ${(distDeg * 111000).toFixed(0)}m from rooms centroid — falling back to independent fit`);
       }
+    }
+    if (!usedPathA && fitTransform && !fitTransform.localPlanarFit && roomsFC?.features?.length) {
+      // Path C: rooms went through fitFloorplanToBuilding (rooms already lon/lat).
+      // fitTransform carries geographic fine-tuning (rotation, scale, translate, nudge) but
+      // no Revit-local → lon/lat step. Walls share the same coordinate space as rooms, so
+      // the identical transform positions them correctly — re-deriving independently would
+      // introduce drift by ignoring the rotation and refinement already baked into fitTransform.
+      console.log('[walls] Path C: rooms used fitFloorplanToBuilding; reusing exact rooms fitTransform');
+      if (_wallDiag) {
+        const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
+        console.log('[walls] rooms bbox center:', ((rbx0 + rbx1) / 2).toFixed(6), ((rby0 + rby1) / 2).toFixed(6),
+          '— walls IQR centroid:', _wallDiag.medX.toFixed(6), _wallDiag.medY.toFixed(6));
+      }
+      usedPathA = true;
     }
     if (!usedPathA && roomsFC?.features?.length) {
       // Path B: independent fit to the rooms envelope.
