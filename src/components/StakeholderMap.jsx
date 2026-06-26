@@ -6953,23 +6953,80 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
       : (buildingGeomOrFeature?.type ? { type: 'Feature', properties: {}, geometry: buildingGeomOrFeature } : null);
     if (!building) return localFC;
 
-    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(localFC);
+    // Compute the target bbox first so we have bW/bH for the clip window.
     const [bxMin, byMin, bxMax, byMax] = turf.bbox(building);
-    if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
-      console.warn('[fitLocalFloorplanToBuilding] non-finite bbox, skipping fit', { rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax });
+    if (![bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
+      console.warn('[fitLocalFloorplanToBuilding] non-finite building bbox, skipping fit');
       return localFC;
     }
+    const bW = Math.max(1e-9, bxMax - bxMin);
+    const bH = Math.max(1e-9, byMax - byMin);
+    const bldgCx = (bxMin + bxMax) / 2;
+    const bldgCy = (byMin + byMax) / 2;
+
+    // Feature centroid in source space (mean of all coordinate pairs in the geometry).
+    const featureCentroid = (feature) => {
+      const pts = [];
+      mapCoords(feature.geometry.coordinates, ([x, y]) => { pts.push([x, y]); return [x, y]; });
+      if (!pts.length) return null;
+      return [
+        pts.reduce((s, p) => s + p[0], 0) / pts.length,
+        pts.reduce((s, p) => s + p[1], 0) / pts.length,
+      ];
+    };
+
+    // Collect all feature centroids and sort to derive robust statistics.
+    // Using median + IQR avoids the circularity of estimating a clip window
+    // from a scale that is itself derived from the skewed (full) bbox.
+    const centroids = localFC.features
+      .filter(f => f?.geometry?.coordinates)
+      .map(f => featureCentroid(f))
+      .filter(Boolean);
+    if (!centroids.length) return localFC;
+
+    const xs = centroids.map(c => c[0]).sort((a, b) => a - b);
+    const ys = centroids.map(c => c[1]).sort((a, b) => a - b);
+    const mid = (arr) => arr[Math.floor(arr.length / 2)];
+    const pct = (arr, p) => arr[Math.max(0, Math.floor(arr.length * p))];
+
+    const medX  = mid(xs);
+    const medY  = mid(ys);
+    // IQR gives a spread estimate that is immune to extreme outliers.
+    const iqrX  = Math.max(1e-9, pct(xs, 0.75) - pct(xs, 0.25));
+    const iqrY  = Math.max(1e-9, pct(ys, 0.75) - pct(ys, 0.25));
+    // Clip window: 2× IQR on each side of the median (≈ 4× IQR total width).
+    // This is equivalent to keeping centroids within ~2 building-widths of the
+    // building core, which removes drawing borders and site-context linework
+    // that are typically 5–20× the building size away from the footprint.
+    const clipXMin = medX - iqrX * 2;
+    const clipXMax = medX + iqrX * 2;
+    const clipYMin = medY - iqrY * 2;
+    const clipYMax = medY + iqrY * 2;
+
+    const coreFeatures = localFC.features.filter(f => {
+      if (!f?.geometry?.coordinates) return false;
+      const c = featureCentroid(f);
+      if (!c) return false;
+      return c[0] >= clipXMin && c[0] <= clipXMax && c[1] >= clipYMin && c[1] <= clipYMax;
+    });
+
+    // Fall back to full set if clipping removes everything (shouldn't happen).
+    const fitFeatures = coreFeatures.length > 0 ? coreFeatures : localFC.features;
+    if (coreFeatures.length < localFC.features.length) {
+      console.log(`[fitLocalFloorplanToBuilding] clipped ${localFC.features.length - coreFeatures.length} outlier features; using ${fitFeatures.length} for source bbox`);
+    }
+
+    // Derive scale/translate from the cleaned core-feature bbox.
+    const fitFC = { ...localFC, features: fitFeatures };
+    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(fitFC);
+    if (![rxMin, ryMin, rxMax, ryMax].every(Number.isFinite)) return localFC;
 
     const rW = Math.max(1e-9, rxMax - rxMin);
     const rH = Math.max(1e-9, ryMax - ryMin);
-    const bW = Math.max(1e-9, bxMax - bxMin);
-    const bH = Math.max(1e-9, byMax - byMin);
     const scale = Math.min(bW / rW, bH / rH) * 0.96;
 
     const roomCx = (rxMin + rxMax) / 2;
     const roomCy = (ryMin + ryMax) / 2;
-    const bldgCx = (bxMin + bxMax) / 2;
-    const bldgCy = (byMin + byMax) / 2;
 
     const next = {
       ...localFC,
