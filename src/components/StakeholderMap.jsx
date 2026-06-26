@@ -3866,18 +3866,26 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log("[walls] skipped affine (already lon/lat)");
   }
 
-  // When walls are in local/Revit coordinate space and no affine.json exists,
-  // the fitTransform from rooms is geographic-only (rotate/translate/scale in
-  // lon/lat space) and produces garbage when applied to raw Revit coords.
-  // Mirror the rooms Path-1 pipeline: fit walls directly into the rooms' bbox,
-  // which is already in its final lon/lat position, then skip fitTransform.
-  if (!isLikelyLonLat(fc) && !affine && roomsFC?.features?.length) {
-    const envelope = turf.envelope(roomsFC);
-    if (envelope) {
-      const locallyFitted = fitLocalFloorplanToBuilding(fc, envelope);
-      if (locallyFitted?.features?.length) {
-        fc = locallyFitted;
-        fitTransform = null;
+  // When walls are in local/Revit coordinate space and no affine.json exists:
+  //   A) If the rooms already produced a localPlanarFit transform, reuse it —
+  //      walls and rooms share the same Revit source coordinate system, so the
+  //      same scale/centerFrom/centerTo maps walls to exactly the rooms' position.
+  //   B) Otherwise fall back to an independent fit against the rooms envelope.
+  //      (This path is taken when fitTransform is a geographic-only transform that
+  //      would produce garbage if applied directly to raw Revit coords.)
+  if (!isLikelyLonLat(fc) && !affine) {
+    if (fitTransform?.localPlanarFit) {
+      // Path A: reuse rooms transform — guarantees walls align to rooms.
+      console.log('[walls] reusing rooms localPlanarFit for walls alignment');
+    } else if (roomsFC?.features?.length) {
+      // Path B: independent fit to the rooms envelope (fallback).
+      const envelope = turf.envelope(roomsFC);
+      if (envelope) {
+        const locallyFitted = fitLocalFloorplanToBuilding(fc, envelope);
+        if (locallyFitted?.features?.length) {
+          fc = locallyFitted;
+          fitTransform = null;
+        }
       }
     }
   }
