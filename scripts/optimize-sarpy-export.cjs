@@ -324,6 +324,11 @@ for (const file of geojsonFiles) {
       // using the rooms we just wrote as the source coordinate reference.
       const fit = computeLocalPlanarFit(mainFC, buildingFeature);
       if (fit) {
+        // toLineFC first: GeometryCollection has .geometries not .coordinates,
+        // so applyLocalPlanarFitToFC would skip those features. Normalizing to
+        // LineString/MultiLineString first ensures all features have .coordinates
+        // and get transformed correctly.
+        wallsFC = toLineFC(wallsFC);
         wallsFC = applyLocalPlanarFitToFC(wallsFC, fit);
 
         const [wxMin, wyMin, wxMax, wyMax] = bboxFromFeatures(wallsFC.features);
@@ -332,9 +337,11 @@ for (const file of geojsonFiles) {
       } else {
         console.warn(`  [fit] could not compute fit for "${BUILDING}" — walls written in Revit space`);
       }
+    } else {
+      // No building footprint supplied — still normalize geometry types.
+      wallsFC = toLineFC(wallsFC);
     }
 
-    wallsFC = toLineFC(wallsFC);
     wallsCount = wallsFC.features.length;
     applyRoundCoords(wallsFC);
     const wallsOut  = JSON.stringify(wallsFC);
