@@ -3851,6 +3851,8 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   let fc = ensureFeatureCollection(raw);
   if (!fc?.features?.length) return;
 
+  console.log('[walls] raw first coord after ensureFeatureCollection:',
+    JSON.stringify(fc?.features?.[0]?.geometry?.coordinates?.[0]?.[0]));
   console.log("[walls] loaded features", fc.features.length);
 
   if (!isLikelyLonLat(fc)) {
