@@ -104,20 +104,11 @@ function extractFloorId(filename) {
 }
 
 // ── Wall-layer classification ─────────────────────────────────────────────────
-// All DXF drawing layers go to the lazy-loaded companion walls file.
-// Every drawing feature has complex polygon geometry (~12–35 KB each);
-// keeping any in the main file pushes it well over the 5 MB target.
-// Rooms stay in the main file (297 KB for LEVEL_1 Courthouse).
-const WALL_LAYERS = new Set([
-  'A-WALL', 'I-WALL',
-  'A-DOOR',
-  'A-GLAZ-CURT', 'A-GLAZ-CWMG',
-  'I-FURN', 'I-FURN-PNLS',
-  'P-SANR-FIXT',
-  'Q-CASE',
-  'S-STRS',
-]);
-const WALL_LAYER_PREFIXES = ['A-WALL-', 'I-WALL-', 'A-GLAZ-', 'S-STRS-'];
+// Only true wall layers go to the lazy-loaded companion walls file.
+// All other drawing features (doors, glazing, furniture, fixtures, stairs)
+// stay in the main rooms file so they render with the initial floor load.
+const WALL_LAYERS = new Set(['A-WALL', 'I-WALL']);
+const WALL_LAYER_PREFIXES = ['A-WALL-', 'I-WALL-'];
 
 function isWallFeature(f) {
   const layer = ((f.properties && (f.properties.Layer || f.properties.layer)) || '').toUpperCase();
