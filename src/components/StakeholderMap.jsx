@@ -4024,8 +4024,6 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   // so ensureLayerOrder in loadFloorGeojson fires before this layer exists.
   // Call it here to guarantee walls land above fills but below room outlines.
   ensureLayerOrder(map);
-  // Make room fills semi-transparent so walls are visible through them.
-  try { map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 0.25); } catch {}
 }
 
 async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel }) {
