@@ -3853,6 +3853,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
 
   console.log("[walls] loaded features", fc.features.length);
 
+  if (!isLikelyLonLat(fc)) {
   // Use the same isLikelyLonLat span check used by applyAffineIfPresent — it
   // computes the full bbox and requires span ≤ 0.25°. The previous inline
   // looksLikeLonLat only sampled 20 points and checked |x|≤180 && |y|≤90,
@@ -3954,12 +3955,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     }
   }
 
-  // If walls are already in lon/lat (pre-baked by optimize-sarpy-export.cjs), do not
-  // apply fitTransform — it contains the localPlanarFit that was already baked offline
-  // and re-applying it would corrupt the coordinates. rotationOverride is still allowed
-  // so user-driven fine-tune rotations propagate correctly.
-  const wallsOverlayTransform = isLikelyLonLat(fc) ? null : fitTransform;
-  fc = applyFloorplanOverlayTransform(fc, rotationOverride, wallsOverlayTransform, { adjustBearings: false });
+  fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
 
   // Drop any features whose coordinates didn't land in valid lon/lat space.
   // This catches the case where fitLocalFloorplanToBuilding bailed early (bad bbox)
@@ -3983,6 +3979,9 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   };
   if (fc.features.length < beforeFilter) {
     console.warn(`[walls] dropped ${beforeFilter - fc.features.length} features with out-of-range coordinates`);
+  }
+  } else {
+    console.log('[walls] pre-baked lon/lat — skipping all transforms');
   }
 
   const WALLS_SOURCE = "walls-source";
