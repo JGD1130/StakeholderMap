@@ -8,12 +8,12 @@
  * What it does:
  *   1. Reads every *.geojson in <src>/ (top level — the main floor files)
  *   2. Splits each file into two outputs:
- *        a. Rooms + non-wall drawings → <dst>/Rooms/{filename}  (fast initial load)
- *           Non-wall layers: A-DOOR, A-GLAZ-*, I-FURN, I-FURN-PNLS, P-SANR-FIXT,
- *                            Q-CASE, S-STRS, S-STRS-*
- *        b. Wall drawings only → <dst>/{floorId}_Walls.geojson at building root
- *           Wall layers: A-WALL, A-WALL-*, I-WALL, I-WALL-*
- *           (auto-detected by tryLoadWallsOverlay after rooms render)
+ *        a. Room polygons only → <dst>/Rooms/{filename}  (fast initial load)
+ *        b. ALL drawing features → <dst>/{floorId}_Walls.geojson at building root
+ *           Includes walls (A-WALL, I-WALL), doors (A-DOOR), glazing (A-GLAZ-*),
+ *           furniture (I-FURN, I-FURN-PNLS), fixtures (P-SANR-FIXT), casework
+ *           (Q-CASE), and stairs (S-STRS, S-STRS-*).
+ *           Loaded lazily by tryLoadWallsOverlay after rooms render.
  *   3. Rounds coordinates to 6 decimal places, writes compact JSON
  *   4. Copies <src>/Doors/  → <dst>/Doors/  if present
  *   5. Copies <src>/Stairs/ → <dst>/Stairs/ if present
@@ -22,7 +22,7 @@
  *   - Reads src/Configs/geojson/SarpyCounty_Buildings.json to find the building polygon
  *   - Computes the same local-planar fit used at runtime (fitLocalFloorplanToBuilding):
  *       IQR-clipped rooms bbox → building footprint bbox, scale + translate only
- *   - Applies that transform to the walls features so the walls GeoJSON is written
+ *   - Applies that transform to ALL drawing features so the companion GeoJSON is written
  *     in lon/lat coordinates, eliminating any runtime transform for those files.
  *
  * Floor ID extraction: leading BASEMENT or LEVEL_N from the filename.
@@ -103,18 +103,11 @@ function extractFloorId(filename) {
   return m ? m[1].toUpperCase() : null;
 }
 
-// ── Wall-layer classification ─────────────────────────────────────────────────
-// Only true wall layers go to the lazy-loaded companion walls file.
-// All other drawing features (doors, glazing, furniture, fixtures, stairs)
-// stay in the main rooms file so they render with the initial floor load.
-const WALL_LAYERS = new Set(['A-WALL', 'I-WALL']);
-const WALL_LAYER_PREFIXES = ['A-WALL-', 'I-WALL-'];
-
-function isWallFeature(f) {
-  const layer = ((f.properties && (f.properties.Layer || f.properties.layer)) || '').toUpperCase();
-  if (WALL_LAYERS.has(layer)) return true;
-  for (const p of WALL_LAYER_PREFIXES) { if (layer.startsWith(p)) return true; }
-  return false;
+// ── Drawing feature classification ───────────────────────────────────────────
+// ALL drawing features go to the lazy-loaded companion file so the transform
+// can be applied uniformly. The rooms file contains only room polygons.
+function isDrawingFeature(f) {
+  return !!(f.properties && f.properties.type === 'drawing');
 }
 
 // ── Offline local-planar fit ──────────────────────────────────────────────────
@@ -260,24 +253,23 @@ for (const file of geojsonFiles) {
   const before  = fc.features.length;
   const srcKB   = (fs.statSync(srcFile).size / 1024).toFixed(1);
 
-  const wallFeatures    = fc.features.filter(f => f.properties && f.properties.type === 'drawing' && isWallFeature(f));
-  const nonWallFeatures = fc.features.filter(f => !(f.properties && f.properties.type === 'drawing' && isWallFeature(f)));
+  const drawingFeatures = fc.features.filter(isDrawingFeature);
+  const roomFeatures    = fc.features.filter(f => !isDrawingFeature(f));
 
-  // ── a. Main file: rooms + non-wall drawings (doors, glazing, furniture, etc.)
-  const mainFC = { ...fc, features: nonWallFeatures };
+  // ── a. Main file: room polygons only
+  const mainFC = { ...fc, features: roomFeatures };
   applyRoundCoords(mainFC);
   const mainOut  = JSON.stringify(mainFC);
   const mainDst  = path.join(roomsDst, file);
   fs.writeFileSync(mainDst, mainOut, 'utf8');
 
-  const roomCount    = nonWallFeatures.filter(f => f.properties && f.properties.Element === 'Room').length;
-  const nonWallCount = nonWallFeatures.filter(f => f.properties && f.properties.type === 'drawing').length;
+  const roomCount = roomFeatures.filter(f => f.properties && f.properties.Element === 'Room').length;
 
-  // ── b. Walls file — optionally pre-baked to lon/lat via offline localPlanarFit
+  // ── b. Drawings file — all drawing features, optionally pre-baked to lon/lat
   const floorId = extractFloorId(file);
   let wallsKB   = '0';
-  if (wallFeatures.length && floorId) {
-    let wallsFC = { ...fc, features: wallFeatures };
+  if (drawingFeatures.length && floorId) {
+    let wallsFC = { ...fc, features: drawingFeatures };
 
     if (buildingFeature) {
       // Compute the same local-planar fit the app would apply at runtime,
@@ -299,13 +291,13 @@ for (const file of geojsonFiles) {
     const wallsFile = path.join(dstAbs, `${floorId}_Walls.geojson`);
     fs.writeFileSync(wallsFile, wallsOut, 'utf8');
     wallsKB = (wallsOut.length / 1024).toFixed(1);
-  } else if (wallFeatures.length && !floorId) {
-    console.warn(`  ${file}: could not extract floorId — wall features not written`);
+  } else if (drawingFeatures.length && !floorId) {
+    console.warn(`  ${file}: could not extract floorId — drawing features not written`);
   }
 
   console.log(
-    `  ${file}: ${before} → ${roomCount} rooms + ${nonWallCount} non-wall drawings (${(mainOut.length/1024).toFixed(1)} KB)` +
-    (wallFeatures.length ? ` | walls → ${floorId}_Walls.geojson (${wallsKB} KB)` : '') +
+    `  ${file}: ${before} → ${roomCount} rooms (${(mainOut.length/1024).toFixed(1)} KB)` +
+    (drawingFeatures.length ? ` | ${drawingFeatures.length} drawings → ${floorId}_Walls.geojson (${wallsKB} KB)` : '') +
     ` | src ${srcKB} KB`
   );
 }
