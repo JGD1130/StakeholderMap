@@ -216,6 +216,53 @@ function applyLocalPlanarFitToFC(wallsFC, fit) {
   };
 }
 
+/**
+ * Convert any geometry to a line-compatible type so all features render on the
+ * Mapbox "line" layer (walls-layer). Polygons become their exterior ring;
+ * GeometryCollections are flattened; Point/MultiPoint are dropped (return null).
+ */
+function toLineGeometry(geom) {
+  if (!geom) return null;
+  switch (geom.type) {
+    case 'LineString':
+    case 'MultiLineString':
+      return geom;
+    case 'Polygon':
+      return { type: 'LineString', coordinates: geom.coordinates[0] };
+    case 'MultiPolygon':
+      return { type: 'MultiLineString', coordinates: geom.coordinates.map(poly => poly[0]) };
+    case 'GeometryCollection': {
+      const lines = [];
+      for (const g of (geom.geometries || [])) {
+        const c = toLineGeometry(g);
+        if (!c) continue;
+        if (c.type === 'LineString') lines.push(c.coordinates);
+        else if (c.type === 'MultiLineString') lines.push(...c.coordinates);
+      }
+      if (!lines.length) return null;
+      return lines.length === 1
+        ? { type: 'LineString', coordinates: lines[0] }
+        : { type: 'MultiLineString', coordinates: lines };
+    }
+    default:
+      return null;
+  }
+}
+
+function toLineFC(fc) {
+  return {
+    ...fc,
+    features: fc.features
+      .map(f => {
+        if (!f?.geometry) return null;
+        const geom = toLineGeometry(f.geometry);
+        if (!geom) return null;
+        return { ...f, geometry: geom };
+      })
+      .filter(Boolean),
+  };
+}
+
 // ── Load building footprint (optional) ───────────────────────────────────────
 let buildingFeature = null;
 if (BUILDING) {
@@ -268,6 +315,7 @@ for (const file of geojsonFiles) {
   // ── b. Drawings file — all drawing features, optionally pre-baked to lon/lat
   const floorId = extractFloorId(file);
   let wallsKB   = '0';
+  let wallsCount = 0;
   if (drawingFeatures.length && floorId) {
     let wallsFC = { ...fc, features: drawingFeatures };
 
@@ -286,6 +334,8 @@ for (const file of geojsonFiles) {
       }
     }
 
+    wallsFC = toLineFC(wallsFC);
+    wallsCount = wallsFC.features.length;
     applyRoundCoords(wallsFC);
     const wallsOut  = JSON.stringify(wallsFC);
     const wallsFile = path.join(dstAbs, `${floorId}_Walls.geojson`);
@@ -297,7 +347,7 @@ for (const file of geojsonFiles) {
 
   console.log(
     `  ${file}: ${before} → ${roomCount} rooms (${(mainOut.length/1024).toFixed(1)} KB)` +
-    (drawingFeatures.length ? ` | ${drawingFeatures.length} drawings → ${floorId}_Walls.geojson (${wallsKB} KB)` : '') +
+    (wallsCount ? ` | ${wallsCount} drawings (as lines) → ${floorId}_Walls.geojson (${wallsKB} KB)` : '') +
     ` | src ${srcKB} KB`
   );
 }
