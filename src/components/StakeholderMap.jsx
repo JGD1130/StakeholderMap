@@ -3954,7 +3954,12 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     }
   }
 
-  fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
+  // If walls are already in lon/lat (pre-baked by optimize-sarpy-export.cjs), do not
+  // apply fitTransform — it contains the localPlanarFit that was already baked offline
+  // and re-applying it would corrupt the coordinates. rotationOverride is still allowed
+  // so user-driven fine-tune rotations propagate correctly.
+  const wallsOverlayTransform = isLikelyLonLat(fc) ? null : fitTransform;
+  fc = applyFloorplanOverlayTransform(fc, rotationOverride, wallsOverlayTransform, { adjustBearings: false });
 
   // Drop any features whose coordinates didn't land in valid lon/lat space.
   // This catches the case where fitLocalFloorplanToBuilding bailed early (bad bbox)
