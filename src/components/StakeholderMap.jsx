@@ -5532,7 +5532,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     } else {
       const fitCandidate = buildFitCandidate(fc);
       const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
-      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding)) {
+      const isSarpyCounty = /SarpyCounty/i.test(floorBasePath || '');
+      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding, { isSarpyCounty })) {
         const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
         if (fitted?.features?.length) {
           fitTransform = fitted.__mfFitTransform || null;
@@ -8437,8 +8438,10 @@ function matchBuildingFeature(features = [], input) {
   return best;
 }
 
-function shouldFitFloorplanToBuilding(roomsFC, buildingFeature) {
+function shouldFitFloorplanToBuilding(roomsFC, buildingFeature, options = {}) {
   try {
+    // Never fit Sarpy County buildings — they use real-world WGS84 coordinates.
+    if (options.isSarpyCounty) return false;
     if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
     if (roomsFC.__mfGeoreferenced || roomsFC.__mfNoFit) return false;
     const forceKey = normalizeSnapKey(buildingFeature?.properties?.id || buildingFeature?.properties?.name || '');
