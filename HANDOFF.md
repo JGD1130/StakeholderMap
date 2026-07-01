@@ -240,6 +240,94 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-06-30)
+
+| Commit | What changed |
+|---|---|
+| `9cfd0e0` | **Park Sarpy walls overlay** — set `enableWallsOverlay: false` in `SarpyCounty.json`. Suppresses `tryLoadWallsOverlay` for all Sarpy buildings. Walls work is parked until Sarpy Revit models are georeferenced (see 2026-06-29 section below). |
+
+### Export Adjusts vs affine.json — clarification
+
+The **Export Adjusts Backup** button (in the floor panel, admin-only) exports a browser localStorage dump. It is **not** compatible with `affine.json`. They are two separate systems:
+
+| | `affine.json` | Export Adjusts backup |
+|---|---|---|
+| **Purpose** | Base transform: Revit feet → geographic lon/lat | Post-hoc fine-tuning on top of an already-positioned floor plan |
+| **Units** | `scale_deg_per_foot`, `anchor_feet` (Revit space) | `translateMeters`, `rotationDeg`, `scale` multiplier, `translateLngLat` |
+| **Applied when** | At fetch time in `loadAffineJson()` | After the floor plan is positioned, as an interactive tweak |
+| **Stored** | Static file on disk per-building in `public/floorplans/` | `localStorage` under `mfFloorAdjust:`, `mfFloorAdjustUrl:`, `mfFloorAdjustFloor:` prefixes |
+
+The backup file (`exportFloorAdjustBackup`, line 18073 in `StakeholderMap.jsx`) wraps all matching localStorage entries in:
+```json
+{ "kind": "mapfluence-floor-adjustments", "version": 1, "universityId": "...", "entries": [...] }
+```
+
+You cannot derive an `affine.json` from an Export Adjusts backup — the backup encodes geographic delta adjustments, not the raw Revit coordinate transform.
+
+---
+
+## Recent Changes (2026-06-29) — Sarpy walls overlay overhaul
+
+### Summary
+
+Spent the session trying to get walls + drawing features (furniture, glazing, casework, fixtures) to render correctly on Sarpy floor plans. The root problem is that Sarpy Revit models are not georeferenced — PyRevit exports in Revit internal coordinates (local feet, e.g. `[121, -75]`), not real-world lon/lat. Every runtime transform attempt is an approximation. **Walls alignment is parked until the Revit models are georeferenced** (see long-term fix below).
+
+### What was done
+
+| Commit | What changed |
+|---|---|
+| `bf84d38` | Narrowed `WALL_LAYERS` in `optimize-sarpy-export.cjs` to only `A-WALL`/`I-WALL`. Previously all drawing layers (doors, glazing, furniture, stairs) were routed to the walls file, leaving rooms files with 0 drawing features. |
+| `bff416d` | Moved ALL `type === 'drawing'` features to the companion `LEVEL_N_Walls.geojson` file (not just walls). Rooms files now contain room polygons only. All drawing features are pre-transformed to lon/lat using the offline localPlanarFit. |
+| `8316a63` | Added early-exit to `tryLoadWallsOverlay`: if `isLikelyLonLat(fc)` is true immediately after fetch, skip all runtime transforms (affine, Path A/B/C, `applyFloorplanOverlayTransform`) and go straight to `addSource`/`addLayer`. |
+| `d52d848` | Added `toLineGeometry`/`toLineFC` to `optimize-sarpy-export.cjs`. Drawing features export as MultiPolygon (furniture, casework, fixtures) but the Mapbox `walls-layer` is `type: "line"` — those features were silently skipped. Converts: MultiPolygon → exterior-ring MultiLineString, Polygon → LineString, GeometryCollection → flattened MultiLineString. |
+| `f675a71` | Diagnostic log: `[walls] raw first coord after ensureFeatureCollection` to see exactly what coordinate `tryLoadWallsOverlay` receives before any transform. |
+| `972cf05` | **Root cause fix**: `applyLocalPlanarFitToFC` checks `f.geometry.coordinates` to decide whether to transform a feature. `GeometryCollection` has `.geometries` not `.coordinates`, so those 10 features were returned untransformed in Revit space. After `toLineFC` extracted their coordinates, Revit X values like 282 ft were written to the walls file alongside lon/lat coordinates. `turf.bbox` then saw `maxX=282 > 180°`, `isLikelyLonLat` correctly returned false, the early-exit missed, and Path A applied a second runtime transform — causing a **51.9m shift** on all walls/drawings. Fix: run `toLineFC` before `applyLocalPlanarFitToFC` so all features are MultiLineString/LineString with `.coordinates` before the transform runs. |
+
+### What failed and why
+
+- **Drawing features in rooms file (Revit space)**: After the first WALL_LAYERS fix (`bf84d38`), non-wall drawings were left in the rooms GeoJSON in Revit local coordinates. The app applies no transform to features in the main rooms file — they rendered ~100 ft from Nebraska. Fixed by moving all drawings to the companion file (`bff416d`).
+
+- **`isLikelyLonLat` returning false despite lon/lat content**: The walls file was confirmed in lon/lat by `node` inspection (`[-96.026583, 41.158152]`), but `turf.bbox` returned `maxX=282` because 10 `GeometryCollection` features bypassed the transform. `isLikelyLonLat` requires `maxX ≤ 180`, so it correctly rejected the file. The early-exit never fired, Path A ran, and walls were shifted 51.9m. Fixed in `972cf05`.
+
+- **Path A diagnostic confusion**: `[walls] Path A: localCenterFrom=[121.33, -75.60]` was visible in console. `localCenterFrom` comes from `fitTransform` (the rooms fit in Revit space) — it does not reflect the walls file coordinates. This is normal when Path A runs; the 51.9m shift was Path A applying a Revit→lon/lat transform on top of already-lon/lat walls coordinates.
+
+- **Diagnostic log obscured by build cache**: Several iterations appeared to "not take effect" because the deployed bundle hash changed but the walls GeoJSON was still browser-cached. Always hard-refresh (Ctrl+Shift+R) or test in incognito when debugging coordinate transforms.
+
+### Current state of walls files
+
+All six walls/drawings files are in lon/lat, all geometry normalized to MultiLineString/LineString:
+
+| Building | File | Features | Size |
+|---|---|---|---|
+| 1102 Building | `LEVEL_1_Walls.geojson` | 2742 | 2.8 MB |
+| Sheriff's Office | `LEVEL_1_Walls.geojson` | 2632 | 9.6 MB |
+| Juvenile Justice Center | `LEVEL_1_Walls.geojson` | 2086 | 4.7 MB |
+| 1246 Building | `LEVEL_1_Walls.geojson` | 760 | 1.7 MB |
+| Admin/Courthouse | `BASEMENT_Walls.geojson` | 1871 | 1.9 MB |
+| Admin/Courthouse | `LEVEL_1_Walls.geojson` | 7761 | 12.2 MB |
+
+The `optimize-sarpy-export.cjs` script does the following for each building:
+1. Splits features: rooms → `Rooms/LEVEL_N_Dept_Rooms.geojson`, drawings → walls companion
+2. Runs `toLineFC` on drawings (normalize geometry)
+3. Runs `computeLocalPlanarFit` using IQR-clipped room centroids → building footprint center
+4. Applies `applyLocalPlanarFitToFC` (scale + translate, no rotation)
+5. Writes walls companion in lon/lat
+
+### Long-term fix: georeference the Sarpy Revit models
+
+The offline fit is a best approximation. It maps the IQR-clipped rooms centroid to the building footprint center using a single scale factor. There is no rotation, and the building footprint polygons in `SarpyCounty_Buildings.json` are manually traced — not survey-accurate. The result is close (~5–50m depending on building) but not architecturally aligned.
+
+**The correct fix**: georeference each Sarpy Revit model by setting the Survey Point to the building's real-world coordinates (Nebraska State Plane or WGS84). Then update the PyRevit export script to use `SharedCoordinates` instead of `InternalOrigin` when computing geometry. The exported GeoJSON would then contain actual lon/lat coordinates and the entire offline-transform pipeline in `optimize-sarpy-export.cjs` becomes unnecessary.
+
+Until georeferencing is done, walls alignment will remain approximate. Do not spend more time tuning the runtime transform or offline fit — the fundamental input data (Revit internal coordinates with no real-world anchor) cannot be made more accurate without this change.
+
+### Other 404s noted (not addressed)
+
+- `public/icons/door-swing.png` and `public/icons/stairs-run.png` — PNG files missing from repo. Need the actual image assets committed to `public/icons/`.
+- `affine.json` 404s for Sarpy buildings — expected. Sarpy uses `fitLocalFloorplanToBuilding` at runtime; no `affine.json` is generated or needed.
+
+---
+
 ## Recent Changes (2026-06-25)
 
 | Commit | What changed and why |
@@ -637,4 +725,4 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ---
 
-*Last updated: 2026-06-25 — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-06-30 — update this file whenever the architecture, client list, or critical behavior changes.*
