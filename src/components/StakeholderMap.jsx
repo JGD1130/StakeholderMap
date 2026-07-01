@@ -5533,6 +5533,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       const fitCandidate = buildFitCandidate(fc);
       const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
       const isSarpyCounty = /SarpyCounty/i.test(floorBasePath || '');
+      console.log('[fit] floorBasePath:', floorBasePath, 'isSarpyCounty:', isSarpyCounty, 'isLikelyLonLat:', isLikelyLonLat(fc), '__mfNoFit:', fc.__mfNoFit, '__mfGeoreferenced:', fc.__mfGeoreferenced);
       if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding, { isSarpyCounty })) {
         const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
         if (fitted?.features?.length) {
@@ -8440,6 +8441,7 @@ function matchBuildingFeature(features = [], input) {
 
 function shouldFitFloorplanToBuilding(roomsFC, buildingFeature, options = {}) {
   try {
+    console.log('[fit] shouldFitFloorplanToBuilding options.isSarpyCounty:', options.isSarpyCounty);
     // Never fit Sarpy County buildings — they use real-world WGS84 coordinates.
     if (options.isSarpyCounty) return false;
     if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
