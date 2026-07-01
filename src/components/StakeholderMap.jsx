@@ -5515,7 +5515,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
 
   let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
   try {
-    if (fitBuilding && !isLikelyLonLat(fc)) {
+    if (fc.__mfGeoreferenced || fc.__mfNoFit) {
+      // Already-correct rooms must skip both fit paths below — the local-planar-fit
+      // branch (taken when !isLikelyLonLat) has no flag check of its own, so without
+      // this guard __mfNoFit/__mfGeoreferenced only protected the bbox-fit branch.
+    } else if (fitBuilding && !isLikelyLonLat(fc)) {
       const locallyFitted = fitLocalFloorplanToBuilding(fc, fitBuilding);
       if (locallyFitted?.features?.length) {
         fc = locallyFitted;
