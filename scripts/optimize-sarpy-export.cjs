@@ -17,6 +17,11 @@
  *   3. Rounds coordinates to 6 decimal places, writes compact JSON
  *   4. Copies <src>/Doors/  → <dst>/Doors/  if present
  *   5. Copies <src>/Stairs/ → <dst>/Stairs/ if present
+ *   6. Copies <src>/affine.json → <dst>/affine.json if present, so the runtime
+ *      (loadAffineForFloor) can find it too — this script only reads affine.json
+ *      from <src> to pre-bake walls; without also copying it to <dst>, rooms are
+ *      never georeferenced at runtime and silently fall back to the
+ *      building-footprint bbox fit.
  *
  *   If <src>/affine.json is present:
  *   - Read anchor_feet / target_lon / target_lat / rotation_deg_cw / scale_deg_per_foot
@@ -468,6 +473,17 @@ if (fs.existsSync(stairsSrc)) {
   console.log(`  Stairs/: copied ${count} file(s)`);
 } else {
   console.log('  Stairs/: not found in source, skipping');
+}
+
+// 4. Copy affine.json to the public destination so the runtime (loadAffineForFloor)
+// can find it too — this build script only reads it from <src> to pre-bake walls;
+// without this copy, rooms are never georeferenced at runtime and silently fall
+// back to the building-footprint bbox fit.
+if (affinePath && fs.existsSync(affinePath)) {
+  fs.copyFileSync(affinePath, path.join(dstAbs, 'affine.json'));
+  console.log('  affine.json: copied to destination');
+} else {
+  console.log('  affine.json: not found in source, skipping');
 }
 
 console.log('\nDone. Destination:', dstAbs);
