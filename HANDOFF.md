@@ -240,6 +240,32 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-07-01) — 1102 Building georeferenced-rooms regression
+
+### Summary
+
+Commit `732b643` (same day, earlier) switched `script.py` to export 1102 Building rooms as real-world WGS84 lon/lat directly (via `SiteLocation`/`ProjectPosition`), removing the need for a per-building `affine.json`, and deleted the stale `affine.json` from the public floorplan folder. This broke floor alignment: `shouldFitFloorplanToBuilding` kept rescaling/repositioning the now-correctly-placed rooms onto the building footprint bbox, because the only place that sets `__mfGeoreferenced` (`applyAffineIfPresent`) requires an `affine` object — which no longer exists for this building by design. Fixing this took several passes; each is captured below because the root causes were layered, not a single bug.
+
+| Commit | What changed and why |
+|---|---|
+| `2c898b3` | Added `'1102_building/level_1'` to `FLOORPLAN_NO_FIT` as an immediate unblock, and added `isFloorAlreadyGeoreferenced(roomsFC, basePath, floorId)` — a general fix that infers georeferencing (sets `fc.__mfGeoreferenced = true`) when rooms are already lon/lat **and** the paired `LEVEL_N_Walls.geojson` for the same floor is also lon/lat, corroborating a genuinely calibrated export rather than coincidentally small numbers. |
+| `725e3b3` | Found the allowlist entry wasn't actually the problem — the key math (`canon('1102 Building')` + `fId('LEVEL_1')` = `1102_building/level_1`) was correct all along. The real gap: `__mfNoFit`/`__mfGeoreferenced` only guarded the `shouldFitFloorplanToBuilding` branch inside `loadFloorGeojson`'s fit block. The sibling `fitLocalFloorplanToBuilding` branch (taken when `!isLikelyLonLat(fc)`) had no flag check of its own. Wrapped both branches in a single `if (fc.__mfGeoreferenced \|\| fc.__mfNoFit) { /* skip */ } else if (...) {...} else {...}`. |
+| `b429bb2` | Requested fix was `if (universityId && canon(universityId) === 'sarpy_county') return false;` at the top of `shouldFitFloorplanToBuilding` — but that's a module-level function with no `universityId` in scope; it would've thrown `ReferenceError` on every call, for every tenant, silently swallowed by the caller's `try/catch`, breaking building-fit everywhere. Used `floorBasePath` instead (in scope at the call site, literally contains `SarpyCounty` for this campus) threaded through as an `isSarpyCounty` option. |
+| `fd8a1dd` | Added temporary `console.log('[fit] ...')` diagnostics (still in the code as of this writing — inside `shouldFitFloorplanToBuilding` and at its call site) after the guard appeared not to fire. **These logs never printing turned out to be expected**, not a bug: they sit inside the `else` branch of the guard added in `725e3b3`, and since `__mfNoFit` is `true` for this building/floor, execution takes the empty first branch and never reaches them. |
+| `994a06f` | Real root cause of "works on first load in incognito, breaks on reload": `floorAdjust` (manual rotate/scale/nudge, saved via the floor-panel alignment tools) is persisted in `window.localStorage` — not the in-memory `floorCache`/`floorTransformCache`, which reset on reload — keyed per building+floor / URL / basePath+floor (`loadFloorAdjust`, `loadFloorAdjustByUrl`, `loadFloorAdjustByBasePath`). It was reapplied unconditionally at the end of `loadFloorGeojson`, regardless of georeferenced state. A stale adjustment saved before the WGS84 re-export got reapplied on top of already-correct coordinates on every normal reload. Incognito starts with empty `localStorage`, so the bug never showed there. Fixed: `if (floorAdjust && !fc.__mfGeoreferenced) {...}`. |
+| `6886417` | `__mfNoFit` (set unconditionally via the allowlist) and `__mfGeoreferenced` (set only if the *async* `isFloorAlreadyGeoreferenced` walls-file fetch succeeds) are independent signals — the `994a06f` guard only checked the latter. Extended to `if (floorAdjust && !fc.__mfGeoreferenced && !fc.__mfNoFit) {...}` so a walls-file corroboration hiccup can't leave the door open. |
+| `1b36d51` | Removed the temporary `[fit]` diagnostic `console.log` calls from `fd8a1dd` now that the root cause is confirmed fixed. |
+
+**Confirmed working after `6886417`.**
+
+### GitHub Actions deploy gotchas discovered this session
+
+- `.github/workflows/deploy.yml`'s `push` trigger has a `paths` filter (`src/**`, `public/**`, `index.html`, `vite.config.js`, `package.json`, `package-lock.json`, `.github/workflows/deploy.yml`). **An empty commit (`git commit --allow-empty`) matches none of these paths and will not trigger a build at all.** Use the `workflow_dispatch` "Run workflow" button in the Actions tab instead, or touch a file under a matched path.
+- The workflow's `concurrency` block is `{ group: "pages", cancel-in-progress: false }`. A stuck/hung run is **not** replaced by a new push — the new run queues behind it. Cancel the stuck run manually (Actions tab → the run → Cancel workflow) before expecting a fresh push or dispatch to actually execute promptly.
+- No `gh` CLI or `GITHUB_TOKEN`/`GH_TOKEN` is available in the assistant's shell environment in this session — cancelling runs or dispatching workflows programmatically isn't possible from here; both require the GitHub web UI.
+
+---
+
 ## Recent Changes (2026-06-30)
 
 | Commit | What changed |
@@ -725,4 +751,4 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ---
 
-*Last updated: 2026-06-30 — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-07-01 — update this file whenever the architecture, client list, or critical behavior changes.*
