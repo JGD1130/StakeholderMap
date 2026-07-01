@@ -3759,6 +3759,22 @@ async function loadWallsFC({ basePath, floorId, affine }) {
   return applyAffineIfPresent(rawFC, affine);
 }
 
+// Rooms with no affine.json can still already be real-world lon/lat (e.g. the
+// script.py WGS84 export from commit 732b643), in which case shouldFitFloorplanToBuilding
+// must not rescale them onto the building bbox. The pre-baked walls file for the same
+// floor is exported through the same pipeline, so if it also lands in lon/lat range
+// that corroborates the rooms are genuinely georeferenced and not just coincidentally
+// small numbers.
+async function isFloorAlreadyGeoreferenced(roomsFC, basePath, floorId) {
+  if (!isLikelyLonLat(roomsFC)) return false;
+  try {
+    const wallsFC = await loadWallsFC({ basePath, floorId, affine: null });
+    return Boolean(wallsFC?.features?.length && isLikelyLonLat(wallsFC));
+  } catch {
+    return false;
+  }
+}
+
 function applyAffine(fc, M) {
   function mapCoords(coords) {
     if (!coords) return coords;
@@ -3841,7 +3857,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef }) {
   if (!basePath || !floorId || !map) return;
   const cleanFloor = String(floorId).trim();
   const candidates = [
@@ -3961,6 +3977,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     }
   }
 
+  if (wallsRawFCRef) wallsRawFCRef.current = JSON.parse(JSON.stringify(fc));
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
 
   // Drop any features whose coordinates didn't land in valid lon/lat space.
@@ -5487,6 +5504,12 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     } catch {}
   };
 
+  if (!fc.__mfGeoreferenced && !fc.__mfNoFit && !affine && floorBasePath && floorId) {
+    if (await isFloorAlreadyGeoreferenced(fc, floorBasePath, floorId)) {
+      fc.__mfGeoreferenced = true;
+    }
+  }
+
   let summary = computeFloorSummary(fc);
   cacheFloorSummary(summary, fc);
 
@@ -5616,6 +5639,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       buildingId,
       floor,
       fc,
+      fitTransform: fitTransform || null,
+      rotationOverride: rotationOverride || null,
       floorAdjustLabel,
       floorAdjustFloorId: floorId || floor || '',
       floorAdjustBasePath: floorBasePath || null,
@@ -5814,7 +5839,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       roomsFC: patchedFC,
       affine,
       rotationOverride,
-      fitTransform: fitTransform || cachedTransform?.fitTransform || null
+      fitTransform: fitTransform || cachedTransform?.fitTransform || null,
+      wallsRawFCRef: options.wallsRawFCRef || null
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -5826,7 +5852,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     tryLoadWallsOverlay({
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,
-      fitTransform: fitTransform || cachedTransform?.fitTransform || null
+      fitTransform: fitTransform || cachedTransform?.fitTransform || null,
+      wallsRawFCRef: options.wallsRawFCRef || null
     }).catch(() => {});
   }
 
@@ -8985,7 +9012,11 @@ const FLOORPLAN_NO_FIT = new Set([
   'calvin_h_french_chapel/basement',
   'calvin_h_french_memorial_chapel/basement',
   'kiewit/level_2',
-  'kiewit_building/level_2'
+  'kiewit_building/level_2',
+  // Temporary unblock: real-world WGS84 export (commit 732b643) has no affine.json,
+  // so __mfGeoreferenced never gets set and shouldFitFloorplanToBuilding was still
+  // rescaling already-correct rooms. General fix lives in loadFloorGeojson.
+  '1102_building/level_1'
 ]);
 
 const DOOR_SWING_FLIP_OVERRIDES = {
@@ -12370,6 +12401,7 @@ const StakeholderMap = ({
   const currentFloorUrlRef = useRef(null);
   const lastFloorUrlRef = useRef(null);
   const currentFloorContextRef = useRef({ url: null, key: null, buildingId: null, floorId: null });
+  const wallsRawFCRef = useRef(null);
   const currentRoomFeatureRef = useRef(null);
   const buildingStatsCache = useRef({});
   const floorStatsCache = useRef({});
@@ -17432,7 +17464,9 @@ const StakeholderMap = ({
       let data = null;
       try {
         data = await res.json();
-      } catch {}
+      } catch (jsonErr) {
+        console.error('[refreshCampusRooms] Failed to parse JSON response:', jsonErr);
+      }
       if (res.ok && data?.ok && Array.isArray(data.rooms)) {
         const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
         setAirtableRooms(scopedRooms);
@@ -17440,7 +17474,12 @@ const StakeholderMap = ({
         recordAirtableScopeCheck('Manual refresh', data.rooms, scopedRooms);
         return true;
       }
-    } catch {}
+      if (!res.ok) {
+        console.error(`[refreshCampusRooms] Server error: HTTP ${res.status}`, data);
+      }
+    } catch (fetchErr) {
+      console.error('[refreshCampusRooms] Network/fetch error:', fetchErr);
+    }
     setAirtableScopeCheck({
       level: 'warn',
       label: 'Refresh failed',
@@ -18402,6 +18441,7 @@ const StakeholderMap = ({
         suppressAutoWalls,
         wallsBasePath: basePath,
         wallsFloorId: floorId,
+        wallsRawFCRef,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -26198,9 +26238,12 @@ useEffect(() => {
       }
       const pivotScreen = map.project({ lng: pivot[0], lat: pivot[1] });
       const startAngle = Math.atan2(e.point.y - pivotScreen.y, e.point.x - pivotScreen.x);
+      const wallsSrcAtDown = getGeojsonSource(map, WALLS_SOURCE);
+      const wallsDataAtDown = wallsSrcAtDown?._data || null;
       floorAdjustDragRef.current = {
         mode,
         baseData: JSON.parse(JSON.stringify(baseData)),
+        wallsBaseData: wallsDataAtDown ? JSON.parse(JSON.stringify(wallsDataAtDown)) : null,
         pivot,
         pivotScreen,
         startAngle,
@@ -26230,6 +26273,10 @@ useEffect(() => {
         const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
         const rotated = turf.transformRotate(drag.baseData, deltaDeg, { pivot: drag.pivot });
         src.setData(rotated);
+        if (drag.wallsBaseData) {
+          const wallsSrc = getGeojsonSource(map, WALLS_SOURCE);
+          if (wallsSrc) wallsSrc.setData(turf.transformRotate(drag.wallsBaseData, deltaDeg, { pivot: drag.pivot }));
+        }
         return;
       }
       if (drag.mode === 'move') {
@@ -26238,6 +26285,10 @@ useEffect(() => {
         const deltaLat = e.lngLat.lat - drag.startLngLat.lat;
         const moved = applyNudgeLngLat(drag.baseData, [deltaLng, deltaLat]);
         src.setData(moved);
+        if (drag.wallsBaseData) {
+          const wallsSrc = getGeojsonSource(map, WALLS_SOURCE);
+          if (wallsSrc) wallsSrc.setData(applyNudgeLngLat(drag.wallsBaseData, [deltaLng, deltaLat]));
+        }
       }
     };
 
@@ -28380,6 +28431,10 @@ useEffect(() => {
                 if (baseData && scalePivot && Number.isFinite(factor) && Math.abs(factor - 1) > 1e-6) {
                   scaled = turf.transformScale(baseData, factor, { origin: scalePivot });
                   if (src) src.setData(scaled);
+                  const wallsSrc = getGeojsonSource(mapRef.current, WALLS_SOURCE);
+                  if (wallsSrc?._data) {
+                    wallsSrc.setData(turf.transformScale(wallsSrc._data, factor, { origin: scalePivot }));
+                  }
                 }
                 const nextAdjust = { ...adjust, scale: nextScale };
                 const adjustLabel =
