@@ -5621,7 +5621,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  if (floorAdjust) {
+  if (floorAdjust && !fc.__mfGeoreferenced) {
     const hasAdjust = hasFloorAdjust(floorAdjust);
     if (hasAdjust) {
       const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
