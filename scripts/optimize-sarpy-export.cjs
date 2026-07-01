@@ -128,6 +128,18 @@ function isDrawingFeature(f) {
 //   IQR-clip room feature centroids → core bbox → scale + translate to building bbox.
 // No rotation — the runtime function does not rotate either.
 
+// Mirrors isLikelyLonLat() in StakeholderMap.jsx — guards against re-applying
+// affine.json to an export that's already real lon/lat (e.g. from the updated
+// PyRevit exporter), which would double-transform and produce garbage.
+function isLikelyLonLat(features) {
+  const [minX, minY, maxX, maxY] = bboxFromFeatures(features);
+  if (![minX, minY, maxX, maxY].every(Number.isFinite)) return false;
+  if (minX < -180 || maxX > 180 || minY < -90 || maxY > 90) return false;
+  const spanX = Math.abs(maxX - minX);
+  const spanY = Math.abs(maxY - minY);
+  return spanX <= 0.25 && spanY <= 0.25;
+}
+
 function bboxFromFeatures(features) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const f of features) {
@@ -338,6 +350,7 @@ function toLineFC(fc) {
 
 // ── Load calibrated affine.json from source dir (optional) ──────────────────
 let affineConfig = null;
+let affineSkippedAsAlreadyLonLat = false;
 const affinePath = path.join(srcAbs, 'affine.json');
 if (fs.existsSync(affinePath)) {
   try {
@@ -405,7 +418,11 @@ for (const file of geojsonFiles) {
   if (drawingFeatures.length && floorId) {
     let wallsFC = { ...fc, features: drawingFeatures };
 
-    if (affineConfig) {
+    if (affineConfig && isLikelyLonLat(drawingFeatures)) {
+      console.log('  [affine] drawing features are already lon/lat — skipping affine.json to avoid double-transform');
+      affineSkippedAsAlreadyLonLat = true;
+      wallsFC = toLineFC(wallsFC);
+    } else if (affineConfig) {
       // Calibrated affine.json takes priority over the bbox fit — it's a
       // measured transform, not an IQR-clipped approximation.
       wallsFC = toLineFC(wallsFC);
@@ -479,8 +496,18 @@ if (fs.existsSync(stairsSrc)) {
 // can find it too — this build script only reads it from <src> to pre-bake walls;
 // without this copy, rooms are never georeferenced at runtime and silently fall
 // back to the building-footprint bbox fit.
-if (affinePath && fs.existsSync(affinePath)) {
-  fs.copyFileSync(affinePath, path.join(dstAbs, 'affine.json'));
+// Skipped when the export is already lon/lat: copying a stale affine.json here
+// would make the runtime double-transform rooms on next load.
+const dstAffinePath = path.join(dstAbs, 'affine.json');
+if (affineSkippedAsAlreadyLonLat) {
+  if (fs.existsSync(dstAffinePath)) {
+    fs.unlinkSync(dstAffinePath);
+    console.log('  affine.json: source export already lon/lat — removed stale affine.json from destination');
+  } else {
+    console.log('  affine.json: source export already lon/lat — not copying (would double-transform rooms at runtime)');
+  }
+} else if (affinePath && fs.existsSync(affinePath)) {
+  fs.copyFileSync(affinePath, dstAffinePath);
   console.log('  affine.json: copied to destination');
 } else {
   console.log('  affine.json: not found in source, skipping');

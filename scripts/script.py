@@ -3,11 +3,13 @@
 Mapfluence Production Floorplan Export
 
 Official exporter for Mapfluence floorplans across all projects.
-Outputs Hastings-style local-coordinate floorplan files:
+Outputs real-world WGS84 lon/lat floorplan files, converted automatically
+from Revit's Site Location + Project Position (no manual origin pick):
   <FLOOR>_Dept_Rooms.geojson
 
-These files are intended for Mapfluence production use where the app handles
-move / rotate / scale / save-adjust workflows after load.
+Requires the project's shared coordinates to be set correctly in Revit
+(Manage tab -> Location -> Site Location / Coordinates at Point) before
+exporting, or the converted coordinates will not land on the real address.
 """
 
 import os, json, re, math, codecs, subprocess, tempfile
@@ -27,8 +29,6 @@ from System.Windows.Forms import FolderBrowserDialog, DialogResult
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 from Autodesk.Revit.UI import TaskDialog
-from Autodesk.Revit.UI.Selection import ObjectSnapTypes
-from Autodesk.Revit.Exceptions import OperationCanceledException
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector, BuiltInCategory, BuiltInParameter,
@@ -462,25 +462,46 @@ if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
 # =============================================================================
-# INTERACTIVE LOCAL ORIGIN PICK
+# REAL-WORLD (WGS84) COORDINATE CONVERSION
 # =============================================================================
-TaskDialog.Show(
-    "Mapfluence Export",
-    "1. Pick a local floorplan origin.\n\n"
-    "Recommended: an exterior corner or a stable point near the building.\n"
-    "Mapfluence will handle move / rotate / scale adjustments after load."
-)
-try:
-    anchor = uidoc.Selection.PickPoint(
-        ObjectSnapTypes.Endpoints | ObjectSnapTypes.Intersections | ObjectSnapTypes.Nearest,
-        "Pick local origin for floorplan export"
-    )
-except OperationCanceledException:
-    raise SystemExit
-ax, ay = anchor.X, anchor.Y
+# Converts Revit internal feet coordinates directly to lon/lat using the
+# project's Site Location (true-north-referenced lat/lon) and Project Position
+# (the internal origin's rotation + offset relative to that reference point).
+# No manual origin pick — this only produces correct results if the project's
+# shared coordinates were actually set in Revit (Manage tab -> Location ->
+# Site Location / Coordinates at Point) to the real-world address/coordinates.
+FEET_PER_DEGREE_LAT = 364000.0
+
+site_location = doc.SiteLocation
+base_lat_rad = site_location.Latitude
+base_lon_rad = site_location.Longitude
+
+project_position = doc.ActiveProjectLocation.GetProjectPosition(XYZ.Zero)
+project_angle = project_position.Angle       # radians: Project North -> True North rotation
+project_east = project_position.EastWest     # feet
+project_north = project_position.NorthSouth  # feet
+
+_cos_base_lat = math.cos(base_lat_rad)
+_feet_per_degree_lon = FEET_PER_DEGREE_LAT * _cos_base_lat if abs(_cos_base_lat) > 1e-9 else FEET_PER_DEGREE_LAT
 
 def ft_to_local(x, y):
-    return [x - ax, y - ay]
+    # Rotate project XY into the true-north-aligned frame. Revit's Angle is
+    # measured from Project North to True North; if converted points come out
+    # mirrored/rotated 180 deg from real geography on first test, flip the
+    # sign of project_angle here.
+    cos_a = math.cos(project_angle)
+    sin_a = math.sin(project_angle)
+    rx = x * cos_a - y * sin_a
+    ry = x * sin_a + y * cos_a
+
+    # Shift by the project position offset (internal origin -> shared origin).
+    east = rx + project_east
+    north = ry + project_north
+
+    # Feet -> degrees, added onto the site's base lat/lon.
+    lon = math.degrees(base_lon_rad) + (east / _feet_per_degree_lon)
+    lat = math.degrees(base_lat_rad) + (north / FEET_PER_DEGREE_LAT)
+    return [lon, lat]
 
 def view_crop_local_bounds(view_plan, pad=0.0):
     try:
@@ -513,10 +534,12 @@ def ring_ft_to_local(ring):
     return [ft_to_local(x, y) for x, y in ring]
 
 TaskDialog.Show(
-    "LOCAL ORIGIN SET",
-    "Origin: (%.1f, %.1f)\nDXF units: %.0f in/ft\n\n"
-    "Export will use local floorplan coordinates compatible with Mapfluence adjustments." % (
-        ax, ay, DXF_UNITS_PER_FOOT
+    "REAL-WORLD COORDINATES DETECTED",
+    "Site Latitude: %.6f\nSite Longitude: %.6f\nProject North rotation: %.2f deg\n"
+    "Project position offset: EastWest=%.1f ft, NorthSouth=%.1f ft\n\n"
+    "Export will use real-world lon/lat coordinates automatically — no origin pick needed." % (
+        math.degrees(base_lat_rad), math.degrees(base_lon_rad),
+        math.degrees(project_angle), project_east, project_north
     )
 )
 
@@ -627,7 +650,7 @@ def transform_coords_from_dxf(geom, units_per_foot):
     def tp(pt):
         x_ft = pt[0] / units_per_foot
         y_ft = pt[1] / units_per_foot
-        return [x_ft - ax, y_ft - ay]
+        return ft_to_local(x_ft, y_ft)
 
     if gtype == "Point":
         geom["coordinates"] = tp(coords)
