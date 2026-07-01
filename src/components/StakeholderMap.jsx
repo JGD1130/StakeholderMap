@@ -3389,6 +3389,10 @@ function applyAffineIfPresent(fc, affine) {
   if (out && typeof out === "object") {
     out.__mfAffineApplied = true;
     out.__mfAffineSignature = getAffineSignature(affine);
+    // A successfully-applied calibrated affine already places rooms correctly —
+    // shouldFitFloorplanToBuilding must not re-fit/rescale onto the building
+    // footprint bbox afterward, or it silently discards the calibration.
+    out.__mfGeoreferenced = true;
   }
   return out;
 }
