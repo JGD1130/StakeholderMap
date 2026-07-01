@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mapfluence — Affine Calibration Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; font-family: -apple-system, Segoe UI, Arial, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header { padding: 10px 14px; background: #1b2733; color: #fff; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header label { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  header input[type=text], header input[type=password] { font-size: 12px; padding: 3px 6px; width: 260px; }
+  #status { padding: 8px 14px; background: #eef4fb; border-bottom: 1px solid #cdd8e3; font-size: 13px; color: #1b2733; }
+  #status strong { color: #0b5fff; }
+  #panes { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; position: relative; border-right: 1px solid #cdd8e3; }
+  .pane:last-child { border-right: none; }
+  .pane h2 { position: absolute; top: 6px; left: 8px; z-index: 5; font-size: 12px; background: rgba(255,255,255,0.85); padding: 2px 6px; border-radius: 3px; margin: 0; }
+  #localCanvas, #mapDiv { width: 100%; height: 100%; display: block; }
+  #results { padding: 10px 14px; background: #12181f; color: #d7e2ee; font-size: 12px; }
+  #results pre { background: #05080b; padding: 8px; border-radius: 4px; overflow: auto; max-height: 160px; }
+  .btnrow { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+  button { font-size: 12px; padding: 5px 10px; cursor: pointer; }
+  .marker-pin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.6); }
+  .marker-A { background: #ff3b30; }
+  .marker-B { background: #0b84ff; }
+  .field { display: flex; gap: 4px; align-items: center; }
+  .field input { width: 110px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Affine Calibration Tool</h1>
+    <label>Mapbox token
+      <input id="tokenInput" type="password" placeholder="pk.eyJ..." />
+    </label>
+    <label>Local rooms GeoJSON
+      <input id="fileInput" type="file" accept=".geojson,.json" />
+    </label>
+    <button id="resetBtn">Reset points</button>
+  </header>
+
+  <div id="status">Load a rooms GeoJSON, then click <strong>point A</strong> on the floorplan (left), then click that same physical spot on the map (right). Repeat for <strong>point B</strong> — pick two points that are far apart for an accurate scale/rotation.</div>
+
+  <div id="panes">
+    <div class="pane">
+      <h2>Local floorplan (feet)</h2>
+      <canvas id="localCanvas"></canvas>
+    </div>
+    <div class="pane">
+      <h2>Live map</h2>
+      <div id="mapDiv"></div>
+    </div>
+  </div>
+
+  <div id="results">
+    <div class="btnrow">
+      <span id="pairSummary">0 of 2 point pairs collected.</span>
+      <button id="copyBtn" disabled>Copy affine.json</button>
+      <button id="downloadBtn" disabled>Download affine.json</button>
+    </div>
+    <div class="btnrow" id="editFields" style="display:none">
+      <div class="field">anchor_feet <input id="fAnchorX" /> , <input id="fAnchorY" /></div>
+      <div class="field">target_lon <input id="fLon" /></div>
+      <div class="field">target_lat <input id="fLat" /></div>
+      <div class="field">rotation_deg_cw <input id="fRot" /></div>
+      <div class="field">scale_deg_per_foot <input id="fScale" /></div>
+      <button id="recomputeBtn">Apply edits</button>
+    </div>
+    <pre id="jsonOut">// affine.json will appear here once both point pairs are set</pre>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Mapbox token persistence ────────────────────────────────────────────
+  const tokenInput = document.getElementById('tokenInput');
+  tokenInput.value = localStorage.getItem('mf_mapbox_token') || '';
+  tokenInput.addEventListener('change', () => {
+    localStorage.setItem('mf_mapbox_token', tokenInput.value.trim());
+    initMapIfReady();
+  });
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let roomsFC = null;
+  let localView = null; // { minX, minY, maxX, maxY } in feet, current visible window
+  let localBounds = null; // full-data bounds, feet
+  const points = { localA: null, localB: null, mapA: null, mapB: null };
+  let nextExpected = 'localA'; // localA -> mapA -> localB -> mapB -> done
+
+  const statusEl = document.getElementById('status');
+  const pairSummaryEl = document.getElementById('pairSummary');
+  const jsonOutEl = document.getElementById('jsonOut');
+  const copyBtn = document.getElementById('copyBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const editFields = document.getElementById('editFields');
+
+  function setStatus(html) { statusEl.innerHTML = html; }
+
+  function updateStatusForStep() {
+    const msgs = {
+      localA: 'Click <strong>point A</strong> on the floorplan (left).',
+      mapA: 'Now click that same physical spot on the <strong>map</strong> (right).',
+      localB: 'Click <strong>point B</strong> on the floorplan (left) — pick something far from A.',
+      mapB: 'Now click that same physical spot for point B on the <strong>map</strong> (right).',
+      done: 'Both pairs collected — affine.json computed below. Adjust fields if needed, then download.'
+    };
+    setStatus(msgs[nextExpected] || '');
+    const n = (points.localA && points.mapA ? 1 : 0) + (points.localB && points.mapB ? 1 : 0);
+    pairSummaryEl.textContent = n + ' of 2 point pairs collected.';
+  }
+
+  // ── Local floorplan canvas ──────────────────────────────────────────────
+  const canvas = document.getElementById('localCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    drawLocal();
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  function mapCoordsWalk(coords, fn) {
+    if (!coords) return;
+    if (typeof coords[0] === 'number') { fn(coords); return; }
+    coords.forEach(c => mapCoordsWalk(c, fn));
+  }
+
+  function computeBounds(fc) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    (fc.features || []).forEach(f => {
+      if (!f.geometry) return;
+      mapCoordsWalk(f.geometry.coordinates, ([x, y]) => {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      });
+      if (f.geometry.geometries) {
+        f.geometry.geometries.forEach(g => mapCoordsWalk(g.coordinates, ([x, y]) => {
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }));
+      }
+    });
+    if (!isFinite(minX)) return null;
+    const padX = (maxX - minX) * 0.05 || 5, padY = (maxY - minY) * 0.05 || 5;
+    return { minX: minX - padX, minY: minY - padY, maxX: maxX + padX, maxY: maxY + padY };
+  }
+
+  function fitScale() {
+    const w = localView.maxX - localView.minX, h = localView.maxY - localView.minY;
+    return Math.min(canvas.width / w, canvas.height / h);
+  }
+
+  function feetToPx(x, y) {
+    const scale = fitScale();
+    const offX = (canvas.width - (localView.maxX - localView.minX) * scale) / 2;
+    const offY = (canvas.height - (localView.maxY - localView.minY) * scale) / 2;
+    return [
+      offX + (x - localView.minX) * scale,
+      canvas.height - (offY + (y - localView.minY) * scale)
+    ];
+  }
+
+  function pxToFeet(px, py) {
+    const scale = fitScale();
+    const offX = (canvas.width - (localView.maxX - localView.minX) * scale) / 2;
+    const offY = (canvas.height - (localView.maxY - localView.minY) * scale) / 2;
+    return [
+      (px - offX) / scale + localView.minX,
+      (canvas.height - py - offY) / scale + localView.minY
+    ];
+  }
+
+  function drawGeom(geom) {
+    if (!geom) return;
+    const type = geom.type;
+    if (type === 'GeometryCollection') {
+      (geom.geometries || []).forEach(drawGeom);
+      return;
+    }
+    const coords = geom.coordinates;
+    const drawRing = (ring) => {
+      ctx.beginPath();
+      ring.forEach(([x, y], i) => {
+        const [px, py] = feetToPx(x, y);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+    };
+    if (type === 'Polygon') coords.forEach(drawRing);
+    else if (type === 'MultiPolygon') coords.forEach(poly => poly.forEach(drawRing));
+    else if (type === 'LineString') drawRing(coords);
+    else if (type === 'MultiLineString') coords.forEach(drawRing);
+  }
+
+  function drawLocal() {
+    if (!roomsFC || !localView) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#2c6ea5';
+    ctx.lineWidth = 1;
+    (roomsFC.features || []).forEach(f => drawGeom(f.geometry));
+
+    if (points.localA) drawMarker(points.localA, '#ff3b30', 'A');
+    if (points.localB) drawMarker(points.localB, '#0b84ff', 'B');
+  }
+
+  function drawMarker(feetPt, color, label) {
+    const [px, py] = feetToPx(feetPt[0], feetPt[1]);
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#111';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(label, px + 8, py - 8);
+  }
+
+  // Zoom / pan on local canvas
+  canvas.addEventListener('wheel', (e) => {
+    if (!localView) return;
+    e.preventDefault();
+    const [fx, fy] = pxToFeet(e.offsetX, e.offsetY);
+    const zoom = e.deltaY < 0 ? 0.85 : 1.15;
+    localView = {
+      minX: fx - (fx - localView.minX) * zoom,
+      maxX: fx + (localView.maxX - fx) * zoom,
+      minY: fy - (fy - localView.minY) * zoom,
+      maxY: fy + (localView.maxY - fy) * zoom
+    };
+    drawLocal();
+  }, { passive: false });
+
+  let dragging = false, dragStart = null, dragViewStart = null;
+  canvas.addEventListener('mousedown', (e) => {
+    dragging = true;
+    dragStart = [e.offsetX, e.offsetY];
+    dragViewStart = { ...localView };
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const scale = fitScale();
+    const dx = (e.offsetX - dragStart[0]) / scale;
+    const dy = (e.offsetY - dragStart[1]) / scale;
+    localView = {
+      minX: dragViewStart.minX - dx, maxX: dragViewStart.maxX - dx,
+      minY: dragViewStart.minY + dy, maxY: dragViewStart.maxY + dy
+    };
+    drawLocal();
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+
+  let clickMoved = false;
+  canvas.addEventListener('mousedown', () => { clickMoved = false; });
+  canvas.addEventListener('mousemove', () => { if (dragging) clickMoved = true; });
+  canvas.addEventListener('click', (e) => {
+    if (clickMoved) return;
+    if (!roomsFC) { alert('Load a rooms GeoJSON first.'); return; }
+    const feet = pxToFeet(e.offsetX, e.offsetY);
+    if (nextExpected === 'localA') { points.localA = feet; nextExpected = 'mapA'; }
+    else if (nextExpected === 'localB') { points.localB = feet; nextExpected = 'mapB'; }
+    else return;
+    drawLocal();
+    updateStatusForStep();
+    maybeCompute();
+  });
+
+  // ── File loading ─────────────────────────────────────────────────────────
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        roomsFC = JSON.parse(reader.result);
+      } catch (err) {
+        alert('Could not parse that file as JSON: ' + err.message);
+        return;
+      }
+      localBounds = computeBounds(roomsFC);
+      if (!localBounds) { alert('No coordinates found in that GeoJSON.'); return; }
+      localView = { ...localBounds };
+      resizeCanvas();
+    };
+    reader.readAsText(file);
+  });
+
+  // ── Mapbox map ───────────────────────────────────────────────────────────
+  let map = null;
+  function initMapIfReady() {
+    const token = tokenInput.value.trim();
+    if (!token || map) return;
+    mapboxgl.accessToken = token;
+    map = new mapboxgl.Map({
+      container: 'mapDiv',
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [-96.0804, 41.1367], // Sarpy County default
+      zoom: 15
+    });
+    map.on('click', (e) => {
+      const lonLat = [e.lngLat.lng, e.lngLat.lat];
+      if (nextExpected === 'mapA') {
+        points.mapA = lonLat;
+        addMapMarker(lonLat, '#ff3b30', 'A');
+        nextExpected = 'localB';
+      } else if (nextExpected === 'mapB') {
+        points.mapB = lonLat;
+        addMapMarker(lonLat, '#0b84ff', 'B');
+        nextExpected = 'done';
+      } else return;
+      updateStatusForStep();
+      maybeCompute();
+    });
+  }
+  function addMapMarker(lonLat, color, label) {
+    const el = document.createElement('div');
+    el.className = 'marker-pin marker-' + label;
+    el.style.background = color;
+    new mapboxgl.Marker(el).setLngLat(lonLat).addTo(map);
+  }
+  initMapIfReady();
+
+  // ── Affine math (mirrors applyAffineTransform in StakeholderMap.jsx) ───────
+  // Solve rotation_deg_cw + scale_deg_per_foot from two feet->lonlat pairs,
+  // anchor_feet/target_lon/target_lat fixed at point A.
+  function computeAffine() {
+    const [ax, ay] = points.localA;
+    const [bx, by] = points.localB;
+    const [targetLon, targetLat] = points.mapA;
+    const [lonB, latB] = points.mapB;
+
+    const dx = bx - ax, dy = by - ay;
+    const latRad = (targetLat * Math.PI) / 180;
+    const cosLat = Math.max(1e-9, Math.cos(latRad));
+
+    // Project the map's second point into a locally-planar (feet-like) frame
+    // by undoing the lon-shrink-by-cos(lat) that applyAffineTransform applies.
+    const xPrime = (lonB - targetLon) * cosLat;
+    const yPrime = (latB - targetLat);
+
+    const distFeet = Math.hypot(dx, dy);
+    const distPrime = Math.hypot(xPrime, yPrime);
+    if (distFeet < 1e-9 || distPrime < 1e-9) return null;
+
+    const scaleLat = distPrime / distFeet;
+    const thetaRad = Math.atan2(yPrime, xPrime) - Math.atan2(dy, dx);
+    const rotationDegCw = (thetaRad * 180) / Math.PI;
+
+    return {
+      target_lat: targetLat,
+      target_lon: targetLon,
+      rotation_deg_cw: rotationDegCw,
+      scale_deg_per_foot: scaleLat,
+      anchor_feet: [ax, ay],
+      units: 'feet'
+    };
+  }
+
+  let currentAffine = null;
+
+  function renderAffine(affine) {
+    currentAffine = affine;
+    jsonOutEl.textContent = JSON.stringify(affine, null, 2);
+    copyBtn.disabled = false;
+    downloadBtn.disabled = false;
+    editFields.style.display = 'flex';
+    document.getElementById('fAnchorX').value = affine.anchor_feet[0].toFixed(4);
+    document.getElementById('fAnchorY').value = affine.anchor_feet[1].toFixed(4);
+    document.getElementById('fLon').value = affine.target_lon.toFixed(8);
+    document.getElementById('fLat').value = affine.target_lat.toFixed(8);
+    document.getElementById('fRot').value = affine.rotation_deg_cw.toFixed(4);
+    document.getElementById('fScale').value = affine.scale_deg_per_foot.toExponential(6);
+  }
+
+  function maybeCompute() {
+    if (points.localA && points.mapA && points.localB && points.mapB) {
+      const affine = computeAffine();
+      if (!affine) { alert('Points A and B must not be identical — pick two distinct locations.'); return; }
+      renderAffine(affine);
+      updateStatusForStep();
+    }
+  }
+
+  document.getElementById('recomputeBtn').addEventListener('click', () => {
+    const affine = {
+      anchor_feet: [Number(document.getElementById('fAnchorX').value), Number(document.getElementById('fAnchorY').value)],
+      target_lon: Number(document.getElementById('fLon').value),
+      target_lat: Number(document.getElementById('fLat').value),
+      rotation_deg_cw: Number(document.getElementById('fRot').value),
+      scale_deg_per_foot: Number(document.getElementById('fScale').value),
+      units: 'feet'
+    };
+    renderAffine(affine);
+  });
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(JSON.stringify(currentAffine, null, 2));
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => { copyBtn.textContent = 'Copy affine.json'; }, 1200);
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(currentAffine, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'affine.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    points.localA = points.localB = points.mapA = points.mapB = null;
+    nextExpected = 'localA';
+    currentAffine = null;
+    copyBtn.disabled = true;
+    downloadBtn.disabled = true;
+    editFields.style.display = 'none';
+    jsonOutEl.textContent = '// affine.json will appear here once both point pairs are set';
+    if (map) {
+      document.querySelectorAll('.marker-pin').forEach(el => el.parentElement && el.parentElement.remove());
+    }
+    drawLocal();
+    updateStatusForStep();
+  });
+
+  updateStatusForStep();
+})();
+</script>
+</body>
+</html>

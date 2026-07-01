@@ -18,7 +18,15 @@
  *   4. Copies <src>/Doors/  → <dst>/Doors/  if present
  *   5. Copies <src>/Stairs/ → <dst>/Stairs/ if present
  *
- *   If --building "<Name>" is provided:
+ *   If <src>/affine.json is present:
+ *   - Read anchor_feet / target_lon / target_lat / rotation_deg_cw / scale_deg_per_foot
+ *     (same schema loadAffineForFloor() reads at runtime, e.g. public/floorplans/Hastings/*.affine.json)
+ *   - Build the identical rotation+scale+translate matrix applyAffineTransform() computes
+ *     in StakeholderMap.jsx and apply it directly to the drawing features.
+ *   - This takes priority over --building, since a calibrated affine is a measured
+ *     transform rather than an IQR-fit approximation.
+ *
+ *   Else if --building "<Name>" is provided:
  *   - Reads src/Configs/geojson/SarpyCounty_Buildings.json to find the building polygon
  *   - Computes the same local-planar fit used at runtime (fitLocalFloorplanToBuilding):
  *       IQR-clipped rooms bbox → building footprint bbox, scale + translate only
@@ -216,6 +224,66 @@ function applyLocalPlanarFitToFC(wallsFC, fit) {
   };
 }
 
+// ── Calibrated affine.json transform ─────────────────────────────────────────
+// Mirrors applyAffine()/applyAffineTransform() in StakeholderMap.jsx exactly,
+// so a wall file pre-transformed here needs no runtime affine pass.
+
+function applyAffineMatrix(fc, M) {
+  return {
+    ...fc,
+    features: fc.features.map(f => {
+      if (!f?.geometry?.coordinates) return f;
+      return {
+        ...f,
+        geometry: {
+          ...f.geometry,
+          coordinates: mapCoords(f.geometry.coordinates, ([x, y]) => [
+            M.a * x + M.b * y + M.c,
+            M.d * x + M.e * y + M.f,
+          ])
+        }
+      };
+    })
+  };
+}
+
+function applyAffineConfigToFC(fc, affine) {
+  if (!fc || !affine) return fc;
+  const anchor = affine.anchor_feet || affine.anchorFeet || affine.anchor;
+  if (!Array.isArray(anchor) || anchor.length < 2) return fc;
+  const targetLon = Number(affine.target_lon ?? affine.targetLon);
+  const targetLat = Number(affine.target_lat ?? affine.targetLat);
+  if (!Number.isFinite(targetLon) || !Number.isFinite(targetLat)) return fc;
+  const rotDeg = Number(affine.rotation_deg_cw ?? affine.rotation_deg ?? 0);
+  const hasEffectiveScale = affine.effective_scale_deg_per_foot != null;
+  const baseScale = Number(
+    hasEffectiveScale
+      ? affine.effective_scale_deg_per_foot
+      : (affine.scale_deg_per_foot ?? affine.scale_deg_per_ft ?? affine.scale)
+  );
+  if (!Number.isFinite(baseScale) || baseScale === 0) return fc;
+  const scalePct = Number(affine.scale_percent ?? 100);
+  const scaleLat = hasEffectiveScale
+    ? baseScale
+    : baseScale * (Number.isFinite(scalePct) ? scalePct / 100 : 1);
+  const latRad = (targetLat * Math.PI) / 180;
+  const cosLat = Math.max(1e-9, Math.cos(latRad));
+  const scaleLon = scaleLat / cosLat;
+  const theta = (rotDeg * Math.PI) / 180;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const [ax, ay] = anchor;
+
+  const a = scaleLon * cosT;
+  const b = -scaleLon * sinT;
+  const c = targetLon - (a * ax + b * ay);
+  const d = scaleLat * sinT;
+  const e = scaleLat * cosT;
+  const f = targetLat - (d * ax + e * ay);
+
+  return applyAffineMatrix(fc, { a, b, c, d, e, f });
+}
+
 /**
  * Convert any geometry to a line-compatible type so all features render on the
  * Mapbox "line" layer (walls-layer). Polygons become their exterior ring;
@@ -261,6 +329,19 @@ function toLineFC(fc) {
       })
       .filter(Boolean),
   };
+}
+
+// ── Load calibrated affine.json from source dir (optional) ──────────────────
+let affineConfig = null;
+const affinePath = path.join(srcAbs, 'affine.json');
+if (fs.existsSync(affinePath)) {
+  try {
+    affineConfig = JSON.parse(fs.readFileSync(affinePath, 'utf8'));
+    console.log('  [affine] Found calibrated affine.json at', affinePath, '— will use it instead of the building-footprint bbox fit');
+  } catch (e) {
+    console.warn('  [affine] Failed to parse', affinePath, '—', e.message);
+    affineConfig = null;
+  }
 }
 
 // ── Load building footprint (optional) ───────────────────────────────────────
@@ -319,7 +400,15 @@ for (const file of geojsonFiles) {
   if (drawingFeatures.length && floorId) {
     let wallsFC = { ...fc, features: drawingFeatures };
 
-    if (buildingFeature) {
+    if (affineConfig) {
+      // Calibrated affine.json takes priority over the bbox fit — it's a
+      // measured transform, not an IQR-clipped approximation.
+      wallsFC = toLineFC(wallsFC);
+      wallsFC = applyAffineConfigToFC(wallsFC, affineConfig);
+
+      const [wxMin, wyMin, wxMax, wyMax] = bboxFromFeatures(wallsFC.features);
+      console.log(`  [affine] walls bbox after transform: lon [${wxMin.toFixed(6)}, ${wxMax.toFixed(6)}]  lat [${wyMin.toFixed(6)}, ${wyMax.toFixed(6)}]`);
+    } else if (buildingFeature) {
       // Compute the same local-planar fit the app would apply at runtime,
       // using the rooms we just wrote as the source coordinate reference.
       const fit = computeLocalPlanarFit(mainFC, buildingFeature);
@@ -338,7 +427,7 @@ for (const file of geojsonFiles) {
         console.warn(`  [fit] could not compute fit for "${BUILDING}" — walls written in Revit space`);
       }
     } else {
-      // No building footprint supplied — still normalize geometry types.
+      // No affine.json or building footprint supplied — still normalize geometry types.
       wallsFC = toLineFC(wallsFC);
     }
 
