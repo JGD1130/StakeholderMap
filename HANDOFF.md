@@ -765,4 +765,56 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ---
 
+## STOPPED HERE (2026-07-02): Sarpy floorAdjust/georeferenced work reverted — Hastings offset still unexplained
+
+**Current state:** `feature/multi-university-refactor` is at `cfecf43`. All floorAdjust/georeferenced-flag code from today has been reverted. `src/components/StakeholderMap.jsx` is byte-identical (same git blob hash) to `18c2f80`, the last commit from 2026-07-01. **Do not assume the code is "back to normal" fixes anything for Hastings — see below.**
+
+### What this session was trying to do
+
+Sarpy County buildings (pre-baked lon/lat floor plans, no `affine.json`, positioned via real-world georeferenced coordinates rather than the usual fit-to-building-footprint pipeline) had a bug where saved admin floor adjustments (rotate/move/scale) wouldn't reliably reapply on reload — sometimes silently no-op'd, sometimes only rooms moved and not walls. Root cause traced to a `georeferenced: true/false` flag stored per floorAdjust doc, which gates whether the saved adjustment is allowed to apply to a floor that's already correctly positioned in real-world space (`fc.__mfGeoreferenced` / `fc.__mfNoFit`). The flag was (a) missing on legacy Sarpy docs, (b) not sticky — recomputed from scratch on every save from an async, fallible detection check, so a single bad save could silently regress it back to `false` and "lose" a working adjustment.
+
+### Commits made and reverted (all now undone via `cfecf43`)
+
+| Commit | What it did |
+|---|---|
+| `de90ab2` | Let intentional post-georeference floor adjustments override `__mfNoFit` |
+| `1dc5090` | Stamp `georeferenced` flag on drag-to-adjust auto-save path |
+| `eed8fb1` | Fix georeferenced-flag clobber in cross-storage/DB sync paths |
+| `7228be5` | Reapply saved floorAdjust to walls overlay on reload, not just rooms |
+| `3b31a3d` | Skip Firestore floorAdjust hydration for no-fit/georeferenced floors |
+| `a09e304` | Fix over-broad Firestore skip: gate on candidate's flag, not the fetch |
+| `42c6abd` | Make floorAdjust `georeferenced` flag sticky across saves (OR with previous value) |
+| `76b0f05` | Gate Sarpy `georeferenced` flag on `isSarpyCountyInstance` directly, not async detection |
+| `1ac5032` | Add walls-to-rooms bbox-center snap for pre-baked floors — **caused visible offsets on previously-correct buildings, reverted same session** (`81ffbc3`) |
+| `d225202` | Empty retrigger commit (a GH Actions Pages deploy step failed transiently; build always succeeded) |
+
+Also stamped `georeferenced: true` directly on 4 pre-existing Sarpy Firestore docs (1246 Building, Administration/Courthouse, Juvenile Justice Center, Sheriff's Office) that predated the flag and had real, large saved corrections (rotations up to 216°, scales up to 2.5x) with no flag set. Sheriff's Office's doc was separately found zeroed out mid-session (real user `Clear Adjust` click, not a bug) and manually restored to its prior rotation/scale/translate/pivot values — `translateLngLat`/`anchorLngLat` could not be recovered and were left `null` (falls back to `translateMeters`, should be visually equivalent).
+
+**None of this touched anything under `public/floorplans/Hastings/`, `src/Configs/`, or Hastings' Firestore collections** — verified explicitly (see below).
+
+### The emergency revert
+
+Mid-session, Hastings was reported "completely broken across multiple buildings" while `de90ab2..d225202` was live. Reverted the whole range in one squashed commit (`cfecf43`) via `git revert --no-commit de90ab2^..HEAD`, verified 0-diff against `f92066c` before committing, pushed (no force-push — normal forward commit), confirmed deployed and live.
+
+**Hastings was still broken after the revert**, including in incognito (ruling out browser cache). This was re-verified two more ways, both coming back clean:
+
+1. `git diff 18c2f80 cfecf43 -- src/` → **zero output**. Not just `StakeholderMap.jsx` — the entire `src/` tree is byte-identical between the last known-good commit and current `HEAD`.
+2. Swept all 15 Firestore collections under `universities/hastings/` (`buildingAssessments`, `buildingConditions`, `buildings`, `drawingEntries`, `floorAdjustments`, `floors`, `maintenanceIssues`, `markers`, `moves`, `plannerCopilotFeedback`, `plannerCopilotPolicies`, `planningScenarios`, `renoScenarios`, `roles`, `rooms`) for any document with any timestamp field dated today. **Zero matches, in any collection.** (Seven of these require admin auth to read via the client SDK's security rules — pulled via the Firestore REST API using the already-authenticated `firebase-tools` CLI's stored OAuth refresh token, same technique used earlier in the session for direct Firestore writes; see `~/.config/configstore/firebase-tools.json` for the token, `563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com` is the Firebase CLI's public OAuth client ID.)
+
+**Conclusion: the Hastings offset is not a regression from anything in this session, or from yesterday's `2026-07-01` Sarpy fit-guard work.** No code and no Firestore write in either day's work can explain it — the evidence rules both out completely, not just probabilistically.
+
+Confirmed live and reproducing on: **Hazelrigg Student Union, LEVEL_1** — floor plan renders well up-and-left of the building's actual footprint on the basemap. Displayed `Rotation: 2.6° · Scale: 1.12` matches the stored Firestore/localStorage value exactly (saved 2026-03-16), so the stored adjustment itself isn't corrupted — it's just not landing in the right place relative to the current basemap/footprint.
+
+**Leading theory, unconfirmed:** stale calibration, not a code bug. `public/floorplans/Hastings/Hazzelrig/affine.json` was last touched 2026-02-04 (`d47884a`). `public/Hastings_College_Buildings.geojson` (the footprint file) was last touched 2025-11-18 (`831608d`). The floorAdjust for Hazelrigg was saved 2026-03-16 — a month after the affine calibration, four months after the footprint. Both reference files have been stable ever since (no touches after March), so this isn't "the ground moved out from under a good save" either — more likely this building (and possibly others) has been silently offset since some point after March and nobody happened to check it until today.
+
+**What wasn't finished:** an old-commit visual comparison (checked out `ab3ff74`, ~1 month before any of this session's or yesterday's work, via `git worktree`, ran a second dev server on port 5175) would have settled definitively whether this predates even that. Abandoned — that dev server instance defaulted to OpenStreetMap raster basemap tiles instead of Mapbox, and those got CORS-blocked in the sandboxed test environment, so the map never painted. The worktree was torn down; nothing left behind. If picking this back up, either fix the basemap/CORS issue for that isolated test, or just re-run `git worktree add ../stakeholder-map-oldcheck ab3ff74` again with a valid Mapbox token wired up for that instance.
+
+**Next step for whoever picks this up:** treat the Hastings offset as its own, separate, pre-existing bug — not connected to the Sarpy georeferenced-flag work above. Likely fix is re-deriving Hazelrigg's (and any other affected Hastings buildings') floorAdjust from scratch against current calibration, using the same pattern as the admin "Clear Adjust" button (`clearFloorAdjustForFloor`), rather than continuing to hunt through today's or yesterday's commits — the evidence says it isn't there.
+
+### Deploy notes
+
+GitHub Actions Pages deploys failed at the "Deploy to GitHub Pages" step (not the build step) three separate times today (`a09e304` twice, `42c6abd`, `81ffbc3`), all with the build job succeeding and only the deploy job failing, no accessible logs (job log download requires repo-admin auth, returns 403 otherwise). One instance (`42c6abd`) self-resolved to `success` on a later status check with no action taken; another (`81ffbc3`) did not and required a follow-up empty commit (`d225202`) to retrigger. If this keeps happening, it's worth someone with repo-admin access checking Settings → Pages directly, since the logs aren't reachable from an assistant session.
+
+---
+
 *Last updated: 2026-07-02 — update this file whenever the architecture, client list, or critical behavior changes.*
