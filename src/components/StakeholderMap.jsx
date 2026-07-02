@@ -4031,6 +4031,32 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     }
   }
 
+  // Pre-baked (Sarpy-style) floors: walls and rooms load from separate files
+  // that each carry their own baked-in georeference, and can land with a small
+  // independent base-position discrepancy even after floorAdjust is reapplied
+  // to both. Snap the walls' bbox center to the rooms' bbox center so they
+  // always land together. Scoped to the pre-baked/no-fit case only — affine
+  // (Hastings-style) floors already fit walls to the rooms envelope via
+  // Path A/B/C above and don't need this.
+  if (
+    (roomsFC?.__mfGeoreferenced || roomsFC?.__mfNoFit) &&
+    roomsFC?.features?.length &&
+    fc?.features?.length
+  ) {
+    try {
+      const roomsBbox = turf.bbox(roomsFC);
+      const wallsBbox = turf.bbox(fc);
+      const roomsCenter = [(roomsBbox[0] + roomsBbox[2]) / 2, (roomsBbox[1] + roomsBbox[3]) / 2];
+      const wallsCenter = [(wallsBbox[0] + wallsBbox[2]) / 2, (wallsBbox[1] + wallsBbox[3]) / 2];
+      const deltaLng = roomsCenter[0] - wallsCenter[0];
+      const deltaLat = roomsCenter[1] - wallsCenter[1];
+      if (Math.abs(deltaLng) > 1e-12 || Math.abs(deltaLat) > 1e-12) {
+        fc = applyNudgeLngLat(fc, [deltaLng, deltaLat]);
+        console.log('[walls] snapped to rooms bbox center, delta:', deltaLng, deltaLat);
+      }
+    } catch {}
+  }
+
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
 
