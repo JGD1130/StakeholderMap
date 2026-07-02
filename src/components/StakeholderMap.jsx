@@ -26387,13 +26387,14 @@ useEffect(() => {
       if (anchorLngLat) {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
-      // Sticky: OR in the previously-stored flag so a transient failure of the
-      // async isFloorAlreadyGeoreferenced() check (line ~3775) can't regress an
-      // already-confirmed georeferenced floor back to false on the next save.
+      // Sarpy floors are always pre-baked/no-fit georeferenced data, so gate on
+      // the instance directly rather than the async isFloorAlreadyGeoreferenced()
+      // detection (line ~3775), which can lag or fail and would otherwise let a
+      // save race ahead and write georeferenced: false for a Sarpy floor.
       const isGeoreferencedFloor = Boolean(
-        currentFloorContextRef.current?.fc?.__mfNoFit ||
+        isSarpyCountyInstance ||
         currentFloorContextRef.current?.fc?.__mfGeoreferenced ||
-        nextAdjust.georeferenced
+        currentFloorContextRef.current?.fc?.__mfNoFit
       );
       nextAdjust = { ...nextAdjust, georeferenced: isGeoreferencedFloor };
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
@@ -26432,7 +26433,7 @@ useEffect(() => {
       try { map.off('mousemove', onMouseMove); } catch {}
       try { map.off('mouseup', onMouseUp); } catch {}
     };
-  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus]);
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus, isSarpyCountyInstance]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -28456,13 +28457,14 @@ useEffect(() => {
                 const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
                 const currentData = src?._data || currentFloorContextRef.current?.fc || null;
                 const anchorLngLat = getFloorAdjustAnchorLngLat(currentData);
-                // Sticky: OR in the previously-stored flag so a transient failure of the
-                // async isFloorAlreadyGeoreferenced() check (line ~3775) can't regress an
-                // already-confirmed georeferenced floor back to false on the next save.
+                // Sarpy floors are always pre-baked/no-fit georeferenced data, so gate on
+                // the instance directly rather than the async isFloorAlreadyGeoreferenced()
+                // detection (line ~3775), which can lag or fail and would otherwise let a
+                // save race ahead and write georeferenced: false for a Sarpy floor.
                 const isGeoreferencedFloor = Boolean(
-                  currentFloorContextRef.current?.fc?.__mfNoFit ||
+                  isSarpyCountyInstance ||
                   currentFloorContextRef.current?.fc?.__mfGeoreferenced ||
-                  adjust?.georeferenced
+                  currentFloorContextRef.current?.fc?.__mfNoFit
                 );
                 const adjustWithPivot = {
                   ...adjust,
