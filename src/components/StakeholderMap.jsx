@@ -2362,7 +2362,8 @@ function parseStoredFloorAdjust(raw) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
   } catch {
     return null;
@@ -17992,6 +17993,7 @@ const StakeholderMap = ({
             translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
             anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
             pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
+            georeferenced: Boolean(adjust.georeferenced),
             updatedAt: serverTimestamp(),
             updatedBy: authUser?.uid || authUser?.email || null
           },
@@ -18377,7 +18379,8 @@ const StakeholderMap = ({
           translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
           translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
-          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
+          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
+          georeferenced: Boolean(dbAdjust.georeferenced)
         };
         const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
