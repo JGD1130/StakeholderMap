@@ -155,6 +155,57 @@ function bboxFromFeatures(features) {
   return [minX, minY, maxX, maxY];
 }
 
+// Drop drawing features whose geometry lands far outside the rooms' own
+// bbox — e.g. degenerate curtain-wall/glazing instances that exported with
+// garbage coordinates (seen in Sheriff's Office: 2 GeometryCollection
+// features on A-GLAZ-CURT/A-GLAZ-CWMG spanning tens of degrees of lon/lat
+// instead of the building's ~0.001-degree footprint). Margin scales with
+// the rooms bbox itself so this works whether rooms are in lon/lat degrees
+// or Revit local feet.
+// Unlike bboxFromFeatures, also walks GeometryCollection.geometries — the
+// outlier features seen in practice (curtain-wall/glazing) are exactly
+// GeometryCollections, which bboxFromFeatures silently skips (it only reads
+// f.geometry.coordinates), so it can't see them without this.
+function featureBbox(f) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const visit = (geom) => {
+    if (!geom) return;
+    if (geom.coordinates) {
+      mapCoords(geom.coordinates, ([x, y]) => {
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+        return [x, y];
+      });
+    } else if (geom.geometries) {
+      geom.geometries.forEach(visit);
+    }
+  };
+  visit(f?.geometry);
+  return [minX, minY, maxX, maxY];
+}
+
+function filterOutlierDrawingFeatures(drawingFeatures, roomFeatures) {
+  const [rMinX, rMinY, rMaxX, rMaxY] = bboxFromFeatures(roomFeatures);
+  if (![rMinX, rMinY, rMaxX, rMaxY].every(Number.isFinite)) {
+    return { kept: drawingFeatures, dropped: [] };
+  }
+  const margin = Math.max(rMaxX - rMinX, rMaxY - rMinY) * 20;
+  const kept = [];
+  const dropped = [];
+  for (const f of drawingFeatures) {
+    const [fMinX, fMinY, fMaxX, fMaxY] = featureBbox(f);
+    const inRange =
+      !Number.isFinite(fMinX) ||
+      (fMaxX >= rMinX - margin && fMinX <= rMaxX + margin &&
+       fMaxY >= rMinY - margin && fMinY <= rMaxY + margin);
+    if (inRange) kept.push(f);
+    else dropped.push(f);
+  }
+  return { kept, dropped };
+}
+
 function featureCentroid(f) {
   const pts = [];
   mapCoords(f.geometry.coordinates, ([x, y]) => { pts.push([x, y]); return [x, y]; });
@@ -399,8 +450,15 @@ for (const file of geojsonFiles) {
   const before  = fc.features.length;
   const srcKB   = (fs.statSync(srcFile).size / 1024).toFixed(1);
 
-  const drawingFeatures = fc.features.filter(isDrawingFeature);
-  const roomFeatures    = fc.features.filter(f => !isDrawingFeature(f));
+  const roomFeatures = fc.features.filter(f => !isDrawingFeature(f));
+  const { kept: drawingFeatures, dropped: droppedDrawingFeatures } =
+    filterOutlierDrawingFeatures(fc.features.filter(isDrawingFeature), roomFeatures);
+  if (droppedDrawingFeatures.length) {
+    console.log(`  [outlier] dropped ${droppedDrawingFeatures.length} drawing feature(s) far outside the rooms bbox:`);
+    droppedDrawingFeatures.forEach(f => {
+      console.log(`    - ${f.properties?.Layer || f.properties?.layer || '(no layer)'} ${f.geometry?.type || '(no geometry)'} guid=${f.properties?.Revit_UniqueId || 'n/a'}`);
+    });
+  }
 
   // ── a. Main file: room polygons only
   const mainFC = { ...fc, features: roomFeatures };
