@@ -18390,38 +18390,52 @@ const StakeholderMap = ({
       }
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
-        if (!dbAdjust) return;
-        const dbCandidate = {
-          rotationDeg: Number(dbAdjust.rotationDeg) || 0,
-          scale: Number(dbAdjust.scale) || 1,
-          translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
-          translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
-          anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
-          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
-          georeferenced: Boolean(dbAdjust.georeferenced)
-        };
-        const dbHasAdjust = hasFloorAdjust(dbCandidate);
-        const dbUpdatedAtMs = (() => {
-          const ts = dbAdjust.updatedAt;
-          if (ts?.toMillis) return ts.toMillis();
-          if (Number.isFinite(ts?.seconds)) return ts.seconds * 1000;
-          return 0;
-        })();
-        const shouldPreferDb = dbUpdatedAtMs
-          ? dbUpdatedAtMs >= localSavedAt
-          : (!localHasAdjust && dbHasAdjust);
-        if (!shouldPreferDb) return;
-        adjustLabels.forEach((label) => {
-          saveFloorAdjust(label, floorId, dbCandidate);
-        });
-        if (url) saveFloorAdjustByUrl(url, dbCandidate);
-        if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
-        if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) !== url) return;
-        floorCache.delete(url);
-        floorTransformCache.delete(url);
-        void handleLoadFloorplan(floorId);
-      }).catch(() => {});
+      // Mirrors the __mfNoFit / __mfGeoreferenced reapply guard in
+      // loadFloorGeojson: for permanently-no-fit floors (e.g. Sarpy's
+      // 1102 Building), don't pull a saved adjustment down from Firestore
+      // at all, so clearing localStorage actually resets the floor instead
+      // of having it silently repopulated from the DB. fc doesn't exist yet
+      // at this point in handleLoadFloorplan (loadFloorGeojson hasn't run
+      // for this cycle), so __mfNoFit is re-derived via the same synchronous
+      // predicate loadFloorGeojson uses, and __mfGeoreferenced is read
+      // best-effort off the floor's last-loaded fc if this isn't a cold load.
+      const skipDbFloorAdjust =
+        shouldSkipFloorplanFit(adjustLabel, floorId) ||
+        Boolean(currentFloorContextRef.current?.fc?.__mfGeoreferenced);
+      if (!skipDbFloorAdjust) {
+        void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
+          if (!dbAdjust) return;
+          const dbCandidate = {
+            rotationDeg: Number(dbAdjust.rotationDeg) || 0,
+            scale: Number(dbAdjust.scale) || 1,
+            translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
+            translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
+            anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
+            pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
+            georeferenced: Boolean(dbAdjust.georeferenced)
+          };
+          const dbHasAdjust = hasFloorAdjust(dbCandidate);
+          const dbUpdatedAtMs = (() => {
+            const ts = dbAdjust.updatedAt;
+            if (ts?.toMillis) return ts.toMillis();
+            if (Number.isFinite(ts?.seconds)) return ts.seconds * 1000;
+            return 0;
+          })();
+          const shouldPreferDb = dbUpdatedAtMs
+            ? dbUpdatedAtMs >= localSavedAt
+            : (!localHasAdjust && dbHasAdjust);
+          if (!shouldPreferDb) return;
+          adjustLabels.forEach((label) => {
+            saveFloorAdjust(label, floorId, dbCandidate);
+          });
+          if (url) saveFloorAdjustByUrl(url, dbCandidate);
+          if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
+          if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) !== url) return;
+          floorCache.delete(url);
+          floorTransformCache.delete(url);
+          void handleLoadFloorplan(floorId);
+        }).catch(() => {});
+      }
       let fitBuilding = selectedBuildingFeatureRef.current || null;
       const targetRaw = String(selectedBuildingId || selectedBuilding || '');
       try {
