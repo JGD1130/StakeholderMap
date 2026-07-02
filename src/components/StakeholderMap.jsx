@@ -26346,6 +26346,11 @@ useEffect(() => {
       if (anchorLngLat) {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
+      const isGeoreferencedFloor = Boolean(
+        currentFloorContextRef.current?.fc?.__mfNoFit ||
+        currentFloorContextRef.current?.fc?.__mfGeoreferenced
+      );
+      nextAdjust = { ...nextAdjust, georeferenced: isGeoreferencedFloor };
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
       saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
       if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
