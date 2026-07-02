@@ -3864,7 +3864,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef, floorAdjust }) {
   if (!basePath || !floorId || !map) return;
   const cleanFloor = String(floorId).trim();
   const candidates = [
@@ -4012,6 +4012,23 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
   } else {
     console.log('[walls] pre-baked lon/lat — skipping all transforms');
+  }
+
+  // Reapply any saved rotate/move/scale adjustment so walls land in the same
+  // final position as rooms on reload. Rooms apply floorAdjust in the
+  // loadFloorGeojson guard (mirrored here); without this, a georeferenced
+  // Sarpy floor's walls always reload at their raw exported position even
+  // though rooms correctly reapply the saved adjustment.
+  if (
+    floorAdjust &&
+    hasFloorAdjust(floorAdjust) &&
+    (floorAdjust.georeferenced || (!roomsFC?.__mfGeoreferenced && !roomsFC?.__mfNoFit))
+  ) {
+    const adjustedWalls = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+    if (adjustedWalls?.fc) {
+      fc = adjustedWalls.fc;
+      console.log('[walls] reapplied saved floorAdjust to match rooms position');
+    }
   }
 
   const WALLS_SOURCE = "walls-source";
@@ -5852,7 +5869,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affine,
       rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null
+      wallsRawFCRef: options.wallsRawFCRef || null,
+      floorAdjust
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -5865,7 +5883,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null
+      wallsRawFCRef: options.wallsRawFCRef || null,
+      floorAdjust
     }).catch(() => {});
   }
 
