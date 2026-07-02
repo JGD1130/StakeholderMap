@@ -2225,7 +2225,8 @@ function loadFloorAdjust(buildingLabel, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
     floorAdjustCache.set(key, safe);
     return safe;
@@ -2272,7 +2273,8 @@ function loadFloorAdjustByUrl(url) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
     floorAdjustUrlCache.set(key, safe);
     return safe;
@@ -2319,7 +2321,8 @@ function loadFloorAdjustByBasePath(basePath, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
     floorAdjustFloorCache.set(key, safe);
     return safe;
@@ -2479,7 +2482,8 @@ function saveFloorAdjust(buildingLabel, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+    georeferenced: Boolean(adjust.georeferenced)
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2519,7 +2523,8 @@ function saveFloorAdjustByUrl(url, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+    georeferenced: Boolean(adjust.georeferenced)
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2559,7 +2564,8 @@ function saveFloorAdjustByBasePath(basePath, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+    georeferenced: Boolean(adjust.georeferenced)
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -5620,7 +5626,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  if (floorAdjust && !fc.__mfGeoreferenced && !fc.__mfNoFit) {
+  if (floorAdjust && (floorAdjust.georeferenced || (!fc.__mfGeoreferenced && !fc.__mfNoFit))) {
     const hasAdjust = hasFloorAdjust(floorAdjust);
     if (hasAdjust) {
       const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
@@ -28400,10 +28406,15 @@ useEffect(() => {
                 const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
                 const currentData = src?._data || currentFloorContextRef.current?.fc || null;
                 const anchorLngLat = getFloorAdjustAnchorLngLat(currentData);
+                const isGeoreferencedFloor = Boolean(
+                  currentFloorContextRef.current?.fc?.__mfNoFit ||
+                  currentFloorContextRef.current?.fc?.__mfGeoreferenced
+                );
                 const adjustWithPivot = {
                   ...adjust,
                   pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
-                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null
+                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null,
+                  georeferenced: isGeoreferencedFloor
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
