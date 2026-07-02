@@ -26387,9 +26387,13 @@ useEffect(() => {
       if (anchorLngLat) {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
+      // Sticky: OR in the previously-stored flag so a transient failure of the
+      // async isFloorAlreadyGeoreferenced() check (line ~3775) can't regress an
+      // already-confirmed georeferenced floor back to false on the next save.
       const isGeoreferencedFloor = Boolean(
         currentFloorContextRef.current?.fc?.__mfNoFit ||
-        currentFloorContextRef.current?.fc?.__mfGeoreferenced
+        currentFloorContextRef.current?.fc?.__mfGeoreferenced ||
+        nextAdjust.georeferenced
       );
       nextAdjust = { ...nextAdjust, georeferenced: isGeoreferencedFloor };
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
@@ -28452,9 +28456,13 @@ useEffect(() => {
                 const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
                 const currentData = src?._data || currentFloorContextRef.current?.fc || null;
                 const anchorLngLat = getFloorAdjustAnchorLngLat(currentData);
+                // Sticky: OR in the previously-stored flag so a transient failure of the
+                // async isFloorAlreadyGeoreferenced() check (line ~3775) can't regress an
+                // already-confirmed georeferenced floor back to false on the next save.
                 const isGeoreferencedFloor = Boolean(
                   currentFloorContextRef.current?.fc?.__mfNoFit ||
-                  currentFloorContextRef.current?.fc?.__mfGeoreferenced
+                  currentFloorContextRef.current?.fc?.__mfGeoreferenced ||
+                  adjust?.georeferenced
                 );
                 const adjustWithPivot = {
                   ...adjust,
