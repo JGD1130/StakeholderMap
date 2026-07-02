@@ -240,6 +240,20 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-07-02) — Sarpy re-exports + Sheriff's Office corrupt-geometry fix
+
+### Summary
+
+Re-optimized five Sarpy County buildings against fresh Revit exports (Administration/Courthouse, 1246 Building, Juvenile Justice Center, Sheriff's Office — all real-world WGS84 lon/lat, no `affine.json`, same pattern as 1102 Building post-`732b643`). Room counts held steady across all of them, confirming the re-exports were geometry/attribute refreshes, not structural changes.
+
+Sheriff's Office was then reported with visibly offset line work after the first re-export. Investigation found 2 drawing features — `A-GLAZ-CURT` and `A-GLAZ-CWMG`, both `GeometryCollection` curtain-wall/glazing geometry — exported with corrupt coordinates spanning tens of degrees of lon/lat (bbox stretched from Nebraska to British Columbia: `[-122.66, 41.09, -96.04, 58.53]`) instead of the building's real ~0.001-degree footprint. The other 2632 drawing features and all 170 rooms were correctly clustered. These 2 garbage features were dwarfing the real walls and blowing out the map's fit-to-bounds — this is what read as "offset."
+
+**Fix (`6b8cf59`):** added `filterOutlierDrawingFeatures()` to `scripts/optimize-sarpy-export.cjs`. It compares each drawing feature's bbox (via a new `featureBbox()` helper that, unlike the pre-existing `bboxFromFeatures()`, also walks `GeometryCollection.geometries` — `bboxFromFeatures()` only reads `f.geometry.coordinates` and silently skips GeometryCollections, which is why the first filter attempt logged 0 drops) against the rooms bbox, with a margin of `20 × max(roomsWidth, roomsHeight)`. Anything farther out is dropped and logged. Margin scales with the rooms bbox itself, so it works whether rooms are in lon/lat degrees or Revit local feet, without hardcoding a unit-specific threshold. Re-ran all 5 current exports afterward to confirm it only caught the 2 Sheriff's Office features and didn't false-positive on the others (all had walls bbox spans of 0.0002–0.002°, comfortably inside the margin).
+
+This filter is now a permanent step in every future `optimize-sarpy-export.cjs` run — no per-building opt-in needed.
+
+---
+
 ## Recent Changes (2026-07-01) — 1102 Building georeferenced-rooms regression
 
 ### Summary
@@ -751,4 +765,4 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ---
 
-*Last updated: 2026-07-01 — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-07-02 — update this file whenever the architecture, client list, or critical behavior changes.*
