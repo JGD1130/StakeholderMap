@@ -2225,8 +2225,7 @@ function loadFloorAdjust(buildingLabel, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
     floorAdjustCache.set(key, safe);
     return safe;
@@ -2273,8 +2272,7 @@ function loadFloorAdjustByUrl(url) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
     floorAdjustUrlCache.set(key, safe);
     return safe;
@@ -2321,8 +2319,7 @@ function loadFloorAdjustByBasePath(basePath, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
     floorAdjustFloorCache.set(key, safe);
     return safe;
@@ -2362,8 +2359,7 @@ function parseStoredFloorAdjust(raw) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
   } catch {
     return null;
@@ -2483,8 +2479,7 @@ function saveFloorAdjust(buildingLabel, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-    georeferenced: Boolean(adjust.georeferenced)
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2524,8 +2519,7 @@ function saveFloorAdjustByUrl(url, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-    georeferenced: Boolean(adjust.georeferenced)
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2565,8 +2559,7 @@ function saveFloorAdjustByBasePath(basePath, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-    georeferenced: Boolean(adjust.georeferenced)
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -3864,7 +3857,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef, floorAdjust }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef }) {
   if (!basePath || !floorId || !map) return;
   const cleanFloor = String(floorId).trim();
   const candidates = [
@@ -4012,23 +4005,6 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
   } else {
     console.log('[walls] pre-baked lon/lat — skipping all transforms');
-  }
-
-  // Reapply any saved rotate/move/scale adjustment so walls land in the same
-  // final position as rooms on reload. Rooms apply floorAdjust in the
-  // loadFloorGeojson guard (mirrored here); without this, a georeferenced
-  // Sarpy floor's walls always reload at their raw exported position even
-  // though rooms correctly reapply the saved adjustment.
-  if (
-    floorAdjust &&
-    hasFloorAdjust(floorAdjust) &&
-    (floorAdjust.georeferenced || (!roomsFC?.__mfGeoreferenced && !roomsFC?.__mfNoFit))
-  ) {
-    const adjustedWalls = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
-    if (adjustedWalls?.fc) {
-      fc = adjustedWalls.fc;
-      console.log('[walls] reapplied saved floorAdjust to match rooms position');
-    }
   }
 
   const WALLS_SOURCE = "walls-source";
@@ -5644,7 +5620,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  if (floorAdjust && (floorAdjust.georeferenced || (!fc.__mfGeoreferenced && !fc.__mfNoFit))) {
+  if (floorAdjust && !fc.__mfGeoreferenced && !fc.__mfNoFit) {
     const hasAdjust = hasFloorAdjust(floorAdjust);
     if (hasAdjust) {
       const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
@@ -5869,8 +5845,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affine,
       rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null,
-      floorAdjust
+      wallsRawFCRef: options.wallsRawFCRef || null
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -5883,8 +5858,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null,
-      floorAdjust
+      wallsRawFCRef: options.wallsRawFCRef || null
     }).catch(() => {});
   }
 
@@ -18012,7 +17986,6 @@ const StakeholderMap = ({
             translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
             anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
             pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
-            georeferenced: Boolean(adjust.georeferenced),
             updatedAt: serverTimestamp(),
             updatedBy: authUser?.uid || authUser?.email || null
           },
@@ -18390,24 +18363,6 @@ const StakeholderMap = ({
       }
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      // Mirrors the __mfNoFit / __mfGeoreferenced reapply guard in
-      // loadFloorGeojson exactly: skip = !floorAdjust.georeferenced &&
-      // (fc.__mfGeoreferenced || fc.__mfNoFit). We don't know the fetched
-      // candidate's georeferenced flag until after the DB call resolves, so
-      // the fetch itself always runs — only the accept/apply decision below
-      // gates on the flag, same as the reapply guard does with an
-      // already-loaded floorAdjust. This still fixes the original bug
-      // (clearing localStorage silently repopulating a STALE, unflagged
-      // adjustment from Firestore for a no-fit floor), while still letting
-      // an intentional, flagged post-georeference correction come down.
-      // fc doesn't exist yet at this point in handleLoadFloorplan
-      // (loadFloorGeojson hasn't run for this cycle), so __mfNoFit is
-      // re-derived via the same synchronous predicate loadFloorGeojson
-      // uses, and __mfGeoreferenced is read best-effort off the floor's
-      // last-loaded fc if this isn't a cold load.
-      const dbFloorIsNoFitOrGeoreferenced =
-        shouldSkipFloorplanFit(adjustLabel, floorId) ||
-        Boolean(currentFloorContextRef.current?.fc?.__mfGeoreferenced);
       void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
         if (!dbAdjust) return;
         const dbCandidate = {
@@ -18416,10 +18371,8 @@ const StakeholderMap = ({
           translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
           translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
-          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
-          georeferenced: Boolean(dbAdjust.georeferenced)
+          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
         };
-        if (!dbCandidate.georeferenced && dbFloorIsNoFitOrGeoreferenced) return;
         const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
           const ts = dbAdjust.updatedAt;
@@ -26387,16 +26340,6 @@ useEffect(() => {
       if (anchorLngLat) {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
-      // Sarpy floors are always pre-baked/no-fit georeferenced data, so gate on
-      // the instance directly rather than the async isFloorAlreadyGeoreferenced()
-      // detection (line ~3775), which can lag or fail and would otherwise let a
-      // save race ahead and write georeferenced: false for a Sarpy floor.
-      const isGeoreferencedFloor = Boolean(
-        isSarpyCountyInstance ||
-        currentFloorContextRef.current?.fc?.__mfGeoreferenced ||
-        currentFloorContextRef.current?.fc?.__mfNoFit
-      );
-      nextAdjust = { ...nextAdjust, georeferenced: isGeoreferencedFloor };
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
       saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
       if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
@@ -26433,7 +26376,7 @@ useEffect(() => {
       try { map.off('mousemove', onMouseMove); } catch {}
       try { map.off('mouseup', onMouseUp); } catch {}
     };
-  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus, isSarpyCountyInstance]);
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -28457,20 +28400,10 @@ useEffect(() => {
                 const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
                 const currentData = src?._data || currentFloorContextRef.current?.fc || null;
                 const anchorLngLat = getFloorAdjustAnchorLngLat(currentData);
-                // Sarpy floors are always pre-baked/no-fit georeferenced data, so gate on
-                // the instance directly rather than the async isFloorAlreadyGeoreferenced()
-                // detection (line ~3775), which can lag or fail and would otherwise let a
-                // save race ahead and write georeferenced: false for a Sarpy floor.
-                const isGeoreferencedFloor = Boolean(
-                  isSarpyCountyInstance ||
-                  currentFloorContextRef.current?.fc?.__mfGeoreferenced ||
-                  currentFloorContextRef.current?.fc?.__mfNoFit
-                );
                 const adjustWithPivot = {
                   ...adjust,
                   pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
-                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null,
-                  georeferenced: isGeoreferencedFloor
+                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
@@ -32132,6 +32065,5 @@ useEffect(() => {
 
 }
 
-// deploy-retry: retriggering Pages workflow after a failed deploy run (no functional change)
 export default StakeholderMap;
 
