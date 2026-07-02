@@ -1,510 +1,510 @@
 {
+  "name": "633004_SarpyMP Courthouse_R26_jack.dohrman - BASEMENT Stairs", 
   "features": [
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Assembled Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5715845, 
-        "Revit_UniqueId": "b1bb82b6-62c2-4f80-8ffb-291fa59f5906-00573785"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "b1bb82b6-62c2-4f80-8ffb-291fa59f5906-00573785", 
+        "interactive": false, 
+        "Family": "Assembled Stair", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          386.25912985701433, 
-          -288.00511213307630
-        ]
-      }
+          -96.038956341814625, 
+          41.140616060903689
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Assembled Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5745452, 
-        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab2c"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab2c", 
+        "interactive": false, 
+        "Family": "Assembled Stair", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          174.65871626146253, 
-          -300.37179353019752
-        ]
-      }
+          -96.039728249055131, 
+          41.140582086504253
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Cast-In-Place Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5782537, 
-        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583c09"
-      }, 
-      "type": "Feature", 
-      "geometry": {
-        "type": "Point", 
-        "coordinates": [
-          331.16590367598462, 
-          -263.17435816432038
-        ]
-      }
-    }, 
-    {
-      "properties": {
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583c09", 
         "interactive": false, 
-        "Name": "Stair", 
         "Family": "Cast-In-Place Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.039157319021939, 
+          41.140684277260746
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5783155, 
-        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583e73"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583e73", 
+        "interactive": false, 
+        "Family": "Cast-In-Place Stair", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          302.64949380537314, 
-          -303.62180731702426
-        ]
-      }
+          -96.039261345393527, 
+          41.140573157894949
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Assembled Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5805014, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893d6"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893d6", 
+        "interactive": false, 
+        "Family": "Assembled Stair", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          134.18201355449969, 
-          -87.830126863530836
-        ]
-      }
+          -96.039875905949373, 
+          41.141165992181904
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Assembled Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5805680, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-00589670"
-      }, 
-      "type": "Feature", 
-      "geometry": {
-        "type": "Point", 
-        "coordinates": [
-          23.554715664028436, 
-          -80.945788117546613
-        ]
-      }
-    }, 
-    {
-      "properties": {
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-00589670", 
         "interactive": false, 
-        "Name": "Stair", 
         "Family": "Assembled Stair", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040279468545450, 
+          41.141184905200440
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5839744, 
-        "Revit_UniqueId": "f5b64948-bc66-46c9-bd2a-91d13474d2aa-00591b80"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "f5b64948-bc66-46c9-bd2a-91d13474d2aa-00591b80", 
+        "interactive": false, 
+        "Family": "Assembled Stair", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          91.820268248388970, 
-          -56.862454784213185
-        ]
-      }
+          -96.040030439380416, 
+          41.141251068204099
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5715937, 
-        "Revit_UniqueId": "b1bb82b6-62c2-4f80-8ffb-291fa59f5906-005737e1"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "b1bb82b6-62c2-4f80-8ffb-291fa59f5906-005737e1", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          386.22736115801729, 
-          -287.96856642541161
-        ]
-      }
+          -96.038956457705169, 
+          41.140616161303988
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5716564, 
-        "Revit_UniqueId": "ab355745-5367-4068-b352-6b662272ec02-00573a54"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ab355745-5367-4068-b352-6b662272ec02-00573a54", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          394.86547170639233, 
-          -297.90557589834475
-        ]
-      }
+          -96.038924946329729, 
+          41.140588861827418
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5745488, 
-        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab50"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab50", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          174.70713979896937, 
-          -300.37179353019752
-        ]
-      }
+          -96.039728072408607, 
+          41.140582086504253
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5745545, 
-        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab89"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab89", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          173.89463979896937, 
-          -305.78846019686421
-        ]
-      }
+          -96.039731036366106, 
+          41.140567205551868
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5782608, 
-        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583c50"
-      }, 
-      "type": "Feature", 
-      "geometry": {
-        "type": "Point", 
-        "coordinates": [
-          331.16590367598462, 
-          -263.14310816432038
-        ]
-      }
-    }, 
-    {
-      "properties": {
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583c50", 
         "interactive": false, 
-        "Name": "Stair", 
         "Family": "Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.039157319021939, 
+          41.140684363112399
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5783229, 
-        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583ebd"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583ebd", 
+        "interactive": false, 
+        "Family": "Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          300.64949380537314, 
-          -303.26765443718398
-        ]
-      }
+          -96.039268641288913, 
+          41.140574130842417
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5805015, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893d7"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893d7", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          134.23409688783303, 
-          -87.830126863530836
-        ]
-      }
+          -96.039875715952093, 
+          41.141165992181904
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5805018, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893da"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893da", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          134.12993022116632, 
-          -92.330126863530722
-        ]
-      }
+          -96.039876095946653, 
+          41.141153629544540
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5805742, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005896ae"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005896ae", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          23.504123934415929, 
-          -80.945788117546613
-        ]
-      }
+          -96.040279653101422, 
+          41.141184905200440
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5806002, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005897b2"
-      }, 
-      "type": "Feature", 
-      "geometry": {
-        "type": "Point", 
-        "coordinates": [
-          23.608290601082615, 
-          -85.276235507489901
-        ]
-      }
-    }, 
-    {
-      "properties": {
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005897b2", 
         "interactive": false, 
-        "Name": "Stair", 
         "Family": "Non-Monolithic Run", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040279273106876, 
+          41.141173008366948
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5839788, 
-        "Revit_UniqueId": "f5b64948-bc66-46c9-bd2a-91d13474d2aa-00591bac"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "f5b64948-bc66-46c9-bd2a-91d13474d2aa-00591bac", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          91.820268248388970, 
-          -56.914538117546499
-        ]
-      }
+          -96.040030439380416, 
+          41.141250925118023
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Landing", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5716566, 
-        "Revit_UniqueId": "ab355745-5367-4068-b352-6b662272ec02-00573a56"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ab355745-5367-4068-b352-6b662272ec02-00573a56", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Landing", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          390.53958248398618, 
-          -292.92920960375091
-        ]
-      }
+          -96.038940726947345, 
+          41.140602533163388
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Landing", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5745547, 
-        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab8b"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "3580b227-c831-478f-b2ec-6e80d1e4ee75-0057ab8b", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Landing", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          168.38422313230271, 
-          -303.08012686353084
-        ]
-      }
+          -96.039751138077861, 
+          41.140574646028057
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Monolithic Landing", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5782712, 
-        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583cb8"
-      }, 
-      "type": "Feature", 
-      "geometry": {
-        "type": "Point", 
-        "coordinates": [
-          336.03609977671340, 
-          -257.74182584725918
-        ]
-      }
-    }, 
-    {
-      "properties": {
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583cb8", 
         "interactive": false, 
-        "Name": "Stair", 
         "Family": "Monolithic Landing", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.039139552801316, 
+          41.140699201800082
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5783347, 
-        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583f33"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "ed0426dd-57a9-4be0-9337-75d177aa7e1e-00583f33", 
+        "interactive": false, 
+        "Family": "Monolithic Landing", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          300.64949380537314, 
-          -308.03846019686455
-        ]
-      }
+          -96.039268641288913, 
+          41.140561024233186
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Landing", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5805020, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893dc"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005893dc", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Landing", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          141.58769162283386, 
-          -90.080126863530779
-        ]
-      }
+          -96.039848890423158, 
+          41.141159810863222
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }, 
     {
       "properties": {
-        "interactive": false, 
-        "Name": "Stair", 
-        "Family": "Non-Monolithic Landing", 
-        "Level": "BASEMENT", 
-        "Element": "Stair", 
         "Type": "Stair", 
         "kind": "stair", 
+        "Name": "Stair", 
         "RevitId": 5806004, 
-        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005897b4"
+        "Level": "BASEMENT", 
+        "Revit_UniqueId": "87ff5161-91e2-445e-982c-4ced2c71f024-005897b4", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Landing", 
+        "Element": "Stair"
       }, 
-      "type": "Feature", 
       "geometry": {
-        "type": "Point", 
         "coordinates": [
-          16.129123934415929, 
-          -83.111011812518257
-        ]
-      }
+          -96.040306556715663, 
+          41.141178956783691
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
     }
   ], 
-  "type": "FeatureCollection", 
-  "name": "633004_SarpyMP Courthouse_R26_jack.dohrman - BASEMENT Stairs"
+  "type": "FeatureCollection"
 }
