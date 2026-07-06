@@ -2225,7 +2225,8 @@ function loadFloorAdjust(buildingLabel, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
     floorAdjustCache.set(key, safe);
     return safe;
@@ -2272,7 +2273,8 @@ function loadFloorAdjustByUrl(url) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
     floorAdjustUrlCache.set(key, safe);
     return safe;
@@ -2319,7 +2321,8 @@ function loadFloorAdjustByBasePath(basePath, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
     floorAdjustFloorCache.set(key, safe);
     return safe;
@@ -2479,7 +2482,8 @@ function saveFloorAdjust(buildingLabel, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+    georeferenced: Boolean(adjust.georeferenced)
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2519,7 +2523,8 @@ function saveFloorAdjustByUrl(url, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+    georeferenced: Boolean(adjust.georeferenced)
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2559,7 +2564,8 @@ function saveFloorAdjustByBasePath(basePath, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+    georeferenced: Boolean(adjust.georeferenced)
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -3943,7 +3949,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef, floorAdjust }) {
   if (!basePath || !floorId || !map) return;
   const cleanFloor = String(floorId).trim();
   const candidates = [
@@ -4091,6 +4097,11 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
   } else {
     console.log('[walls] pre-baked lon/lat — skipping all transforms');
+  }
+
+  if (floorAdjust && floorAdjust.georeferenced && hasFloorAdjust(floorAdjust)) {
+    const adjustedWalls = applyFloorAdjustWithTransform(fc, floorAdjust, null);
+    if (adjustedWalls?.fc) fc = adjustedWalls.fc;
   }
 
   const WALLS_SOURCE = "walls-source";
@@ -5928,7 +5939,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affine,
       rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null
+      wallsRawFCRef: options.wallsRawFCRef || null,
+      floorAdjust
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -5941,7 +5953,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
       affine, rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null
+      wallsRawFCRef: options.wallsRawFCRef || null,
+      floorAdjust
     }).catch(() => {});
   }
 
@@ -28486,7 +28499,8 @@ useEffect(() => {
                 const adjustWithPivot = {
                   ...adjust,
                   pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
-                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null
+                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null,
+                  georeferenced: isSarpyCountyInstance || false
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
