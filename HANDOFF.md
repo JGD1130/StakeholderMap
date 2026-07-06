@@ -767,6 +767,8 @@ Firebase env vars live in `src/.env` and `functions/.env`. Do not commit `.env` 
 
 ## STOPPED HERE (2026-07-02): Sarpy floorAdjust/georeferenced work reverted — Hastings offset still unexplained
 
+**RESOLVED 2026-07-06** — see "Recent Changes (2026-07-06) — Root cause found and fixed" below. Root cause was `0268780`'s unconditional `fc.__mfGeoreferenced = true` after any successful affine transform, not anything in Firestore/localStorage — which confirms the "not a regression from this session's or the Sarpy work" conclusion reached below, but the actual mechanism is more precise than the "stale calibration" theory guessed at the time: the calibration *was* stale/wrong, but the real bug is that nothing ever re-checked it once `__mfGeoreferenced` was set.
+
 **Current state:** `feature/multi-university-refactor` is at `cfecf43`. All floorAdjust/georeferenced-flag code from today has been reverted. `src/components/StakeholderMap.jsx` is byte-identical (same git blob hash) to `18c2f80`, the last commit from 2026-07-01. **Do not assume the code is "back to normal" fixes anything for Hastings — see below.**
 
 ### What this session was trying to do
@@ -817,12 +819,55 @@ GitHub Actions Pages deploys failed at the "Deploy to GitHub Pages" step (not th
 
 ---
 
+## Recent Changes (2026-07-06) — Root cause found and fixed: `__mfGeoreferenced` set unconditionally on affine apply
+
+### Summary
+
+Direct continuation of the 2026-07-02 "STOPPED HERE" investigation above. **Root cause confirmed and fixed** this session — see "Root cause" below. Two earlier attempts this same session were dead ends and were reverted; both are documented here so nobody re-tries them.
+
+### Session timeline
+
+| Commit | What it did |
+|---|---|
+| `3710ae3`, `c174213` (earlier — superseded) | Added a "sanity guard" that scored saved floor adjustments against the current building fit (overlap/offset/scale) and silently ignored ones that scored worse, plus a hardcoded ignore-list for Hazelrigg specifically. Intended to protect against stale adjustments, but it ended up **blocking legitimate floor adjustments from loading across Hastings** — too aggressive. |
+| `be6ff17` | Reverted the sanity guard entirely. Restored the simple `if (floorAdjust && hasFloorAdjust(floorAdjust))` reapply check in both `loadFloorGeojson` and `handleLoadFloorplan`. This unblocked floor adjustments from loading, but Hazelrigg still rendered in the wrong position afterward — a *different*, pre-existing bug (see below). |
+| `381525f` | **Dead end, reverted same session (`253571a`).** Tried making `shouldFitFloorplanToBuilding` skip entirely whenever a non-Sarpy floor already had a saved adjustment, on the theory the fit heuristic was fighting the adjustment. Wrong direction — the fit heuristic needed to *run* to correct the underlying affine error, not be skipped; skipping it just left the floor sitting on the uncorrected (miscalibrated) affine position. |
+| `f1bd213`, `2022aa5` | Temporary diagnostic logging (both removed in `8770e08` once the root cause was confirmed) added to `fitFloorplanToBuilding` and to `loadFloorGeojson`'s fit-decision point. The `fitBuilding`-resolution log was the one that mattered: it showed `mfGeoreferenced: true` for Hazelrigg despite it having a perfectly valid, fetchable `affine.json` — which should never by itself mark a floor as georeferenced. That's what led to the actual bug. |
+| **`8770e08`** | **The fix.** See "Root cause" and "The fix" below. |
+
+### Root cause
+
+`applyAffineIfPresent` (called by `loadRoomsFC` for every floor that has an `affine.json`) set `fc.__mfGeoreferenced = true` unconditionally whenever the affine transform applied without throwing — regardless of whether that calibration was still *accurate*. This line was added in `0268780` ("Mark rooms georeferenced after affine.json applies to skip building-fit override", 2026-07-01) — **and was already present in `18c2f80`, the "last known good" commit referenced throughout the 2026-07-02 investigation above.** It was never touched by the `de90ab2..d225202` revert that day. This means the bug has been live in production since **2026-07-01**, silently affecting **every Hastings building with an `affine.json`**, not just Hazelrigg.
+
+`fc.__mfGeoreferenced` gates `loadFloorGeojson`'s fit block:
+```js
+if (fc.__mfGeoreferenced || fc.__mfNoFit) {
+  // skip both fitLocalFloorplanToBuilding and shouldFitFloorplanToBuilding
+}
+```
+Once `__mfGeoreferenced` was (wrongly) `true`, the floor's position was never checked against the current building footprint — the app just trusted the affine transform's output as "already correct" and skipped the one mechanism (`shouldFitFloorplanToBuilding` → `fitFloorplanToBuilding`) that would have caught and corrected a bad calibration. For Hazelrigg specifically, the affine's `scale_deg_per_foot` measured out to ~7.3x too large (produces a ~630m × 486m floor plan against a real ~90m × 69m building footprint) — the fit heuristic's scale/distance/overlap checks all trip hard on the real numbers and would have corrected it, but never got the chance to run.
+
+The saved `floorAdjust` (an admin's manual rotate/scale correction) was then applied on top of this uncorrected, oversized affine baseline, landing the floor in the wrong final position — even though the stored adjustment values themselves were completely correct and unchanged.
+
+### The fix (`8770e08`)
+
+Removed the `out.__mfGeoreferenced = true;` line (and its justifying comment) from `applyAffineIfPresent` — no replacement. `__mfGeoreferenced` is now set in exactly **one** place in the whole codebase: the `isFloorAlreadyGeoreferenced` check inside `loadFloorGeojson` (~line 5595), which corroborates via the paired walls file before trusting a floor as georeferenced — this path is for Sarpy-style pre-baked lon/lat exports that have **no** `affine.json` at all. Having an `affine.json`, and having it apply without throwing, is no longer treated as proof that a floor is correctly positioned.
+
+### ⚠️ Guardrail — do not reintroduce this
+
+**Never set `__mfGeoreferenced = true` just because a transform ran successfully.** "The code didn't error" is not the same as "the floor is in the right place." The only legitimate way to mark a floor georeferenced is independent corroboration (e.g. `isFloorAlreadyGeoreferenced`'s paired-walls-file check) — not the mere presence or successful application of an affine transform. If future work wants a fast-path that skips `shouldFitFloorplanToBuilding` for already-calibrated buildings, it needs an actual accuracy check (e.g. compare the post-transform bbox/overlap against the current building footprint) — not an assumption baked in at apply-time.
+
+### False leads ruled out this session (for anyone re-reading git history later)
+
+- `shouldFitFloorplanToBuilding`'s thresholds (`scale < 0.75 || > 1.35`, `distKm > 0.06`, `offsetRatio > 0.18`) — unchanged since `2026-01-12` / `2026-02-04`.
+- `Hastings_College_Buildings.geojson`'s Hazelrigg footprint polygon — byte-identical since at least the `2025-11-18` path-rename commit (`831608d`), never touched since.
+- `affine.json` for Hazzelrig — unchanged since `2026-02-04` (`d47884a`), and confirmed live/fetchable on the deployed site (not a 404 or stale-cache issue).
+- `FLOORPLAN_NO_FIT` / `shouldSkipFloorplanFit` — a static per-building/floor allowlist unrelated to `floorAdjust`; Hazelrigg was never in it.
+- `isFloorAlreadyGeoreferenced` — only runs when `!affine`; irrelevant for buildings (like Hazelrigg) that have a working `affine.json`, so it was never the mis-detection source for this bug.
+
+### Deploy note
+
+GitHub Pages returned "Deployment failed, try again later." again after pushing `8770e08` — the same transient deploy-step failure documented in the 2026-07-02 section above (build succeeds, the separate Pages-upload step fails independently). Still no `gh` CLI or `GITHUB_TOKEN` available in the assistant's shell environment to retry programmatically; use the Actions tab → the failed run → "Re-run failed jobs."
+
 ---
-
-## Recent Changes (2026-07-06) - Hastings saved floorAdjust sanity guard
-
-Added a defensive check in src/components/StakeholderMap.jsx before applying persisted floor adjustments (loorAdjust) on top of a freshly fit Hastings floor. The loader now scores the pre-adjust and post-adjust floor footprint against the current building footprint (overlap, center offset ratio, and scale error) and ignores any saved adjustment that clearly makes the fit worse.
-
-This is meant to protect public/admin hosted URLs from stale Hazelrigg-style adjustments that still deserialize cleanly but no longer land correctly relative to the current footprint calibration. It does not delete or rewrite the stored adjustment; it only refuses to apply it when the saved transform degrades alignment.
-*Last updated: 2026-07-02 — update this file whenever the architecture, client list, or critical behavior changes.*
-
+*Last updated: 2026-07-06 — update this file whenever the architecture, client list, or critical behavior changes.*
