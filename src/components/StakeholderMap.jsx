@@ -5710,47 +5710,14 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  const ignoreKnownBadSavedAdjust = shouldIgnoreKnownBadFloorAdjust({
-    buildingLabel: floorAdjustLabel,
-    buildingId,
-    floorId: floorId || floor || '',
-    floorBasePath,
-    url
-  });
-  if (floorAdjust && !fc.__mfGeoreferenced && !fc.__mfNoFit) {
-    if (ignoreKnownBadSavedAdjust) {
-      console.warn('[floorAdjust] Ignoring known bad saved adjustment for this floor', {
-        building: floorAdjustLabel || buildingId || '',
-        floor: floorId || floor || '',
-        url
-      });
-    } else {
-      const hasAdjust = hasFloorAdjust(floorAdjust);
-      if (hasAdjust) {
-        const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
-        if (adjustedResult?.fc && adjustedResult.fc !== fc) {
-          const baselineAlignment = fitBuilding ? summarizeFloorplanAlignment(fc, fitBuilding) : null;
-          const adjustedAlignment = fitBuilding ? summarizeFloorplanAlignment(adjustedResult.fc, fitBuilding) : null;
-          const rejectSavedAdjust = shouldRejectSavedFloorAdjust({
-            baseline: baselineAlignment,
-            adjusted: adjustedAlignment
-          });
-          if (rejectSavedAdjust) {
-            console.warn('[floorAdjust] Ignoring saved adjustment because it worsens building fit', {
-              building: fitBuilding?.properties?.id || fitBuilding?.properties?.name || buildingId || '',
-              floor: floorId || floor || '',
-              baselineAlignment,
-              adjustedAlignment
-            });
-          } else {
-            fc = adjustedResult.fc;
-            fitTransform = adjustedResult.fitTransform || fitTransform;
-            data.__mfTransformed = true;
-            if (!snapCorner) {
-              floorCache.set(url, fc);
-            }
-          }
-        }
+  if (floorAdjust && hasFloorAdjust(floorAdjust)) {
+    const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+    if (adjustedResult?.fc && adjustedResult.fc !== fc) {
+      fc = adjustedResult.fc;
+      fitTransform = adjustedResult.fitTransform || fitTransform;
+      data.__mfTransformed = true;
+      if (!snapCorner) {
+        floorCache.set(url, fc);
       }
     }
   }
@@ -18465,21 +18432,6 @@ const StakeholderMap = ({
         label: localAdjustByLabel
       });
       let localAdjust = localPick.adjust;
-      const ignoreKnownBadLocalAdjust = shouldIgnoreKnownBadFloorAdjust({
-        buildingLabel: adjustLabel,
-        buildingId: selectedBuildingId || selectedBuilding,
-        floorId,
-        floorBasePath: basePath,
-        url
-      });
-      if (ignoreKnownBadLocalAdjust) {
-        adjustLabels.forEach((label) => {
-          clearFloorAdjust(label, floorId);
-        });
-        if (url) clearFloorAdjustByUrl(url);
-        if (basePath) clearFloorAdjustByBasePath(basePath, floorId);
-        localAdjust = null;
-      }
       if (!hasFloorAdjust(localAdjust)) {
         const recoveredAdjust = findMatchingStoredFloorAdjust({
           floorId,
@@ -18508,15 +18460,6 @@ const StakeholderMap = ({
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
           pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
         };
-        if (shouldIgnoreKnownBadFloorAdjust({
-          buildingLabel: adjustLabel,
-          buildingId: selectedBuildingId || selectedBuilding,
-          floorId,
-          floorBasePath: basePath,
-          url
-        })) {
-          return;
-        }
         const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
           const ts = dbAdjust.updatedAt;
