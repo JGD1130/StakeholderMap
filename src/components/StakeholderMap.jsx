@@ -7649,6 +7649,14 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
 
     let cRooms = turf.centroid(roomsFC);
     const cBldg = turf.centroid(building);
+    // TEMP DIAGNOSTIC (remove after Hazelrigg investigation): trace the
+    // input/output bbox and computed transform for the affected building.
+    const __diagLabel = building?.properties?.id || building?.properties?.name || '';
+    const __diagOn = /hazelrigg|hazzelrig/i.test(__diagLabel);
+    if (__diagOn) {
+      console.log('[fitFloorplanToBuilding] rooms bbox (pre-fit):', turf.bbox(roomsFC));
+      console.log('[fitFloorplanToBuilding] building bbox:', turf.bbox(building), 'label:', __diagLabel);
+    }
     const fitTransform = {
       rotationDeg: 0,
       rotationPivot: null,
@@ -7802,6 +7810,20 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
     const refined = refinedResult?.fc || fitted;
     fitTransform.refineRotationDeg = refinedResult?.angle || 0;
     fitTransform.refineRotationPivot = buildingPivot;
+
+    if (__diagOn) {
+      console.log('[fitFloorplanToBuilding] computed transform:', {
+        rotationDeg: fitTransform.rotationDeg,
+        rotationPivot: fitTransform.rotationPivot,
+        scale: fitTransform.scale,
+        scaleOrigin: fitTransform.scaleOrigin,
+        translateKm: fitTransform.translateKm,
+        translateBearing: fitTransform.translateBearing,
+        refineRotationDeg: fitTransform.refineRotationDeg,
+        refineRotationPivot: fitTransform.refineRotationPivot
+      });
+      console.log('[fitFloorplanToBuilding] output bbox (post-fit):', turf.bbox(refined));
+    }
 
     if (refined && typeof refined === 'object') {
       refined.__mfFitted = true;
