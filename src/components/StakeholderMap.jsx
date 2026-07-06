@@ -2796,6 +2796,67 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
   return { fc: out, fitTransform: nextTransform };
 }
 
+function summarizeFloorplanAlignment(fc, buildingFeature) {
+  if (!fc?.features?.length || !buildingFeature) return null;
+  try {
+    const fitCandidate = buildFitCandidate(fc) || fc;
+    const hull = buildHullFeature(fitCandidate, 1600) || buildHullFeature(fc, 1600);
+    if (!hull) return null;
+
+    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(hull);
+    const [bxMin, byMin, bxMax, byMax] = turf.bbox(buildingFeature);
+    if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
+      return null;
+    }
+
+    const rW = Math.max(1e-9, rxMax - rxMin);
+    const rH = Math.max(1e-9, ryMax - ryMin);
+    const bW = Math.max(1e-9, bxMax - bxMin);
+    const bH = Math.max(1e-9, byMax - byMin);
+    const scaleRatio = Math.min(bW / rW, bH / rH);
+    const scaleError = Number.isFinite(scaleRatio) && scaleRatio > 0
+      ? Math.abs(Math.log(scaleRatio))
+      : Number.POSITIVE_INFINITY;
+
+    const roomsCenter = turf.centroid(hull);
+    const buildingCenter = turf.centroid(buildingFeature);
+    const distKm = turf.distance(roomsCenter, buildingCenter, { units: 'kilometers' });
+    const diagKm = turf.distance(
+      turf.point([bxMin, byMin]),
+      turf.point([bxMax, byMax]),
+      { units: 'kilometers' }
+    );
+    const offsetRatio =
+      Number.isFinite(distKm) && Number.isFinite(diagKm) && diagKm > 1e-9
+        ? distKm / diagKm
+        : 0;
+    const overlap = overlapScore(hull, buildingFeature);
+
+    return {
+      overlap,
+      offsetRatio,
+      scaleError,
+      score: (overlap * 4) - (offsetRatio * 2) - scaleError
+    };
+  } catch {
+    return null;
+  }
+}
+
+function shouldRejectSavedFloorAdjust({ baseline, adjusted }) {
+  if (!baseline || !adjusted) return false;
+  if (adjusted.overlap + 0.12 < baseline.overlap) return true;
+  if (adjusted.offsetRatio > baseline.offsetRatio + 0.18) return true;
+  if (
+    adjusted.score + 0.35 < baseline.score &&
+    adjusted.overlap < baseline.overlap &&
+    adjusted.offsetRatio >= baseline.offsetRatio
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function isDrawingFeature(props = {}) {
   if (!props) return false;
   const type = String(props.type ?? props.Type ?? '').toLowerCase();
@@ -5625,11 +5686,26 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     if (hasAdjust) {
       const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
       if (adjustedResult?.fc && adjustedResult.fc !== fc) {
-        fc = adjustedResult.fc;
-        fitTransform = adjustedResult.fitTransform || fitTransform;
-        data.__mfTransformed = true;
-        if (!snapCorner) {
-          floorCache.set(url, fc);
+        const baselineAlignment = fitBuilding ? summarizeFloorplanAlignment(fc, fitBuilding) : null;
+        const adjustedAlignment = fitBuilding ? summarizeFloorplanAlignment(adjustedResult.fc, fitBuilding) : null;
+        const rejectSavedAdjust = shouldRejectSavedFloorAdjust({
+          baseline: baselineAlignment,
+          adjusted: adjustedAlignment
+        });
+        if (rejectSavedAdjust) {
+          console.warn('[floorAdjust] Ignoring saved adjustment because it worsens building fit', {
+            building: fitBuilding?.properties?.id || fitBuilding?.properties?.name || buildingId || '',
+            floor: floorId || floor || '',
+            baselineAlignment,
+            adjustedAlignment
+          });
+        } else {
+          fc = adjustedResult.fc;
+          fitTransform = adjustedResult.fitTransform || fitTransform;
+          data.__mfTransformed = true;
+          if (!snapCorner) {
+            floorCache.set(url, fc);
+          }
         }
       }
     }

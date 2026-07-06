@@ -817,4 +817,12 @@ GitHub Actions Pages deploys failed at the "Deploy to GitHub Pages" step (not th
 
 ---
 
+---
+
+## Recent Changes (2026-07-06) - Hastings saved floorAdjust sanity guard
+
+Added a defensive check in src/components/StakeholderMap.jsx before applying persisted floor adjustments (loorAdjust) on top of a freshly fit Hastings floor. The loader now scores the pre-adjust and post-adjust floor footprint against the current building footprint (overlap, center offset ratio, and scale error) and ignores any saved adjustment that clearly makes the fit worse.
+
+This is meant to protect public/admin hosted URLs from stale Hazelrigg-style adjustments that still deserialize cleanly but no longer land correctly relative to the current footprint calibration. It does not delete or rewrite the stored adjustment; it only refuses to apply it when the saved transform degrades alignment.
 *Last updated: 2026-07-02 — update this file whenever the architecture, client list, or critical behavior changes.*
+
