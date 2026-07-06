@@ -3479,10 +3479,6 @@ function applyAffineIfPresent(fc, affine) {
   if (out && typeof out === "object") {
     out.__mfAffineApplied = true;
     out.__mfAffineSignature = getAffineSignature(affine);
-    // A successfully-applied calibrated affine already places rooms correctly —
-    // shouldFitFloorplanToBuilding must not re-fit/rescale onto the building
-    // footprint bbox afterward, or it silently discards the calibration.
-    out.__mfGeoreferenced = true;
   }
   return out;
 }
@@ -5604,18 +5600,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   cacheFloorSummary(summary, fc);
 
   let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
-  if (/hazelrigg|hazzelrig/i.test(affineBuildingLabel || buildingId || '')) {
-    console.log('[loadFloorGeojson] fitBuilding at fit-decision point:', {
-      hasFitBuilding: Boolean(fitBuilding),
-      fitBuildingId: fitBuilding?.properties?.id || fitBuilding?.properties?.name || null,
-      mfGeoreferenced: Boolean(fc.__mfGeoreferenced),
-      mfNoFit: Boolean(fc.__mfNoFit),
-      isLikelyLonLat: isLikelyLonLat(fc),
-      affineBuildingLabel,
-      buildingId,
-      floorBasePath
-    });
-  }
   try {
     if (fc.__mfGeoreferenced || fc.__mfNoFit) {
       // Already-correct rooms must skip both fit paths below — the local-planar-fit
@@ -7661,14 +7645,6 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
 
     let cRooms = turf.centroid(roomsFC);
     const cBldg = turf.centroid(building);
-    // TEMP DIAGNOSTIC (remove after Hazelrigg investigation): trace the
-    // input/output bbox and computed transform for the affected building.
-    const __diagLabel = building?.properties?.id || building?.properties?.name || '';
-    const __diagOn = /hazelrigg|hazzelrig/i.test(__diagLabel);
-    if (__diagOn) {
-      console.log('[fitFloorplanToBuilding] rooms bbox (pre-fit):', turf.bbox(roomsFC));
-      console.log('[fitFloorplanToBuilding] building bbox:', turf.bbox(building), 'label:', __diagLabel);
-    }
     const fitTransform = {
       rotationDeg: 0,
       rotationPivot: null,
@@ -7822,20 +7798,6 @@ function fitFloorplanToBuilding(roomsFC, buildingGeomOrFeature) {
     const refined = refinedResult?.fc || fitted;
     fitTransform.refineRotationDeg = refinedResult?.angle || 0;
     fitTransform.refineRotationPivot = buildingPivot;
-
-    if (__diagOn) {
-      console.log('[fitFloorplanToBuilding] computed transform:', {
-        rotationDeg: fitTransform.rotationDeg,
-        rotationPivot: fitTransform.rotationPivot,
-        scale: fitTransform.scale,
-        scaleOrigin: fitTransform.scaleOrigin,
-        translateKm: fitTransform.translateKm,
-        translateBearing: fitTransform.translateBearing,
-        refineRotationDeg: fitTransform.refineRotationDeg,
-        refineRotationPivot: fitTransform.refineRotationPivot
-      });
-      console.log('[fitFloorplanToBuilding] output bbox (post-fit):', turf.bbox(refined));
-    }
 
     if (refined && typeof refined === 'object') {
       refined.__mfFitted = true;
