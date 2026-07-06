@@ -5623,8 +5623,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       const fitCandidate = buildFitCandidate(fc);
       const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
       const isSarpyCounty = /SarpyCounty/i.test(floorBasePath || '');
-      const hasSavedFloorAdjust = !isSarpyCounty && hasFloorAdjust(floorAdjust);
-      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding, { isSarpyCounty, hasSavedFloorAdjust })) {
+      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding, { isSarpyCounty })) {
         const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
         if (fitted?.features?.length) {
           fitTransform = fitted.__mfFitTransform || null;
@@ -8530,9 +8529,6 @@ function shouldFitFloorplanToBuilding(roomsFC, buildingFeature, options = {}) {
   try {
     // Never fit Sarpy County buildings — they use real-world WGS84 coordinates.
     if (options.isSarpyCounty) return false;
-    // A saved (non-Sarpy) floor adjustment means the floor was already positioned
-    // by hand — don't let the bbox-fit heuristic re-fit it out from under that.
-    if (options.hasSavedFloorAdjust) return false;
     if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
     if (roomsFC.__mfGeoreferenced || roomsFC.__mfNoFit) return false;
     const forceKey = normalizeSnapKey(buildingFeature?.properties?.id || buildingFeature?.properties?.name || '');
