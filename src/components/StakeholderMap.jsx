@@ -4100,7 +4100,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   if (floorAdjust && floorAdjust.georeferenced && hasFloorAdjust(floorAdjust)) {
-    const adjustedWalls = applyFloorAdjustWithTransform(fc, floorAdjust, null);
+    const adjustedWalls = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
     if (adjustedWalls?.fc) fc = adjustedWalls.fc;
   }
 
