@@ -5604,6 +5604,18 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   cacheFloorSummary(summary, fc);
 
   let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
+  if (/hazelrigg|hazzelrig/i.test(affineBuildingLabel || buildingId || '')) {
+    console.log('[loadFloorGeojson] fitBuilding at fit-decision point:', {
+      hasFitBuilding: Boolean(fitBuilding),
+      fitBuildingId: fitBuilding?.properties?.id || fitBuilding?.properties?.name || null,
+      mfGeoreferenced: Boolean(fc.__mfGeoreferenced),
+      mfNoFit: Boolean(fc.__mfNoFit),
+      isLikelyLonLat: isLikelyLonLat(fc),
+      affineBuildingLabel,
+      buildingId,
+      floorBasePath
+    });
+  }
   try {
     if (fc.__mfGeoreferenced || fc.__mfNoFit) {
       // Already-correct rooms must skip both fit paths below — the local-planar-fit
