@@ -4101,7 +4101,10 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   if (floorAdjust && floorAdjust.georeferenced && hasFloorAdjust(floorAdjust)) {
-    const adjustedWalls = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+    // anchorLngLat is derived from the rooms centroid, so replaying it on the walls
+    // collection shifts linework away from rooms after reload.
+    const overlayAdjust = floorAdjust.anchorLngLat ? { ...floorAdjust, anchorLngLat: null } : floorAdjust;
+    const adjustedWalls = applyFloorAdjustWithTransform(fc, overlayAdjust, fitTransform);
     if (adjustedWalls?.fc) fc = adjustedWalls.fc;
   }
 
