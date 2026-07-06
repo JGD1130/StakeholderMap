@@ -2856,6 +2856,35 @@ function shouldRejectSavedFloorAdjust({ baseline, adjusted }) {
   }
   return false;
 }
+const KNOWN_BAD_FLOOR_ADJUST_SCOPE_KEYS = new Set([
+  'hazzelrig/level_1',
+  'hazelrigg_student_union/level_1'
+]);
+function shouldIgnoreKnownBadFloorAdjust({ buildingLabel = '', buildingId = '', floorId = '', floorBasePath = '', url = '' } = {}) {
+  const floorKey = fId(floorId || '');
+  if (!floorKey) return false;
+  const scopeTokens = new Set();
+  const pushScope = (value) => {
+    const token = canon(value || '');
+    if (token && token !== 'na') scopeTokens.add(token);
+  };
+  pushScope(buildingLabel);
+  pushScope(buildingId);
+  pushScope(url);
+  pushScope(floorBasePath);
+  const folderFromBase = getBuildingFolderFromBasePath(floorBasePath || '');
+  const folderFromUrl = getBuildingFolderFromBasePath(url || '');
+  pushScope(folderFromBase);
+  pushScope(folderFromUrl);
+  pushScope(BUILDING_FOLDER_TO_NAME?.[folderFromBase] || '');
+  pushScope(BUILDING_FOLDER_TO_NAME?.[folderFromUrl] || '');
+  for (const scope of scopeTokens) {
+    if (KNOWN_BAD_FLOOR_ADJUST_SCOPE_KEYS.has(scope + '/' + floorKey)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function isDrawingFeature(props = {}) {
   if (!props) return false;
@@ -5681,30 +5710,45 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
+  const ignoreKnownBadSavedAdjust = shouldIgnoreKnownBadFloorAdjust({
+    buildingLabel: floorAdjustLabel,
+    buildingId,
+    floorId: floorId || floor || '',
+    floorBasePath,
+    url
+  });
   if (floorAdjust && !fc.__mfGeoreferenced && !fc.__mfNoFit) {
-    const hasAdjust = hasFloorAdjust(floorAdjust);
-    if (hasAdjust) {
-      const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
-      if (adjustedResult?.fc && adjustedResult.fc !== fc) {
-        const baselineAlignment = fitBuilding ? summarizeFloorplanAlignment(fc, fitBuilding) : null;
-        const adjustedAlignment = fitBuilding ? summarizeFloorplanAlignment(adjustedResult.fc, fitBuilding) : null;
-        const rejectSavedAdjust = shouldRejectSavedFloorAdjust({
-          baseline: baselineAlignment,
-          adjusted: adjustedAlignment
-        });
-        if (rejectSavedAdjust) {
-          console.warn('[floorAdjust] Ignoring saved adjustment because it worsens building fit', {
-            building: fitBuilding?.properties?.id || fitBuilding?.properties?.name || buildingId || '',
-            floor: floorId || floor || '',
-            baselineAlignment,
-            adjustedAlignment
+    if (ignoreKnownBadSavedAdjust) {
+      console.warn('[floorAdjust] Ignoring known bad saved adjustment for this floor', {
+        building: floorAdjustLabel || buildingId || '',
+        floor: floorId || floor || '',
+        url
+      });
+    } else {
+      const hasAdjust = hasFloorAdjust(floorAdjust);
+      if (hasAdjust) {
+        const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+        if (adjustedResult?.fc && adjustedResult.fc !== fc) {
+          const baselineAlignment = fitBuilding ? summarizeFloorplanAlignment(fc, fitBuilding) : null;
+          const adjustedAlignment = fitBuilding ? summarizeFloorplanAlignment(adjustedResult.fc, fitBuilding) : null;
+          const rejectSavedAdjust = shouldRejectSavedFloorAdjust({
+            baseline: baselineAlignment,
+            adjusted: adjustedAlignment
           });
-        } else {
-          fc = adjustedResult.fc;
-          fitTransform = adjustedResult.fitTransform || fitTransform;
-          data.__mfTransformed = true;
-          if (!snapCorner) {
-            floorCache.set(url, fc);
+          if (rejectSavedAdjust) {
+            console.warn('[floorAdjust] Ignoring saved adjustment because it worsens building fit', {
+              building: fitBuilding?.properties?.id || fitBuilding?.properties?.name || buildingId || '',
+              floor: floorId || floor || '',
+              baselineAlignment,
+              adjustedAlignment
+            });
+          } else {
+            fc = adjustedResult.fc;
+            fitTransform = adjustedResult.fitTransform || fitTransform;
+            data.__mfTransformed = true;
+            if (!snapCorner) {
+              floorCache.set(url, fc);
+            }
           }
         }
       }
@@ -18421,6 +18465,21 @@ const StakeholderMap = ({
         label: localAdjustByLabel
       });
       let localAdjust = localPick.adjust;
+      const ignoreKnownBadLocalAdjust = shouldIgnoreKnownBadFloorAdjust({
+        buildingLabel: adjustLabel,
+        buildingId: selectedBuildingId || selectedBuilding,
+        floorId,
+        floorBasePath: basePath,
+        url
+      });
+      if (ignoreKnownBadLocalAdjust) {
+        adjustLabels.forEach((label) => {
+          clearFloorAdjust(label, floorId);
+        });
+        if (url) clearFloorAdjustByUrl(url);
+        if (basePath) clearFloorAdjustByBasePath(basePath, floorId);
+        localAdjust = null;
+      }
       if (!hasFloorAdjust(localAdjust)) {
         const recoveredAdjust = findMatchingStoredFloorAdjust({
           floorId,
@@ -18449,6 +18508,15 @@ const StakeholderMap = ({
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
           pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
         };
+        if (shouldIgnoreKnownBadFloorAdjust({
+          buildingLabel: adjustLabel,
+          buildingId: selectedBuildingId || selectedBuilding,
+          floorId,
+          floorBasePath: basePath,
+          url
+        })) {
+          return;
+        }
         const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
           const ts = dbAdjust.updatedAt;
