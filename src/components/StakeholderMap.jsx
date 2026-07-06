@@ -2362,7 +2362,8 @@ function parseStoredFloorAdjust(raw) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
+      georeferenced: Boolean(parsed?.georeferenced)
     };
   } catch {
     return null;
@@ -18082,6 +18083,7 @@ const StakeholderMap = ({
             translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
             anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
             pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
+            georeferenced: Boolean(adjust.georeferenced),
             updatedAt: serverTimestamp(),
             updatedBy: authUser?.uid || authUser?.email || null
           },
@@ -18204,7 +18206,8 @@ const StakeholderMap = ({
         translateMeters: [0, 0],
         translateLngLat: null,
         anchorLngLat: null,
-        pivot: null
+        pivot: null,
+        georeferenced: Boolean(/SarpyCounty/i.test(adjustBasePath || adjustUrl || ''))
       });
     } catch {}
     setFloorAdjustNotice('');
@@ -18467,7 +18470,8 @@ const StakeholderMap = ({
           translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
           translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
-          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
+          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
+          georeferenced: Boolean(dbAdjust.georeferenced)
         };
         const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
@@ -26436,6 +26440,10 @@ useEffect(() => {
       if (anchorLngLat) {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
+      nextAdjust = {
+        ...nextAdjust,
+        georeferenced: Boolean(nextAdjust.georeferenced || /SarpyCounty/i.test(drag.adjustBasePath || drag.adjustUrl || ''))
+      };
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
       saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
       if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
@@ -28500,7 +28508,7 @@ useEffect(() => {
                   ...adjust,
                   pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
                   anchorLngLat: anchorLngLat || adjust.anchorLngLat || null,
-                  georeferenced: isSarpyCountyInstance || false
+                  georeferenced: Boolean(adjust.georeferenced || /SarpyCounty/i.test(adjustBasePath || adjustUrl || ''))
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
@@ -28550,7 +28558,8 @@ useEffect(() => {
                 const nextAdjustWithPivot = {
                   ...nextAdjust,
                   pivot: Array.isArray(adjustPivot) ? adjustPivot : nextAdjust.pivot,
-                  anchorLngLat: getFloorAdjustAnchorLngLat(scaled || src?._data || baseData) || nextAdjust.anchorLngLat || null
+                  anchorLngLat: getFloorAdjustAnchorLngLat(scaled || src?._data || baseData) || nextAdjust.anchorLngLat || null,
+                  georeferenced: Boolean(nextAdjust.georeferenced || /SarpyCounty/i.test(adjustBasePath || adjustUrl || ''))
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, nextAdjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, nextAdjustWithPivot);
