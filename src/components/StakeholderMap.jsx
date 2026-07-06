@@ -2145,8 +2145,22 @@ function buildFloorAdjustKey(buildingLabel, floorId) {
   return `${FLOORPLAN_ADJUST_STORAGE_PREFIX}${key}/${floorKey}`;
 }
 
+function normalizeFloorplanPathToken(value) {
+  let text = String(value || '');
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const decoded = decodeURIComponent(text);
+      if (!decoded || decoded === text) break;
+      text = decoded;
+    } catch {
+      break;
+    }
+  }
+  return text;
+}
+
 function buildFloorAdjustUrlKey(url) {
-  const key = canon(url || '');
+  const key = canon(normalizeFloorplanPathToken(url || ''));
   if (!key) return null;
   return `${FLOORPLAN_ADJUST_URL_PREFIX}${key}`;
 }
@@ -8324,13 +8338,7 @@ async function loadCampusBuildings() {
 }
 
 function getBuildingFolderFromBasePath(basePath) {
-  const decoded = (() => {
-    try {
-      return decodeURIComponent(String(basePath || ''));
-    } catch {
-      return String(basePath || '');
-    }
-  })();
+  const decoded = normalizeFloorplanPathToken(basePath || '');
   const parts = decoded.split('/').filter(Boolean);
   if (!parts.length) return '';
   const floorIdx = parts.indexOf('floorplans');
