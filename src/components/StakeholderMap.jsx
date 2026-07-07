@@ -28646,15 +28646,15 @@ useEffect(() => {
                 if (!ctx?.buildingLabel || !ctx?.floorId) return;
                 const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
                 const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
-                const adjustByBase = adjustBasePath ? loadFloorAdjustByBasePath(adjustBasePath, ctx.floorId) : null;
-                const adjustBaseHasAdjust = hasFloorAdjust(adjustByBase);
-                const adjustByUrl = adjustUrl ? loadFloorAdjustByUrl(adjustUrl) : null;
-                const adjustUrlHasAdjust = hasFloorAdjust(adjustByUrl);
-                const adjust = adjustBaseHasAdjust
-                  ? adjustByBase
-                  : (adjustUrlHasAdjust
-                      ? adjustByUrl
-                      : loadFloorAdjust(ctx.buildingLabel, ctx.floorId));
+                const adjustLabel =
+                  currentFloorContextRef.current?.floorAdjustLabel ||
+                  ctx.buildingLabel;
+                const adjust = getCurrentStoredFloorAdjust({
+                  buildingLabel: adjustLabel,
+                  floorId: ctx.floorId,
+                  url: adjustUrl,
+                  basePath: adjustBasePath
+                });
                 const nextScale = Math.max(0.5, Math.min(2.5, (adjust.scale || 1) + delta));
                 const factor = nextScale / (adjust.scale || 1);
                 const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
@@ -28670,9 +28670,6 @@ useEffect(() => {
                   }
                 }
                 const nextAdjust = { ...adjust, scale: nextScale };
-                const adjustLabel =
-                  currentFloorContextRef.current?.floorAdjustLabel ||
-                  ctx.buildingLabel;
                 const adjustPivot =
                   currentFloorContextRef.current?.floorAdjustBasePivot ||
                   (baseData ? (turf.centroid(baseData)?.geometry?.coordinates || null) : null);
@@ -32293,6 +32290,8 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 
 
 
