@@ -2741,7 +2741,30 @@ function getFloorAdjustAnchorLngLat(fc) {
   }
 }
 
-function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
+function hasGeoFloorAdjustDelta(adjust) {
+  if (!adjust) return false;
+  return (
+    Math.abs((adjust.translateLngLat?.[0] || 0)) > 1e-12 ||
+    Math.abs((adjust.translateLngLat?.[1] || 0)) > 1e-12 ||
+    Math.abs((adjust.anchorLngLat?.[0] || 0)) > 1e-12 ||
+    Math.abs((adjust.anchorLngLat?.[1] || 0)) > 1e-12
+  );
+}
+
+function shouldReplayFloorAdjustDirectly(fc, adjust) {
+  if (!fc?.features?.length || !hasFloorAdjust(adjust)) return false;
+  return Boolean(fc.__mfGeoreferenced || fc.__mfNoFit || hasGeoFloorAdjustDelta(adjust));
+}
+
+function buildOverlayFloorAdjust(adjust) {
+  if (!hasFloorAdjust(adjust)) return null;
+  return {
+    ...adjust,
+    anchorLngLat: null
+  };
+}
+
+function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
   if (!fc?.features?.length || !adjust) return { fc, fitTransform };
   const sig = getFloorAdjustSignature(adjust);
   if (sig && fc.__mfUserAdjustSignature === sig) return { fc, fitTransform };
@@ -2783,7 +2806,8 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
   }
 
   let nextTransform = fitTransform;
-  if (Number.isFinite(scale) || Number.isFinite(rotationDeg) || Array.isArray(translateMeters)) {
+  const shouldUpdateFitTransform = options?.updateFitTransform !== false;
+  if (shouldUpdateFitTransform && (Number.isFinite(scale) || Number.isFinite(rotationDeg) || Array.isArray(translateMeters))) {
     nextTransform = nextTransform || {
       rotationDeg: 0,
       rotationPivot: pivot,
@@ -3964,7 +3988,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef, floorAdjust }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef, floorAdjust, overlayFloorAdjust = null }) {
   if (!basePath || !floorId || !map) return;
   const cleanFloor = String(floorId).trim();
   const candidates = [
@@ -4114,11 +4138,8 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log('[walls] pre-baked lon/lat — skipping all transforms');
   }
 
-  if (floorAdjust && floorAdjust.georeferenced && hasFloorAdjust(floorAdjust)) {
-    // anchorLngLat is derived from the rooms centroid, so replaying it on the walls
-    // collection shifts linework away from rooms after reload.
-    const overlayAdjust = floorAdjust.anchorLngLat ? { ...floorAdjust, anchorLngLat: null } : floorAdjust;
-    const adjustedWalls = applyFloorAdjustWithTransform(fc, overlayAdjust, fitTransform);
+  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
+    const adjustedWalls = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform);
     if (adjustedWalls?.fc) fc = adjustedWalls.fc;
   }
 
@@ -4163,7 +4184,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   ensureLayerOrder(map);
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4194,6 +4215,13 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
     adjustBearings: true,
     bearingRotationDeg: affineRotationDeg
   });
+  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
+    const adjustedDoors = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform);
+    if (adjustedDoors?.fc) fc = adjustedDoors.fc;
+    if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
+      fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
+    }
+  }
   fc = applyDoorSwingDirection(fc, roomsFC, {
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
@@ -4594,7 +4622,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4625,6 +4653,13 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     adjustBearings: true,
     bearingRotationDeg: affineRotationDeg
   });
+  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
+    const adjustedStairs = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform);
+    if (adjustedStairs?.fc) fc = adjustedStairs.fc;
+    if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
+      fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
+    }
+  }
 
   console.log("[stairs] loaded features", fc.features.length);
 
@@ -5735,8 +5770,12 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
+  const shouldDirectReplayFloorAdjust = shouldReplayFloorAdjustDirectly(fc, floorAdjust);
+  const overlayFloorAdjust = shouldDirectReplayFloorAdjust ? buildOverlayFloorAdjust(floorAdjust) : null;
   if (floorAdjust && hasFloorAdjust(floorAdjust)) {
-    const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+    const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform, {
+      updateFitTransform: !shouldDirectReplayFloorAdjust
+    });
     if (adjustedResult?.fc && adjustedResult.fc !== fc) {
       fc = adjustedResult.fc;
       fitTransform = adjustedResult.fitTransform || fitTransform;
@@ -5958,7 +5997,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
       wallsRawFCRef: options.wallsRawFCRef || null,
-      floorAdjust
+      floorAdjust,
+      overlayFloorAdjust
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -5999,7 +6039,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           rotationOverride,
           fitTransform: fitTransform || cachedTransform.fitTransform || null,
           roomsFC: patchedFC,
-          buildingLabel: overlayBuildingLabel
+          buildingLabel: overlayBuildingLabel,
+          overlayFloorAdjust
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -6007,7 +6048,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         map,
         affine,
         rotationOverride,
-        fitTransform: fitTransform || cachedTransform.fitTransform || null
+        fitTransform: fitTransform || cachedTransform.fitTransform || null,
+        overlayFloorAdjust
       });
     }
   }
@@ -18076,6 +18118,27 @@ const StakeholderMap = ({
     [db, universityId, buildFloorAdjustDocId]
   );
 
+  const loadFloorAdjustFromDbCandidates = useCallback(
+    async (buildingLabels, floorId) => {
+      if (!universityId || !floorId) return null;
+      const labels = Array.from(new Set((buildingLabels || []).filter(Boolean)));
+      let best = null;
+      for (const label of labels) {
+        const docData = await loadFloorAdjustFromDb(label, floorId);
+        if (!docData) continue;
+        const ts = docData.updatedAt;
+        const updatedAtMs = ts?.toMillis
+          ? ts.toMillis()
+          : (Number.isFinite(ts?.seconds) ? ts.seconds * 1000 : 0);
+        if (!best || updatedAtMs > best.updatedAtMs) {
+          best = { label, data: docData, updatedAtMs };
+        }
+      }
+      return best;
+    },
+    [universityId, loadFloorAdjustFromDb]
+  );
+
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
       if (!universityId || !buildingLabel || !floorId || !adjust) return;
@@ -18473,8 +18536,9 @@ const StakeholderMap = ({
       }
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
-        if (!dbAdjust) return;
+      void loadFloorAdjustFromDbCandidates(adjustLabels, floorId).then((dbResult) => {
+        if (!dbResult?.data) return;
+        const dbAdjust = dbResult.data;
         const dbCandidate = {
           rotationDeg: Number(dbAdjust.rotationDeg) || 0,
           scale: Number(dbAdjust.scale) || 1,
@@ -32183,4 +32247,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
+
 
