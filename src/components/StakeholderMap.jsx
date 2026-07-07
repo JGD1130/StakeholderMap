@@ -2729,6 +2729,14 @@ function pickLatestFloorAdjust({ base, url, label }) {
   return labelCandidate || candidates[0] || { source: 'label', adjust: null, savedAt: 0 };
 }
 
+function getCurrentStoredFloorAdjust({ buildingLabel, floorId, url = null, basePath = null }) {
+  return pickLatestFloorAdjust({
+    base: basePath ? loadFloorAdjustByBasePath(basePath, floorId) : null,
+    url: url ? loadFloorAdjustByUrl(url) : null,
+    label: loadFloorAdjust(buildingLabel, floorId)
+  }).adjust;
+}
+
 function getFloorAdjustAnchorLngLat(fc) {
   if (!fc?.features?.length) return null;
   try {
@@ -2756,11 +2764,30 @@ function shouldReplayFloorAdjustDirectly(fc, adjust) {
   return Boolean(fc.__mfGeoreferenced || fc.__mfNoFit || hasGeoFloorAdjustDelta(adjust));
 }
 
-function buildOverlayFloorAdjust(adjust) {
+function buildOverlayFloorAdjust({ adjust, baseRoomsFC, fitTransform, finalRoomsFC }) {
   if (!hasFloorAdjust(adjust)) return null;
-  return {
+  const overlayAdjust = {
     ...adjust,
     anchorLngLat: null
+  };
+  const targetAnchor = getFloorAdjustAnchorLngLat(finalRoomsFC) ||
+    (Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null);
+  if (!targetAnchor || !baseRoomsFC?.features?.length) return overlayAdjust;
+  const preview = applyFloorAdjustWithTransform(baseRoomsFC, overlayAdjust, fitTransform, {
+    updateFitTransform: false
+  });
+  const previewAnchor = getFloorAdjustAnchorLngLat(preview?.fc || preview || null);
+  if (!previewAnchor) return overlayAdjust;
+  const deltaLng = targetAnchor[0] - previewAnchor[0];
+  const deltaLat = targetAnchor[1] - previewAnchor[1];
+  if (Math.abs(deltaLng) <= 1e-12 && Math.abs(deltaLat) <= 1e-12) return overlayAdjust;
+  const baseTranslate = Array.isArray(overlayAdjust.translateLngLat) ? overlayAdjust.translateLngLat : [0, 0];
+  return {
+    ...overlayAdjust,
+    translateLngLat: [
+      (Number(baseTranslate[0]) || 0) + deltaLng,
+      (Number(baseTranslate[1]) || 0) + deltaLat
+    ]
   };
 }
 
@@ -5765,13 +5792,14 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       }
     }
   }
+  const preUserAdjustFc = fc;
+  const preUserAdjustFitTransform = fitTransform || null;
   const adjustPivotBase =
     fitTransform?.scaleOrigin ||
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
   const shouldDirectReplayFloorAdjust = shouldReplayFloorAdjustDirectly(fc, floorAdjust);
-  const overlayFloorAdjust = shouldDirectReplayFloorAdjust ? buildOverlayFloorAdjust(floorAdjust) : null;
   if (floorAdjust && hasFloorAdjust(floorAdjust)) {
     const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform, {
       updateFitTransform: !shouldDirectReplayFloorAdjust
@@ -5785,6 +5813,14 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       }
     }
   }
+  const overlayFloorAdjust = shouldDirectReplayFloorAdjust
+    ? buildOverlayFloorAdjust({
+        adjust: floorAdjust,
+        baseRoomsFC: preUserAdjustFc,
+        fitTransform: preUserAdjustFitTransform,
+        finalRoomsFC: fc
+      })
+    : null;
   if (fitTransform) {
     cachedTransform.fitTransform = fitTransform;
     floorTransformCache.set(url, cachedTransform);
@@ -26388,15 +26424,12 @@ useEffect(() => {
       const adjustUrl = ctx.url || buildFloorUrl(selectedBuilding, ctx.floorId);
       const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
       const basePivot = currentFloorContextRef.current?.floorAdjustBasePivot || null;
-      const adjustByBase = adjustBasePath ? loadFloorAdjustByBasePath(adjustBasePath, ctx.floorId) : null;
-      const adjustBaseHasAdjust = hasFloorAdjust(adjustByBase);
-      const adjustByUrl = adjustUrl ? loadFloorAdjustByUrl(adjustUrl) : null;
-      const adjustUrlHasAdjust = hasFloorAdjust(adjustByUrl);
-      const adjust = adjustBaseHasAdjust
-        ? adjustByBase
-        : (adjustUrlHasAdjust
-            ? adjustByUrl
-            : loadFloorAdjust(ctx.buildingLabel, ctx.floorId));
+      const adjust = getCurrentStoredFloorAdjust({
+        buildingLabel: ctx.buildingLabel,
+        floorId: ctx.floorId,
+        url: adjustUrl,
+        basePath: adjustBasePath
+      });
       const startTranslateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : [0, 0];
       const adjustLabel =
         currentFloorContextRef.current?.floorAdjustLabel ||
@@ -26433,6 +26466,7 @@ useEffect(() => {
         startScale: adjust.scale || 1,
         startTranslate: adjust.translateMeters || [0, 0],
         startTranslateLngLat,
+        startAdjust: JSON.parse(JSON.stringify(adjust || {})),
         startLngLat: e.lngLat,
         buildingLabel: ctx.buildingLabel,
         floorId: ctx.floorId,
@@ -26477,7 +26511,14 @@ useEffect(() => {
     const onMouseUp = (e) => {
       const drag = floorAdjustDragRef.current;
       if (!drag) return;
-      let nextAdjust = loadFloorAdjust(drag.buildingLabel, drag.floorId);
+      let nextAdjust = drag.startAdjust
+        ? JSON.parse(JSON.stringify(drag.startAdjust))
+        : getCurrentStoredFloorAdjust({
+            buildingLabel: drag.adjustLabel || drag.buildingLabel,
+            floorId: drag.floorId,
+            url: drag.adjustUrl,
+            basePath: drag.adjustBasePath
+          });
       if (drag.mode === 'rotate') {
         const angle = Math.atan2(e.point.y - drag.pivotScreen.y, e.point.x - drag.pivotScreen.x);
         const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
@@ -28570,7 +28611,12 @@ useEffect(() => {
                   ctx.buildingLabel;
                 const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
                 const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
-                const adjust = floorAdjustValue || loadFloorAdjust(adjustLabel, ctx.floorId);
+                const adjust = getCurrentStoredFloorAdjust({
+                  buildingLabel: adjustLabel,
+                  floorId: ctx.floorId,
+                  url: adjustUrl,
+                  basePath: adjustBasePath
+                });
                 const pivot =
                   currentFloorContextRef.current?.floorAdjustBasePivot ||
                   (currentFloorContextRef.current?.fc
@@ -32247,6 +32293,11 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
+
+
+
 
 
 
