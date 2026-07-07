@@ -6048,7 +6048,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affine, rotationOverride,
       fitTransform: fitTransform || cachedTransform?.fitTransform || null,
       wallsRawFCRef: options.wallsRawFCRef || null,
-      floorAdjust
+      floorAdjust,
+      overlayFloorAdjust
     }).catch(() => {});
   }
 
@@ -32290,6 +32291,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
