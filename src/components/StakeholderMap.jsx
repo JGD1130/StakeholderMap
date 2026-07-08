@@ -31253,6 +31253,7 @@ useEffect(() => {
                 let popupRefreshPayload = null;
                 let popupRefreshMatchedExact = false;
                 const sharedProps = roomEditData.properties || {};
+                const trimValue = (value) => String(value ?? '').trim();
                 const mapRefCurrent = mapRef.current;
                 const src = getGeojsonSource(mapRefCurrent, FLOOR_SOURCE);
                 const sourceData = src ? (src._data || src.serialize?.().data || null) : null;
@@ -31291,7 +31292,7 @@ useEffect(() => {
                         ? sharedProps.seatCount
                         : fallbackProps.seatCount)
                     : undefined;
-                  const propsForTarget = {
+                  const displayPropsForTarget = {
                     ...tgt.properties,
                     ...sharedProps,
                     type:
@@ -31306,9 +31307,39 @@ useEffect(() => {
                     ...(editHasSeatCountType ? { seatCount: seatCountValue } : {})
                   };
                   if (editHasOfficeType) {
-                    propsForTarget.OccupancyStatus = occupancyStatusValue;
-                    propsForTarget['Occupancy Status'] = occupancyStatusValue;
+                    displayPropsForTarget.OccupancyStatus = occupancyStatusValue;
+                    displayPropsForTarget['Occupancy Status'] = occupancyStatusValue;
                   }
+                  const propsForTarget = {};
+                  if (trimValue(displayPropsForTarget.type) !== trimValue(fallbackProps.type)) {
+                    propsForTarget.type = displayPropsForTarget.type;
+                  }
+                  if (trimValue(displayPropsForTarget.department) !== trimValue(fallbackProps.department)) {
+                    propsForTarget.department = displayPropsForTarget.department;
+                  }
+                  if (trimValue(displayPropsForTarget.comments) !== trimValue(fallbackProps.comments)) {
+                    propsForTarget.comments = displayPropsForTarget.comments;
+                  }
+                  if (editHasOfficeType) {
+                    if (trimValue(displayPropsForTarget.occupant) !== trimValue(fallbackProps.occupant)) {
+                      propsForTarget.occupant = displayPropsForTarget.occupant;
+                    }
+                    if (trimValue(displayPropsForTarget.occupancyStatus) !== trimValue(fallbackProps.occupancyStatus)) {
+                      propsForTarget.occupancyStatus = displayPropsForTarget.occupancyStatus;
+                      propsForTarget.OccupancyStatus = occupancyStatusValue;
+                      propsForTarget['Occupancy Status'] = occupancyStatusValue;
+                    }
+                  }
+                  if (editHasSeatCountType) {
+                    const nextSeatCount = Number(displayPropsForTarget.seatCount);
+                    const prevSeatCount = Number(fallbackProps.seatCount);
+                    const normalizedNextSeatCount = Number.isFinite(nextSeatCount) && nextSeatCount > 0 ? nextSeatCount : null;
+                    const normalizedPrevSeatCount = Number.isFinite(prevSeatCount) && prevSeatCount > 0 ? prevSeatCount : null;
+                    if (normalizedNextSeatCount !== normalizedPrevSeatCount) {
+                      propsForTarget.seatCount = displayPropsForTarget.seatCount;
+                    }
+                  }
+                  if (!Object.keys(propsForTarget).length) continue;
                   const saved = await saveRoomEdits({
                     roomId: tgt.roomId,
                     buildingId: tgt.buildingId,
@@ -31323,10 +31354,10 @@ useEffect(() => {
                     savedCount += 1;
                     const targetRoomKey = tgt.roomId || String(tgt.revitId ?? '');
                     const popupPayloadForTarget = {
-                      type: propsForTarget.type ?? fallbackProps.type ?? '',
-                      department: propsForTarget.department ?? fallbackProps.department ?? '',
-                      occupant: propsForTarget.occupant ?? fallbackProps.occupant ?? '',
-                      seatCount: propsForTarget.seatCount ?? fallbackProps.seatCount ?? null
+                      type: displayPropsForTarget.type ?? fallbackProps.type ?? '',
+                      department: displayPropsForTarget.department ?? fallbackProps.department ?? '',
+                      occupant: displayPropsForTarget.occupant ?? fallbackProps.occupant ?? '',
+                      seatCount: displayPropsForTarget.seatCount ?? fallbackProps.seatCount ?? null
                     };
                     const hasExactPopupMatch =
                       Boolean(activePopupRoomKey) &&
@@ -31344,12 +31375,12 @@ useEffect(() => {
                       if (fid != null) {
                         const feat = patchedFeatures.find((f) => (f.id ?? f.properties?.RevitId) === fid);
                         if (feat && feat.properties) {
-                          feat.properties.department = propsForTarget.department ?? feat.properties.department;
-                          feat.properties.department = feat.properties.department || propsForTarget.department || '';
+                          feat.properties.department = displayPropsForTarget.department ?? feat.properties.department;
+                          feat.properties.department = feat.properties.department || displayPropsForTarget.department || '';
                           feat.properties.Department = feat.properties.department;
                           feat.properties.NCES_Department = feat.properties.department;
                           feat.properties.__dept = feat.properties.department;
-                          feat.properties.type = propsForTarget.type ?? feat.properties.type;
+                          feat.properties.type = displayPropsForTarget.type ?? feat.properties.type;
                           feat.properties.Type = feat.properties.type;
                           feat.properties.RoomType = feat.properties.type;
                           feat.properties['Room Type'] = feat.properties.type;
@@ -31359,19 +31390,19 @@ useEffect(() => {
                           feat.properties.__roomType = feat.properties.type;
                           feat.properties.__roomCategory = getRoomCategoryLabelFromProps(feat.properties);
                           if (editHasOfficeType) {
-                            feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
+                            feat.properties.Occupant = displayPropsForTarget.occupant ?? feat.properties.Occupant;
                             feat.properties.occupant = feat.properties.Occupant;
                             feat.properties.occupancyStatus =
-                              propsForTarget.occupancyStatus ?? feat.properties.occupancyStatus;
+                              displayPropsForTarget.occupancyStatus ?? feat.properties.occupancyStatus;
                             feat.properties.OccupancyStatus =
-                              propsForTarget.OccupancyStatus ?? feat.properties.OccupancyStatus;
+                              displayPropsForTarget.OccupancyStatus ?? feat.properties.OccupancyStatus;
                             feat.properties['Occupancy Status'] =
-                              propsForTarget['Occupancy Status'] ?? feat.properties['Occupancy Status'];
+                              displayPropsForTarget['Occupancy Status'] ?? feat.properties['Occupancy Status'];
                           }
                           if (editHasSeatCountType) {
-                            feat.properties.SeatCount = propsForTarget.seatCount ?? feat.properties.SeatCount;
-                            feat.properties['Seat Count'] = propsForTarget.seatCount ?? feat.properties['Seat Count'];
-                            feat.properties.seatCount = propsForTarget.seatCount ?? feat.properties.seatCount;
+                            feat.properties.SeatCount = displayPropsForTarget.seatCount ?? feat.properties.SeatCount;
+                            feat.properties['Seat Count'] = displayPropsForTarget.seatCount ?? feat.properties['Seat Count'];
+                            feat.properties.seatCount = displayPropsForTarget.seatCount ?? feat.properties.seatCount;
                           }
                         }
                       }
