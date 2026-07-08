@@ -1184,14 +1184,19 @@ const AIRTABLE_DEPT_FIELD_CANDIDATES = uniqueStrings([
   ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
   "Department",
   AIRTABLE_DEPT_FIELD,
-  "Dept"
+  "department",
+  "Dept",
+  "dept"
 ]);
 const AIRTABLE_TYPE_FIELD_CANDIDATES = uniqueStrings([
   ...parseEnvFieldList(process.env.AIRTABLE_TYPE_FIELD),
   "Room Type",
   AIRTABLE_TYPE_FIELD,
   "Type",
-  "Room Type Description"
+  "type",
+  "Room Type Description",
+  "roomType",
+  "roomTypeDescription"
 ]);
 
 const linkedRecordCache = new Map();
@@ -1693,6 +1698,8 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
     },
     body: JSON.stringify({ fields })
   });
+  const hasOtherFields = (fields, fieldName) =>
+    Object.keys(fields || {}).some((key) => key !== fieldName);
 
   let resp = await doPatch(resolvedFields);
   if (resp.ok) {
@@ -1724,6 +1731,34 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
   }
 
   if (!shouldRetry) {
+    if (
+      typeFieldName &&
+      isAirtableInvalidValueForField(firstErrorText, typeFieldName) &&
+      Object.prototype.hasOwnProperty.call(resolvedFields, typeFieldName) &&
+      hasOtherFields(resolvedFields, typeFieldName)
+    ) {
+      const withoutTypeFields = { ...resolvedFields };
+      delete withoutTypeFields[typeFieldName];
+      resp = await doPatch(withoutTypeFields);
+      if (resp.ok) {
+        return {
+          ok: true,
+          data: await resp.json(),
+          fields: withoutTypeFields,
+          retried: true,
+          droppedFields: [typeFieldName]
+        };
+      }
+      const droppedTypeErrorText = await resp.text();
+      return {
+        ok: false,
+        errorText: droppedTypeErrorText,
+        firstErrorText,
+        fields: withoutTypeFields,
+        retried: true,
+        droppedFields: [typeFieldName]
+      };
+    }
     return { ok: false, errorText: firstErrorText, fields: resolvedFields, retried: false };
   }
 
@@ -1733,6 +1768,36 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
   }
 
   const retryErrorText = await resp.text();
+  if (
+    typeFieldName &&
+    isAirtableInvalidValueForField(retryErrorText, typeFieldName) &&
+    Object.prototype.hasOwnProperty.call(fallbackFields, typeFieldName) &&
+    hasOtherFields(fallbackFields, typeFieldName)
+  ) {
+    const withoutTypeFields = { ...fallbackFields };
+    delete withoutTypeFields[typeFieldName];
+    resp = await doPatch(withoutTypeFields);
+    if (resp.ok) {
+      return {
+        ok: true,
+        data: await resp.json(),
+        fields: withoutTypeFields,
+        retried: true,
+        droppedFields: [typeFieldName]
+      };
+    }
+    const droppedTypeErrorText = await resp.text();
+    return {
+      ok: false,
+      errorText: droppedTypeErrorText,
+      firstErrorText,
+      retryErrorText,
+      fields: withoutTypeFields,
+      retried: true,
+      droppedFields: [typeFieldName]
+    };
+  }
+
   return {
     ok: false,
     errorText: retryErrorText,
