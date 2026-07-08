@@ -921,7 +921,7 @@ function parseTimeRange(startValue, endValue, rangeValue) {
   let timeText = String(rangeValue || "").trim();
 
   if ((!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) && timeText) {
-    const parts = timeText.split(/\s*(?:-|â€“|â€”|to)\s*/i);
+    const parts = timeText.split(/\s*(?:-|–|—|to)\s*/i);
     if (parts.length >= 2) {
       startMinutes = parseTimeToMinutes(parts[0]);
       endMinutes = parseTimeToMinutes(parts[1]);
@@ -945,7 +945,7 @@ function splitScheduleBuildingAndRoom(value) {
   const raw = String(value || "").trim();
   if (!raw) return { building: "", room: "" };
 
-  const explicitDelimiters = [" / ", " - ", " â€“ ", ", "];
+  const explicitDelimiters = [" / ", " - ", " – ", ", "];
   for (const delimiter of explicitDelimiters) {
     if (!raw.includes(delimiter)) continue;
     const [left, ...rightParts] = raw.split(delimiter);
@@ -1350,24 +1350,35 @@ function buildFieldEqualsClause(fields = [], values = []) {
   return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
 }
 
-async function fetchAirtableTableRecords(tableName, { filterFormula, view } = {}) {
-  const params = new URLSearchParams();
-  if (view) params.set("view", view);
-  if (filterFormula) params.set("filterByFormula", filterFormula);
-  params.set("pageSize", "5");
+async function fetchAirtableTableRecords(tableName, { filterFormula, view, pageSize = 5, maxRecords = 5 } = {}) {
+  const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 5));
+  const safeMaxRecords = Math.max(safePageSize, Math.min(500, Number(maxRecords) || safePageSize));
+  const records = [];
+  let offset = "";
 
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
-  const resp = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_TOKEN}`
+  do {
+    const params = new URLSearchParams();
+    if (view) params.set("view", view);
+    if (filterFormula) params.set("filterByFormula", filterFormula);
+    params.set("pageSize", String(Math.min(safePageSize, safeMaxRecords - records.length)));
+    if (offset) params.set("offset", offset);
+
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`
+      }
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Airtable error: ${resp.status} ${text}`);
     }
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Airtable error: ${resp.status} ${text}`);
-  }
-  const data = await resp.json();
-  return data.records || [];
+    const data = await resp.json();
+    records.push(...(data.records || []));
+    offset = data?.offset || "";
+  } while (offset && records.length < safeMaxRecords);
+
+  return records;
 }
 
 async function fetchAirtableBaseSchema() {
@@ -1390,7 +1401,6 @@ async function fetchAirtableBaseSchema() {
 }
 
 async function resolvePrimaryFieldName(tableName, explicitField) {
-  if (explicitField) return explicitField;
   if (tablePrimaryFieldCache.has(tableName)) {
     return tablePrimaryFieldCache.get(tableName);
   }
@@ -1407,7 +1417,48 @@ async function resolvePrimaryFieldName(tableName, explicitField) {
   } catch (err) {
     console.warn(`Unable to read Airtable schema for ${tableName}`, err?.message || err);
   }
-  return "";
+  return String(explicitField || "").trim();
+}
+
+function isAirtableUnknownFieldFormulaError(errorText = "") {
+  const text = String(errorText || "");
+  return /INVALID_FILTER_BY_FORMULA/i.test(text) && /Unknown field names/i.test(text);
+}
+
+function getComparableLinkedValues(value) {
+  if (value == null) return [];
+  if (typeof value === "string" || typeof value === "number") {
+    return [String(value)];
+  }
+  if (Array.isArray(value) && value.length === 1) {
+    return getComparableLinkedValues(value[0]);
+  }
+  return [];
+}
+
+function findLinkedRecordMatch(records = [], label, candidateFields = []) {
+  const normalizedLabel = normalizeLoose(label);
+  if (!normalizedLabel) return null;
+
+  const preferredFields = uniqueStrings(candidateFields);
+  const preferredMatches = records.filter((record) => {
+    const fields = record?.fields || {};
+    return preferredFields.some((fieldName) => {
+      const values = getComparableLinkedValues(fields[fieldName]);
+      return values.some((value) => normalizeLoose(value) === normalizedLabel);
+    });
+  });
+  if (preferredMatches.length === 1) return preferredMatches[0];
+  if (preferredMatches.length > 1) return null;
+
+  const broadMatches = records.filter((record) => {
+    const fields = record?.fields || {};
+    return Object.values(fields).some((value) => {
+      const values = getComparableLinkedValues(value);
+      return values.some((candidate) => normalizeLoose(candidate) === normalizedLabel);
+    });
+  });
+  return broadMatches.length === 1 ? broadMatches[0] : null;
 }
 
 async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
@@ -1419,11 +1470,43 @@ async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
     return linkedRecordCache.get(normKey);
   }
   const primaryField = await resolvePrimaryFieldName(tableName, primaryFieldName);
-  if (!primaryField) return null;
-  const lower = raw.toLowerCase();
-  const filter = `LOWER({${primaryField}})="${escapeFormulaValue(lower)}"`;
-  const records = await fetchAirtableTableRecords(tableName, { filterFormula: filter });
-  const id = records?.[0]?.id || null;
+  if (primaryField) {
+    const lower = raw.toLowerCase();
+    const filter = `LOWER({${primaryField}})="${escapeFormulaValue(lower)}"`;
+    try {
+      const records = await fetchAirtableTableRecords(tableName, { filterFormula: filter });
+      const id = records?.[0]?.id || null;
+      if (id) {
+        linkedRecordCache.set(normKey, id);
+        return id;
+      }
+    } catch (err) {
+      const message = String(err?.message || err || "");
+      if (!isAirtableUnknownFieldFormulaError(message)) {
+        throw err;
+      }
+      console.warn(
+        `[airtable] linked lookup formula skipped for ${tableName}: ${primaryField}`
+        , message
+      );
+    }
+  }
+
+  const records = await fetchAirtableTableRecords(tableName, {
+    pageSize: 100,
+    maxRecords: 250
+  });
+  const match = findLinkedRecordMatch(records, raw, [
+    primaryField,
+    primaryFieldName,
+    "Name",
+    "Room Type",
+    "Type",
+    "Department",
+    "Title",
+    "Label"
+  ]);
+  const id = match?.id || null;
   if (id) {
     linkedRecordCache.set(normKey, id);
   }
@@ -3086,7 +3169,7 @@ function normalizeFicmCode(value = "") {
 function parseFicmTypeText(typeRaw = "") {
   const text = normalizeCopilotText(typeRaw);
   if (!text) return { code: "", label: "" };
-  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-â€“]?\s*(.+)$/);
+  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-–]?\s*(.+)$/);
   if (match) {
     return {
       code: normalizeFicmCode(match[1]),
