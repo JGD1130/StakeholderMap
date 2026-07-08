@@ -1180,9 +1180,23 @@ const AIRTABLE_ROOM_TYPE_TABLE = process.env.AIRTABLE_ROOM_TYPE_TABLE || "";
 const AIRTABLE_ROOM_TYPE_PRIMARY_FIELD = process.env.AIRTABLE_ROOM_TYPE_PRIMARY_FIELD || "";
 const AIRTABLE_DEPT_TABLE = process.env.AIRTABLE_DEPT_TABLE || "";
 const AIRTABLE_DEPT_PRIMARY_FIELD = process.env.AIRTABLE_DEPT_PRIMARY_FIELD || "";
+const AIRTABLE_DEPT_FIELD_CANDIDATES = uniqueStrings([
+  ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
+  "Department",
+  AIRTABLE_DEPT_FIELD,
+  "Dept"
+]);
+const AIRTABLE_TYPE_FIELD_CANDIDATES = uniqueStrings([
+  ...parseEnvFieldList(process.env.AIRTABLE_TYPE_FIELD),
+  "Room Type",
+  AIRTABLE_TYPE_FIELD,
+  "Type",
+  "Room Type Description"
+]);
 
 const linkedRecordCache = new Map();
 const tablePrimaryFieldCache = new Map();
+const tableFieldNameCache = new Map();
 const linkedLabelCache = new Map();
 const LINKED_LABEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -1420,6 +1434,89 @@ async function resolvePrimaryFieldName(tableName, explicitField) {
   return String(explicitField || "").trim();
 }
 
+function findExistingFieldName(fieldNames = [], candidates = []) {
+  const available = uniqueStrings(fieldNames);
+  const desired = uniqueStrings(candidates);
+  if (!available.length || !desired.length) return "";
+
+  for (const candidate of desired) {
+    if (available.includes(candidate)) return candidate;
+  }
+
+  const byLower = new Map(available.map((name) => [name.toLowerCase(), name]));
+  for (const candidate of desired) {
+    const match = byLower.get(String(candidate || "").toLowerCase());
+    if (match) return match;
+  }
+  return "";
+}
+
+async function resolveTableFieldName(tableName, candidates = [], fallback = "") {
+  const candidateList = uniqueStrings([
+    ...candidates,
+    fallback
+  ]);
+  const fallbackName = candidateList[0] || "";
+  if (!tableName || !candidateList.length) return fallbackName;
+
+  const cacheKey = `${tableName}|${candidateList.join("|")}`;
+  if (tableFieldNameCache.has(cacheKey)) {
+    return tableFieldNameCache.get(cacheKey);
+  }
+
+  let resolved = fallbackName;
+  try {
+    const schema = await fetchAirtableBaseSchema();
+    const table = (schema?.tables || []).find((t) => t?.name === tableName);
+    const fieldNames = (table?.fields || []).map((field) => String(field?.name || "").trim()).filter(Boolean);
+    const match = findExistingFieldName(fieldNames, candidateList);
+    if (match) resolved = match;
+  } catch (err) {
+    console.warn(`Unable to resolve Airtable field name for ${tableName}`, err?.message || err);
+  }
+
+  tableFieldNameCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+async function getRoomUpdateFieldNames(tableName) {
+  const typeFieldName = await resolveTableFieldName(
+    tableName,
+    AIRTABLE_TYPE_FIELD_CANDIDATES,
+    AIRTABLE_TYPE_FIELD
+  );
+  const deptFieldName = await resolveTableFieldName(
+    tableName,
+    AIRTABLE_DEPT_FIELD_CANDIDATES,
+    AIRTABLE_DEPT_FIELD
+  );
+  return { typeFieldName, deptFieldName };
+}
+
+function remapFieldAlias(updateFields = {}, candidates = [], resolvedFieldName = "") {
+  const targetField = String(resolvedFieldName || "").trim();
+  if (!targetField) return { ...updateFields };
+
+  const next = { ...updateFields };
+  uniqueStrings(candidates).forEach((candidate) => {
+    if (!candidate || candidate === targetField) return;
+    if (!Object.prototype.hasOwnProperty.call(next, candidate)) return;
+    if (!Object.prototype.hasOwnProperty.call(next, targetField)) {
+      next[targetField] = next[candidate];
+    }
+    delete next[candidate];
+  });
+  return next;
+}
+
+async function normalizeRoomUpdateFields(tableName, updateFields = {}) {
+  const { typeFieldName, deptFieldName } = await getRoomUpdateFieldNames(tableName);
+  let next = { ...updateFields };
+  next = remapFieldAlias(next, AIRTABLE_TYPE_FIELD_CANDIDATES, typeFieldName);
+  next = remapFieldAlias(next, AIRTABLE_DEPT_FIELD_CANDIDATES, deptFieldName);
+  return { fields: next, typeFieldName, deptFieldName };
+}
+
 function isAirtableUnknownFieldFormulaError(errorText = "") {
   const text = String(errorText || "");
   return /INVALID_FILTER_BY_FORMULA/i.test(text) && /Unknown field names/i.test(text);
@@ -1513,10 +1610,13 @@ async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
   return id;
 }
 
-async function resolveLinkedFields(updateFields = {}) {
+async function resolveLinkedFields(
+  updateFields = {},
+  { typeFieldName = AIRTABLE_TYPE_FIELD, deptFieldName = AIRTABLE_DEPT_FIELD } = {}
+) {
   const next = { ...updateFields };
-  if (AIRTABLE_TYPE_FIELD in next) {
-    const value = next[AIRTABLE_TYPE_FIELD];
+  if (typeFieldName && Object.prototype.hasOwnProperty.call(next, typeFieldName)) {
+    const value = next[typeFieldName];
     if (Array.isArray(value)) {
       // ok
     } else if (String(value ?? "").trim()) {
@@ -1531,13 +1631,13 @@ async function resolveLinkedFields(updateFields = {}) {
       if (!id) {
         throw new Error(`Room Type not found: ${value}`);
       }
-      next[AIRTABLE_TYPE_FIELD] = [id];
+      next[typeFieldName] = [id];
     } else {
-      next[AIRTABLE_TYPE_FIELD] = [];
+      next[typeFieldName] = [];
     }
   }
-  if (AIRTABLE_DEPT_FIELD in next) {
-    const value = next[AIRTABLE_DEPT_FIELD];
+  if (deptFieldName && Object.prototype.hasOwnProperty.call(next, deptFieldName)) {
+    const value = next[deptFieldName];
     if (Array.isArray(value)) {
       // ok
     } else if (String(value ?? "").trim()) {
@@ -1552,9 +1652,9 @@ async function resolveLinkedFields(updateFields = {}) {
       if (!id) {
         throw new Error(`Department not found: ${value}`);
       }
-      next[AIRTABLE_DEPT_FIELD] = [id];
+      next[deptFieldName] = [id];
     } else {
-      next[AIRTABLE_DEPT_FIELD] = [];
+      next[deptFieldName] = [];
     }
   }
   return next;
@@ -1575,7 +1675,15 @@ function isAirtableInvalidValueForField(errorText = "", fieldName = "") {
 }
 
 async function patchAirtableRecord(table, recordId, updateFields = {}) {
-  const resolvedFields = await resolveLinkedFields(updateFields);
+  const {
+    fields: normalizedFields,
+    typeFieldName,
+    deptFieldName
+  } = await normalizeRoomUpdateFields(table, updateFields);
+  const resolvedFields = await resolveLinkedFields(normalizedFields, {
+    typeFieldName,
+    deptFieldName
+  });
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${recordId}`;
   const doPatch = async (fields) => fetch(url, {
     method: "PATCH",
@@ -1596,20 +1704,22 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
   let shouldRetry = false;
 
   if (
-    Object.prototype.hasOwnProperty.call(updateFields, AIRTABLE_DEPT_FIELD) &&
-    !Array.isArray(updateFields[AIRTABLE_DEPT_FIELD]) &&
-    isAirtableInvalidValueForField(firstErrorText, AIRTABLE_DEPT_FIELD)
+    deptFieldName &&
+    Object.prototype.hasOwnProperty.call(normalizedFields, deptFieldName) &&
+    !Array.isArray(normalizedFields[deptFieldName]) &&
+    isAirtableInvalidValueForField(firstErrorText, deptFieldName)
   ) {
-    fallbackFields[AIRTABLE_DEPT_FIELD] = updateFields[AIRTABLE_DEPT_FIELD];
+    fallbackFields[deptFieldName] = normalizedFields[deptFieldName];
     shouldRetry = true;
   }
 
   if (
-    Object.prototype.hasOwnProperty.call(updateFields, AIRTABLE_TYPE_FIELD) &&
-    !Array.isArray(updateFields[AIRTABLE_TYPE_FIELD]) &&
-    isAirtableInvalidValueForField(firstErrorText, AIRTABLE_TYPE_FIELD)
+    typeFieldName &&
+    Object.prototype.hasOwnProperty.call(normalizedFields, typeFieldName) &&
+    !Array.isArray(normalizedFields[typeFieldName]) &&
+    isAirtableInvalidValueForField(firstErrorText, typeFieldName)
   ) {
-    fallbackFields[AIRTABLE_TYPE_FIELD] = updateFields[AIRTABLE_TYPE_FIELD];
+    fallbackFields[typeFieldName] = normalizedFields[typeFieldName];
     shouldRetry = true;
   }
 
