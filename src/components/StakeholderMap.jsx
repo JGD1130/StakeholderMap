@@ -17819,6 +17819,8 @@ const StakeholderMap = ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   roomId: roomGuidValue || roomNumberValue,
+                  roomNumber: roomNumberValue || undefined,
+                  roomLabel: String((roomLabel ?? roomNumberValue) || '').trim() || undefined,
                   roomGuid: roomGuidValue || undefined,
                   building: buildingId,
                   buildingName: buildingName || '',

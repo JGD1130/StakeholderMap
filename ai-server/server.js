@@ -2229,6 +2229,14 @@ app.patch("/api/rooms", async (req, res) => {
     }
 
     const roomFields = parseEnvFieldList(process.env.AIRTABLE_ROOM_ID_FIELD);
+    const roomNumberFields = uniqueStrings([
+      ...parseEnvFieldList(process.env.AIRTABLE_ROOM_NUMBER_FIELD),
+      "Room Number",
+      "RoomNumber",
+      "Number",
+      "Room No",
+      "Room"
+    ]);
     if (!roomFields.length) {
       return res.status(400).json({
         ok: false,
@@ -2251,13 +2259,16 @@ app.patch("/api/rooms", async (req, res) => {
     const buildingValues = expandBuildingValues([building, buildingName]);
     const floorValues = expandFloorValues([floor]);
 
-    const roomLookupValues = uniqueStrings([roomIdValue, roomNumberValue, roomLabelValue]);
+    const roomIdLookupValues = uniqueStrings([roomIdValue]);
+    const roomNumberLookupValues = uniqueStrings([roomNumberValue, roomLabelValue]);
     const roomGuidLookupValues = uniqueStrings([roomGuidValue]);
-    const roomIdClause = buildFieldEqualsClause(roomFields, roomLookupValues);
+    const roomIdClause = buildFieldEqualsClause(roomFields, roomIdLookupValues);
+    const roomNumberClause = buildFieldEqualsClause(roomNumberFields, roomNumberLookupValues);
     const roomGuidClause = buildFieldEqualsClause(roomGuidFields, roomGuidLookupValues);
-    const roomClause = roomIdClause && roomGuidClause
-      ? `OR(${roomIdClause},${roomGuidClause})`
-      : (roomIdClause || roomGuidClause);
+    const roomClauseParts = [roomIdClause, roomNumberClause, roomGuidClause].filter(Boolean);
+    const roomClause = roomClauseParts.length > 1
+      ? `OR(${roomClauseParts.join(",")})`
+      : (roomClauseParts[0] || null);
     const buildingClause = buildFieldEqualsClause(buildingFields, buildingValues);
     const floorClause = buildFieldEqualsClause(floorFields, floorValues);
     if (!roomClause) {
@@ -2284,12 +2295,17 @@ app.patch("/api/rooms", async (req, res) => {
     };
 
     let records = await safeLookup(formula, "room+building+floor");
-    const roomBaseClause = roomIdClause || roomClause;
+    const roomBaseClause = roomIdClause || roomNumberClause || roomClause;
 
     if (!records.length && roomIdClause && roomClause !== roomIdClause) {
       const idOnlyParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
       const idOnlyFormula = idOnlyParts.length > 1 ? `AND(${idOnlyParts.join(",")})` : idOnlyParts[0];
       records = await safeLookup(idOnlyFormula, "roomId+building+floor");
+    }
+    if (!records.length && roomNumberClause && roomClause !== roomNumberClause) {
+      const numberOnlyParts = [roomNumberClause, buildingClause, floorClause].filter(Boolean);
+      const numberOnlyFormula = numberOnlyParts.length > 1 ? `AND(${numberOnlyParts.join(",")})` : numberOnlyParts[0];
+      records = await safeLookup(numberOnlyFormula, "roomNumber+building+floor");
     }
     if (!records.length && floorClause) {
       const noFloorParts = [roomBaseClause, buildingClause].filter(Boolean);
