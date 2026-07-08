@@ -1477,6 +1477,78 @@ async function resolveLinkedFields(updateFields = {}) {
   return next;
 }
 
+function isAirtableInvalidValueForField(errorText = "", fieldName = "") {
+  const text = String(errorText || "");
+  if (!text) return false;
+  const normalizedField = String(fieldName || "").trim();
+  if (!/INVALID_VALUE_FOR_COLUMN/i.test(text)) return false;
+  if (!normalizedField) return true;
+  const lowerText = text.toLowerCase();
+  const lowerField = normalizedField.toLowerCase();
+  return lowerText.includes(`field \\\"${lowerField}\\\"`) ||
+    lowerText.includes(`field \"${lowerField}\"`) ||
+    lowerText.includes(`field "${lowerField}"`) ||
+    lowerText.includes(lowerField);
+}
+
+async function patchAirtableRecord(table, recordId, updateFields = {}) {
+  const resolvedFields = await resolveLinkedFields(updateFields);
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${recordId}`;
+  const doPatch = async (fields) => fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ fields })
+  });
+
+  let resp = await doPatch(resolvedFields);
+  if (resp.ok) {
+    return { ok: true, data: await resp.json(), fields: resolvedFields, retried: false };
+  }
+
+  const firstErrorText = await resp.text();
+  const fallbackFields = { ...resolvedFields };
+  let shouldRetry = false;
+
+  if (
+    Object.prototype.hasOwnProperty.call(updateFields, AIRTABLE_DEPT_FIELD) &&
+    !Array.isArray(updateFields[AIRTABLE_DEPT_FIELD]) &&
+    isAirtableInvalidValueForField(firstErrorText, AIRTABLE_DEPT_FIELD)
+  ) {
+    fallbackFields[AIRTABLE_DEPT_FIELD] = updateFields[AIRTABLE_DEPT_FIELD];
+    shouldRetry = true;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(updateFields, AIRTABLE_TYPE_FIELD) &&
+    !Array.isArray(updateFields[AIRTABLE_TYPE_FIELD]) &&
+    isAirtableInvalidValueForField(firstErrorText, AIRTABLE_TYPE_FIELD)
+  ) {
+    fallbackFields[AIRTABLE_TYPE_FIELD] = updateFields[AIRTABLE_TYPE_FIELD];
+    shouldRetry = true;
+  }
+
+  if (!shouldRetry) {
+    return { ok: false, errorText: firstErrorText, fields: resolvedFields, retried: false };
+  }
+
+  resp = await doPatch(fallbackFields);
+  if (resp.ok) {
+    return { ok: true, data: await resp.json(), fields: fallbackFields, retried: true };
+  }
+
+  const retryErrorText = await resp.text();
+  return {
+    ok: false,
+    errorText: retryErrorText,
+    firstErrorText,
+    fields: fallbackFields,
+    retried: true
+  };
+}
+
 async function getLinkedLabelMap(tableName, primaryFieldName) {
   if (!tableName || !primaryFieldName) return null;
   const cacheKey = `${tableName}|${primaryFieldName}`;
@@ -1822,26 +1894,18 @@ app.patch("/api/rooms/:airtableId", async (req, res) => {
     if (!Object.keys(updateFields).length) {
       return res.status(400).json({ ok: false, error: "No fields to update" });
     }
-    const resolvedFields = await resolveLinkedFields(updateFields);
-
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${airtableId}`;
-    const resp = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields: resolvedFields })
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error("Airtable PATCH by id failed", { status: resp.status, text });
-      return res.status(500).json({ ok: false, error: text });
+    const patchResult = await patchAirtableRecord(table, airtableId, updateFields);
+    if (!patchResult.ok) {
+      console.error("Airtable PATCH by id failed", {
+        errorText: patchResult.errorText,
+        firstErrorText: patchResult.firstErrorText,
+        retried: patchResult.retried,
+        fields: patchResult.fields
+      });
+      return res.status(500).json({ ok: false, error: patchResult.errorText });
     }
 
-    const data = await resp.json();
-    return res.json({ ok: true, id: data?.id || airtableId });
+    return res.json({ ok: true, id: patchResult.data?.id || airtableId, retried: patchResult.retried });
   } catch (err) {
     console.error("PATCH /api/rooms failed", err);
     res.status(500).json({ ok: false, error: "Failed to update room" });
@@ -2002,26 +2066,18 @@ app.patch("/api/rooms", async (req, res) => {
       }
     }
 
-    const resolvedFields = await resolveLinkedFields(updateFields);
-
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${target.id}`;
-    const resp = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields: resolvedFields })
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error("Airtable PATCH by lookup failed", { status: resp.status, text });
-      return res.status(500).json({ ok: false, error: text });
+    const patchResult = await patchAirtableRecord(table, target.id, updateFields);
+    if (!patchResult.ok) {
+      console.error("Airtable PATCH by lookup failed", {
+        errorText: patchResult.errorText,
+        firstErrorText: patchResult.firstErrorText,
+        retried: patchResult.retried,
+        fields: patchResult.fields
+      });
+      return res.status(500).json({ ok: false, error: patchResult.errorText });
     }
 
-    const data = await resp.json();
-    return res.json({ ok: true, id: data?.id || target.id });
+    return res.json({ ok: true, id: patchResult.data?.id || target.id, retried: patchResult.retried });
   } catch (err) {
     console.error("PATCH /api/rooms (by roomId) failed", err);
     res.status(500).json({ ok: false, error: err?.message || "Failed to update room" });
@@ -6721,6 +6777,9 @@ app.post("/api/photo-export", async (req, res) => {
 app.listen(8787, () => {
   console.log("[ai-server] running at http://localhost:8787");
 });
+
+
+
 
 
 
