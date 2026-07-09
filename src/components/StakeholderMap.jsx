@@ -31230,7 +31230,10 @@ useEffect(() => {
                 const targets = roomEditTargets.length
                   ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
                   : [];
-                if (!targets.length) return;
+                if (!targets.length) {
+                  alert('Select at least one room to save.');
+                  return;
+                }
                 let savedCount = 0;
                 const multiEdit = targets.length > 1;
                 const activePopupRoomKey = roomEditData?.roomId || String(roomEditData?.revitId ?? '');
@@ -31392,6 +31395,10 @@ useEffect(() => {
                       }
                     }
                   }
+                }
+                if (savedCount === 0) {
+                  alert('No changes detected for the selected rooms.');
+                  return;
                 }
                 if (savedCount > 0) {
                   try {
