@@ -26868,33 +26868,15 @@ useEffect(() => {
         rawProps['Room GUID'] ??
         ''
       ).trim();
-      const buildingKey = normalizeDashboardKey(buildingId);
-      const floorTokens = normalizeFloorTokens(derivedFloorDefault);
-      const roomNumberKey = String(roomNum2 ?? '').trim();
-      const roomsForAirtableMatch = airtableRooms?.length ? airtableRooms : campusRooms;
-      const matchingAirtableRoom = Array.isArray(roomsForAirtableMatch)
-        ? roomsForAirtableMatch.find((room) => {
-            if (!room) return false;
-            const roomIdValue = String(room?.roomId ?? room?.roomNumber ?? room?.roomLabel ?? '').trim();
-            const roomGuidFromRow = String(room?.roomGuid ?? room?.revitUniqueId ?? '').trim();
-            if (
-              roomGuidValue &&
-              (roomGuidFromRow === roomGuidValue || roomIdValue === roomGuidValue)
-            ) {
-              return true;
-            }
-            const roomBuildingKey = normalizeDashboardKey(
-              room?.building ?? room?.buildingName ?? room?.buildingLabel ?? ''
-            );
-            if (buildingKey && roomBuildingKey !== buildingKey) return false;
-            if (floorTokens.length &&
-              !floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
-            ) {
-              return false;
-            }
-            return roomNumberKey && roomIdValue === roomNumberKey;
-          })
-        : null;
+      const matchingAirtableRoom = resolveScenarioBaselineRoom({
+        roomGuid: roomGuidValue || "",
+        revitId: revitId != null ? String(revitId) : "",
+        roomNumber: String(roomNum2 ?? "").trim(),
+        roomId: canonicalRoomId || "",
+        buildingId,
+        buildingName,
+        floorName: derivedFloorDefault
+      });
       const airtableIdFromMatch =
         matchingAirtableRoom?.airtableId ||
         matchingAirtableRoom?.AirtableId ||

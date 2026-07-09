@@ -2295,7 +2295,7 @@ app.patch("/api/rooms", async (req, res) => {
     };
 
     let records = await safeLookup(formula, "room+building+floor");
-    const roomBaseClause = roomIdClause || roomNumberClause || roomClause;
+    const roomBaseClause = roomClause || roomNumberClause || roomIdClause || roomGuidClause;
 
     if (!records.length && roomIdClause && roomClause !== roomIdClause) {
       const idOnlyParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
@@ -2314,6 +2314,15 @@ app.patch("/api/rooms", async (req, res) => {
     }
     if (!records.length && buildingClause) {
       records = await safeLookup(roomBaseClause, "room-only");
+    }
+    if (!records.length && roomNumberClause) {
+      records = await safeLookup(roomNumberClause, "roomNumber-only");
+    }
+    if (!records.length && roomGuidClause) {
+      records = await safeLookup(roomGuidClause, "roomGuid-only");
+    }
+    if (!records.length && roomIdClause) {
+      records = await safeLookup(roomIdClause, "roomId-only");
     }
     if (!records.length) {
       return res.status(404).json({ ok: false, error: "Room not found" });
