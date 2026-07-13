@@ -921,7 +921,7 @@ function parseTimeRange(startValue, endValue, rangeValue) {
   let timeText = String(rangeValue || "").trim();
 
   if ((!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) && timeText) {
-    const parts = timeText.split(/\s*(?:-|â€“|â€”|to)\s*/i);
+    const parts = timeText.split(/\s*(?:-|–|—|to)\s*/i);
     if (parts.length >= 2) {
       startMinutes = parseTimeToMinutes(parts[0]);
       endMinutes = parseTimeToMinutes(parts[1]);
@@ -945,7 +945,7 @@ function splitScheduleBuildingAndRoom(value) {
   const raw = String(value || "").trim();
   if (!raw) return { building: "", room: "" };
 
-  const explicitDelimiters = [" / ", " - ", " â€“ ", ", "];
+  const explicitDelimiters = [" / ", " - ", " – ", ", "];
   for (const delimiter of explicitDelimiters) {
     if (!raw.includes(delimiter)) continue;
     const [left, ...rightParts] = raw.split(delimiter);
@@ -1180,9 +1180,28 @@ const AIRTABLE_ROOM_TYPE_TABLE = process.env.AIRTABLE_ROOM_TYPE_TABLE || "";
 const AIRTABLE_ROOM_TYPE_PRIMARY_FIELD = process.env.AIRTABLE_ROOM_TYPE_PRIMARY_FIELD || "";
 const AIRTABLE_DEPT_TABLE = process.env.AIRTABLE_DEPT_TABLE || "";
 const AIRTABLE_DEPT_PRIMARY_FIELD = process.env.AIRTABLE_DEPT_PRIMARY_FIELD || "";
+const AIRTABLE_DEPT_FIELD_CANDIDATES = uniqueStrings([
+  ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
+  "Department",
+  AIRTABLE_DEPT_FIELD,
+  "department",
+  "Dept",
+  "dept"
+]);
+const AIRTABLE_TYPE_FIELD_CANDIDATES = uniqueStrings([
+  ...parseEnvFieldList(process.env.AIRTABLE_TYPE_FIELD),
+  "Room Type",
+  AIRTABLE_TYPE_FIELD,
+  "Type",
+  "type",
+  "Room Type Description",
+  "roomType",
+  "roomTypeDescription"
+]);
 
 const linkedRecordCache = new Map();
 const tablePrimaryFieldCache = new Map();
+const tableFieldNameCache = new Map();
 const linkedLabelCache = new Map();
 const LINKED_LABEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -1330,6 +1349,62 @@ function uniqueStrings(values = []) {
   return out;
 }
 
+function getComparableFieldValues(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => getComparableFieldValues(entry));
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const raw = String(value ?? "").trim();
+    return raw ? [raw] : [];
+  }
+  return [];
+}
+
+function recordMatchesFieldCandidates(fields = {}, candidateFields = [], desiredValues = []) {
+  const fieldNames = uniqueStrings(candidateFields);
+  const values = uniqueStrings(desiredValues);
+  if (!fieldNames.length || !values.length) return false;
+
+  const rawSet = new Set(values);
+  const looseSet = new Set(values.map((value) => normalizeLoose(value)).filter(Boolean));
+
+  return fieldNames.some((fieldName) => {
+    const candidates = getComparableFieldValues(fields?.[fieldName]);
+    return candidates.some((candidate) => {
+      if (rawSet.has(candidate)) return true;
+      const loose = normalizeLoose(candidate);
+      return Boolean(loose && looseSet.has(loose));
+    });
+  });
+}
+
+function filterAirtableRecordsByLookup(
+  records = [],
+  {
+    roomMatchers = [],
+    buildingFields = [],
+    buildingValues = [],
+    floorFields = [],
+    floorValues = []
+  } = {}
+) {
+  const roomRules = Array.isArray(roomMatchers)
+    ? roomMatchers.filter((rule) => Array.isArray(rule?.fields) && Array.isArray(rule?.values) && rule.fields.length && rule.values.length)
+    : [];
+
+  return (Array.isArray(records) ? records : []).filter((record) => {
+    const fields = record?.fields || {};
+    const roomOk = roomRules.length
+      ? roomRules.some((rule) => recordMatchesFieldCandidates(fields, rule.fields, rule.values))
+      : false;
+    if (!roomOk) return false;
+    if (buildingValues.length && !recordMatchesFieldCandidates(fields, buildingFields, buildingValues)) return false;
+    if (floorValues.length && !recordMatchesFieldCandidates(fields, floorFields, floorValues)) return false;
+    return true;
+  });
+}
+
 function buildFieldEqualsClause(fields = [], values = []) {
   const fieldList = uniqueStrings(fields);
   const valueList = uniqueStrings(values);
@@ -1350,24 +1425,35 @@ function buildFieldEqualsClause(fields = [], values = []) {
   return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
 }
 
-async function fetchAirtableTableRecords(tableName, { filterFormula, view } = {}) {
-  const params = new URLSearchParams();
-  if (view) params.set("view", view);
-  if (filterFormula) params.set("filterByFormula", filterFormula);
-  params.set("pageSize", "5");
+async function fetchAirtableTableRecords(tableName, { filterFormula, view, pageSize = 5, maxRecords = 5 } = {}) {
+  const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 5));
+  const safeMaxRecords = Math.max(safePageSize, Math.min(500, Number(maxRecords) || safePageSize));
+  const records = [];
+  let offset = "";
 
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
-  const resp = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_TOKEN}`
+  do {
+    const params = new URLSearchParams();
+    if (view) params.set("view", view);
+    if (filterFormula) params.set("filterByFormula", filterFormula);
+    params.set("pageSize", String(Math.min(safePageSize, safeMaxRecords - records.length)));
+    if (offset) params.set("offset", offset);
+
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`
+      }
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Airtable error: ${resp.status} ${text}`);
     }
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Airtable error: ${resp.status} ${text}`);
-  }
-  const data = await resp.json();
-  return data.records || [];
+    const data = await resp.json();
+    records.push(...(data.records || []));
+    offset = data?.offset || "";
+  } while (offset && records.length < safeMaxRecords);
+
+  return records;
 }
 
 async function fetchAirtableBaseSchema() {
@@ -1390,7 +1476,6 @@ async function fetchAirtableBaseSchema() {
 }
 
 async function resolvePrimaryFieldName(tableName, explicitField) {
-  if (explicitField) return explicitField;
   if (tablePrimaryFieldCache.has(tableName)) {
     return tablePrimaryFieldCache.get(tableName);
   }
@@ -1407,7 +1492,131 @@ async function resolvePrimaryFieldName(tableName, explicitField) {
   } catch (err) {
     console.warn(`Unable to read Airtable schema for ${tableName}`, err?.message || err);
   }
+  return String(explicitField || "").trim();
+}
+
+function findExistingFieldName(fieldNames = [], candidates = []) {
+  const available = uniqueStrings(fieldNames);
+  const desired = uniqueStrings(candidates);
+  if (!available.length || !desired.length) return "";
+
+  for (const candidate of desired) {
+    if (available.includes(candidate)) return candidate;
+  }
+
+  const byLower = new Map(available.map((name) => [name.toLowerCase(), name]));
+  for (const candidate of desired) {
+    const match = byLower.get(String(candidate || "").toLowerCase());
+    if (match) return match;
+  }
   return "";
+}
+
+async function resolveTableFieldName(tableName, candidates = [], fallback = "") {
+  const candidateList = uniqueStrings([
+    ...candidates,
+    fallback
+  ]);
+  const fallbackName = candidateList[0] || "";
+  if (!tableName || !candidateList.length) return fallbackName;
+
+  const cacheKey = `${tableName}|${candidateList.join("|")}`;
+  if (tableFieldNameCache.has(cacheKey)) {
+    return tableFieldNameCache.get(cacheKey);
+  }
+
+  let resolved = fallbackName;
+  try {
+    const schema = await fetchAirtableBaseSchema();
+    const table = (schema?.tables || []).find((t) => t?.name === tableName);
+    const fieldNames = (table?.fields || []).map((field) => String(field?.name || "").trim()).filter(Boolean);
+    const match = findExistingFieldName(fieldNames, candidateList);
+    if (match) resolved = match;
+  } catch (err) {
+    console.warn(`Unable to resolve Airtable field name for ${tableName}`, err?.message || err);
+  }
+
+  tableFieldNameCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+async function getRoomUpdateFieldNames(tableName) {
+  const typeFieldName = await resolveTableFieldName(
+    tableName,
+    AIRTABLE_TYPE_FIELD_CANDIDATES,
+    AIRTABLE_TYPE_FIELD
+  );
+  const deptFieldName = await resolveTableFieldName(
+    tableName,
+    AIRTABLE_DEPT_FIELD_CANDIDATES,
+    AIRTABLE_DEPT_FIELD
+  );
+  return { typeFieldName, deptFieldName };
+}
+
+function remapFieldAlias(updateFields = {}, candidates = [], resolvedFieldName = "") {
+  const targetField = String(resolvedFieldName || "").trim();
+  if (!targetField) return { ...updateFields };
+
+  const next = { ...updateFields };
+  uniqueStrings(candidates).forEach((candidate) => {
+    if (!candidate || candidate === targetField) return;
+    if (!Object.prototype.hasOwnProperty.call(next, candidate)) return;
+    if (!Object.prototype.hasOwnProperty.call(next, targetField)) {
+      next[targetField] = next[candidate];
+    }
+    delete next[candidate];
+  });
+  return next;
+}
+
+async function normalizeRoomUpdateFields(tableName, updateFields = {}) {
+  const { typeFieldName, deptFieldName } = await getRoomUpdateFieldNames(tableName);
+  let next = { ...updateFields };
+  next = remapFieldAlias(next, AIRTABLE_TYPE_FIELD_CANDIDATES, typeFieldName);
+  next = remapFieldAlias(next, AIRTABLE_DEPT_FIELD_CANDIDATES, deptFieldName);
+  return { fields: next, typeFieldName, deptFieldName };
+}
+
+function isAirtableUnknownFieldFormulaError(errorText = "") {
+  const text = String(errorText || "");
+  return /INVALID_FILTER_BY_FORMULA/i.test(text) && /Unknown field names/i.test(text);
+}
+
+function getComparableLinkedValues(value) {
+  if (value == null) return [];
+  if (typeof value === "string" || typeof value === "number") {
+    return [String(value)];
+  }
+  if (Array.isArray(value) && value.length === 1) {
+    return getComparableLinkedValues(value[0]);
+  }
+  return [];
+}
+
+function findLinkedRecordMatch(records = [], label, candidateFields = []) {
+  const normalizedLabel = normalizeLoose(label);
+  if (!normalizedLabel) return null;
+
+  const preferredFields = uniqueStrings(candidateFields);
+  const preferredMatches = records.filter((record) => {
+    const fields = record?.fields || {};
+    return preferredFields.some((fieldName) => {
+      const values = getComparableLinkedValues(fields[fieldName]);
+      return values.some((value) => normalizeLoose(value) === normalizedLabel);
+    });
+  });
+  if (preferredMatches.length === 1) return preferredMatches[0];
+  if (preferredMatches.length > 1) return null;
+
+  const broadMatches = records.filter((record) => {
+    const fields = record?.fields || {};
+    return Object.values(fields).some((value) => {
+      const values = getComparableLinkedValues(value);
+      return values.some((candidate) => normalizeLoose(candidate) === normalizedLabel);
+    });
+  });
+  return broadMatches.length === 1 ? broadMatches[0] : null;
 }
 
 async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
@@ -1419,21 +1628,56 @@ async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
     return linkedRecordCache.get(normKey);
   }
   const primaryField = await resolvePrimaryFieldName(tableName, primaryFieldName);
-  if (!primaryField) return null;
-  const lower = raw.toLowerCase();
-  const filter = `LOWER({${primaryField}})="${escapeFormulaValue(lower)}"`;
-  const records = await fetchAirtableTableRecords(tableName, { filterFormula: filter });
-  const id = records?.[0]?.id || null;
+  if (primaryField) {
+    const lower = raw.toLowerCase();
+    const filter = `LOWER({${primaryField}})="${escapeFormulaValue(lower)}"`;
+    try {
+      const records = await fetchAirtableTableRecords(tableName, { filterFormula: filter });
+      const id = records?.[0]?.id || null;
+      if (id) {
+        linkedRecordCache.set(normKey, id);
+        return id;
+      }
+    } catch (err) {
+      const message = String(err?.message || err || "");
+      if (!isAirtableUnknownFieldFormulaError(message)) {
+        throw err;
+      }
+      console.warn(
+        `[airtable] linked lookup formula skipped for ${tableName}: ${primaryField}`
+        , message
+      );
+    }
+  }
+
+  const records = await fetchAirtableTableRecords(tableName, {
+    pageSize: 100,
+    maxRecords: 250
+  });
+  const match = findLinkedRecordMatch(records, raw, [
+    primaryField,
+    primaryFieldName,
+    "Name",
+    "Room Type",
+    "Type",
+    "Department",
+    "Title",
+    "Label"
+  ]);
+  const id = match?.id || null;
   if (id) {
     linkedRecordCache.set(normKey, id);
   }
   return id;
 }
 
-async function resolveLinkedFields(updateFields = {}) {
+async function resolveLinkedFields(
+  updateFields = {},
+  { typeFieldName = AIRTABLE_TYPE_FIELD, deptFieldName = AIRTABLE_DEPT_FIELD } = {}
+) {
   const next = { ...updateFields };
-  if (AIRTABLE_TYPE_FIELD in next) {
-    const value = next[AIRTABLE_TYPE_FIELD];
+  if (typeFieldName && Object.prototype.hasOwnProperty.call(next, typeFieldName)) {
+    const value = next[typeFieldName];
     if (Array.isArray(value)) {
       // ok
     } else if (String(value ?? "").trim()) {
@@ -1448,13 +1692,13 @@ async function resolveLinkedFields(updateFields = {}) {
       if (!id) {
         throw new Error(`Room Type not found: ${value}`);
       }
-      next[AIRTABLE_TYPE_FIELD] = [id];
+      next[typeFieldName] = [id];
     } else {
-      next[AIRTABLE_TYPE_FIELD] = [];
+      next[typeFieldName] = [];
     }
   }
-  if (AIRTABLE_DEPT_FIELD in next) {
-    const value = next[AIRTABLE_DEPT_FIELD];
+  if (deptFieldName && Object.prototype.hasOwnProperty.call(next, deptFieldName)) {
+    const value = next[deptFieldName];
     if (Array.isArray(value)) {
       // ok
     } else if (String(value ?? "").trim()) {
@@ -1469,12 +1713,154 @@ async function resolveLinkedFields(updateFields = {}) {
       if (!id) {
         throw new Error(`Department not found: ${value}`);
       }
-      next[AIRTABLE_DEPT_FIELD] = [id];
+      next[deptFieldName] = [id];
     } else {
-      next[AIRTABLE_DEPT_FIELD] = [];
+      next[deptFieldName] = [];
     }
   }
   return next;
+}
+
+function isAirtableInvalidValueForField(errorText = "", fieldName = "") {
+  const text = String(errorText || "");
+  if (!text) return false;
+  const normalizedField = String(fieldName || "").trim();
+  if (!/INVALID_VALUE_FOR_COLUMN/i.test(text)) return false;
+  if (!normalizedField) return true;
+  const lowerText = text.toLowerCase();
+  const lowerField = normalizedField.toLowerCase();
+  return lowerText.includes(`field \\\"${lowerField}\\\"`) ||
+    lowerText.includes(`field \"${lowerField}\"`) ||
+    lowerText.includes(`field "${lowerField}"`) ||
+    lowerText.includes(lowerField);
+}
+
+async function patchAirtableRecord(table, recordId, updateFields = {}) {
+  const {
+    fields: normalizedFields,
+    typeFieldName,
+    deptFieldName
+  } = await normalizeRoomUpdateFields(table, updateFields);
+  const resolvedFields = await resolveLinkedFields(normalizedFields, {
+    typeFieldName,
+    deptFieldName
+  });
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${recordId}`;
+  const doPatch = async (fields) => fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ fields })
+  });
+  const hasOtherFields = (fields, fieldName) =>
+    Object.keys(fields || {}).some((key) => key !== fieldName);
+
+  let resp = await doPatch(resolvedFields);
+  if (resp.ok) {
+    return { ok: true, data: await resp.json(), fields: resolvedFields, retried: false };
+  }
+
+  const firstErrorText = await resp.text();
+  const fallbackFields = { ...resolvedFields };
+  let shouldRetry = false;
+
+  if (
+    deptFieldName &&
+    Object.prototype.hasOwnProperty.call(normalizedFields, deptFieldName) &&
+    !Array.isArray(normalizedFields[deptFieldName]) &&
+    isAirtableInvalidValueForField(firstErrorText, deptFieldName)
+  ) {
+    fallbackFields[deptFieldName] = normalizedFields[deptFieldName];
+    shouldRetry = true;
+  }
+
+  if (
+    typeFieldName &&
+    Object.prototype.hasOwnProperty.call(normalizedFields, typeFieldName) &&
+    !Array.isArray(normalizedFields[typeFieldName]) &&
+    isAirtableInvalidValueForField(firstErrorText, typeFieldName)
+  ) {
+    fallbackFields[typeFieldName] = normalizedFields[typeFieldName];
+    shouldRetry = true;
+  }
+
+  if (!shouldRetry) {
+    if (
+      typeFieldName &&
+      isAirtableInvalidValueForField(firstErrorText, typeFieldName) &&
+      Object.prototype.hasOwnProperty.call(resolvedFields, typeFieldName) &&
+      hasOtherFields(resolvedFields, typeFieldName)
+    ) {
+      const withoutTypeFields = { ...resolvedFields };
+      delete withoutTypeFields[typeFieldName];
+      resp = await doPatch(withoutTypeFields);
+      if (resp.ok) {
+        return {
+          ok: true,
+          data: await resp.json(),
+          fields: withoutTypeFields,
+          retried: true,
+          droppedFields: [typeFieldName]
+        };
+      }
+      const droppedTypeErrorText = await resp.text();
+      return {
+        ok: false,
+        errorText: droppedTypeErrorText,
+        firstErrorText,
+        fields: withoutTypeFields,
+        retried: true,
+        droppedFields: [typeFieldName]
+      };
+    }
+    return { ok: false, errorText: firstErrorText, fields: resolvedFields, retried: false };
+  }
+
+  resp = await doPatch(fallbackFields);
+  if (resp.ok) {
+    return { ok: true, data: await resp.json(), fields: fallbackFields, retried: true };
+  }
+
+  const retryErrorText = await resp.text();
+  if (
+    typeFieldName &&
+    isAirtableInvalidValueForField(retryErrorText, typeFieldName) &&
+    Object.prototype.hasOwnProperty.call(fallbackFields, typeFieldName) &&
+    hasOtherFields(fallbackFields, typeFieldName)
+  ) {
+    const withoutTypeFields = { ...fallbackFields };
+    delete withoutTypeFields[typeFieldName];
+    resp = await doPatch(withoutTypeFields);
+    if (resp.ok) {
+      return {
+        ok: true,
+        data: await resp.json(),
+        fields: withoutTypeFields,
+        retried: true,
+        droppedFields: [typeFieldName]
+      };
+    }
+    const droppedTypeErrorText = await resp.text();
+    return {
+      ok: false,
+      errorText: droppedTypeErrorText,
+      firstErrorText,
+      retryErrorText,
+      fields: withoutTypeFields,
+      retried: true,
+      droppedFields: [typeFieldName]
+    };
+  }
+
+  return {
+    ok: false,
+    errorText: retryErrorText,
+    firstErrorText,
+    fields: fallbackFields,
+    retried: true
+  };
 }
 
 async function getLinkedLabelMap(tableName, primaryFieldName) {
@@ -1822,26 +2208,18 @@ app.patch("/api/rooms/:airtableId", async (req, res) => {
     if (!Object.keys(updateFields).length) {
       return res.status(400).json({ ok: false, error: "No fields to update" });
     }
-    const resolvedFields = await resolveLinkedFields(updateFields);
-
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${airtableId}`;
-    const resp = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields: resolvedFields })
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error("Airtable PATCH by id failed", { status: resp.status, text });
-      return res.status(500).json({ ok: false, error: text });
+    const patchResult = await patchAirtableRecord(table, airtableId, updateFields);
+    if (!patchResult.ok) {
+      console.error("Airtable PATCH by id failed", {
+        errorText: patchResult.errorText,
+        firstErrorText: patchResult.firstErrorText,
+        retried: patchResult.retried,
+        fields: patchResult.fields
+      });
+      return res.status(500).json({ ok: false, error: patchResult.errorText });
     }
 
-    const data = await resp.json();
-    return res.json({ ok: true, id: data?.id || airtableId });
+    return res.json({ ok: true, id: patchResult.data?.id || airtableId, retried: patchResult.retried });
   } catch (err) {
     console.error("PATCH /api/rooms failed", err);
     res.status(500).json({ ok: false, error: "Failed to update room" });
@@ -1907,6 +2285,14 @@ app.patch("/api/rooms", async (req, res) => {
     }
 
     const roomFields = parseEnvFieldList(process.env.AIRTABLE_ROOM_ID_FIELD);
+    const roomNumberFields = uniqueStrings([
+      ...parseEnvFieldList(process.env.AIRTABLE_ROOM_NUMBER_FIELD),
+      "Room Number",
+      "RoomNumber",
+      "Number",
+      "Room No",
+      "Room"
+    ]);
     if (!roomFields.length) {
       return res.status(400).json({
         ok: false,
@@ -1929,13 +2315,16 @@ app.patch("/api/rooms", async (req, res) => {
     const buildingValues = expandBuildingValues([building, buildingName]);
     const floorValues = expandFloorValues([floor]);
 
-    const roomLookupValues = uniqueStrings([roomIdValue, roomNumberValue, roomLabelValue]);
+    const roomIdLookupValues = uniqueStrings([roomIdValue]);
+    const roomNumberLookupValues = uniqueStrings([roomNumberValue, roomLabelValue]);
     const roomGuidLookupValues = uniqueStrings([roomGuidValue]);
-    const roomIdClause = buildFieldEqualsClause(roomFields, roomLookupValues);
+    const roomIdClause = buildFieldEqualsClause(roomFields, roomIdLookupValues);
+    const roomNumberClause = buildFieldEqualsClause(roomNumberFields, roomNumberLookupValues);
     const roomGuidClause = buildFieldEqualsClause(roomGuidFields, roomGuidLookupValues);
-    const roomClause = roomIdClause && roomGuidClause
-      ? `OR(${roomIdClause},${roomGuidClause})`
-      : (roomIdClause || roomGuidClause);
+    const roomClauseParts = [roomIdClause, roomNumberClause, roomGuidClause].filter(Boolean);
+    const roomClause = roomClauseParts.length > 1
+      ? `OR(${roomClauseParts.join(",")})`
+      : (roomClauseParts[0] || null);
     const buildingClause = buildFieldEqualsClause(buildingFields, buildingValues);
     const floorClause = buildFieldEqualsClause(floorFields, floorValues);
     if (!roomClause) {
@@ -1944,8 +2333,35 @@ app.patch("/api/rooms", async (req, res) => {
     const formulaParts = [roomClause, buildingClause, floorClause].filter(Boolean);
     const formula = formulaParts.length > 1 ? `AND(${formulaParts.join(",")})` : formulaParts[0];
 
+    const roomMatchers = [
+      { fields: roomFields, values: roomIdLookupValues },
+      { fields: roomNumberFields, values: roomNumberLookupValues },
+      { fields: roomGuidFields, values: roomGuidLookupValues }
+    ].filter((rule) => rule.fields.length && rule.values.length);
+
     const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
-    const safeLookup = async (formulaText, label) => {
+    let lookupFallbackPromise = null;
+    const getLookupFallbackRecords = async () => {
+      if (!lookupFallbackPromise) {
+        lookupFallbackPromise = fetchAirtableAllRecords({
+          table,
+          view,
+          fields: null
+        });
+      }
+      return lookupFallbackPromise;
+    };
+    const fallbackLookup = async ({ roomMatchers: fallbackRoomMatchers = roomMatchers, includeBuilding = true, includeFloor = true } = {}) => {
+      const fallbackRecords = await getLookupFallbackRecords();
+      return filterAirtableRecordsByLookup(fallbackRecords, {
+        roomMatchers: fallbackRoomMatchers,
+        buildingFields: includeBuilding ? buildingFields : [],
+        buildingValues: includeBuilding ? buildingValues : [],
+        floorFields: includeFloor ? floorFields : [],
+        floorValues: includeFloor ? floorValues : []
+      });
+    };
+    const safeLookup = async (formulaText, label, fallbackOptions = null) => {
       if (!formulaText) return [];
       try {
         return await fetchAirtableRows(formulaText, view);
@@ -1955,27 +2371,48 @@ app.patch("/api/rooms", async (req, res) => {
           /INVALID_FILTER_BY_FORMULA/i.test(msg) && /Unknown field names/i.test(msg);
         if (invalidFormulaUnknownFields) {
           console.warn(`[rooms] lookup skipped (${label}) due to Airtable formula field mismatch`);
+          if (fallbackOptions) {
+            return await fallbackLookup(fallbackOptions);
+          }
           return [];
         }
         throw err;
       }
     };
 
-    let records = await safeLookup(formula, "room+building+floor");
-    const roomBaseClause = roomIdClause || roomClause;
+    let records = await safeLookup(formula, "room+building+floor", {
+      roomMatchers,
+      includeBuilding: true,
+      includeFloor: true
+    });
+    const roomBaseClause = roomClause || roomNumberClause || roomIdClause || roomGuidClause;
 
     if (!records.length && roomIdClause && roomClause !== roomIdClause) {
       const idOnlyParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
       const idOnlyFormula = idOnlyParts.length > 1 ? `AND(${idOnlyParts.join(",")})` : idOnlyParts[0];
-      records = await safeLookup(idOnlyFormula, "roomId+building+floor");
+      records = await safeLookup(idOnlyFormula, "roomId+building+floor", { roomMatchers: [{ fields: roomFields, values: roomIdLookupValues }], includeBuilding: true, includeFloor: true });
+    }
+    if (!records.length && roomNumberClause && roomClause !== roomNumberClause) {
+      const numberOnlyParts = [roomNumberClause, buildingClause, floorClause].filter(Boolean);
+      const numberOnlyFormula = numberOnlyParts.length > 1 ? `AND(${numberOnlyParts.join(",")})` : numberOnlyParts[0];
+      records = await safeLookup(numberOnlyFormula, "roomNumber+building+floor", { roomMatchers: [{ fields: roomNumberFields, values: roomNumberLookupValues }], includeBuilding: true, includeFloor: true });
     }
     if (!records.length && floorClause) {
       const noFloorParts = [roomBaseClause, buildingClause].filter(Boolean);
       const noFloorFormula = noFloorParts.length > 1 ? `AND(${noFloorParts.join(",")})` : noFloorParts[0];
-      records = await safeLookup(noFloorFormula, "room+building");
+      records = await safeLookup(noFloorFormula, "room+building", { roomMatchers, includeBuilding: true, includeFloor: false });
     }
     if (!records.length && buildingClause) {
-      records = await safeLookup(roomBaseClause, "room-only");
+      records = await safeLookup(roomBaseClause, "room-only", { roomMatchers, includeBuilding: false, includeFloor: false });
+    }
+    if (!records.length && roomNumberClause) {
+      records = await safeLookup(roomNumberClause, "roomNumber-only", { roomMatchers: [{ fields: roomNumberFields, values: roomNumberLookupValues }], includeBuilding: false, includeFloor: false });
+    }
+    if (!records.length && roomGuidClause) {
+      records = await safeLookup(roomGuidClause, "roomGuid-only", { roomMatchers: [{ fields: roomGuidFields, values: roomGuidLookupValues }], includeBuilding: false, includeFloor: false });
+    }
+    if (!records.length && roomIdClause) {
+      records = await safeLookup(roomIdClause, "roomId-only", { roomMatchers: [{ fields: roomFields, values: roomIdLookupValues }], includeBuilding: false, includeFloor: false });
     }
     if (!records.length) {
       return res.status(404).json({ ok: false, error: "Room not found" });
@@ -2002,26 +2439,18 @@ app.patch("/api/rooms", async (req, res) => {
       }
     }
 
-    const resolvedFields = await resolveLinkedFields(updateFields);
-
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${target.id}`;
-    const resp = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields: resolvedFields })
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error("Airtable PATCH by lookup failed", { status: resp.status, text });
-      return res.status(500).json({ ok: false, error: text });
+    const patchResult = await patchAirtableRecord(table, target.id, updateFields);
+    if (!patchResult.ok) {
+      console.error("Airtable PATCH by lookup failed", {
+        errorText: patchResult.errorText,
+        firstErrorText: patchResult.firstErrorText,
+        retried: patchResult.retried,
+        fields: patchResult.fields
+      });
+      return res.status(500).json({ ok: false, error: patchResult.errorText });
     }
 
-    const data = await resp.json();
-    return res.json({ ok: true, id: data?.id || target.id });
+    return res.json({ ok: true, id: patchResult.data?.id || target.id, retried: patchResult.retried });
   } catch (err) {
     console.error("PATCH /api/rooms (by roomId) failed", err);
     res.status(500).json({ ok: false, error: err?.message || "Failed to update room" });
@@ -3030,7 +3459,7 @@ function normalizeFicmCode(value = "") {
 function parseFicmTypeText(typeRaw = "") {
   const text = normalizeCopilotText(typeRaw);
   if (!text) return { code: "", label: "" };
-  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-â€“]?\s*(.+)$/);
+  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-–]?\s*(.+)$/);
   if (match) {
     return {
       code: normalizeFicmCode(match[1]),
@@ -6721,6 +7150,9 @@ app.post("/api/photo-export", async (req, res) => {
 app.listen(8787, () => {
   console.log("[ai-server] running at http://localhost:8787");
 });
+
+
+
 
 
 
