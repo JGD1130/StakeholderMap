@@ -1349,6 +1349,62 @@ function uniqueStrings(values = []) {
   return out;
 }
 
+function getComparableFieldValues(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => getComparableFieldValues(entry));
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const raw = String(value ?? "").trim();
+    return raw ? [raw] : [];
+  }
+  return [];
+}
+
+function recordMatchesFieldCandidates(fields = {}, candidateFields = [], desiredValues = []) {
+  const fieldNames = uniqueStrings(candidateFields);
+  const values = uniqueStrings(desiredValues);
+  if (!fieldNames.length || !values.length) return false;
+
+  const rawSet = new Set(values);
+  const looseSet = new Set(values.map((value) => normalizeLoose(value)).filter(Boolean));
+
+  return fieldNames.some((fieldName) => {
+    const candidates = getComparableFieldValues(fields?.[fieldName]);
+    return candidates.some((candidate) => {
+      if (rawSet.has(candidate)) return true;
+      const loose = normalizeLoose(candidate);
+      return Boolean(loose && looseSet.has(loose));
+    });
+  });
+}
+
+function filterAirtableRecordsByLookup(
+  records = [],
+  {
+    roomMatchers = [],
+    buildingFields = [],
+    buildingValues = [],
+    floorFields = [],
+    floorValues = []
+  } = {}
+) {
+  const roomRules = Array.isArray(roomMatchers)
+    ? roomMatchers.filter((rule) => Array.isArray(rule?.fields) && Array.isArray(rule?.values) && rule.fields.length && rule.values.length)
+    : [];
+
+  return (Array.isArray(records) ? records : []).filter((record) => {
+    const fields = record?.fields || {};
+    const roomOk = roomRules.length
+      ? roomRules.some((rule) => recordMatchesFieldCandidates(fields, rule.fields, rule.values))
+      : false;
+    if (!roomOk) return false;
+    if (buildingValues.length && !recordMatchesFieldCandidates(fields, buildingFields, buildingValues)) return false;
+    if (floorValues.length && !recordMatchesFieldCandidates(fields, floorFields, floorValues)) return false;
+    return true;
+  });
+}
+
 function buildFieldEqualsClause(fields = [], values = []) {
   const fieldList = uniqueStrings(fields);
   const valueList = uniqueStrings(values);
@@ -2277,8 +2333,35 @@ app.patch("/api/rooms", async (req, res) => {
     const formulaParts = [roomClause, buildingClause, floorClause].filter(Boolean);
     const formula = formulaParts.length > 1 ? `AND(${formulaParts.join(",")})` : formulaParts[0];
 
+    const roomMatchers = [
+      { fields: roomFields, values: roomIdLookupValues },
+      { fields: roomNumberFields, values: roomNumberLookupValues },
+      { fields: roomGuidFields, values: roomGuidLookupValues }
+    ].filter((rule) => rule.fields.length && rule.values.length);
+
     const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
-    const safeLookup = async (formulaText, label) => {
+    let lookupFallbackPromise = null;
+    const getLookupFallbackRecords = async () => {
+      if (!lookupFallbackPromise) {
+        lookupFallbackPromise = fetchAirtableAllRecords({
+          table,
+          view,
+          fields: null
+        });
+      }
+      return lookupFallbackPromise;
+    };
+    const fallbackLookup = async ({ roomMatchers: fallbackRoomMatchers = roomMatchers, includeBuilding = true, includeFloor = true } = {}) => {
+      const fallbackRecords = await getLookupFallbackRecords();
+      return filterAirtableRecordsByLookup(fallbackRecords, {
+        roomMatchers: fallbackRoomMatchers,
+        buildingFields: includeBuilding ? buildingFields : [],
+        buildingValues: includeBuilding ? buildingValues : [],
+        floorFields: includeFloor ? floorFields : [],
+        floorValues: includeFloor ? floorValues : []
+      });
+    };
+    const safeLookup = async (formulaText, label, fallbackOptions = null) => {
       if (!formulaText) return [];
       try {
         return await fetchAirtableRows(formulaText, view);
@@ -2288,41 +2371,48 @@ app.patch("/api/rooms", async (req, res) => {
           /INVALID_FILTER_BY_FORMULA/i.test(msg) && /Unknown field names/i.test(msg);
         if (invalidFormulaUnknownFields) {
           console.warn(`[rooms] lookup skipped (${label}) due to Airtable formula field mismatch`);
+          if (fallbackOptions) {
+            return await fallbackLookup(fallbackOptions);
+          }
           return [];
         }
         throw err;
       }
     };
 
-    let records = await safeLookup(formula, "room+building+floor");
+    let records = await safeLookup(formula, "room+building+floor", {
+      roomMatchers,
+      includeBuilding: true,
+      includeFloor: true
+    });
     const roomBaseClause = roomClause || roomNumberClause || roomIdClause || roomGuidClause;
 
     if (!records.length && roomIdClause && roomClause !== roomIdClause) {
       const idOnlyParts = [roomIdClause, buildingClause, floorClause].filter(Boolean);
       const idOnlyFormula = idOnlyParts.length > 1 ? `AND(${idOnlyParts.join(",")})` : idOnlyParts[0];
-      records = await safeLookup(idOnlyFormula, "roomId+building+floor");
+      records = await safeLookup(idOnlyFormula, "roomId+building+floor", { roomMatchers: [{ fields: roomFields, values: roomIdLookupValues }], includeBuilding: true, includeFloor: true });
     }
     if (!records.length && roomNumberClause && roomClause !== roomNumberClause) {
       const numberOnlyParts = [roomNumberClause, buildingClause, floorClause].filter(Boolean);
       const numberOnlyFormula = numberOnlyParts.length > 1 ? `AND(${numberOnlyParts.join(",")})` : numberOnlyParts[0];
-      records = await safeLookup(numberOnlyFormula, "roomNumber+building+floor");
+      records = await safeLookup(numberOnlyFormula, "roomNumber+building+floor", { roomMatchers: [{ fields: roomNumberFields, values: roomNumberLookupValues }], includeBuilding: true, includeFloor: true });
     }
     if (!records.length && floorClause) {
       const noFloorParts = [roomBaseClause, buildingClause].filter(Boolean);
       const noFloorFormula = noFloorParts.length > 1 ? `AND(${noFloorParts.join(",")})` : noFloorParts[0];
-      records = await safeLookup(noFloorFormula, "room+building");
+      records = await safeLookup(noFloorFormula, "room+building", { roomMatchers, includeBuilding: true, includeFloor: false });
     }
     if (!records.length && buildingClause) {
-      records = await safeLookup(roomBaseClause, "room-only");
+      records = await safeLookup(roomBaseClause, "room-only", { roomMatchers, includeBuilding: false, includeFloor: false });
     }
     if (!records.length && roomNumberClause) {
-      records = await safeLookup(roomNumberClause, "roomNumber-only");
+      records = await safeLookup(roomNumberClause, "roomNumber-only", { roomMatchers: [{ fields: roomNumberFields, values: roomNumberLookupValues }], includeBuilding: false, includeFloor: false });
     }
     if (!records.length && roomGuidClause) {
-      records = await safeLookup(roomGuidClause, "roomGuid-only");
+      records = await safeLookup(roomGuidClause, "roomGuid-only", { roomMatchers: [{ fields: roomGuidFields, values: roomGuidLookupValues }], includeBuilding: false, includeFloor: false });
     }
     if (!records.length && roomIdClause) {
-      records = await safeLookup(roomIdClause, "roomId-only");
+      records = await safeLookup(roomIdClause, "roomId-only", { roomMatchers: [{ fields: roomFields, values: roomIdLookupValues }], includeBuilding: false, includeFloor: false });
     }
     if (!records.length) {
       return res.status(404).json({ ok: false, error: "Room not found" });
