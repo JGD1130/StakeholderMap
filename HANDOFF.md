@@ -240,6 +240,33 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-07-13) — Sarpy Airtable room-edit save 404 fixed
+
+### Summary
+
+Sarpy room edits were saving from the map UI but failing on the Airtable write-back fallback with `Airtable update by roomId failed 404 {"ok":false,"error":"Room not found"}`. Hastings did not reproduce it because its Airtable base/view exposes the broader set of candidate field names the shared lookup logic expected.
+
+Root cause was in `ai-server/server.js`: the PATCH `/api/rooms` room-lookup fallback builds `filterByFormula` expressions across multiple possible room/building/floor field names. In Sarpy's Airtable base/view, some of those candidate fields do not exist. Airtable rejects the whole formula when even one referenced field name is unknown, so the lookup returned no records and the server surfaced a false 404 `Room not found`.
+
+**Fix (`bf06833` on `feature/multi-university-refactor`, equivalent `6568fa2` on `main`):**
+- Added in-memory fallback helpers in `ai-server/server.js`:
+  - `getComparableFieldValues(...)`
+  - `recordMatchesFieldCandidates(...)`
+  - `filterAirtableRecordsByLookup(...)`
+- When formula-based lookup fails because Airtable reports unknown field names, the server now fetches records from the active view and matches them in memory across `roomId`, `roomNumber`, and `roomGuid`, then optionally narrows by building/floor.
+- This keeps the shared multi-candidate lookup behavior, but removes Sarpy's hard dependency on every Hastings-style field existing in the target Airtable base.
+
+### Deployment / verification
+
+- Sarpy's Render AI service is `https://mapfluence-sarpy-ai.onrender.com`.
+- The live Sarpy AI service deploys from `feature/multi-university-refactor`, not `main`.
+- The successful live Render deploy was commit `bf06833` (`Fix Sarpy Airtable room lookup fallback`).
+- The equivalent `main` commit `6568fa2` exists, but it is not what Sarpy Render is serving today.
+- User verification after the Render deploy: edited Sarpy rooms saved through to Airtable successfully.
+- If this regresses, check `https://mapfluence-sarpy-ai.onrender.com/health` first and confirm the reported `commit` matches the expected backend revision.
+
+---
+
 ## Recent Changes (2026-07-02) — Sarpy re-exports + Sheriff's Office corrupt-geometry fix
 
 ### Summary
@@ -726,6 +753,8 @@ Each tenant that uses Airtable room data needs its own AI server instance on Ren
 | Hastings | `https://github-stakeholder-ai.onrender.com` | `appQbbKh2wTFogpN5` (Hastings) |
 | Sarpy County | `https://mapfluence-sarpy-ai.onrender.com` | Sarpy base (set in Render env vars) |
 
+As of 2026-07-13, the Sarpy Render AI service is configured to deploy from `feature/multi-university-refactor`, not `main`. Confirm the live backend revision via `/health` before assuming a `main` push is active.
+
 `getAiBaseUrl()` priority order:
 1. `config.aiServerUrl` (set at component mount via `setRuntimeAiBaseUrl()`)
 2. `VITE_AI_BASE_URL` build-time env var
@@ -819,7 +848,39 @@ GitHub Actions Pages deploys failed at the "Deploy to GitHub Pages" step (not th
 
 ---
 
-## Recent Changes (2026-07-06) — Root cause found and fixed: `__mfGeoreferenced` set unconditionally on affine apply
+## Recent Changes (2026-07-07) � Sarpy floorAdjust save/reload finally fixed
+
+### Summary
+
+Follow-up to the earlier Sarpy georeferenced-floor work. The remaining bug was: after an admin used rotate/move/scale on a Sarpy floor, clicked **Save Adjust**, then hard-reloaded, the rooms and linework could come back out of sync or the saved position could appear to revert. This is now confirmed fixed for the tested Sarpy buildings after `0f912bc`.
+
+### What was actually wrong
+
+There were **three separate reload/save-path issues**, not one:
+
+| Commit | What it fixed |
+|---|---|
+| `59fce1a` | Earlier work that broadened reload to check label / URL / basePath / Firestore candidate docs instead of trusting one storage key. This improved persistence but did **not** fully fix reload. |
+| **`7a2e489`** | Fixed stale-save branches that were still rebuilding the next adjust from the wrong source. `drag` mouse-up and explicit `Save Adjust` were updated to start from the freshest stored adjust across label/URL/basePath instead of sometimes pulling an older label-key copy; `onScaleChange` was later brought onto the same helper in this commit as well. Also added `buildOverlayFloorAdjust(...)`, which converts the rooms' saved `anchorLngLat` snap into an equivalent `translateLngLat` for overlays so walls/doors/stairs inherit the same final translation as rooms on reload. |
+| **`0f912bc`** | Final root cause for the lingering walls mismatch: the fire-and-forget auto-walls path in `loadFloorGeojson` still called `tryLoadWallsOverlay(...)` **without** `overlayFloorAdjust`. On Sarpy floors this second async walls load could arrive after the adjusted pass and repaint unadjusted walls on top. The console symptom was duplicated `[walls] loaded features ... pre-baked lon/lat � skipping all transforms` logs for the same floor open. Passing `overlayFloorAdjust` through this second path fixed the last visible reload desync. |
+
+### Key implementation details
+
+- `getCurrentStoredFloorAdjust(...)` is now the single helper for "freshest saved adjust wins" across:
+  - `loadFloorAdjust(buildingLabel, floorId)`
+  - `loadFloorAdjustByUrl(url)`
+  - `loadFloorAdjustByBasePath(basePath, floorId)`
+- `buildOverlayFloorAdjust(...)` intentionally strips `anchorLngLat` from overlay replay, previews the adjusted rooms transform, measures the anchor delta, and adds that delta back as `translateLngLat`. This avoids double-applying the room anchor logic while still landing overlays where the rooms end up.
+- `tryLoadWallsOverlay(...)`, `tryLoadDoorsOverlay(...)`, and `tryLoadStairsOverlay(...)` all accept `overlayFloorAdjust`; doors and stairs also rotate bearing-like properties with `applyBearingRotation(...)` when replaying a saved rotation.
+
+### Guardrails for future work
+
+- If Sarpy reload ever looks "half right" again, check whether **every** overlay load path is receiving the same replay adjust, not just the first/awaited one.
+- Duplicate overlay console logs for the same floor open are a strong clue that one async path is repainting another.
+- For georeferenced/no-`affine.json` floors, do not assume room-only replay is enough; overlays need an equivalent geographic replay path too.
+
+---
+## Recent Changes (2026-07-06) � Root cause found and fixed: `__mfGeoreferenced` set unconditionally on affine apply
 
 ### Summary
 
@@ -870,4 +931,6 @@ Removed the `out.__mfGeoreferenced = true;` line (and its justifying comment) fr
 GitHub Pages returned "Deployment failed, try again later." again after pushing `8770e08` — the same transient deploy-step failure documented in the 2026-07-02 section above (build succeeds, the separate Pages-upload step fails independently). Still no `gh` CLI or `GITHUB_TOKEN` available in the assistant's shell environment to retry programmatically; use the Actions tab → the failed run → "Re-run failed jobs."
 
 ---
-*Last updated: 2026-07-06 — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-07-13 — update this file whenever the architecture, client list, or critical behavior changes.*
+
+
