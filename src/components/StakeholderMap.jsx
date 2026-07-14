@@ -11795,7 +11795,45 @@ const StakeholderMap = ({
         title: `${activeUniversityName} Client Workspace`,
         subtitle: 'Secure client access for campus space review and room inventory updates.'
       };
-    }    if (isAdminCombinedMode && mapView === MAP_VIEWS.SPACE_DATA) {
+    }
+    if (isAdminCombinedMode) {
+      return {
+        title: 'Admin Stakeholder + Technical',
+        subtitle: 'Engagement markers/heatmaps with technical assessment in one map.'
+      };
+    }
+    if (isTechnicalOnlyMode) {
+      return {
+        title: 'Technical Assessment',
+        subtitle: 'Technical-only view for architecture and engineering review.'
+      };
+    }
+    if (engagementMode) {
+      return {
+        title: 'Stakeholder Engagement',
+        subtitle: 'Public engagement map for marker collection and sentiment.'
+      };
+    }
+    if (isSharedPublicPlanningMode) {
+      return {
+        title: 'Shared Planning Workspace',
+        subtitle: 'No-sign-in planning, reno, and AI tools for team review. Room edits stay read-only.'
+      };
+    }
+    return {
+      title: `${activeUniversityName} Map`,
+      subtitle: 'Campus space visualization view.'
+    };
+  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isClientMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
+  const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
+  const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
+  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
+  useEffect(() => {
+    if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
+      setMapView(MAP_VIEWS.TECHNICAL);
+      return;
+    }
+    if (isAdminCombinedMode && mapView === MAP_VIEWS.SPACE_DATA) {
       setMapView(MAP_VIEWS.ASSESSMENT);
       return;
     }
