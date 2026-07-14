@@ -10742,6 +10742,13 @@ const technicalScoreColorForAverage = (averageScore, scoredFields = 0) => {
 };
 
 const defaultBuildingColor = '#85474b';
+const SARPY_FACILITY_TYPE_COLORS = {
+  'Administrative': '#4A90D9',
+  'Law Enforcement': '#C0392B',
+  'Public Works': '#E8601C',
+  'Recreation': '#27AE60',
+  'Infrastructure': '#7F8C8D'
+};
 const NO_FLOORPLAN_BUILDINGS = [
   '603 E 9th St',
   '603 E. 9th St',
@@ -25944,6 +25951,27 @@ useEffect(() => {
           map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0)');
         }
       } catch {}
+    } else if (universityId === 'sarpy-county') {
+      // Sarpy buildings: color by facilityType instead of the flat default
+      try {
+        const facilityTypeExpr = withNoFloorplanOverride([
+          'match',
+          ['get', 'facilityType'],
+          'Administrative', SARPY_FACILITY_TYPE_COLORS['Administrative'],
+          'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
+          'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
+          'Recreation', SARPY_FACILITY_TYPE_COLORS['Recreation'],
+          'Infrastructure', SARPY_FACILITY_TYPE_COLORS['Infrastructure'],
+          defaultBuildingColor
+        ]);
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', facilityTypeExpr);
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.7);
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', facilityTypeExpr);
+          map.setPaintProperty('buildings-fill', 'fill-opacity', 0.35);
+          map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0.08)');
+        }
+      } catch {}
     } else {
       // in Space Data we keep buildings pure white; do not recolor
       try {
@@ -26037,6 +26065,21 @@ useEffect(() => {
       });
     }
 
+    if (!hasEntries && universityId === 'sarpy-county') {
+      const facilityTypeExpr = withNoFloorplanOverride([
+        'match',
+        ['get', 'facilityType'],
+        'Administrative', SARPY_FACILITY_TYPE_COLORS['Administrative'],
+        'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
+        'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
+        'Recreation', SARPY_FACILITY_TYPE_COLORS['Recreation'],
+        'Infrastructure', SARPY_FACILITY_TYPE_COLORS['Infrastructure'],
+        defaultBuildingColor
+      ]);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', facilityTypeExpr);
+      return;
+    }
+
     matchExpr.push(defaultBuildingColor);
     const finalExpr = withNoFloorplanOverride(matchExpr);
 
@@ -26045,7 +26088,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, universityId]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
