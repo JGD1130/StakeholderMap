@@ -7,7 +7,11 @@ const TENANT_DEFS = [
     features: {
       // Hook: can be enabled per tenant later without touching shared logic.
       enableEngagementTechnicalAssessment: false,
-      enablePublicAiCreatePlanningScenario: false
+      enablePublicAiCreatePlanningScenario: false,
+      enableMaintenanceWorkflow: false,
+      enableRoomEdit: true,
+      requireClientAuth: true,
+      clientWorkspaceRoute: 'client'
     }
   },
   {

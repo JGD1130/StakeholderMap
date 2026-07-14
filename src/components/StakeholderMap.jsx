@@ -11658,9 +11658,11 @@ const StakeholderMap = ({
     MAINTENANCE: 'maintenance'
   };
   const isAdminMode = mode === 'admin';
+  const isClientMode = mode === 'client';
+  const isPublicMode = mode === 'public';
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode);
-  const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
+  const isDemoPublicMode = isPublicMode && !engagementMode && !technicalMode;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
@@ -11668,6 +11670,8 @@ const StakeholderMap = ({
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const maintenanceWorkflowEnabled = (config?.enableMaintenanceWorkflow ?? tenant?.features?.enableMaintenanceWorkflow ?? true) !== false;
+  const publicMaintenanceWorkflowEnabled = isDemoPublicMode && maintenanceWorkflowEnabled;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
@@ -11707,7 +11711,7 @@ const StakeholderMap = ({
     };
   }, [isHastingsCollegeInstance]);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
-  const showAuthAccessControls = isAdminMode;
+  const showAuthAccessControls = isAdminMode || isClientMode;
   const defaultMapView = isTechnicalOnlyMode
     ? MAP_VIEWS.TECHNICAL
     : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
@@ -11716,7 +11720,7 @@ const StakeholderMap = ({
   const adminEngagementToolsMode = isAdminCombinedMode || adminAssessmentEngagementMode;
   const stakeholderWorkflowActive = (engagementMode || adminAssessmentEngagementMode) && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
-  const maintenanceWorkflowActive = (showFullMapfluenceControls || isDemoPublicMode) && mapView === MAP_VIEWS.MAINTENANCE;
+  const maintenanceWorkflowActive = (showFullMapfluenceControls || publicMaintenanceWorkflowEnabled) && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(false);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -11740,10 +11744,12 @@ const StakeholderMap = ({
       ];
     }
     if (isDemoPublicMode) {
-      return [
-        { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
-        { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
-      ];
+      return publicMaintenanceWorkflowEnabled
+        ? [
+            { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
+            { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
+          ]
+        : [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
     }
     if (isAdminCombinedMode) {
       return [
@@ -11755,13 +11761,13 @@ const StakeholderMap = ({
       return [{ value: MAP_VIEWS.TECHNICAL, label: 'Technical' }];
     }
     return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, publicMaintenanceWorkflowEnabled, isAdminCombinedMode, isTechnicalOnlyMode]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
   const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
-  const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
+  const accessControlLabel = isAdminMode ? 'Admin access' : (isClientMode ? 'Client access' : 'Authorized access');
   const routeModeMeta = useMemo(() => {
     if (showFullMapfluenceControls) {
       if (mapView === MAP_VIEWS.MAINTENANCE) {
@@ -11783,47 +11789,19 @@ const StakeholderMap = ({
           : 'Maintenance issue reporting and tracking demo mode.'
       };
     }
-    if (isAdminCombinedMode) {
+    if (isClientMode) {
       return {
-        title: 'Admin Stakeholder + Technical',
-        subtitle: 'Engagement markers/heatmaps with technical assessment in one map.'
+        title: `${activeUniversityName} Client Workspace`,
+        subtitle: 'Secure client access for campus space review and room inventory updates.'
       };
-    }
-    if (isTechnicalOnlyMode) {
-      return {
-        title: 'Technical Assessment',
-        subtitle: 'Technical-only view for architecture and engineering review.'
-      };
-    }
-    if (engagementMode) {
-      return {
-        title: 'Stakeholder Engagement',
-        subtitle: 'Public engagement map for marker collection and sentiment.'
-      };
-    }
-    if (isSharedPublicPlanningMode) {
-      return {
-        title: 'Shared Planning Workspace',
-        subtitle: 'No-sign-in planning, reno, and AI tools for team review. Room edits stay read-only.'
-      };
-    }
-    return {
-      title: `${activeUniversityName} Map`,
-      subtitle: 'Campus space visualization view.'
-    };
-  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
-  const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
-  const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
-  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
-  useEffect(() => {
-    if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
-      setMapView(MAP_VIEWS.TECHNICAL);
+    }    if (isAdminCombinedMode && mapView === MAP_VIEWS.SPACE_DATA) {
+      setMapView(MAP_VIEWS.ASSESSMENT);
       return;
     }
-    if (isAdminCombinedMode && mapView === MAP_VIEWS.SPACE_DATA) {
-      setMapView(MAP_VIEWS.ASSESSMENT);
+    if (!visibleMapViewOptions.some((option) => option.value === mapView)) {
+      setMapView(visibleMapViewOptions[0]?.value || defaultMapView);
     }
-  }, [isTechnicalOnlyMode, isAdminCombinedMode, mapView]);
+  }, [isTechnicalOnlyMode, isAdminCombinedMode, mapView, visibleMapViewOptions, defaultMapView]);
   useEffect(() => {
     if (mapView !== MAP_VIEWS.TECHNICAL) {
       setIsTechnicalPanelOpen(false);
@@ -17217,6 +17195,7 @@ const StakeholderMap = ({
 
   // Auth / role
   const [authUser, setAuthUser] = useState(null);
+  const [userRole, setUserRole] = useState('');
   const [isAdminUser, setIsAdminUser] = useState(false);
   const technicalAssessmentSaveMode = String(config?.technicalAssessmentSaveMode || 'building').trim().toLowerCase() === 'per-assessor'
     ? 'per-assessor'
@@ -17258,10 +17237,14 @@ const StakeholderMap = ({
     const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
     return buildAdminCombinedPrefsStorageKey(universityId, userKey);
   }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
-  const roomEditCanWrite = useMemo(
-    () => Boolean(isAdminUser && showFullMapfluenceControls),
-    [isAdminUser, showFullMapfluenceControls]
-  );
+  const roomEditEnabledForCurrentTenant = (config?.enableRoomEdit ?? tenant?.features?.enableRoomEdit ?? false) === true;
+  const roomEditCanWrite = useMemo(() => {
+    if (showFullMapfluenceControls) return Boolean(isAdminUser);
+    if (isClientMode && roomEditEnabledForCurrentTenant) {
+      return userRole === 'editor' || userRole === 'admin';
+    }
+    return false;
+  }, [isAdminUser, showFullMapfluenceControls, isClientMode, roomEditEnabledForCurrentTenant, userRole]);
 
   // Marker filters (admin)
   const [showStudentMarkers, setShowStudentMarkers] = useState(false);
@@ -24551,7 +24534,7 @@ useEffect(() => {
         }
 
         const shouldLoadConditions = mode === 'admin';
-        const shouldLoadMaintenance = mode === 'admin' || isDemoPublicMode;
+        const shouldLoadMaintenance = mode === 'admin' || publicMaintenanceWorkflowEnabled;
         if (!shouldLoadConditions && !shouldLoadMaintenance) {
           setBuildingConditions({});
           setMaintenanceIssues([]);
@@ -24617,7 +24600,7 @@ useEffect(() => {
     mode,
     engagementMode,
     technicalMode,
-    isDemoPublicMode,
+    publicMaintenanceWorkflowEnabled,
     universityId,
     persona,
     markersCollection,
@@ -29510,7 +29493,7 @@ useEffect(() => {
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {authUser.email} {isAdminUser ? '(admin)' : '(no admin)'}
+                      {authUser.email} ({userRole || (isAdminUser ? 'admin' : 'signed in')})
                     </span>
                     <button onClick={handleAdminSignOut}>Sign out</button>
                   </div>

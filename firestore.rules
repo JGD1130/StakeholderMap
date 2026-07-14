@@ -15,6 +15,25 @@ service cloud.firestore {
         && get(roleDoc(universityId)).data.role == 'admin';
     }
 
+
+    function isUniversityViewer(universityId) {
+      return isSignedIn()
+        && exists(roleDoc(universityId))
+        && (
+          get(roleDoc(universityId)).data.role == 'viewer'
+          || get(roleDoc(universityId)).data.role == 'editor'
+          || get(roleDoc(universityId)).data.role == 'admin'
+        );
+    }
+
+    function isUniversityEditor(universityId) {
+      return isSignedIn()
+        && exists(roleDoc(universityId))
+        && (
+          get(roleDoc(universityId)).data.role == 'editor'
+          || get(roleDoc(universityId)).data.role == 'admin'
+        );
+    }
     function isOpenPilotCampus(universityId) {
       return universityId == 'hastings'
         || universityId == 'hastings-demo'
@@ -121,7 +140,7 @@ service cloud.firestore {
 
           match /rooms/{roomId} {
             allow read: if true;
-            allow write: if isUniversityAdmin(universityId);
+            allow write: if isUniversityEditor(universityId);
           }
         }
       }
