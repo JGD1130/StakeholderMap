@@ -11769,6 +11769,14 @@ const StakeholderMap = ({
   const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
   const accessControlLabel = isAdminMode ? 'Admin access' : (isClientMode ? 'Client access' : 'Authorized access');
+  const effectiveUserRole = userRole || (isAdminUser ? 'admin' : 'signed in');
+  const clientAccessSummary = isClientMode
+    ? (effectiveUserRole === 'viewer'
+        ? 'Read-only access'
+        : ((effectiveUserRole === 'editor' || effectiveUserRole === 'admin')
+            ? 'Room edits enabled'
+            : 'Signed-in access'))
+    : null;
   const routeModeMeta = useMemo(() => {
     if (showFullMapfluenceControls) {
       if (mapView === MAP_VIEWS.MAINTENANCE) {
@@ -29531,9 +29539,14 @@ useEffect(() => {
                   <button onClick={handleAdminSignIn}>Sign in with Google</button>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {authUser.email} ({userRole || (isAdminUser ? 'admin' : 'signed in')})
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.15 }}>
+                      <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {authUser.email} ({effectiveUserRole})
+                      </span>
+                      {clientAccessSummary ? (
+                        <span style={{ fontSize: 11, color: '#465569' }}>{clientAccessSummary}</span>
+                      ) : null}
+                    </div>
                     <button onClick={handleAdminSignOut}>Sign out</button>
                   </div>
                 )}
@@ -32408,6 +32421,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
