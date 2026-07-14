@@ -425,6 +425,35 @@ const StrategicDashboardSection = ({ strategic, onExpandedStateChange, hideTitle
   );
 };
 
+const FacilityTypeLegend = ({ items = [] }) => {
+  if (!items.length) return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div className="mf-section-title">Facility Type</div>
+      <div style={{ display: 'grid', gap: 3, marginTop: 4 }}>
+        {items.map((item) => (
+          <div
+            key={item.label}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#1f2937' }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 10,
+                height: 10,
+                borderRadius: 2,
+                background: item.color,
+                flexShrink: 0
+              }}
+            />
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export default function SpaceDashboardPanel({
   title,
   metrics,
@@ -437,6 +466,7 @@ export default function SpaceDashboardPanel({
   onToggleHeatmap,
   strategic,
   spaceContextTitle = 'Campus Space Context',
+  facilityTypeLegend = [],
   showUtilizationSection = true,
   showStrategicSection = true
 }) {
@@ -489,6 +519,7 @@ export default function SpaceDashboardPanel({
                   <DeptList entries={metrics.byDept || []} />
                 </PanelCard>
               </div>
+              <FacilityTypeLegend items={facilityTypeLegend} />
             </PanelCard>
           ) : null}
 

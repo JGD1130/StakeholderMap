@@ -6194,11 +6194,12 @@ function buildLowZoomBuildingMarkerFC(buildingsGeoJson) {
     const props = feature?.properties || {};
     const id = String(props.id ?? props.ID ?? props.name ?? props.Name ?? `building_${idx + 1}`);
     const name = String(props.name ?? props.Name ?? props.id ?? props.ID ?? `Building ${idx + 1}`).trim() || `Building ${idx + 1}`;
+    const facilityType = props.facilityType ?? props.FacilityType ?? null;
 
     markerFeatures.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
-      properties: { id, name }
+      properties: { id, name, facilityType }
     });
   });
 
@@ -11492,8 +11493,29 @@ const StakeholderMap = ({
       : { type: 'FeatureCollection', features: [] }),
     [lowZoomBuildingMarkersEnabled, config?.buildings]
   );
+  const sarpyFacilityTypeCircleColorExpr = isSarpyCountyInstance
+    ? [
+        'match',
+        ['get', 'facilityType'],
+        'Administrative', SARPY_FACILITY_TYPE_COLORS['Administrative'],
+        'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
+        'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
+        'Recreation', SARPY_FACILITY_TYPE_COLORS['Recreation'],
+        'Infrastructure', SARPY_FACILITY_TYPE_COLORS['Infrastructure'],
+        defaultBuildingColor
+      ]
+    : null;
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
+  const sarpyFacilityTypeLegendItems = isSarpyCountyInstance
+    ? [
+        { label: 'Administrative', color: SARPY_FACILITY_TYPE_COLORS['Administrative'] },
+        { label: 'Law Enforcement', color: SARPY_FACILITY_TYPE_COLORS['Law Enforcement'] },
+        { label: 'Public Works', color: SARPY_FACILITY_TYPE_COLORS['Public Works'] },
+        { label: 'Recreation', color: SARPY_FACILITY_TYPE_COLORS['Recreation'] },
+        { label: 'Infrastructure', color: SARPY_FACILITY_TYPE_COLORS['Infrastructure'] }
+      ]
+    : [];
   const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
   const showStrategicDashboard = !isSarpyCountyInstance;
   const hasConfiguredUniversityLogo = Boolean(
@@ -25316,9 +25338,11 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 10, 12, 12, 15],
-          'circle-color': 'rgba(220,38,38,0.20)',
-          'circle-stroke-color': 'rgba(185,28,28,0.75)',
-          'circle-stroke-width': 1.2
+          'circle-color': isSarpyCountyInstance ? sarpyFacilityTypeCircleColorExpr : 'rgba(220,38,38,0.20)',
+          'circle-opacity': isSarpyCountyInstance ? 0.22 : 1,
+          'circle-stroke-color': isSarpyCountyInstance ? sarpyFacilityTypeCircleColorExpr : 'rgba(185,28,28,0.75)',
+          'circle-stroke-width': 1.2,
+          'circle-stroke-opacity': isSarpyCountyInstance ? 0.8 : 1
         }
       }, 'buildings-labels');
     }
@@ -25331,7 +25355,7 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4.8, 10, 6.3, 12, 8.1],
-          'circle-color': '#dc2626',
+          'circle-color': isSarpyCountyInstance ? sarpyFacilityTypeCircleColorExpr : '#dc2626',
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.2
         }
@@ -28373,6 +28397,7 @@ useEffect(() => {
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
               spaceContextTitle={dashboardSpaceContextTitle}
+              facilityTypeLegend={sarpyFacilityTypeLegendItems}
               showUtilizationSection={showClassroomUtilizationDashboard}
               showStrategicSection={showStrategicDashboard}
               strategic={isAdminMode && showStrategicDashboard ? {
