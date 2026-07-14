@@ -8714,6 +8714,7 @@ const BUILDINGS_LIST = [
   { name: 'Wilson Center', folder: 'WilsonCenter' },
   { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
   { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
+  { name: 'Bellevue Shop', folder: 'Bellevue Shop', campus: 'SarpyCounty' },
   { name: 'Juvenile Justice Center', folder: 'Juvenile Justice Center', campus: 'SarpyCounty' },
   { name: 'Springfield Shop', folder: 'Springfield Shop', campus: 'SarpyCounty' },
   { name: 'Public Works Fleet', folder: 'Public Works Fleet', campus: 'SarpyCounty' },
