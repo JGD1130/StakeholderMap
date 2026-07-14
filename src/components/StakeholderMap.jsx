@@ -8716,6 +8716,7 @@ const BUILDINGS_LIST = [
   { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
   { name: 'Juvenile Justice Center', folder: 'Juvenile Justice Center', campus: 'SarpyCounty' },
   { name: 'Springfield Shop', folder: 'Springfield Shop', campus: 'SarpyCounty' },
+  { name: 'Public Works Fleet', folder: 'Public Works Fleet', campus: 'SarpyCounty' },
   { name: "Sheriff's Garage", folder: "Sheriff's Garage", campus: 'SarpyCounty' },
   { name: "Sheriff's Office", folder: "Sheriff's Office", campus: 'SarpyCounty' },
   { name: '1246 Building', folder: '1246 Building', campus: 'SarpyCounty' },
