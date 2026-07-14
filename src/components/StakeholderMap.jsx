@@ -8713,6 +8713,7 @@ const BUILDINGS_LIST = [
   { name: 'Taylor Hall', folder: 'Taylor Hall' },
   { name: 'Wilson Center', folder: 'WilsonCenter' },
   { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
+  { name: '180th Shop', folder: '180th Shop', campus: 'SarpyCounty' },
   { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
   { name: 'Bellevue Shop', folder: 'Bellevue Shop', campus: 'SarpyCounty' },
   { name: 'Gretna Shop', folder: 'Gretna Shop', campus: 'SarpyCounty' },
