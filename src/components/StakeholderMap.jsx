@@ -10,6 +10,7 @@ import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, set
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
+import ClientRoleManagerPanel from './ClientRoleManagerPanel.jsx';
 import { surveyConfigs } from '../surveyConfigs';
 import * as turf from '@turf/turf';
 import { bId, fId, rId, canon } from '../utils/idUtils';
@@ -17285,6 +17286,7 @@ const StakeholderMap = ({
     return buildAdminCombinedPrefsStorageKey(universityId, userKey);
   }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
   const roomEditEnabledForCurrentTenant = (config?.enableRoomEdit ?? tenant?.features?.enableRoomEdit ?? false) === true;
+  const roleManagementEnabled = (config?.enableRoleManagement ?? tenant?.features?.enableRoleManagement ?? false) === true;
   const roomEditCanWrite = useMemo(() => {
     if (showFullMapfluenceControls) return Boolean(isAdminUser);
     if (isClientMode && roomEditEnabledForCurrentTenant) {
@@ -23289,15 +23291,28 @@ useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setAuthUser(user || null);
       if (!user) {
+        setUserRole('');
         setIsAdminUser(false);
         return;
       }
+
+      let resolvedRole = '';
       try {
         const roleSnap = await getDoc(doc(db, 'universities', universityId, 'roles', user.uid));
-        setIsAdminUser(!!roleSnap.exists() && roleSnap.data()?.role === 'admin');
-      } catch {
-        setIsAdminUser(false);
+        resolvedRole = String(roleSnap.data()?.role || '').trim().toLowerCase();
+      } catch {}
+
+      if (!resolvedRole) {
+        try {
+          const tokenResult = await user.getIdTokenResult();
+          if (tokenResult?.claims?.admin === true) {
+            resolvedRole = 'admin';
+          }
+        } catch {}
       }
+
+      setUserRole(resolvedRole);
+      setIsAdminUser(resolvedRole === 'admin');
     });
     return () => unsub();
   }, [universityId]);
@@ -29554,6 +29569,9 @@ useEffect(() => {
             </div>
           )}
 
+          {isAdminMode && isAdminUser && roleManagementEnabled && (
+            <ClientRoleManagerPanel universityId={universityId} enabled />
+          )}
           {/* Map View */}
           {showMapViewSelector && (
             <div className="control-section theme-selector" style={{ marginTop: 6 }}>
@@ -32421,6 +32439,8 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 
 
 

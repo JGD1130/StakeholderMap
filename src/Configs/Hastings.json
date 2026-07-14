@@ -13,6 +13,7 @@
   "enableRoomEdit": true,
   "requireClientAuth": true,
   "clientWorkspaceRoute": "client",
+  "enableRoleManagement": true,
 
   "style": "mapbox://styles/mapbox/streets-v12",
   "lng": -98.371164,
@@ -39,4 +40,6 @@
   ]
 }
 ]
+
+
 

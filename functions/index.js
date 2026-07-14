@@ -6,8 +6,34 @@ const cors = require("cors");
 const OpenAI = require("openai");
 admin.initializeApp();
 
+const db = admin.firestore();
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 const corsHandler = cors({ origin: true });
+const VALID_UNIVERSITY_ROLES = new Set(["viewer", "editor", "admin"]);
+
+function normalizeString(value) {
+  return String(value || "").trim();
+}
+
+function normalizeUniversityRole(value) {
+  return normalizeString(value).toLowerCase();
+}
+
+async function callerCanManageUniversityRoles(context, universityId) {
+  if (!context.auth?.uid) return false;
+  if (context.auth.token.admin === true) return true;
+  const roleDoc = await db.doc(`universities/${universityId}/roles/${context.auth.uid}`).get();
+  return roleDoc.exists && normalizeUniversityRole(roleDoc.data()?.role) === "admin";
+}
+
+async function lookupUserByEmail(email) {
+  try {
+    return await admin.auth().getUserByEmail(email);
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") return null;
+    throw error;
+  }
+}
 
 // FINAL, SECURE VERSION
 exports.addAdminRole = functions.https.onCall(async (data, context) => {
@@ -34,6 +60,129 @@ exports.addAdminRole = functions.https.onCall(async (data, context) => {
   } catch (error) {
     throw new functions.https.HttpsError("internal", error.message);
   }
+});
+
+exports.setUniversityUserRole = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const universityId = normalizeString(data?.universityId).toLowerCase();
+  const email = normalizeString(data?.email).toLowerCase();
+  const role = normalizeUniversityRole(data?.role);
+  const callerIsGlobalAdmin = context.auth.token.admin === true;
+
+  if (!universityId) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing universityId.");
+  }
+  if (!email) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing user email.");
+  }
+  if (!VALID_UNIVERSITY_ROLES.has(role)) {
+    throw new functions.https.HttpsError("invalid-argument", "Role must be viewer, editor, or admin.");
+  }
+  if (role === "admin" && !callerIsGlobalAdmin) {
+    throw new functions.https.HttpsError("permission-denied", "Only a global admin can assign the admin role.");
+  }
+
+  const allowed = await callerCanManageUniversityRoles(context, universityId);
+  if (!allowed) {
+    throw new functions.https.HttpsError("permission-denied", "You do not have permission to manage roles for this workspace.");
+  }
+
+  const user = await lookupUserByEmail(email);
+  if (!user) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "That Google account has not signed in yet. Have them open the Hastings client workspace once, then try again."
+    );
+  }
+
+  const roleDocRef = db.doc(`universities/${universityId}/roles/${user.uid}`);
+  const existingRoleDoc = await roleDocRef.get();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const updatedByEmail = normalizeString(context.auth.token.email || "").toLowerCase();
+  const payload = {
+    role,
+    email: normalizeString(user.email || email).toLowerCase(),
+    displayName: normalizeString(user.displayName || ""),
+    updatedAt: now,
+    updatedByUid: context.auth.uid,
+    updatedByEmail,
+  };
+
+  if (!existingRoleDoc.exists) {
+    payload.createdAt = now;
+    payload.createdByUid = context.auth.uid;
+    payload.createdByEmail = updatedByEmail;
+  }
+
+  await roleDocRef.set(payload, { merge: true });
+
+  return {
+    ok: true,
+    uid: user.uid,
+    email: payload.email,
+    role,
+    message: `${payload.email} now has ${role} access for ${universityId}.`,
+  };
+});
+
+exports.removeUniversityUserRole = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const universityId = normalizeString(data?.universityId).toLowerCase();
+  const callerIsGlobalAdmin = context.auth.token.admin === true;
+  let targetUid = normalizeString(data?.uid);
+  const email = normalizeString(data?.email).toLowerCase();
+
+  if (!universityId) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing universityId.");
+  }
+
+  const allowed = await callerCanManageUniversityRoles(context, universityId);
+  if (!allowed) {
+    throw new functions.https.HttpsError("permission-denied", "You do not have permission to manage roles for this workspace.");
+  }
+
+  if (!targetUid && email) {
+    const user = await lookupUserByEmail(email);
+    targetUid = normalizeString(user?.uid);
+  }
+
+  if (!targetUid) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing target user id.");
+  }
+
+  const roleDocRef = db.doc(`universities/${universityId}/roles/${targetUid}`);
+  const existingRoleDoc = await roleDocRef.get();
+  if (!existingRoleDoc.exists) {
+    return {
+      ok: true,
+      removed: false,
+      uid: targetUid,
+      message: `No role document was found for ${targetUid}.`,
+    };
+  }
+
+  const existingRole = normalizeUniversityRole(existingRoleDoc.data()?.role);
+  if (existingRole === "admin" && !callerIsGlobalAdmin) {
+    throw new functions.https.HttpsError("permission-denied", "Only a global admin can remove the admin role.");
+  }
+
+  await roleDocRef.delete();
+
+  const targetEmail = normalizeString(existingRoleDoc.data()?.email || email || targetUid).toLowerCase();
+  return {
+    ok: true,
+    removed: true,
+    uid: targetUid,
+    email: targetEmail,
+    role: existingRole,
+    message: `${targetEmail} no longer has ${universityId} client access.`,
+  };
 });
 
 // AI explanation endpoint (keeps OpenAI key on the server)

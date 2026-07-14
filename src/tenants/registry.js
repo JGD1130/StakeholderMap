@@ -11,7 +11,8 @@ const TENANT_DEFS = [
       enableMaintenanceWorkflow: false,
       enableRoomEdit: true,
       requireClientAuth: true,
-      clientWorkspaceRoute: 'client'
+      clientWorkspaceRoute: 'client',
+      enableRoleManagement: true
     }
   },
   {
@@ -56,3 +57,6 @@ export function getTenantFeatures(universityId) {
 }
 
 export const TENANTS = TENANT_DEFS;
+
+
+
