@@ -52,6 +52,11 @@ export function getTenantConfigId(universityId) {
   return tenant?.configId || universityId;
 }
 
+export function getTenantId(universityId) {
+  const tenant = resolveTenant(universityId);
+  return tenant?.id || universityId;
+}
+
 export function getTenantFeatures(universityId) {
   return resolveTenant(universityId)?.features || {};
 }

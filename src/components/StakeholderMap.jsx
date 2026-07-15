@@ -31361,6 +31361,8 @@ useEffect(() => {
                   return;
                 }
                 let savedCount = 0;
+                let attemptedSaveCount = 0;
+                let failedSaveCount = 0;
                 const multiEdit = targets.length > 1;
                 const activePopupRoomKey = roomEditData?.roomId || String(roomEditData?.revitId ?? '');
                 let popupRefreshPayload = null;
@@ -31453,6 +31455,7 @@ useEffect(() => {
                     }
                   }
                   if (!Object.keys(propsForTarget).length) continue;
+                  attemptedSaveCount += 1;
                   const saved = await saveRoomEdits({
                     roomId: tgt.roomId,
                     buildingId: tgt.buildingId,
@@ -31520,10 +31523,16 @@ useEffect(() => {
                         }
                       }
                     }
+                  } else {
+                    failedSaveCount += 1;
                   }
                 }
-                if (savedCount === 0) {
+                if (attemptedSaveCount === 0) {
                   alert('No changes detected for the selected rooms.');
+                  return;
+                }
+                if (savedCount === 0 && failedSaveCount > 0) {
+                  alert('Failed to save the selected room changes. Please try again.');
                   return;
                 }
                 if (savedCount > 0) {
@@ -31540,6 +31549,9 @@ useEffect(() => {
                   roomEditData.refreshPopup?.();
                   clearRoomEditSelection();
                   closeRoomEdit();
+                  if (failedSaveCount > 0) {
+                    alert(`Saved ${savedCount} ${savedCount === 1 ? 'room' : 'rooms'}, but ${failedSaveCount} ${failedSaveCount === 1 ? 'room failed' : 'rooms failed'}. Reopen the rooms to verify and retry.`);
+                  }
                 }
             }}
           >

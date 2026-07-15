@@ -7,7 +7,7 @@ import AdminMapPage from './pages/AdminMapPage.jsx';
 import ClientMapPage from './pages/ClientMapPage.jsx';
 import { getConfig } from './configLoader';
 import { db } from './firebaseConfig';
-import { getTenantConfigId, resolveTenant } from './tenants/registry';
+import { getTenantConfigId, getTenantId, resolveTenant } from './tenants/registry';
 import './App.css';
 
 function SecureWorkspaceGate({ universityId, title = 'Secure Workspace', requiredRoles = ['viewer', 'editor', 'admin'], children }) {
@@ -120,6 +120,7 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
   const { universityId, persona } = useParams();
   const location = useLocation();
   const tenant = resolveTenant(universityId);
+  const canonicalUniversityId = getTenantId(universityId);
   const configId = getTenantConfigId(universityId);
   const config = getConfig(configId);
 
@@ -137,10 +138,10 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
 
   if (isAdminPath) {
     return (
-      <SecureWorkspaceGate universityId={universityId} title="Internal Admin Workspace" requiredRoles={['admin']}>
+      <SecureWorkspaceGate universityId={canonicalUniversityId} title="Internal Admin Workspace" requiredRoles={['admin']}>
         <AdminMapPage
           config={config}
-          universityId={universityId}
+          universityId={canonicalUniversityId}
           tenant={tenant}
           engagementMode={engagementMode}
           technicalMode={technicalMode}
@@ -153,7 +154,7 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
     const clientPage = (
       <ClientMapPage
         config={config}
-        universityId={universityId}
+        universityId={canonicalUniversityId}
         tenant={tenant}
         engagementMode={engagementMode}
         technicalMode={technicalMode}
@@ -161,7 +162,7 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
     );
     if (!clientAuthRequired) return clientPage;
     return (
-      <SecureWorkspaceGate universityId={universityId} title="Client Workspace" requiredRoles={['viewer', 'editor', 'admin']}>
+      <SecureWorkspaceGate universityId={canonicalUniversityId} title="Client Workspace" requiredRoles={['viewer', 'editor', 'admin']}>
         {clientPage}
       </SecureWorkspaceGate>
     );
@@ -170,7 +171,7 @@ function UniversityMapLoader({ engagementMode = false, technicalMode = false }) 
   return (
     <PublicMapPage
       config={config}
-      universityId={universityId}
+      universityId={canonicalUniversityId}
       persona={persona}
       engagementMode={engagementMode}
       technicalMode={technicalMode}
