@@ -11713,6 +11713,12 @@ const StakeholderMap = ({
     };
   }, [isHastingsCollegeInstance]);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
+
+  // Auth / role
+  const [authUser, setAuthUser] = useState(null);
+  const [userRole, setUserRole] = useState('');
+  const [isAdminUser, setIsAdminUser] = useState(false);
+
   const showAuthAccessControls = isAdminMode || isClientMode;
   const defaultMapView = isTechnicalOnlyMode
     ? MAP_VIEWS.TECHNICAL
@@ -17241,10 +17247,6 @@ const StakeholderMap = ({
     });
   }, [scenarioPanelPos]);
 
-  // Auth / role
-  const [authUser, setAuthUser] = useState(null);
-  const [userRole, setUserRole] = useState('');
-  const [isAdminUser, setIsAdminUser] = useState(false);
   const technicalAssessmentSaveMode = String(config?.technicalAssessmentSaveMode || 'building').trim().toLowerCase() === 'per-assessor'
     ? 'per-assessor'
     : 'building';
