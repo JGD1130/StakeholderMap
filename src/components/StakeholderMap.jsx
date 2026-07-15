@@ -11669,9 +11669,11 @@ const StakeholderMap = ({
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const airtableControlsAllowed = isAdminMode || isClientMode || publicAirtableControlsAllowed;
+  const planningScenarioAllowedForCurrentView = showFullMapfluenceControls || publicPlanningScenarioAllowed;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
-  const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const maintenanceWorkflowEnabled = (config?.enableMaintenanceWorkflow ?? tenant?.features?.enableMaintenanceWorkflow ?? true) !== false;
   const publicMaintenanceWorkflowEnabled = isDemoPublicMode && maintenanceWorkflowEnabled;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
@@ -12937,7 +12939,7 @@ const StakeholderMap = ({
     setAiCreateScenarioLoading(false);
     setAiCreateScenarioResult(null);
     setAiCreateScenarioErr('');
-    if (!isDemoPublicMode && (roomEditOpen || roomEditData || roomEditSelection.length)) {
+    if (!isDemoPublicMode && !isClientMode && (roomEditOpen || roomEditData || roomEditSelection.length)) {
       setRoomEditOpen(false);
       setRoomEditData(null);
       clearRoomEditSelection();
@@ -12945,6 +12947,7 @@ const StakeholderMap = ({
   }, [
     showFullMapfluenceControls,
     isDemoPublicMode,
+    isClientMode,
     roomEditOpen,
     roomEditData,
     roomEditSelection.length,
@@ -13172,12 +13175,11 @@ const StakeholderMap = ({
     resetScenarioModeState();
   }, [resetScenarioModeState]);
   useEffect(() => {
-    const planningScenarioAllowed = showFullMapfluenceControls || publicPlanningScenarioAllowed;
-    if (planningScenarioAllowed) return;
+    if (planningScenarioAllowedForCurrentView) return;
     if (!moveScenarioMode) return;
     setMoveScenarioMode(false);
     clearScenario();
-  }, [showFullMapfluenceControls, publicPlanningScenarioAllowed, moveScenarioMode, clearScenario]);
+  }, [planningScenarioAllowedForCurrentView, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
@@ -28694,7 +28696,7 @@ useEffect(() => {
               explainDisabled={!aiEnabledForCurrentView || aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
-              onToggleMoveScenarioMode={handleToggleMoveScenarioMode}
+              onToggleMoveScenarioMode={planningScenarioAllowedForCurrentView ? handleToggleMoveScenarioMode : undefined}
               rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
               moveActive={mode === 'admin' && floorAdjustMode === 'move'}
               rotateValue={mode === 'admin' ? floorRotateValue : 0}
@@ -30874,7 +30876,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {(mode === 'admin' || publicAirtableControlsAllowed) && (
+                  {airtableControlsAllowed && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -30890,19 +30892,19 @@ useEffect(() => {
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {(mode === 'admin' || publicAirtableControlsAllowed) && airtableRefreshMessage && (
+                {airtableControlsAllowed && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {(mode === 'admin' || publicAirtableControlsAllowed) && (
+                {airtableControlsAllowed && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
                   </div>
                 )}
-                {(mode === 'admin' || publicAirtableControlsAllowed) && (
+                {airtableControlsAllowed && (
                   <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
                     Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
