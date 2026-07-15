@@ -17816,6 +17816,8 @@ const StakeholderMap = ({
         const seatCountRaw = properties.seatCount;
         const seatCountNum = Number(seatCountRaw);
         const seatCountValue = Number.isFinite(seatCountNum) && seatCountNum > 0 ? seatCountNum : null;
+        const commentsProvided = Object.prototype.hasOwnProperty.call(properties, 'comments');
+        const commentsValue = String(properties.comments ?? '');
 
         const payload = {
           type: typeValue || '',
@@ -17846,6 +17848,7 @@ const StakeholderMap = ({
           if (deptValue) airtablePayload.department = deptValue;
           if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
           if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
+          if (commentsProvided) airtablePayload.comments = commentsValue;
           const roomNumberValue = String(
             roomNumber ??
             properties.roomNumber ??
@@ -32455,18 +32458,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
