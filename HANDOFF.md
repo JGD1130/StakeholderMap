@@ -240,6 +240,116 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-07-15) - Hastings client role QA flow hardened
+
+### Summary
+
+Follow-up on the Hastings client rollout. The secure client workspace is now much closer to operator-ready: the route/role plumbing was tightened so Hastings aliases resolve to one canonical tenant workspace, room-edit save feedback is clearer for client users, and the repo now has repeatable automated and manual QA coverage for the new `viewer` / `editor` / `admin` model.
+
+### What changed
+
+- **Canonical tenant resolution for secure routes (`8ee6464`)**
+  - Added `getTenantId(...)` in `src/tenants/registry.js`.
+  - `src/App.jsx` now passes the canonical tenant id into the secure gate and page loaders instead of trusting the raw URL slug.
+  - Practical effect: `/hastings/client` and `/hastings-demo/client` now read the same Firestore role docs and nested room data under `universities/hastings/...` instead of risking alias-split behavior.
+
+- **Client room-edit save feedback hardened (`8ee6464`)**
+  - The shared room-edit modal in `src/components/StakeholderMap.jsx` now distinguishes three cases correctly:
+    - no-op edit (nothing changed)
+    - full save failure
+    - partial success where some selected rooms saved and others failed
+  - This fixes the prior confusing fallback where failed saves could surface as the misleading `No changes detected` message.
+
+- **Automated Hastings client smoke coverage expanded (`8ee6464`)**
+  - `scripts/smoke-check.mjs` was extended from the older admin/engagement checks to cover:
+    - `/:universityId/client` route presence
+    - canonical tenant id wiring
+    - Hastings tenant flags / config flags
+    - secure gate copy for signed-out and unauthorized users
+    - shared client header summaries for `viewer` and `editor`
+    - room-edit permission gates
+    - Firestore rule helper presence for `viewer` / `editor` / `admin`
+  - Current result after the Hastings updates: **`62/62` checks passed** via `node scripts/smoke-check.mjs`.
+
+- **Manual operator QA docs added (`8ee6464`)**
+  - Added `docs/HASTINGS_CLIENT_ROLE_QA_RUNBOOK.md` with a live browser test script for:
+    - signed-out access
+    - Hastings `viewer`
+    - Hastings `editor`
+    - Hastings `admin`
+    - alias consistency between `/hastings/client` and `/hastings-demo/client`
+    - safe rollback of the temporary room-edit test
+  - Refreshed `docs/HASTINGS_PRE_RELEASE_CHECKLIST.md` so it now matches the actual client rollout shape instead of the older admin-only pre-release matrix.
+
+### Deployment / QA note
+
+- GitHub Pages deploy workflow currently triggers on pushes to both:
+  - `main`
+  - `feature/multi-university-refactor`
+- The workflow still deploys to the single GitHub Pages environment, so **pushes from the feature branch are effectively production-facing for the public Pages URL** unless the workflow strategy changes later.
+- That means the remaining browser-only role-matrix QA in `docs/HASTINGS_CLIENT_ROLE_QA_RUNBOOK.md` should be treated as a live-environment check, not a harmless preview-only pass.
+
+### Current status
+
+- Code-side Hastings client guardrails are in place.
+- Automated smoke coverage for the Hastings client route/role model is passing.
+- The remaining blocker is **real browser QA with actual Hastings `viewer`, `editor`, and `admin` accounts** to confirm live Google sign-in, room-edit save behavior, alias consistency, and admin-route separation end to end.
+
+---
+## Recent Changes (2026-07-14) - Sarpy floorplan intake wrapped up for current export set
+
+### Summary
+
+Finished the current batch of Sarpy County floorplan imports and verified the safe intake pattern for already-georeferenced Revit exports. The key lesson from this run: when the raw export is already in real Nebraska lon/lat, run scripts/optimize-sarpy-export.cjs without --building.
+
+Using --building on these corrected exports can create a coordinate-space mismatch: rooms stay in their raw georeferenced coordinates, while walls/drawing features get re-fit to the GIS footprint bbox. That is what caused the brief Sheriff's Garage rooms-vs-walls separation during troubleshooting. Re-running the optimizer without --building restored alignment immediately.
+
+### Buildings added in this run
+
+| Commit | Building | Notes |
+|---|---|---|
+| 4970c9b | Sheriff's Garage | Initial import. |
+| c6d6423 | Sheriff's Garage | Replaced walls file after confirming the correct no---building flow. User later confirmed the remaining issue was only footprint placement, not rooms/walls drift. |
+| fda5c8 | Springfield Shop | Added and verified. |
+| 32d4ade | Public Works Fleet | Added and verified. |
+| 29d018 | Bellevue Shop | Added and verified. |
+| 763d71 | Gretna Shop | Added and verified; includes LEVEL_1 and LEVEL_2. |
+
+### Safe Sarpy intake workflow (current best practice)
+
+1. Confirm the raw top-level room GeoJSON is already real-world lon/lat in the Sarpy area (roughly -96.x, 41.1x), not small local Revit coordinates.
+2. Confirm the raw export keeps rooms and drawings together internally:
+   - inspect feature counts in LEVEL_*_Dept_Rooms.geojson
+   - confirm room bbox and drawing bbox are in the same neighborhood
+3. Run:
+
+`powershell
+node scripts/optimize-sarpy-export.cjs --src "C:\temp\Sarpy\{Building Name}" --dst "public/floorplans/SarpyCounty/{Building Name}"
+`
+
+Do not pass --building for these georeferenced exports.
+
+4. Verify output alignment:
+   - Rooms/LEVEL_*_Dept_Rooms.geojson bbox and LEVEL_*_Walls.geojson bbox should be nearly identical
+   - if they are aligned with each other but offset from the GIS footprint, that is a placement issue, not an export corruption issue
+5. Add the building to BUILDINGS_LIST in src/components/StakeholderMap.jsx
+6. Add manifest.json with the exported floor list
+7. Push to eature/multi-university-refactor, wait for GitHub Pages deploy, and test live
+8. If the whole floorplan group is offset from the traced footprint, use Adjust Floorplan to place it; then hard refresh and confirm the saved adjust persists
+
+### Current status
+
+- All Sarpy buildings that currently have floorplans available from the user are now in the repo.
+- Recent additions from this run:
+  - Sheriff's Garage
+  - Springfield Shop
+  - Public Works Fleet
+  - Bellevue Shop
+  - Gretna Shop
+- Gretna Shop is the only new multi-floor building in this batch (LEVEL_1, LEVEL_2).
+- For Bellevue Shop and Gretna Shop, the raw exports sit somewhat northwest of the GIS footprints, but rooms/walls/doors stayed internally aligned after optimization. Treat those as floor-adjust placement steps, not export-pipeline failures.
+
+---
 ## Recent Changes (2026-07-13) — Sarpy Airtable room-edit save 404 fixed
 
 ### Summary
@@ -931,6 +1041,6 @@ Removed the `out.__mfGeoreferenced = true;` line (and its justifying comment) fr
 GitHub Pages returned "Deployment failed, try again later." again after pushing `8770e08` — the same transient deploy-step failure documented in the 2026-07-02 section above (build succeeds, the separate Pages-upload step fails independently). Still no `gh` CLI or `GITHUB_TOKEN` available in the assistant's shell environment to retry programmatically; use the Actions tab → the failed run → "Re-run failed jobs."
 
 ---
-*Last updated: 2026-07-13 — update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-07-15 - update this file whenever the architecture, client list, or critical behavior changes.*
 
 
