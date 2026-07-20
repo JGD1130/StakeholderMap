@@ -1554,6 +1554,22 @@ async function getRoomUpdateFieldNames(tableName) {
   return { typeFieldName, deptFieldName };
 }
 
+async function getTableFieldMeta(tableName, fieldName) {
+  const resolvedTable = String(tableName || "").trim();
+  const resolvedField = String(fieldName || "").trim();
+  if (!resolvedTable || !resolvedField) return null;
+
+  try {
+    const schema = await fetchAirtableBaseSchema();
+    const table = (schema?.tables || []).find((t) => t?.name === resolvedTable);
+    if (!table) return null;
+    return (table.fields || []).find((field) => String(field?.name || "").trim() === resolvedField) || null;
+  } catch (err) {
+    console.warn(`Unable to read Airtable field metadata for ${resolvedTable}.${resolvedField}`, err?.message || err);
+    return null;
+  }
+}
+
 function remapFieldAlias(updateFields = {}, candidates = [], resolvedFieldName = "") {
   const targetField = String(resolvedFieldName || "").trim();
   if (!targetField) return { ...updateFields };
@@ -1672,11 +1688,18 @@ async function resolveLinkedRecordId(tableName, primaryFieldName, label) {
 }
 
 async function resolveLinkedFields(
+  tableName,
   updateFields = {},
   { typeFieldName = AIRTABLE_TYPE_FIELD, deptFieldName = AIRTABLE_DEPT_FIELD } = {}
 ) {
   const next = { ...updateFields };
-  if (typeFieldName && Object.prototype.hasOwnProperty.call(next, typeFieldName)) {
+  const [typeFieldMeta, deptFieldMeta] = await Promise.all([
+    getTableFieldMeta(tableName, typeFieldName),
+    getTableFieldMeta(tableName, deptFieldName)
+  ]);
+  const typeIsLinkedField = typeFieldMeta?.type === "multipleRecordLinks";
+  const deptIsLinkedField = deptFieldMeta?.type === "multipleRecordLinks";
+  if (typeIsLinkedField && typeFieldName && Object.prototype.hasOwnProperty.call(next, typeFieldName)) {
     const value = next[typeFieldName];
     if (Array.isArray(value)) {
       // ok
@@ -1697,7 +1720,7 @@ async function resolveLinkedFields(
       next[typeFieldName] = [];
     }
   }
-  if (deptFieldName && Object.prototype.hasOwnProperty.call(next, deptFieldName)) {
+  if (deptIsLinkedField && deptFieldName && Object.prototype.hasOwnProperty.call(next, deptFieldName)) {
     const value = next[deptFieldName];
     if (Array.isArray(value)) {
       // ok
@@ -1741,7 +1764,7 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
     typeFieldName,
     deptFieldName
   } = await normalizeRoomUpdateFields(table, updateFields);
-  const resolvedFields = await resolveLinkedFields(normalizedFields, {
+  const resolvedFields = await resolveLinkedFields(table, normalizedFields, {
     typeFieldName,
     deptFieldName
   });
