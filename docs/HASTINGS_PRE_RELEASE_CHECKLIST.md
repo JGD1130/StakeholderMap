@@ -1,60 +1,77 @@
-# Hastings Client Go/No-Go Checklist
-Date: July 15, 2026
+# Hastings Client Pre-Go-Live Checklist
+Date: July 20, 2026
 Project: StakeholderMap (`/StakeholderMap`)
 
-## Env Baseline
-- Verify deploy secrets/vars using `docs/DEPLOY_ENV_VARS.md`.
-- Confirm the current branch/build includes the Hastings client route and role-gating changes.
-- Detailed live operator steps: docs/HASTINGS_CLIENT_ROLE_QA_RUNBOOK.md.
+## Goal
+Use this checklist before live Hastings client handoff or wider campus rollout.
 
-## Current Validation Snapshot
+## Release Baseline
 | Check | Status | Notes |
 |---|---|---|
-| `node scripts/smoke-check.mjs` | GO | Passed `62/62` checks covering Hastings client routes, canonical tenant IDs, role gates, tenant flags, Firestore rule wiring, and shared admin guardrails. |
-| `npm.cmd run build` | GO | Build passes after the Hastings client QA fixes. |
-| Static room-edit failure handling | GO | Client room edit now distinguishes no-op, full failure, and partial failure outcomes. |
-| Final browser role-matrix smoke | PENDING | Run the URL/auth checks below before stakeholder handoff. |
+| GitHub Pages client/admin build | GO | Latest Hastings client fixes are pushed on `feature/multi-university-refactor`, including room edit audit history and history viewer. |
+| `npm.cmd run build` | GO | Passed on July 20, 2026 after the edit history viewer change. |
+| Firestore room-history rules | GO | Deployed to Firebase project `stakeholder-map-a4bdc` on July 20, 2026 at about 9:53 AM Central. |
+| Building summary export room-type rollups | GO | Building summary CSV now populates room type rollups instead of returning all zeros. |
+| Room edit audit trail | GO | Room edits now write actor metadata plus append-only history entries. |
+| Final browser role + workflow QA | PENDING MANUAL | Run the manual checks below in the live Hastings environment. |
 
-## URL + Role Matrix
+## Required Docs
+- `docs/HASTINGS_CLIENT_ROLE_QA_RUNBOOK.md`
+- `docs/HASTINGS_ROLE_ADMIN_SETUP.md`
+- `docs/DEPLOY_ENV_VARS.md`
+- `docs/DEPLOY_SAFETY_AND_ROLLBACK_PLAYBOOK.md`
+
+## Route + Role Matrix
 | URL | Auth State | Expected Behavior | Status |
 |---|---|---|---|
 | `/hastings` | Signed out | Public demo loads without auth prompt; no secure client controls; no room edit actions. | PENDING MANUAL |
 | `/hastings/client` | Signed out | Secure gate blocks access and shows `Sign in to continue.` | PENDING MANUAL |
-| `/hastings/client` | `viewer` | Client workspace loads; header shows `Read-only access`; `Space Data` only; no room edit button/action. | PENDING MANUAL |
+| `/hastings/client` | `viewer` | Client workspace loads; header shows `Read-only access`; no room edit action. | PENDING MANUAL |
 | `/hastings/client` | `editor` | Client workspace loads; header shows `Room edits enabled`; room edit opens and save path works. | PENDING MANUAL |
-| `/hastings/client` | `admin` | Client workspace loads; room edit works; internal-only admin tooling should still stay on `/hastings/admin`. | PENDING MANUAL |
+| `/hastings/client` | `admin` | Client workspace loads in client mode; internal-only admin tooling stays on `/hastings/admin`. | PENDING MANUAL |
 | `/hastings-demo/client` | Signed out | Same secure gate behavior as `/hastings/client`. | PENDING MANUAL |
-| `/hastings-demo/client` | `viewer` | Same workspace/data/role behavior as `/hastings/client`; alias should not split role docs or room data. | PENDING MANUAL |
-| `/hastings-demo/client` | `editor` | Same edit behavior as `/hastings/client`; room save should target the canonical Hastings workspace. | PENDING MANUAL |
-| `/hastings/admin` | Signed out / non-admin | Internal admin gate blocks access; no admin workspace should load. | PENDING MANUAL |
+| `/hastings-demo/client` | `viewer` | Same workspace/data/role behavior as `/hastings/client`. | PENDING MANUAL |
+| `/hastings-demo/client` | `editor` | Same edit/save behavior as `/hastings/client`. | PENDING MANUAL |
+| `/hastings/admin` | Signed out / non-admin | Internal admin gate blocks access. | PENDING MANUAL |
 | `/hastings/admin` | `admin` | Full internal admin workspace loads with advanced controls and role manager. | PENDING MANUAL |
 | `/hastings/admin/engagement` | Any | Redirects to `/hastings/admin`. | PENDING MANUAL |
 | `/hastings/admin/technical` | Any | Redirects to `/hastings/admin`. | PENDING MANUAL |
 
-## Manual Smoke Steps
-1. Open `/hastings`, `/hastings/client`, `/hastings-demo/client`, and `/hastings/admin` in fresh tabs.
-2. In an incognito/private window, verify `/hastings` stays public and both `/client` routes require sign-in.
-3. Sign in as a Hastings `viewer` on both `/client` routes.
-   - Confirm the header shows the signed-in email plus `(viewer)`.
-   - Confirm the access summary reads `Read-only access`.
-   - Open a floorplan room popup and confirm no `Edit` button appears.
-4. Sign in as a Hastings `editor` on both `/client` routes.
-   - Confirm the header shows `(editor)`.
-   - Confirm the access summary reads `Room edits enabled`.
-   - Open a room popup, launch room edit, change one low-risk field, save, and confirm the room refreshes without the old misleading `No changes detected` message.
-5. If possible, verify the edited room changed in Airtable or in the next Airtable refresh path.
-6. Sign in as Hastings `admin`.
-   - Confirm `/hastings/client` still looks like the client workspace, not the full internal admin route.
-   - Confirm `/hastings/admin` exposes the internal admin workspace and role manager.
-7. Test alias consistency.
-   - Repeat one viewer check and one editor save check on `/hastings-demo/client`.
-   - Confirm behavior matches `/hastings/client` exactly.
+## Data + Editing Checks
+1. Open one low-risk room on `/hastings/client` as an `editor`.
+2. Change one field such as `Comments` or `Department`, save, and confirm the room refreshes immediately.
+3. Open the same room again as an `admin` and confirm `Edit History` loads.
+4. Confirm the history panel shows:
+   - the actor email
+   - a timestamp
+   - `Client room edit` or `Admin room edit`
+   - field-level `Before` and `After` values
+5. Open a room with no prior audit entries and confirm the panel shows `No recorded edits yet for this room.` instead of a permission error.
+6. Run `Space Data Export -> Building summary` and confirm room-type rollup columns populate correctly for at least one known building.
+7. If Airtable sync is part of the live workflow, confirm the edited field appears after the next refresh/sync path.
 
-## Go/No-Go Rule
-- GO when all matrix rows are manually verified and no role/route regressions are found.
-- NO-GO if any of the following fails:
-  - signed-out users can reach `/client`,
-  - `viewer` can edit rooms,
-  - `editor` cannot save room edits,
-  - `/hastings-demo/client` behaves differently from `/hastings/client`,
-  - `/hastings/admin` is reachable by non-admin users.
+## Admin Readiness
+- Confirm at least:
+  - 1 Hastings admin user
+  - 1 Hastings editor user
+  - 1 Hastings viewer user
+- Confirm role docs exist under `universities/hastings/roles/{uid}` for those users.
+- Confirm the person performing support can reach `/hastings/admin`.
+- Confirm someone on the team knows that GitHub Pages deploys do not deploy Firestore rules.
+
+## Browser Smoke
+1. Test `/hastings`, `/hastings/client`, and `/hastings/admin` in a normal signed-in browser.
+2. Repeat the public/client gate checks in an incognito or private browser window.
+3. Test at least one non-Chrome browser if Hastings users are likely to use Edge or Firefox.
+
+## Go / No-Go
+- GO when all route/role checks pass, one real edit succeeds, edit history loads for admin users, and the building summary export is correct.
+- NO-GO if any of the following occurs:
+  - signed-out users can reach `/client`
+  - `viewer` can edit rooms
+  - `editor` cannot save room edits
+  - admin users see `Missing or insufficient permissions` in `Edit History`
+  - a no-history room fails to show the empty-state message
+  - building summary export rollups return zeros when known room types exist
+  - `/hastings-demo/client` behaves differently from `/hastings/client`
+  - `/hastings/admin` is reachable by non-admin users
