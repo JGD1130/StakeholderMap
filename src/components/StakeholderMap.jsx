@@ -10544,9 +10544,11 @@ function bringFloorRoomLabelsToFront(map) {
 // Load Firestore rooms at path:
 // universities/{campusId}/buildings/{buildingId}/floors/{floorId}/rooms
 async function loadRooms(db, campusId, buildingId, floorId) {
+  const canonicalBuildingId = bId(buildingId);
+  const canonicalFloorId = fId(floorId);
   const colRef = collection(
     db,
-    `universities/${campusId}/buildings/${buildingId}/floors/${floorId}/rooms`
+    `universities/${campusId}/buildings/${canonicalBuildingId}/floors/${canonicalFloorId}/rooms`
   );
   const snap = await getDocs(colRef);
   const byId = {};
@@ -17922,6 +17924,8 @@ const StakeholderMap = ({
       }
 
       const roomKey = rId(buildingId, floorName, revitId);
+      const canonicalBuildingId = bId(buildingId);
+      const canonicalFloorId = fId(floorName);
       const actorUid = String(authUser?.uid || '').trim() || null;
       const actorEmail = String(authUser?.email || '').trim().toLowerCase() || null;
       const actorRole = String(effectiveUserRole || '').trim().toLowerCase() || null;
@@ -17933,9 +17937,9 @@ const StakeholderMap = ({
           'universities',
           universityId,
           'buildings',
-          buildingId,
+          canonicalBuildingId,
           'floors',
-          floorName,
+          canonicalFloorId,
           'rooms',
           roomKey
         );
