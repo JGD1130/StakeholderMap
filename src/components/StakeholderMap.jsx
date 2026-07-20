@@ -10126,22 +10126,36 @@ const buildCampusRoomsFromManifest = async (manifest) => {
 
 const roomRowToDashboardFeature = (room) => {
   if (!room) return null;
-  const area = Number(room.areaSF ?? room.area ?? room.sf ?? 0);
+  const resolvedArea = resolvePatchedArea(room);
+  const area = Number.isFinite(resolvedArea)
+    ? Number(resolvedArea)
+    : Number(room.areaSF ?? room.area ?? room.sf ?? 0);
   if (!Number.isFinite(area) || area <= 0) return null;
   const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
   const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
   const revitId = room.revitId ?? room.RevitId ?? null;
-  const categoryCode = String(
-    room.categoryCode ??
-    room.category ??
-    room.NCES_Category ??
-    room['NCES Category'] ??
+  const categoryCode = String(getRoomCategoryCode(room) || '').trim();
+  const dept = String(getDeptFromProps(room) || room.department || '').trim();
+  const type = String(getTypeFromProps(room) || room.type || room.roomType || room.Name || '').trim();
+  const buildingName = String(room.building ?? room.buildingName ?? room.buildingLabel ?? '').trim();
+  const floorName = String(room.floor ?? room.floorName ?? room.floorId ?? '').trim();
+  const roomNumber = String(
+    room.roomNumber ??
+    room.Number ??
+    room.RoomNumber ??
+    room.number ??
+    room.Room ??
+    room.roomLabel ??
+    room.roomId ??
     ''
   ).trim();
-  const dept = String(room.department ?? '').trim();
-  const type = String(room.type ?? '').trim();
-  const occupancyStatus = String(room.occupancyStatus ?? '').trim();
-  const occupant = String(room.occupant ?? '').trim();
+  const occupancyStatus = String(
+    room.occupancyStatus ??
+    room['Occupancy Status'] ??
+    room.OccupancyStatus ??
+    ''
+  ).trim();
+  const occupant = String(room.occupant ?? room.Occupant ?? '').trim();
   return {
     type: 'Feature',
     properties: {
@@ -10152,20 +10166,29 @@ const roomRowToDashboardFeature = (room) => {
       NCES_Department: dept,
       Department: dept,
       department: dept,
+      Dept: dept,
       NCES_Type: type,
+      Type: type,
+      type,
+      RoomType: type,
+      roomType: type,
+      'Room Type': type,
+      RoomTypeDescription: type,
+      roomTypeDescription: type,
+      'Room Type Description': type,
       __roomType: type,
       NCES_Category: categoryCode,
       'NCES Category': categoryCode,
       categoryCode,
       category: categoryCode,
-      building: room.building || '',
-      Building: room.building || '',
-      buildingName: room.building || '',
-      Floor: room.floor ?? room.floorName ?? room.floorId ?? '',
-      floor: room.floor ?? room.floorName ?? room.floorId ?? '',
-      Number: room.roomNumber || room.roomId || '',
-      RoomNumber: room.roomNumber || room.roomId || '',
-      roomNumber: room.roomNumber || room.roomId || '',
+      building: buildingName,
+      Building: buildingName,
+      buildingName: buildingName,
+      Floor: floorName,
+      floor: floorName,
+      Number: roomNumber,
+      RoomNumber: roomNumber,
+      roomNumber: roomNumber,
       RevitId: revitId != null ? String(revitId) : undefined,
       revitId: revitId != null ? String(revitId) : undefined,
       roomGuid: room.roomGuid || '',
@@ -32458,4 +32481,3 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
