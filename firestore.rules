@@ -143,6 +143,12 @@ service cloud.firestore {
           match /rooms/{roomId} {
             allow read: if true;
             allow write: if isUniversityEditor(universityId);
+
+            match /history/{entryId} {
+              allow read: if isUniversityAdmin(universityId);
+              allow create: if isUniversityEditor(universityId);
+              allow update, delete: if false;
+            }
           }
         }
       }

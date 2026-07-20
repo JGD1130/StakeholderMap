@@ -17812,6 +17812,10 @@ const StakeholderMap = ({
       }
 
       const roomKey = rId(buildingId, floorName, revitId);
+      const actorUid = String(authUser?.uid || '').trim() || null;
+      const actorEmail = String(authUser?.email || '').trim().toLowerCase() || null;
+      const actorRole = String(effectiveUserRole || '').trim().toLowerCase() || null;
+      const editSource = isClientMode ? 'client-room-edit' : 'admin-room-edit';
 
       try {
         const roomRef = doc(
@@ -17841,12 +17845,33 @@ const StakeholderMap = ({
         const seatCountValue = Number.isFinite(seatCountNum) && seatCountNum > 0 ? seatCountNum : null;
         const commentsProvided = Object.prototype.hasOwnProperty.call(properties, 'comments');
         const commentsValue = String(properties.comments ?? '');
+        const roomNumberValue = String(
+          roomNumber ??
+          properties.roomNumber ??
+          properties.RoomNumber ??
+          properties.Number ??
+          roomLabel ??
+          ''
+        ).trim();
+        const roomGuidValue = String(
+          roomGuid ??
+          properties.Revit_UniqueId ??
+          properties.revit_unique_id ??
+          properties.revitUniqueId ??
+          properties.RevitUniqueId ??
+          properties['Room GUID'] ??
+          properties.roomGuid ??
+          ''
+        ).trim();
 
         const payload = {
           type: typeValue || '',
           department: deptValue || '',
           comments: properties.comments || '',
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          updatedByUid: actorUid,
+          updatedByEmail: actorEmail,
+          updatedByRole: actorRole
         };
         if (allowOfficeFields) {
           payload.occupant = properties.occupant || '';
@@ -17856,103 +17881,156 @@ const StakeholderMap = ({
           payload.seatCount = seatCountValue;
         }
 
-          await setDoc(roomRef, payload, { merge: true });
+        const roomSnap = await getDoc(roomRef);
+        const existingData = roomSnap.exists() ? (roomSnap.data() || {}) : {};
+        const existingOriginal = existingData.original && typeof existingData.original === 'object'
+          ? existingData.original
+          : {};
+        payload.original = {
+          ...existingOriginal,
+          buildingId: String(buildingId || '').trim(),
+          buildingName: String(buildingName || existingOriginal.buildingName || buildingId || '').trim(),
+          floorLabel: String(floorName || existingOriginal.floorLabel || '').trim(),
+          featureId: String(revitId ?? existingOriginal.featureId ?? '').trim(),
+          roomId: String(roomId || existingOriginal.roomId || roomKey).trim(),
+          roomLabel: String(roomLabel || existingOriginal.roomLabel || roomNumberValue || '').trim(),
+          roomNumber: roomNumberValue,
+          roomGuid: roomGuidValue || String(existingOriginal.roomGuid || '').trim(),
+          lastEditSource: editSource
+        };
+        if (!roomSnap.exists()) {
+          payload.createdAt = serverTimestamp();
+          payload.createdByUid = actorUid;
+          payload.createdByEmail = actorEmail;
+          payload.createdByRole = actorRole;
+        }
 
-          const airtableId =
-            properties.airtableId ||
-            properties.AirtableId ||
-            properties.airtableID ||
-            properties['Airtable ID'] ||
-            properties['Airtable Id'] ||
-            null;
-          const airtablePayload = {};
-          if (occStatus) airtablePayload.occupancyStatus = occStatus;
-          if (typeValue) airtablePayload.type = typeValue;
-          if (deptValue) airtablePayload.department = deptValue;
-          if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
-          if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
-          if (commentsProvided) airtablePayload.comments = commentsValue;
-          const roomNumberValue = String(
-            roomNumber ??
-            properties.roomNumber ??
-            properties.RoomNumber ??
-            properties.Number ??
-            roomLabel ??
-            ''
-          ).trim();
-          const roomGuidValue = String(
-            roomGuid ??
-            properties.Revit_UniqueId ??
-            properties.revit_unique_id ??
-            properties.revitUniqueId ??
-            properties.RevitUniqueId ??
-            properties['Room GUID'] ??
-            properties.roomGuid ??
-            ''
-          ).trim();
-          let didUpdateAirtable = false;
-          if (airtableId && Object.keys(airtablePayload).length) {
-            try {
-              const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(airtablePayload)
-              });
-              if (!resp.ok) {
-                const text = await resp.text().catch(() => '');
-                console.warn('Airtable update failed', resp.status, text);
-              } else {
-                didUpdateAirtable = true;
-              }
-            } catch (err) {
-              console.warn('Airtable update failed', err);
-            }
-          }
-          if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
-            try {
-              const resp = await guardedAiFetch('/ai/api/rooms', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  roomId: roomGuidValue || roomNumberValue,
-                  roomNumber: roomNumberValue || undefined,
-                  roomLabel: String((roomLabel ?? roomNumberValue) || '').trim() || undefined,
-                  roomGuid: roomGuidValue || undefined,
-                  building: buildingId,
-                  buildingName: buildingName || '',
-                  floor: floorName,
-                  ...airtablePayload
-                })
-              });
-              if (!resp.ok) {
-                const text = await resp.text().catch(() => '');
-                console.warn('Airtable update by roomId failed', resp.status, text);
-              } else {
-                didUpdateAirtable = true;
-              }
-            } catch (err) {
-              console.warn('Airtable update by roomId failed', err);
-            }
-          }
+        const trackedAuditValues = {
+          type: payload.type ?? null,
+          department: payload.department ?? null,
+          comments: payload.comments ?? null
+        };
+        if (Object.prototype.hasOwnProperty.call(payload, 'occupant')) {
+          trackedAuditValues.occupant = payload.occupant ?? null;
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'occupancyStatus')) {
+          trackedAuditValues.occupancyStatus = payload.occupancyStatus ?? null;
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'seatCount')) {
+          trackedAuditValues.seatCount = payload.seatCount ?? null;
+        }
 
-          const patchTypeValue = properties.type || '';
-          const patchDeptValue = properties.department || '';
-          const patchPayload = {
-            type: patchTypeValue,
-            Type: patchTypeValue,
-            RoomType: patchTypeValue,
-            'Room Type': patchTypeValue,
-            'Room Type Description': patchTypeValue,
-            RoomTypeDescription: patchTypeValue,
-            roomTypeDescription: patchTypeValue,
-            __roomType: patchTypeValue,
-            __roomCategory: getRoomCategoryLabelFromProps({ ...properties, __roomType: patchTypeValue }),
-            department: patchDeptValue,
-            Department: patchDeptValue,
-            NCES_Department: patchDeptValue,
-            __dept: patchDeptValue,
-            occupant: allowOfficeFields ? (properties.occupant || '') : (properties.occupant ?? ''),
-            occupancyStatus: allowOfficeFields ? (properties.occupancyStatus || '') : (properties.occupancyStatus ?? ''),
+        const changes = {};
+        Object.entries(trackedAuditValues).forEach(([field, after]) => {
+          const before = existingData[field] ?? null;
+          if (before !== after) {
+            changes[field] = { before, after };
+          }
+        });
+
+        const historyRef = doc(collection(roomRef, 'history'));
+        const historyPayload = {
+          eventType: roomSnap.exists() ? 'update' : 'create',
+          createdAt: serverTimestamp(),
+          createdAtClientMs: Date.now(),
+          source: editSource,
+          actorUid,
+          actorEmail,
+          actorRole,
+          roomKey,
+          roomId: String(roomId || roomKey).trim(),
+          buildingId: String(buildingId || '').trim(),
+          buildingName: String(buildingName || '').trim(),
+          floorName: String(floorName || '').trim(),
+          roomNumber: roomNumberValue || '',
+          roomLabel: String(roomLabel || roomNumberValue || '').trim(),
+          roomGuid: roomGuidValue || '',
+          changedFields: Object.keys(changes),
+          changes
+        };
+
+        const roomBatch = writeBatch(db);
+        roomBatch.set(roomRef, payload, { merge: true });
+        roomBatch.set(historyRef, historyPayload);
+        await roomBatch.commit();
+
+        const airtableId =
+          properties.airtableId ||
+          properties.AirtableId ||
+          properties.airtableID ||
+          properties['Airtable ID'] ||
+          properties['Airtable Id'] ||
+          null;
+        const airtablePayload = {};
+        if (occStatus) airtablePayload.occupancyStatus = occStatus;
+        if (typeValue) airtablePayload.type = typeValue;
+        if (deptValue) airtablePayload.department = deptValue;
+        if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
+        if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
+        if (commentsProvided) airtablePayload.comments = commentsValue;
+        let didUpdateAirtable = false;
+        if (airtableId && Object.keys(airtablePayload).length) {
+          try {
+            const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(airtablePayload)
+            });
+            if (!resp.ok) {
+              const text = await resp.text().catch(() => '');
+              console.warn('Airtable update failed', resp.status, text);
+            } else {
+              didUpdateAirtable = true;
+            }
+          } catch (err) {
+            console.warn('Airtable update failed', err);
+          }
+        }
+        if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
+          try {
+            const resp = await guardedAiFetch('/ai/api/rooms', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomId: roomGuidValue || roomNumberValue,
+                roomNumber: roomNumberValue || undefined,
+                roomLabel: String((roomLabel ?? roomNumberValue) || '').trim() || undefined,
+                roomGuid: roomGuidValue || undefined,
+                building: buildingId,
+                buildingName: buildingName || '',
+                floor: floorName,
+                ...airtablePayload
+              })
+            });
+            if (!resp.ok) {
+              const text = await resp.text().catch(() => '');
+              console.warn('Airtable update by roomId failed', resp.status, text);
+            } else {
+              didUpdateAirtable = true;
+            }
+          } catch (err) {
+            console.warn('Airtable update by roomId failed', err);
+          }
+        }
+
+        const patchTypeValue = properties.type || '';
+        const patchDeptValue = properties.department || '';
+        const patchPayload = {
+          type: patchTypeValue,
+          Type: patchTypeValue,
+          RoomType: patchTypeValue,
+          'Room Type': patchTypeValue,
+          'Room Type Description': patchTypeValue,
+          RoomTypeDescription: patchTypeValue,
+          roomTypeDescription: patchTypeValue,
+          __roomType: patchTypeValue,
+          __roomCategory: getRoomCategoryLabelFromProps({ ...properties, __roomType: patchTypeValue }),
+          department: patchDeptValue,
+          Department: patchDeptValue,
+          NCES_Department: patchDeptValue,
+          __dept: patchDeptValue,
+          occupant: allowOfficeFields ? (properties.occupant || '') : (properties.occupant ?? ''),
+          occupancyStatus: allowOfficeFields ? (properties.occupancyStatus || '') : (properties.occupancyStatus ?? ''),
           comments: properties.comments || ''
         };
         if (seatCountProvided) {
@@ -18068,21 +18146,21 @@ const StakeholderMap = ({
             const idx = labelFallbackIndexes[0];
             if (nextRooms[idx]) {
               didApplyDashboardPatch = true;
-                nextRooms[idx] = {
-                  ...nextRooms[idx],
-                  type: properties.type != null ? properties.type : nextRooms[idx].type,
-                  department: properties.department != null ? properties.department : nextRooms[idx].department,
-                  occupant: properties.occupant != null ? properties.occupant : nextRooms[idx].occupant,
-                  occupancyStatus: properties.occupancyStatus != null
-                    ? properties.occupancyStatus
-                    : nextRooms[idx].occupancyStatus,
-                  seatCount: seatCountProvided ? seatCountValue : (nextRooms[idx].seatCount ?? nextRooms[idx].SeatCount ?? nextRooms[idx]['Seat Count']),
-                  area: areaValue > 0 ? areaValue : (nextRooms[idx].area ?? nextRooms[idx].areaSF ?? nextRooms[idx].sf),
-                  areaSF: areaValue > 0 ? areaValue : (nextRooms[idx].areaSF ?? nextRooms[idx].sf ?? nextRooms[idx].area),
-                  sf: areaValue > 0 ? areaValue : (nextRooms[idx].sf ?? nextRooms[idx].areaSF ?? nextRooms[idx].area),
-                  roomLabel: nextRooms[idx].roomLabel ?? nextRooms[idx].name ?? nextRooms[idx].number ?? editRoomLabel,
-                  comments: properties.comments != null ? properties.comments : nextRooms[idx].comments
-                };
+              nextRooms[idx] = {
+                ...nextRooms[idx],
+                type: properties.type != null ? properties.type : nextRooms[idx].type,
+                department: properties.department != null ? properties.department : nextRooms[idx].department,
+                occupant: properties.occupant != null ? properties.occupant : nextRooms[idx].occupant,
+                occupancyStatus: properties.occupancyStatus != null
+                  ? properties.occupancyStatus
+                  : nextRooms[idx].occupancyStatus,
+                seatCount: seatCountProvided ? seatCountValue : (nextRooms[idx].seatCount ?? nextRooms[idx].SeatCount ?? nextRooms[idx]['Seat Count']),
+                area: areaValue > 0 ? areaValue : (nextRooms[idx].area ?? nextRooms[idx].areaSF ?? nextRooms[idx].sf),
+                areaSF: areaValue > 0 ? areaValue : (nextRooms[idx].areaSF ?? nextRooms[idx].sf ?? nextRooms[idx].area),
+                sf: areaValue > 0 ? areaValue : (nextRooms[idx].sf ?? nextRooms[idx].areaSF ?? nextRooms[idx].area),
+                roomLabel: nextRooms[idx].roomLabel ?? nextRooms[idx].name ?? nextRooms[idx].number ?? editRoomLabel,
+                comments: properties.comments != null ? properties.comments : nextRooms[idx].comments
+              };
             }
           }
           if (!didApplyDashboardPatch && editRoomLabel) {
@@ -18152,7 +18230,16 @@ const StakeholderMap = ({
         return null;
       }
     },
-    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite]
+    [
+      db,
+      universityId,
+      scheduleCampusRoomsRefresh,
+      roomEditCanWrite,
+      authUser?.uid,
+      authUser?.email,
+      effectiveUserRole,
+      isClientMode
+    ]
   );
 
   // Sarpy keeps a guided default building/floor for demos; other campuses stay unselected on load.
