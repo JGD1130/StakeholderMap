@@ -11291,7 +11291,45 @@ const toTimestampIso = (value) => {
     return '';
   }
 };
-
+const formatTimestampLabel = (value, fallbackMs = 0) => {
+  const ms = parseFirestoreTimestampMs(value) || Number(fallbackMs) || 0;
+  if (!ms) return '';
+  try {
+    return new Date(ms).toLocaleString();
+  } catch {
+    return '';
+  }
+};
+const ROOM_EDIT_HISTORY_FIELD_LABELS = Object.freeze({
+  type: 'Room Type',
+  department: 'Department',
+  comments: 'Comments',
+  occupant: 'Occupant',
+  occupancyStatus: 'Occupancy Status',
+  seatCount: 'Seat Count'
+});
+const getRoomEditHistoryFieldLabel = (field) => ROOM_EDIT_HISTORY_FIELD_LABELS[field] || field;
+const formatRoomEditHistoryValue = (value) => {
+  if (value == null) return '(blank)';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : '(blank)';
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value.toLocaleString() : String(value);
+  }
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value);
+};
+const formatRoomEditHistorySource = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'client-room-edit') return 'Client room edit';
+  if (normalized === 'admin-room-edit') return 'Admin room edit';
+  if (normalized === 'create') return 'Created';
+  if (normalized === 'update') return 'Updated';
+  return normalized.replace(/[-_]+/g, ' ');
+};
 const TECHNICAL_ASSESSOR_NAME_STORAGE_PREFIX = 'mf:technical-assessor-name';
 const TECHNICAL_ASSESSOR_DEVICE_STORAGE_PREFIX = 'mf:technical-assessor-device';
 
@@ -12200,6 +12238,10 @@ const StakeholderMap = ({
   const [roomEditData, setRoomEditData] = useState(null);
   const [roomEditSelection, setRoomEditSelection] = useState([]);
   const [roomEditPanelPos, setRoomEditPanelPos] = useState(null);
+  const [roomEditHistoryOpen, setRoomEditHistoryOpen] = useState(false);
+  const [roomEditHistoryLoading, setRoomEditHistoryLoading] = useState(false);
+  const [roomEditHistoryEntries, setRoomEditHistoryEntries] = useState([]);
+  const [roomEditHistoryError, setRoomEditHistoryError] = useState('');
   const [programTestFitOpen, setProgramTestFitOpen] = useState(false);
   const [programTestFitTarget, setProgramTestFitTarget] = useState(null);
   const [programTestFitPos, setProgramTestFitPos] = useState(null);
@@ -12470,7 +12512,75 @@ const StakeholderMap = ({
       : [];
   const primaryRoomEditTarget = roomEditTargets[0] || null;
   const roomEditFeatureProps = primaryRoomEditTarget?.feature?.properties || {};
-    const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
+  const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
+  const roomEditHistoryCanRead = effectiveUserRole === 'admin';
+  const roomEditHistoryTarget = roomEditTargets.length === 1 && primaryRoomEditTarget?.roomId && primaryRoomEditTarget?.buildingId && primaryRoomEditTarget?.floorName
+    ? primaryRoomEditTarget
+    : null;
+  const roomEditHistoryCurrentPatch = roomEditHistoryTarget?.roomId && roomPatches instanceof Map
+    ? roomPatches.get(roomEditHistoryTarget.roomId) || null
+    : null;
+  const roomEditHistoryCreatedLabel = formatTimestampLabel(roomEditHistoryCurrentPatch?.createdAt);
+  const roomEditHistoryUpdatedLabel = formatTimestampLabel(roomEditHistoryCurrentPatch?.updatedAt);
+  useEffect(() => {
+    setRoomEditHistoryOpen(false);
+    setRoomEditHistoryLoading(false);
+    setRoomEditHistoryEntries([]);
+    setRoomEditHistoryError('');
+  }, [roomEditOpen, roomEditHistoryTarget?.roomId, roomEditHistoryTarget?.buildingId, roomEditHistoryTarget?.floorName]);
+  useEffect(() => {
+    if (!roomEditOpen || !roomEditHistoryOpen || !roomEditHistoryCanRead || !roomEditHistoryTarget || !db || !universityId) return undefined;
+    let cancelled = false;
+    setRoomEditHistoryLoading(true);
+    setRoomEditHistoryError('');
+    (async () => {
+      try {
+        const historyCol = collection(
+          db,
+          'universities', universityId,
+          'buildings', bId(roomEditHistoryTarget.buildingId),
+          'floors', fId(roomEditHistoryTarget.floorName),
+          'rooms', roomEditHistoryTarget.roomId,
+          'history'
+        );
+        const snap = await getDocs(historyCol);
+        const next = [];
+        snap.forEach((docSnap) => {
+          next.push({
+            id: docSnap.id,
+            ...(docSnap.data() || {})
+          });
+        });
+        next.sort((a, b) => {
+          const aMs = parseFirestoreTimestampMs(a?.createdAt) || Number(a?.createdAtClientMs || 0);
+          const bMs = parseFirestoreTimestampMs(b?.createdAt) || Number(b?.createdAtClientMs || 0);
+          if (aMs !== bMs) return bMs - aMs;
+          return String(b?.id || '').localeCompare(String(a?.id || ''));
+        });
+        if (cancelled) return;
+        setRoomEditHistoryEntries(next);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('Room edit history load failed', err);
+        setRoomEditHistoryEntries([]);
+        setRoomEditHistoryError('Unable to load edit history right now.');
+      } finally {
+        if (!cancelled) setRoomEditHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    db,
+    roomEditHistoryCanRead,
+    roomEditHistoryOpen,
+    roomEditHistoryTarget?.buildingId,
+    roomEditHistoryTarget?.floorName,
+    roomEditHistoryTarget?.roomId,
+    roomEditOpen,
+    universityId
+  ]);
   const closeProgramTestFit = useCallback(() => {
     setProgramTestFitOpen(false);
     setProgramTestFitPos(null);
@@ -31464,6 +31574,104 @@ useEffect(() => {
             />
           </div>
 
+
+          {roomEditHistoryCanRead && roomEditHistoryTarget && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>Edit History</div>
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                    Admin-only audit trail for this room.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setRoomEditHistoryOpen((prev) => !prev)}
+                >
+                  {roomEditHistoryOpen ? 'Hide History' : 'View History'}
+                </button>
+              </div>
+
+              {(roomEditHistoryCreatedLabel || roomEditHistoryUpdatedLabel) && (
+                <div style={{ marginBottom: 10, fontSize: 12, color: '#555', display: 'grid', gap: 4 }}>
+                  {roomEditHistoryCreatedLabel && (
+                    <div>
+                      Created {roomEditHistoryCreatedLabel}
+                      {roomEditHistoryCurrentPatch?.createdByEmail ? ` by ${roomEditHistoryCurrentPatch.createdByEmail}` : ''}
+                    </div>
+                  )}
+                  {roomEditHistoryUpdatedLabel && (
+                    <div>
+                      Last updated {roomEditHistoryUpdatedLabel}
+                      {roomEditHistoryCurrentPatch?.updatedByEmail ? ` by ${roomEditHistoryCurrentPatch.updatedByEmail}` : ''}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {roomEditHistoryOpen && (
+                <div style={{ maxHeight: 240, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fafafa', padding: 10 }}>
+                  {roomEditHistoryLoading ? (
+                    <div style={{ fontSize: 12, color: '#666' }}>Loading edit history...</div>
+                  ) : roomEditHistoryError ? (
+                    <div style={{ fontSize: 12, color: '#b42318' }}>{roomEditHistoryError}</div>
+                  ) : roomEditHistoryEntries.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#666' }}>No recorded edits yet for this room.</div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {roomEditHistoryEntries.map((entry) => {
+                        const whenLabel = formatTimestampLabel(entry?.createdAt, entry?.createdAtClientMs) || 'Pending timestamp';
+                        const actorLabel = String(entry?.actorEmail || entry?.actorUid || 'Unknown user').trim() || 'Unknown user';
+                        const actorRoleLabel = String(entry?.actorRole || '').trim();
+                        const sourceLabel = formatRoomEditHistorySource(entry?.source || entry?.eventType);
+                        const changedFields = Array.isArray(entry?.changedFields) && entry.changedFields.length
+                          ? entry.changedFields
+                          : Object.keys(entry?.changes || {});
+                        return (
+                          <div key={entry.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                              <div style={{ fontWeight: 700 }}>
+                                {entry?.eventType === 'create' ? 'Created room record' : 'Updated room record'}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#666' }}>{whenLabel}</div>
+                            </div>
+                            <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
+                              {actorLabel}
+                              {actorRoleLabel ? ` (${actorRoleLabel})` : ''}
+                              {sourceLabel ? ` | ${sourceLabel}` : ''}
+                            </div>
+                            <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                              {changedFields.length ? changedFields.map((field) => {
+                                const change = entry?.changes?.[field] || {};
+                                return (
+                                  <div key={`${entry.id}-${field}`} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: '6px 8px' }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>
+                                      {getRoomEditHistoryFieldLabel(field)}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: '#666' }}>
+                                      Before: {formatRoomEditHistoryValue(change?.before)}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: '#111' }}>
+                                      After: {formatRoomEditHistoryValue(change?.after)}
+                                    </div>
+                                  </div>
+                                );
+                              }) : (
+                                <div style={{ fontSize: 12, color: '#666' }}>
+                                  No field-level changes were captured for this entry.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         <div className="mf-actions">
           <button className="btn" onClick={closeRoomEdit}>Cancel</button>
           <button
