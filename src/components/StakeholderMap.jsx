@@ -18356,21 +18356,6 @@ const StakeholderMap = ({
     ]
   );
 
-  // Sarpy keeps a guided default building/floor for demos; other campuses stay unselected on load.
-  useEffect(() => {
-    if (!isSarpyCountyInstance) return;
-    if (!floorplansEnabled) return;
-    if (selectedBuilding) return;
-    if (!floorplanBuildingOptions.length) return;
-
-    const first = floorplanBuildingOptions[0].name;
-    setSelectedBuilding(first);
-    const feature = matchBuildingFeature(config?.buildings?.features || [], first);
-    const nextId = String(feature?.properties?.id || '').trim();
-    setSelectedBuildingId(nextId || null);
-    selectedBuildingIdRef.current = nextId || null;
-    setSelectedFloor('LEVEL_1');
-  }, [isSarpyCountyInstance, selectedBuilding, floorplansEnabled, floorplanBuildingOptions, config]);
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
@@ -23584,25 +23569,6 @@ useEffect(() => {
         setEngagementScopeMode(storedScope);
       }
 
-      const storedBuildingId = String(stored?.selectedBuildingId || '').trim();
-      if (isSarpyCountyInstance && storedBuildingId) {
-        setSelectedBuildingId(storedBuildingId);
-        selectedBuildingIdRef.current = storedBuildingId;
-      }
-
-      const storedBuildingName = String(stored?.selectedBuilding || '').trim();
-      const resolvedBuilding =
-        resolveBuildingNameFromInput(storedBuildingName || storedBuildingId) ||
-        storedBuildingName ||
-        '';
-      if (isSarpyCountyInstance && resolvedBuilding) {
-        setSelectedBuilding(resolvedBuilding);
-      }
-
-      const storedFloor = normalizeFloorIdValue(stored?.selectedFloor || '');
-      if (isSarpyCountyInstance && storedFloor) {
-        setSelectedFloor(storedFloor);
-      }
     } finally {
       requestAnimationFrame(() => {
         adminCombinedPrefsRestoringRef.current = false;
@@ -23653,25 +23619,18 @@ useEffect(() => {
         const bCol = collection(db, 'universities', universityId, 'buildings');
         const bSnap = await getDocs(bCol);
         if (!bSnap.empty) {
-          const opts = bSnap.docs.map(d => ({ id: d.id, name: d.data()?.name || d.id }));
-          // (removed setBuildingOptions)
-          // If nothing is selected yet, default to the first
-          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
           return;
         }
         // Fallback to local manifest if Firestore empty
         const res = await fetch(FLOORPLAN_MANIFEST_URL);
         if (res.ok) {
-          const m = await res.json(); // { buildings: { [id]: { name, floors: [...] } } }
-          const opts = Object.entries(m.buildings || {}).map(([id, v]) => ({ id, name: v?.name || id }));
-          // (removed setBuildingOptions)
-          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
+          await res.json(); // { buildings: { [id]: { name, floors: [...] } } }
         }
       } catch (e) {
         console.warn('Building options load failed:', e);
       }
     })();
-  }, [universityId, isSarpyCountyInstance, selectedBuilding]);
+  }, [universityId]);
 
   // ---------- Load floor manifest when building changes ----------
   useEffect(() => {
