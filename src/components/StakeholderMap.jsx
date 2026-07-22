@@ -4802,7 +4802,12 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
     );
     globalFloors = matchKey ? floorsByBuilding[matchKey] : null;
   }
-  const normalizedGlobal = normalizeFloorEntries(globalFloors || []);
+  const normalizedGlobal = normalizeFloorEntries(globalFloors || []).filter((entry) => {
+    if (!entry?.url) return true;
+    const normalizedUrl = String(entry.url || '').replace(/^\/+/, '').toLowerCase();
+    const expectedPrefix = `floorplans/${String(campus || DEFAULT_FLOORPLAN_CAMPUS).toLowerCase()}/`;
+    return normalizedUrl.startsWith(expectedPrefix);
+  });
 
   // Prefer global manifest mappings when they already provide floor URLs.
   // This avoids unnecessary per-building manifest fetches (and noisy 503/404 console errors)
@@ -11600,11 +11605,48 @@ const StakeholderMap = ({
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
+  const configuredFloorplanBuildingOptions = useMemo(() => {
+    const raw = Array.isArray(config?.floorplanBuildings) ? config.floorplanBuildings : [];
+    const seen = new Set();
+    return raw
+      .map((entry) => {
+        if (!entry) return null;
+        if (typeof entry === 'string') {
+          const name = String(entry).trim();
+          return name ? { name, folder: name } : null;
+        }
+        const name = String(entry?.name || entry?.label || entry?.id || '').trim();
+        const folder = String(entry?.folder || entry?.path || name).trim();
+        if (!name || !folder) return null;
+        return { name, folder };
+      })
+      .filter((entry) => {
+        const key = normalizeDashboardKey(entry?.name || entry?.folder || '');
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [config?.floorplanBuildings]);
+  const floorplanBuildingFolderMap = useMemo(() => {
+    const merged = { ...BUILDING_FOLDER_MAP };
+    configuredFloorplanBuildingOptions.forEach((entry) => {
+      if (entry?.name && entry?.folder) {
+        merged[entry.name] = entry.folder;
+      }
+    });
+    return merged;
+  }, [configuredFloorplanBuildingOptions]);
+  const floorplanBuildingFolderSet = useMemo(
+    () => new Set(Object.values(floorplanBuildingFolderMap)),
+    [floorplanBuildingFolderMap]
+  );
   const floorplanBuildingOptions = useMemo(
     () => {
       if (!floorplansEnabled) return [];
+      if (configuredFloorplanBuildingOptions.length) return configuredFloorplanBuildingOptions;
+      const targetCampus = floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS;
       if (!isSarpyCountyInstance) {
-        return BUILDINGS_LIST.filter((b) => !b?.campus || b.campus === 'Hastings');
+        return BUILDINGS_LIST.filter((b) => (b?.campus || DEFAULT_FLOORPLAN_CAMPUS) === targetCampus);
       }
       const seen = new Set();
       return (config?.buildings?.features || [])
@@ -11614,18 +11656,37 @@ const StakeholderMap = ({
         })
         .filter((name) => {
           if (!name || seen.has(name)) return false;
-          if (!BUILDING_FOLDER_MAP[name]) return false;
+          if (!floorplanBuildingFolderMap[name]) return false;
           seen.add(name);
           return true;
         })
-        .map((name) => ({ name, folder: BUILDING_FOLDER_MAP[name] }));
+        .map((name) => ({ name, folder: floorplanBuildingFolderMap[name] }));
     },
-    [floorplansEnabled, isSarpyCountyInstance, config?.buildings?.features]
+    [floorplansEnabled, configuredFloorplanBuildingOptions, floorplanCampus, isSarpyCountyInstance, config?.buildings?.features, floorplanBuildingFolderMap]
   );
   const floorplanBuildingNames = useMemo(
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  useEffect(() => {
+    if (!floorplanBuildingOptions.length) return;
+    const currentValid = floorplanBuildingOptions.some((entry) => entry?.name === selectedBuilding);
+    if (currentValid) return;
+    const selectedFeature = (config?.buildings?.features || []).find((feature) => {
+      const featureId = String(feature?.properties?.id || '').trim();
+      return featureId && featureId === String(selectedBuildingId || '').trim();
+    });
+    const selectedFeatureName = String(
+      selectedFeature?.properties?.name || selectedFeature?.properties?.Name || ''
+    ).trim();
+    const matchedOption = floorplanBuildingOptions.find(
+      (entry) => normalizeDashboardKey(entry?.name || '') === normalizeDashboardKey(selectedFeatureName)
+    );
+    const fallbackName = matchedOption?.name || floorplanBuildingOptions[0]?.name || '';
+    if (fallbackName && fallbackName !== selectedBuilding) {
+      setSelectedBuilding(fallbackName);
+    }
+  }, [config?.buildings?.features, floorplanBuildingOptions, selectedBuilding, selectedBuildingId]);
   const configuredDashboardBuildingKeys = useMemo(() => {
     const out = new Set();
     (config?.buildings?.features || []).forEach((feature) => {
@@ -11743,7 +11804,7 @@ const StakeholderMap = ({
   const maintenanceWorkflowEnabled = (config?.enableMaintenanceWorkflow ?? tenant?.features?.enableMaintenanceWorkflow ?? true) !== false;
   const publicMaintenanceWorkflowEnabled = isDemoPublicMode && maintenanceWorkflowEnabled;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
-  const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
+  const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
     const amount = Number(value);
@@ -12954,12 +13015,19 @@ const StakeholderMap = ({
   const getBuildingFolderKey = useCallback((idOrName) => {
     if (!idOrName) return null;
     const resolvedName = resolveBuildingNameFromInput(idOrName);
-    if (resolvedName && BUILDING_FOLDER_MAP[resolvedName]) {
-      return BUILDING_FOLDER_MAP[resolvedName];
+    if (resolvedName && floorplanBuildingFolderMap[resolvedName]) {
+      return floorplanBuildingFolderMap[resolvedName];
     }
-    if (BUILDING_FOLDER_SET.has(idOrName)) return idOrName;
+    const directConfigMatch = configuredFloorplanBuildingOptions.find((entry) => {
+      const entryNameKey = normalizeDashboardKey(entry?.name || '');
+      const entryFolderKey = normalizeDashboardKey(entry?.folder || '');
+      const inputKey = normalizeDashboardKey(idOrName);
+      return inputKey && (inputKey === entryNameKey || inputKey === entryFolderKey);
+    });
+    if (directConfigMatch?.folder) return directConfigMatch.folder;
+    if (floorplanBuildingFolderSet.has(idOrName)) return idOrName;
     return null;
-  }, []);
+  }, [configuredFloorplanBuildingOptions, floorplanBuildingFolderMap, floorplanBuildingFolderSet]);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
     if (!floorplansEnabled) return null;
     const normalizedFloorId = normalizeFloorIdValue(floorId);
@@ -31004,7 +31072,7 @@ useEffect(() => {
                   </button>
                   {!floorplanBuildingOptions.length && (
                     <div style={{ fontSize: 11, color: '#555', textAlign: 'center' }}>
-                      Floorplans will appear here after Sarpy floor data is added.
+                      Floorplans will appear here after building floor data is added.
                     </div>
                   )}
                 </div>

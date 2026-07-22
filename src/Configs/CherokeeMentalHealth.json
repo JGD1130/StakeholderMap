@@ -4,7 +4,11 @@
   "enableDrawingEntry": true,
   "enableFloorplans": true,
   "enableTechnicalRouteSpaceData": true,
+  "enableMapfluenceAI": false,
   "floorplanCampus": "CherokeeMentalHealth",
+  "floorplanBuildings": [
+    { "name": "Ginzberg", "folder": "Ginzberg" }
+  ],
   "technicalAssessmentSaveMode": "per-assessor",
   "style": "mapbox://styles/mapbox/streets-v12",
   "initialCenter": [-95.573222, 42.756854],
