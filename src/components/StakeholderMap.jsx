@@ -3920,17 +3920,17 @@ async function loadWallsFC({ basePath, floorId, affine }) {
 
 // Rooms with no affine.json can still already be real-world lon/lat (e.g. the
 // script.py WGS84 export from commit 732b643), in which case shouldFitFloorplanToBuilding
-// must not rescale them onto the building bbox. The pre-baked walls file for the same
-// floor is exported through the same pipeline, so if it also lands in lon/lat range
-// that corroborates the rooms are genuinely georeferenced and not just coincidentally
-// small numbers.
+// must not rescale them onto the building bbox. When a companion walls file exists we use
+// it as corroboration, but some exports embed walls in the room GeoJSON and do not ship a
+// separate walls asset at all.
 async function isFloorAlreadyGeoreferenced(roomsFC, basePath, floorId) {
   if (!isLikelyLonLat(roomsFC)) return false;
   try {
     const wallsFC = await loadWallsFC({ basePath, floorId, affine: null });
-    return Boolean(wallsFC?.features?.length && isLikelyLonLat(wallsFC));
+    if (!wallsFC?.features?.length) return true;
+    return isLikelyLonLat(wallsFC);
   } catch {
-    return false;
+    return true;
   }
 }
 
