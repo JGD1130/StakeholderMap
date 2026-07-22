@@ -123,6 +123,10 @@
                       {
                           "id":  "Voldeng Building",
                           "name":  "Voldeng Building"
+                      },
+                      {
+                          "id":  "Wirth Building",
+                          "name":  "Wirth Hall"
                       }
                   ],
     "floorsByBuilding":  {
@@ -488,19 +492,32 @@
                                               }
                                           ],
                              "Voldeng Building":  [
-                                                     {
-                                                         "id":  "BASEMENT",
-                                                         "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/BASEMENT_Dept_Rooms.geojson"
-                                                     },
-                                                     {
-                                                         "id":  "LEVEL_1",
-                                                         "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/LEVEL_1_Dept_Rooms.geojson"
-                                                     },
-                                                     {
-                                                         "id":  "LEVEL_2",
-                                                         "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/LEVEL_2_Dept_Rooms.geojson"
-                                                     }
-                                                 ]
+                                                      {
+                                                          "id":  "BASEMENT",
+                                                          "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                      },
+                                                      {
+                                                          "id":  "LEVEL_1",
+                                                          "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                      },
+                                                      {
+                                                          "id":  "LEVEL_2",
+                                                          "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                      }
+                                                  ],
+                             "Wirth Building":  [
+                                                    {
+                                                        "id":  "BASEMENT",
+                                                        "url":  "floorplans/CherokeeMentalHealth/Wirth Building/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                    },
+                                                    {
+                                                        "id":  "LEVEL_1",
+                                                        "url":  "floorplans/CherokeeMentalHealth/Wirth Building/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                    },
+                                                    {
+                                                        "id":  "LEVEL_2",
+                                                        "url":  "floorplans/CherokeeMentalHealth/Wirth Building/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                    }
+                                                ]
                          }
 }
-
