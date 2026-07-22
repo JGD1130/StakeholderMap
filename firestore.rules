@@ -11,8 +11,13 @@ service cloud.firestore {
 
     function isUniversityAdmin(universityId) {
       return isSignedIn()
-        && exists(roleDoc(universityId))
-        && get(roleDoc(universityId)).data.role == 'admin';
+        && (
+          request.auth.token.admin == true
+          || (
+            exists(roleDoc(universityId))
+            && get(roleDoc(universityId)).data.role == 'admin'
+          )
+        );
     }
 
 
@@ -155,5 +160,6 @@ service cloud.firestore {
     }
   }
 }
+
 
 
