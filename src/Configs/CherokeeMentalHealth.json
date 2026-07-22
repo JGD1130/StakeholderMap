@@ -5,6 +5,8 @@
   "enableFloorplans": true,
   "enableTechnicalRouteSpaceData": true,
   "enableMapfluenceAI": false,
+  "enableFloorAdjustments": false,
+  "enableClassroomMetrics": false,
   "floorplanCampus": "CherokeeMentalHealth",
   "floorplanBuildings": [
     { "name": "Ginzberg", "folder": "Ginzberg" }

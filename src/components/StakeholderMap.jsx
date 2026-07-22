@@ -5437,15 +5437,19 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   });
   const skipAffine = shouldSkipAffine({ buildingLabel: affineBuildingLabel, floorBasePath });
   const basePostRotateDeg = getFloorplanPostRotationOverride(affineBuildingLabel || buildingId || '', floorId || floor || '') || 0;
-  const floorAdjustFromBase =
-    floorBasePath && floorId ? loadFloorAdjustByBasePath(floorBasePath, floorId) : null;
-  const floorAdjustFromUrl = loadFloorAdjustByUrl(url);
-  const floorAdjustFromLabel = loadFloorAdjust(floorAdjustLabel, floorId || floor);
-  const floorAdjustPick = pickLatestFloorAdjust({
-    base: floorAdjustFromBase,
-    url: floorAdjustFromUrl,
-    label: floorAdjustFromLabel
-  });
+  const floorAdjustEnabled = options?.enableFloorAdjustments !== false;
+  const floorAdjustFromBase = floorAdjustEnabled && floorBasePath && floorId
+    ? loadFloorAdjustByBasePath(floorBasePath, floorId)
+    : null;
+  const floorAdjustFromUrl = floorAdjustEnabled ? loadFloorAdjustByUrl(url) : null;
+  const floorAdjustFromLabel = floorAdjustEnabled ? loadFloorAdjust(floorAdjustLabel, floorId || floor) : null;
+  const floorAdjustPick = floorAdjustEnabled
+    ? pickLatestFloorAdjust({
+        base: floorAdjustFromBase,
+        url: floorAdjustFromUrl,
+        label: floorAdjustFromLabel
+      })
+    : { source: 'disabled', adjust: null, savedAt: 0 };
   const floorAdjust = floorAdjustPick.adjust;
   const postRotateDeg = basePostRotateDeg;
 
@@ -11580,6 +11584,8 @@ const StakeholderMap = ({
         defaultBuildingColor
       ]
     : null;
+  const classroomMetricsEnabled = (config?.enableClassroomMetrics ?? !isSarpyCountyInstance) !== false;
+  const floorAdjustmentsEnabled = (config?.enableFloorAdjustments ?? true) !== false;
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const sarpyFacilityTypeLegendItems = isSarpyCountyInstance
@@ -11591,8 +11597,8 @@ const StakeholderMap = ({
         { label: 'Infrastructure', color: SARPY_FACILITY_TYPE_COLORS['Infrastructure'] }
       ]
     : [];
-  const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
-  const showStrategicDashboard = !isSarpyCountyInstance;
+  const showClassroomUtilizationDashboard = classroomMetricsEnabled;
+  const showStrategicDashboard = classroomMetricsEnabled;
   const hasConfiguredUniversityLogo = Boolean(
     config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
   );
@@ -12145,6 +12151,10 @@ const StakeholderMap = ({
     missing: false
   });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
+  useEffect(() => {
+    if (classroomMetricsEnabled) return;
+    setUtilizationHeatmapOn(false);
+  }, [classroomMetricsEnabled]);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
   const [strategicTargetUtilization, setStrategicTargetUtilization] = useState(STRATEGIC_DEFAULT_TARGET_UTILIZATION);
   const [strategicIncludeLabs, setStrategicIncludeLabs] = useState(STRATEGIC_DEFAULT_INCLUDE_LABS);
@@ -18788,16 +18798,20 @@ const StakeholderMap = ({
   const drawingAlignActive = Boolean(drawingAlignState);
 
   const floorAdjustContext = getFloorAdjustContext();
-  const floorAdjustByBase = floorAdjustContext.basePath
+  const floorAdjustByBase = floorAdjustmentsEnabled && floorAdjustContext.basePath
     ? loadFloorAdjustByBasePath(floorAdjustContext.basePath, floorAdjustContext.floorId)
     : null;
-  const floorAdjustByUrl = floorAdjustContext.url ? loadFloorAdjustByUrl(floorAdjustContext.url) : null;
-  const floorAdjustByLabel = loadFloorAdjust(floorAdjustContext.buildingLabel, floorAdjustContext.floorId);
-  const floorAdjustPick = pickLatestFloorAdjust({
-    base: floorAdjustByBase,
-    url: floorAdjustByUrl,
-    label: floorAdjustByLabel
-  });
+  const floorAdjustByUrl = floorAdjustmentsEnabled && floorAdjustContext.url ? loadFloorAdjustByUrl(floorAdjustContext.url) : null;
+  const floorAdjustByLabel = floorAdjustmentsEnabled
+    ? loadFloorAdjust(floorAdjustContext.buildingLabel, floorAdjustContext.floorId)
+    : null;
+  const floorAdjustPick = floorAdjustmentsEnabled
+    ? pickLatestFloorAdjust({
+        base: floorAdjustByBase,
+        url: floorAdjustByUrl,
+        label: floorAdjustByLabel
+      })
+    : { source: 'disabled', adjust: null, savedAt: 0 };
   const floorAdjustValue = floorAdjustPick.adjust;
   const floorAdjustDebugInfo = isAdminUser ? {
     source: floorAdjustPick.source,
@@ -19022,6 +19036,7 @@ const StakeholderMap = ({
         roomPatches,
         airtableLookup: airtableRoomLookup,
         currentFloorContextRef,
+        enableFloorAdjustments: floorAdjustmentsEnabled,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
         enableWalls: allowOptionalOverlays,
@@ -23892,6 +23907,10 @@ useEffect(() => {
   }, [fetchClassSchedule, isHastingsCollegeInstance]);
 
   useEffect(() => {
+    if (!classroomMetricsEnabled) {
+      setUtilizationData({ buildings: {}, rooms: {}, campus: null });
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -23905,7 +23924,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [classroomMetricsEnabled]);
 
   const dashboardScopeRooms = useMemo(() => {
     if (!campusRoomsLoaded) return [];
@@ -25825,7 +25844,7 @@ useEffect(() => {
       showMaintenanceActionPopup(e.lngLat, buildingContext);
       return;
     }
-    const openingTechnicalWorkflow = technicalMode || technicalWorkflowActive;
+    const openingTechnicalWorkflow = technicalWorkflowActive;
     if (openingTechnicalWorkflow) {
       setMapView(MAP_VIEWS.TECHNICAL);
       setIsTechnicalPanelOpen(true);
@@ -25850,8 +25869,8 @@ useEffect(() => {
                 <div style="font-weight:700;margin-bottom:6px;">${buildingName}</div>
                 <div><b>Total SF:</b> ${fmtArea(statsRaw.totalSf)}</div>
                 <div><b>Rooms:</b> ${fmtCount(statsRaw.rooms)}</div>
-                ${isSarpyCountyInstance ? '' : `<div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>`}
-                ${isSarpyCountyInstance ? '' : `<div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>`}
+                ${classroomMetricsEnabled ? `<div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>` : ''}
+                ${classroomMetricsEnabled ? `<div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>` : ''}
               </div>
               <div style="min-width:180px;">
                 <div style="font-weight:600;margin-bottom:4px;">Key Departments</div>
@@ -28874,9 +28893,9 @@ useEffect(() => {
             <BuildingPanel
               buildingName={activeBuildingName}
               stats={buildingStats}
-              hideClassroomSummary={isSarpyCountyInstance}
+              hideClassroomSummary={!classroomMetricsEnabled}
               keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
-              utilization={getUtilizationForBuilding(activeBuildingName)}
+              utilization={classroomMetricsEnabled ? getUtilizationForBuilding(activeBuildingName) : null}
               floors={availableFloors}
               selectedFloor={panelSelectedFloor}
               onChangeFloor={(fl) => setSelectedFloor(fl)}
@@ -28912,7 +28931,7 @@ useEffect(() => {
               buildingName={activeBuildingName}
               floorLabel={floorStats?.floorLabel || panelSelectedFloor}
               stats={floorStats}
-              hideClassroomSummary={isSarpyCountyInstance}
+              hideClassroomSummary={!classroomMetricsEnabled}
               legendItems={floorLegendItems}
               legendTitle={
                 {
@@ -28974,7 +28993,7 @@ useEffect(() => {
               rotateNotice={mode === 'admin' ? floorAdjustNotice : ''}
               rotateStored={mode === 'admin' ? floorAdjustStored : false}
               adjustDebugInfo={mode === 'admin' ? floorAdjustDebugInfo : null}
-              onStartRotate={mode === 'admin' ? startFloorRotate : undefined}
+              onStartRotate={mode === 'admin' && floorAdjustmentsEnabled ? startFloorRotate : undefined}
               onStartMove={mode === 'admin' ? startFloorMove : undefined}
               onCancelRotate={mode === 'admin' ? cancelFloorAdjust : undefined}
               onClearRotate={mode === 'admin' ? clearFloorAdjustForFloor : undefined}
