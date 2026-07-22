@@ -2131,6 +2131,19 @@ const FLOORPLAN_ADJUST_FLOOR_PREFIX = 'mfFloorAdjustFloor:';
 const floorAdjustCache = new Map();
 const floorAdjustUrlCache = new Map();
 const floorAdjustFloorCache = new Map();
+let activeFloorAdjustStorageScope = '';
+
+function normalizeFloorAdjustStorageScope(value) {
+  return canon(value || '');
+}
+
+function setActiveFloorAdjustStorageScope(value) {
+  activeFloorAdjustStorageScope = normalizeFloorAdjustStorageScope(value);
+}
+
+function getFloorAdjustStoragePrefix(prefix) {
+  return activeFloorAdjustStorageScope ? `${prefix}${activeFloorAdjustStorageScope}:` : prefix;
+}
 
 function buildDrawingAlignKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
@@ -2143,7 +2156,7 @@ function buildFloorAdjustKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
   const floorKey = fId(floorId || '');
   if (!key || !floorKey) return null;
-  return `${FLOORPLAN_ADJUST_STORAGE_PREFIX}${key}/${floorKey}`;
+  return `${getFloorAdjustStoragePrefix(FLOORPLAN_ADJUST_STORAGE_PREFIX)}${key}/${floorKey}`;
 }
 
 function normalizeFloorplanPathToken(value) {
@@ -2163,7 +2176,7 @@ function normalizeFloorplanPathToken(value) {
 function buildFloorAdjustUrlKey(url) {
   const key = canon(normalizeFloorplanPathToken(url || ''));
   if (!key) return null;
-  return `${FLOORPLAN_ADJUST_URL_PREFIX}${key}`;
+  return `${getFloorAdjustStoragePrefix(FLOORPLAN_ADJUST_URL_PREFIX)}${key}`;
 }
 
 function buildFloorAdjustFloorKey(basePath, floorId) {
@@ -2171,7 +2184,7 @@ function buildFloorAdjustFloorKey(basePath, floorId) {
   const key = canon(folder || basePath || '');
   const floorKey = fId(floorId || '');
   if (!key || !floorKey) return null;
-  return `${FLOORPLAN_ADJUST_FLOOR_PREFIX}${key}/${floorKey}`;
+  return `${getFloorAdjustStoragePrefix(FLOORPLAN_ADJUST_FLOOR_PREFIX)}${key}/${floorKey}`;
 }
 
 function getDrawingAlignSignature(align) {
@@ -11612,6 +11625,8 @@ const StakeholderMap = ({
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
+  const floorAdjustStorageScope = String(config?.floorAdjustStorageScope || '').trim();
+  setActiveFloorAdjustStorageScope(floorAdjustStorageScope);
   const configuredFloorplanBuildingOptions = useMemo(() => {
     const raw = Array.isArray(config?.floorplanBuildings) ? config.floorplanBuildings : [];
     const seen = new Set();
@@ -18560,9 +18575,9 @@ const StakeholderMap = ({
 
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
-      if (!universityId || !buildingLabel || !floorId || !adjust) return;
+      if (!universityId || !buildingLabel || !floorId || !adjust) return false;
       const docId = buildFloorAdjustDocId(buildingLabel, floorId);
-      if (!docId) return;
+      if (!docId) return false;
       try {
         const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
         await setDoc(
@@ -18582,7 +18597,16 @@ const StakeholderMap = ({
           },
           { merge: true }
         );
-      } catch {}
+        return true;
+      } catch (error) {
+        console.warn('Failed to save floor adjustment to Firestore.', {
+          universityId,
+          buildingLabel,
+          floorId,
+          error
+        });
+        return false;
+      }
     },
     [db, universityId, buildFloorAdjustDocId, authUser]
   );
@@ -26981,7 +27005,11 @@ useEffect(() => {
       saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
       if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
       if (drag.adjustBasePath) saveFloorAdjustByBasePath(drag.adjustBasePath, drag.floorId, nextAdjust);
-      try { saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust); } catch {}
+      void saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust).then((savedToDb) => {
+        if (savedToDb === false) {
+          setFloorAdjustNotice('Saved on this browser only. Sign in as a Cherokee admin to sync floor adjustments.');
+        }
+      });
       const sig = getFloorAdjustSignature(nextAdjust);
       if (sig && currentData) {
         const cached = { ...currentData, __mfUserAdjustSignature: sig };
@@ -29034,7 +29062,12 @@ useEffect(() => {
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
                 if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, adjustWithPivot);
-                try { await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot); } catch {}
+                const savedToDb = await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot);
+                if (savedToDb === false) {
+                  setFloorAdjustNotice('Saved on this browser only. Sign in as a Cherokee admin to sync floor adjustments.');
+                } else {
+                  setFloorAdjustNotice('Floor adjustment saved.');
+                }
                 if (adjustUrl) {
                   floorCache.delete(adjustUrl);
                   floorTransformCache.delete(adjustUrl);
@@ -29082,7 +29115,11 @@ useEffect(() => {
                 saveFloorAdjust(adjustLabel, ctx.floorId, nextAdjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, nextAdjustWithPivot);
                 if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, nextAdjustWithPivot);
-                try { saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot); } catch {}
+                void saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot).then((savedToDb) => {
+                  if (savedToDb === false) {
+                    setFloorAdjustNotice('Scaled on this browser only. Sign in as a Cherokee admin to sync floor adjustments.');
+                  }
+                });
                 const sig = getFloorAdjustSignature(nextAdjustWithPivot);
                 const currentData = baseData || currentFloorContextRef.current?.fc || null;
                 if (sig && currentData) {

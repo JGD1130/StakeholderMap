@@ -9,6 +9,7 @@
   "enableFloorAdjustRecovery": false,
   "enableClassroomMetrics": false,
   "defaultMapView": "space-data",
+  "floorAdjustStorageScope": "CherokeeMentalHealth-v2",
   "floorplanCampus": "CherokeeMentalHealth",
   "floorplanBuildings": [
     { "name": "Ginzberg", "folder": "Ginzberg" }
@@ -34,4 +35,5 @@
     "clarkEnersen": "Clark_Enersen_Logo.png"
   }
 }
+
 
