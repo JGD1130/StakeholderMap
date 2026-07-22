@@ -1,4 +1,4 @@
-﻿{
+{
     "buildings":  [
                       {
                           "id":  "1882",
@@ -115,6 +115,10 @@
                       {
                           "id":  "WilsonCenter",
                           "name":  "Wilson Center"
+                      },
+                      {
+                          "id":  "Ginzberg",
+                          "name":  "Ginzberg"
                       }
                   ],
     "floorsByBuilding":  {
@@ -460,7 +464,24 @@
                                                       "id":  "LEVEL_1",
                                                       "url":  "floorplans/Hastings/WilsonCenter/Rooms/LEVEL_1_Dept_Rooms.geojson"
                                                   }
-                                              ]
+                                              ],
+                             "Ginzberg":  [
+                                              {
+                                                  "id":  "BASEMENT",
+                                                  "url":  "floorplans/CherokeeMentalHealth/Ginzberg/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                              },
+                                              {
+                                                  "id":  "LEVEL_1",
+                                                  "url":  "floorplans/CherokeeMentalHealth/Ginzberg/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                              },
+                                              {
+                                                  "id":  "LEVEL_2",
+                                                  "url":  "floorplans/CherokeeMentalHealth/Ginzberg/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                              },
+                                              {
+                                                  "id":  "LEVEL_3",
+                                                  "url":  "floorplans/CherokeeMentalHealth/Ginzberg/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                              }
+                                          ]
                          }
 }
-

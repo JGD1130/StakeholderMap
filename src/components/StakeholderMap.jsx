@@ -11726,7 +11726,10 @@ const StakeholderMap = ({
   const isClientMode = mode === 'client';
   const isPublicMode = mode === 'public';
   const isAdminCombinedMode = isAdminMode && engagementMode;
-  const isTechnicalOnlyMode = Boolean(technicalMode);
+  const technicalRouteSpaceDataEnabled = Boolean(
+    technicalMode && (config?.enableTechnicalRouteSpaceData ?? tenant?.features?.enableTechnicalRouteSpaceData ?? false)
+  );
+  const isTechnicalOnlyMode = Boolean(technicalMode && !technicalRouteSpaceDataEnabled);
   const isDemoPublicMode = isPublicMode && !engagementMode && !technicalMode;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
@@ -11736,7 +11739,7 @@ const StakeholderMap = ({
   const airtableControlsAllowed = isAdminMode || isClientMode || publicAirtableControlsAllowed;
   const planningScenarioAllowedForCurrentView = showFullMapfluenceControls || publicPlanningScenarioAllowed;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
-  const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
+  const isStakeholderTechnicalMode = isAdminCombinedMode || technicalMode;
   const maintenanceWorkflowEnabled = (config?.enableMaintenanceWorkflow ?? tenant?.features?.enableMaintenanceWorkflow ?? true) !== false;
   const publicMaintenanceWorkflowEnabled = isDemoPublicMode && maintenanceWorkflowEnabled;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
@@ -11785,7 +11788,7 @@ const StakeholderMap = ({
   const [isAdminUser, setIsAdminUser] = useState(false);
 
   const showAuthAccessControls = isAdminMode || isClientMode;
-  const defaultMapView = isTechnicalOnlyMode
+  const defaultMapView = technicalMode
     ? MAP_VIEWS.TECHNICAL
     : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
   const [mapView, setMapView] = useState(defaultMapView);
@@ -11793,6 +11796,7 @@ const StakeholderMap = ({
   const adminEngagementToolsMode = isAdminCombinedMode || adminAssessmentEngagementMode;
   const stakeholderWorkflowActive = (engagementMode || adminAssessmentEngagementMode) && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
+  const spaceDataUiAllowed = !stakeholderWorkflowActive && (!technicalMode || technicalRouteSpaceDataEnabled);
   const maintenanceWorkflowActive = (showFullMapfluenceControls || publicMaintenanceWorkflowEnabled) && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(false);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
@@ -11830,11 +11834,17 @@ const StakeholderMap = ({
         { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
       ];
     }
+    if (technicalRouteSpaceDataEnabled) {
+      return [
+        { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
+        { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
+      ];
+    }
     if (isTechnicalOnlyMode) {
       return [{ value: MAP_VIEWS.TECHNICAL, label: 'Technical' }];
     }
     return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-  }, [showFullMapfluenceControls, isDemoPublicMode, publicMaintenanceWorkflowEnabled, isAdminCombinedMode, isTechnicalOnlyMode]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, publicMaintenanceWorkflowEnabled, isAdminCombinedMode, isTechnicalOnlyMode, technicalRouteSpaceDataEnabled]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
@@ -11882,6 +11892,12 @@ const StakeholderMap = ({
         subtitle: 'Engagement markers/heatmaps with technical assessment in one map.'
       };
     }
+    if (technicalRouteSpaceDataEnabled) {
+      return {
+        title: 'Technical Assessment + Space Data',
+        subtitle: 'Technical review with floorplans and room inventory on one route.'
+      };
+    }
     if (isTechnicalOnlyMode) {
       return {
         title: 'Technical Assessment',
@@ -11904,10 +11920,10 @@ const StakeholderMap = ({
       title: `${activeUniversityName} Map`,
       subtitle: 'Campus space visualization view.'
     };
-  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isClientMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isClientMode, isAdminCombinedMode, isTechnicalOnlyMode, technicalRouteSpaceDataEnabled, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
   const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
-  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
+  const showControlsToggle = (showAuthAccessControls || technicalMode) && !presentationMode;
   useEffect(() => {
     if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
       setMapView(MAP_VIEWS.TECHNICAL);
@@ -28624,7 +28640,7 @@ useEffect(() => {
             />
           </div>
         </div>
-        {!stakeholderWorkflowActive && !technicalMode && (
+        {spaceDataUiAllowed && (
           <div className="dashboard-box">
             <SpaceDashboardPanel
               title={dashboardTitle}
@@ -28720,7 +28736,7 @@ useEffect(() => {
       </>
     )}
 
-    {mapView === MAP_VIEWS.SPACE_DATA && !stakeholderWorkflowActive && !technicalMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+    {mapView === MAP_VIEWS.SPACE_DATA && spaceDataUiAllowed && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
       const containerWidth = mapContainerRef.current?.clientWidth || 1000;
       const containerHeight = mapContainerRef.current?.clientHeight || 800;
       const PANEL_WIDTH = 360;
@@ -31012,7 +31028,7 @@ useEffect(() => {
               </div>
               )}
 
-              {!stakeholderWorkflowActive && !technicalMode && (
+              {spaceDataUiAllowed && (
               <div
                 className="floorplans-section"
                 style={{
@@ -31111,7 +31127,7 @@ useEffect(() => {
           */}
 
 
-            {!stakeholderWorkflowActive && !technicalMode && aiEnabledForCurrentView && (
+            {spaceDataUiAllowed && aiEnabledForCurrentView && (
             <div
               style={{
                 marginTop: 4,
