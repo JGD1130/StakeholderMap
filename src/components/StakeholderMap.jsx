@@ -10106,9 +10106,18 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
   };
 };
 
-const buildCampusRoomsFromManifest = async (manifest) => {
+const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
   const floorsByBuilding = manifest?.floorsByBuilding || {};
   const jobs = [];
+  const allowedBuildingKeys = new Set(
+    (options?.allowedBuildingKeys || [])
+      .map((value) => normalizeDashboardKey(value))
+      .filter(Boolean)
+  );
+  const allowedCampusPrefix = String(options?.campusPathPrefix || '')
+    .trim()
+    .replace(/^\/+/, '')
+    .toLowerCase();
 
   const buildingNameById = new Map();
   if (Array.isArray(manifest?.buildings)) {
@@ -10125,9 +10134,16 @@ const buildCampusRoomsFromManifest = async (manifest) => {
 
   Object.entries(floorsByBuilding).forEach(([buildingKey, floors]) => {
     const buildingLabel = buildingNameById.get(String(buildingKey)) || buildingKey;
+    if (allowedBuildingKeys.size) {
+      const keyMatches = [buildingKey, buildingLabel].some((value) => allowedBuildingKeys.has(normalizeDashboardKey(value)));
+      if (!keyMatches) return;
+    }
     (floors || []).forEach((floor) => {
       const url = typeof floor === 'string' ? floor : floor?.url;
-      if (url) jobs.push({ url, buildingLabel });
+      if (!url) return;
+      const normalizedUrl = String(url).replace(/^\/+/, '').toLowerCase();
+      if (allowedCampusPrefix && !normalizedUrl.startsWith(allowedCampusPrefix)) return;
+      jobs.push({ url, buildingLabel });
     });
   });
 
@@ -11690,6 +11706,10 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const dashboardManifestScope = useMemo(() => ({
+    allowedBuildingKeys: floorplanBuildingOptions.flatMap((entry) => [entry?.name, entry?.folder]).filter(Boolean),
+    campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`
+  }), [floorplanBuildingOptions, floorplanCampus]);
   useEffect(() => {
     if (!floorplanBuildingOptions.length) return;
     const currentValid = floorplanBuildingOptions.some((entry) => entry?.name === selectedBuilding);
@@ -23858,7 +23878,7 @@ useEffect(() => {
             manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
             dashboardManifestRef.current = manifest;
           }
-          const rooms = await buildCampusRoomsFromManifest(manifest);
+          const rooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
           if (!rooms.length) throw new Error('No floorplan rooms found for dashboard');
           if (!cancelled) {
             manifestHydrationRoomsRef.current = rooms;
@@ -23876,7 +23896,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode]);
+  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, dashboardManifestScope]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -24432,7 +24452,7 @@ useEffect(() => {
           }
           let manifestRooms = manifestHydrationRoomsRef.current;
           if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
-            manifestRooms = await buildCampusRoomsFromManifest(manifest);
+            manifestRooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
             if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
               throw new Error('Manifest hydration rooms unavailable');
             }
@@ -24478,7 +24498,7 @@ useEffect(() => {
             if (!fetchedValid) throw new Error('Dashboard manifest unavailable');
             dashboardManifestRef.current = manifest;
           }
-          fallbackManifestRooms = await buildCampusRoomsFromManifest(manifest);
+          fallbackManifestRooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
           if (!Array.isArray(fallbackManifestRooms) || !fallbackManifestRooms.length) {
             throw new Error('Fallback manifest room hydration unavailable');
           }
@@ -24496,7 +24516,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode]);
+  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode, dashboardManifestScope]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
