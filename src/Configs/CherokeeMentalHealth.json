@@ -1,39 +1,47 @@
 {
-  "universityId": "cherokee-mental-health",
-  "universityName": "Cherokee Mental Health",
-  "enableDrawingEntry": true,
-  "enableFloorplans": true,
-  "enableTechnicalRouteSpaceData": true,
-  "enableMapfluenceAI": false,
-  "enableFloorAdjustments": true,
-  "enableFloorAdjustRecovery": false,
-  "enableClassroomMetrics": false,
-  "defaultMapView": "space-data",
-  "floorAdjustStorageScope": "CherokeeMentalHealth-v2",
-  "floorplanCampus": "CherokeeMentalHealth",
-  "floorplanBuildings": [
-    { "name": "Ginzberg", "folder": "Ginzberg" }
-  ],
-  "technicalAssessmentSaveMode": "per-assessor",
-  "style": "mapbox://styles/mapbox/streets-v12",
-  "initialCenter": [-95.573222, 42.756854],
-  "initialZoom": 16.2,
-  "lng": -95.573222,
-  "lat": 42.756854,
-  "zoom": 16.7,
-  "pitch": 39,
-  "bearing": 0,
-  "boundaryFitPadding": {
-    "top": 70,
-    "right": 320,
-    "bottom": 70,
-    "left": 300
-  },
-  "boundaryFitMaxZoom": 16.6,
-  "logos": {
-    "university": "",
-    "clarkEnersen": "Clark_Enersen_Logo.png"
-  }
+    "universityId":  "cherokee-mental-health",
+    "universityName":  "Cherokee Mental Health",
+    "enableDrawingEntry":  true,
+    "enableFloorplans":  true,
+    "enableTechnicalRouteSpaceData":  true,
+    "enableMapfluenceAI":  false,
+    "enableFloorAdjustments":  true,
+    "enableFloorAdjustRecovery":  false,
+    "enableClassroomMetrics":  false,
+    "defaultMapView":  "space-data",
+    "floorAdjustStorageScope":  "CherokeeMentalHealth-v2",
+    "floorplanCampus":  "CherokeeMentalHealth",
+    "floorplanBuildings":  [
+                               {
+                                   "name":  "Ginzberg",
+                                   "folder":  "Ginzberg"
+                               },
+                               {
+                                   "name":  "Voldeng Building",
+                                   "folder":  "Voldeng Building"
+                               }
+                           ],
+    "technicalAssessmentSaveMode":  "per-assessor",
+    "style":  "mapbox://styles/mapbox/streets-v12",
+    "initialCenter":  [
+                          -95.573222,
+                          42.756854
+                      ],
+    "initialZoom":  16.2,
+    "lng":  -95.573222,
+    "lat":  42.756854,
+    "zoom":  16.7,
+    "pitch":  39,
+    "bearing":  0,
+    "boundaryFitPadding":  {
+                               "top":  70,
+                               "right":  320,
+                               "bottom":  70,
+                               "left":  300
+                           },
+    "boundaryFitMaxZoom":  16.6,
+    "logos":  {
+                  "university":  "",
+                  "clarkEnersen":  "Clark_Enersen_Logo.png"
+              }
 }
-
-

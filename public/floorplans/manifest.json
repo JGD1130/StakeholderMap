@@ -119,6 +119,10 @@
                       {
                           "id":  "Ginzberg",
                           "name":  "Ginzberg"
+                      },
+                      {
+                          "id":  "Voldeng Building",
+                          "name":  "Voldeng Building"
                       }
                   ],
     "floorsByBuilding":  {
@@ -482,6 +486,21 @@
                                                   "id":  "LEVEL_3",
                                                   "url":  "floorplans/CherokeeMentalHealth/Ginzberg/Rooms/LEVEL_3_Dept_Rooms.geojson"
                                               }
-                                          ]
+                                          ],
+                             "Voldeng Building":  [
+                                                     {
+                                                         "id":  "BASEMENT",
+                                                         "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                     },
+                                                     {
+                                                         "id":  "LEVEL_1",
+                                                         "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                     },
+                                                     {
+                                                         "id":  "LEVEL_2",
+                                                         "url":  "floorplans/CherokeeMentalHealth/Voldeng Building/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                     }
+                                                 ]
                          }
 }
+
