@@ -5,8 +5,10 @@
   "enableFloorplans": true,
   "enableTechnicalRouteSpaceData": true,
   "enableMapfluenceAI": false,
-  "enableFloorAdjustments": false,
+  "enableFloorAdjustments": true,
+  "enableFloorAdjustRecovery": false,
   "enableClassroomMetrics": false,
+  "defaultMapView": "space-data",
   "floorplanCampus": "CherokeeMentalHealth",
   "floorplanBuildings": [
     { "name": "Ginzberg", "folder": "Ginzberg" }
@@ -32,3 +34,4 @@
     "clarkEnersen": "Clark_Enersen_Logo.png"
   }
 }
+

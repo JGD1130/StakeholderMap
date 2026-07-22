@@ -11586,6 +11586,7 @@ const StakeholderMap = ({
     : null;
   const classroomMetricsEnabled = (config?.enableClassroomMetrics ?? !isSarpyCountyInstance) !== false;
   const floorAdjustmentsEnabled = (config?.enableFloorAdjustments ?? true) !== false;
+  const floorAdjustRecoveryEnabled = (config?.enableFloorAdjustRecovery ?? true) !== false;
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const sarpyFacilityTypeLegendItems = isSarpyCountyInstance
@@ -11855,9 +11856,12 @@ const StakeholderMap = ({
   const [isAdminUser, setIsAdminUser] = useState(false);
 
   const showAuthAccessControls = isAdminMode || isClientMode;
-  const defaultMapView = technicalMode
-    ? MAP_VIEWS.TECHNICAL
-    : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
+  const configuredDefaultMapView = String(config?.defaultMapView || '').trim().toLowerCase();
+  const defaultMapView = (configuredDefaultMapView && Object.values(MAP_VIEWS).includes(configuredDefaultMapView))
+    ? configuredDefaultMapView
+    : (technicalMode
+        ? MAP_VIEWS.TECHNICAL
+        : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA));
   const [mapView, setMapView] = useState(defaultMapView);
   const adminAssessmentEngagementMode = showFullMapfluenceControls && mapView === MAP_VIEWS.ASSESSMENT;
   const adminEngagementToolsMode = isAdminCombinedMode || adminAssessmentEngagementMode;
@@ -18937,7 +18941,7 @@ const StakeholderMap = ({
         label: localAdjustByLabel
       });
       let localAdjust = localPick.adjust;
-      if (!hasFloorAdjust(localAdjust)) {
+      if (!hasFloorAdjust(localAdjust) && floorAdjustRecoveryEnabled) {
         const recoveredAdjust = findMatchingStoredFloorAdjust({
           floorId,
           labels: adjustLabels,
@@ -28994,7 +28998,7 @@ useEffect(() => {
               rotateStored={mode === 'admin' ? floorAdjustStored : false}
               adjustDebugInfo={mode === 'admin' ? floorAdjustDebugInfo : null}
               onStartRotate={mode === 'admin' && floorAdjustmentsEnabled ? startFloorRotate : undefined}
-              onStartMove={mode === 'admin' ? startFloorMove : undefined}
+              onStartMove={mode === 'admin' && floorAdjustmentsEnabled ? startFloorMove : undefined}
               onCancelRotate={mode === 'admin' ? cancelFloorAdjust : undefined}
               onClearRotate={mode === 'admin' ? clearFloorAdjustForFloor : undefined}
               onExportAdjustBackup={mode === 'admin' ? exportFloorAdjustBackup : undefined}
@@ -32842,3 +32846,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
