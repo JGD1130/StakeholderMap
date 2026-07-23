@@ -3348,92 +3348,6 @@ function pruneDrawingOutsideRooms(fc, marginRatio = 0.12) {
   return keep.length === fc.features.length ? fc : { ...fc, features: keep };
 }
 
-function clipFeatureCollectionToBuildingFootprint(fc, buildingFeature, options = {}) {
-  if (!fc?.features?.length || !buildingFeature) return fc;
-  let clipFeature = buildingFeature;
-  const bufferMeters = Number(options?.bufferMeters);
-  if (Number.isFinite(bufferMeters) && Math.abs(bufferMeters) > 1e-6) {
-    try {
-      const buffered = turf.buffer(buildingFeature, bufferMeters, { units: 'meters' });
-      if (buffered) clipFeature = buffered;
-    } catch {}
-  }
-  if (!clipFeature) return fc;
-
-  const nextFeatures = [];
-  let changed = false;
-  for (const feature of fc.features) {
-    if (!feature?.geometry?.type) continue;
-    const geomType = feature.geometry.type;
-    try {
-      if (geomType === 'Point') {
-        if (turf.booleanPointInPolygon(feature, clipFeature)) {
-          nextFeatures.push(feature);
-        } else {
-          changed = true;
-        }
-        continue;
-      }
-      if (geomType === 'MultiPoint') {
-        const originalCoords = Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates : [];
-        const keptCoords = originalCoords.filter((coord) => {
-          try {
-            return turf.booleanPointInPolygon(turf.point(coord), clipFeature);
-          } catch {
-            return false;
-          }
-        });
-        if (!keptCoords.length) {
-          changed = true;
-          continue;
-        }
-        if (keptCoords.length !== originalCoords.length) {
-          changed = true;
-          nextFeatures.push({
-            ...feature,
-            geometry: {
-              ...feature.geometry,
-              coordinates: keptCoords
-            }
-          });
-          continue;
-        }
-        nextFeatures.push(feature);
-        continue;
-      }
-      if (geomType === 'Polygon' || geomType === 'MultiPolygon') {
-        const clipped = turf.intersect(turf.featureCollection([feature, clipFeature]));
-        if (clipped?.geometry) {
-          const clippedGeometry = clipped.geometry;
-          if (JSON.stringify(clippedGeometry) !== JSON.stringify(feature.geometry)) changed = true;
-          nextFeatures.push({
-            ...feature,
-            geometry: clippedGeometry
-          });
-        } else {
-          changed = true;
-        }
-        continue;
-      }
-      if (!turf.booleanDisjoint(feature, clipFeature)) {
-        nextFeatures.push(feature);
-      } else {
-        changed = true;
-      }
-    } catch {
-      nextFeatures.push(feature);
-    }
-  }
-
-  if (!changed) return fc;
-  if (!nextFeatures.length) return fc;
-  return {
-    ...fc,
-    features: nextFeatures,
-    __mfBuildingFootprintClipped: true
-  };
-}
-
 function autoAlignDrawingToRooms(fc, context = {}) {
   if (!fc?.features?.length || fc.__mfAutoDrawingAlign) return fc;
   const drawing = fc.features.filter((f) => isDrawingFeature(f?.properties || {}));
@@ -4134,9 +4048,9 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   console.log("[walls] loaded features", fc.features.length);
 
   if (!isLikelyLonLat(fc)) {
-  // Use the same isLikelyLonLat span check used by applyAffineIfPresent â€” it
-  // computes the full bbox and requires span â‰¤ 0.25Â°. The previous inline
-  // looksLikeLonLat only sampled 20 points and checked |x|â‰¤180 && |y|â‰¤90,
+  // Use the same isLikelyLonLat span check used by applyAffineIfPresent — it
+  // computes the full bbox and requires span = 0.25°. The previous inline
+  // looksLikeLonLat only sampled 20 points and checked |x|=180 && |y|=90,
   // which Revit local coords (e.g. [-50, 100] ft) pass, causing the affine
   // to be silently skipped and walls to render misaligned.
   const shouldApplyAffine = affine && !isLikelyLonLat(fc);
@@ -4148,10 +4062,10 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   // When walls are not already lon/lat and no affine.json exists:
-  //   A) rooms used fitLocalFloorplanToBuilding â†’ fitTransform has localPlanarFit.
+  //   A) rooms used fitLocalFloorplanToBuilding ? fitTransform has localPlanarFit.
   //      Reuse it directly: walls and rooms share the same Revit coordinate system,
   //      so the same scale/centerFrom/centerTo maps walls to the rooms' position.
-  //   C) rooms used fitFloorplanToBuilding (already lon/lat) â†’ fitTransform has
+  //   C) rooms used fitFloorplanToBuilding (already lon/lat) ? fitTransform has
   //      geographic fine-tuning but no localPlanarFit. Walls share the same
   //      coordinate space as rooms, so the identical transform positions them
   //      correctly. Re-deriving via Path B would discard rotation and nudge.
@@ -4185,7 +4099,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
       const [ftx, fty] = fitTransform.localCenterTo;
       const distDeg = Math.sqrt((ftx - roomsCx) ** 2 + (fty - roomsCy) ** 2);
       if (distDeg < 0.005) {
-        // Path A: transform is for this building â€” reuse it.
+        // Path A: transform is for this building — reuse it.
         console.log('[walls] Path A: localCenterFrom=', JSON.stringify(fitTransform.localCenterFrom),
           'localCenterTo=', JSON.stringify(fitTransform.localCenterTo),
           'scale=', fitTransform.localScale);
@@ -4193,27 +4107,27 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
           const predLon = ftx + (_wallDiag.medX - fitTransform.localCenterFrom[0]) * fitTransform.localScale;
           const predLat = fty + (_wallDiag.medY - fitTransform.localCenterFrom[1]) * fitTransform.localScale;
           console.log('[walls] walls source IQR centroid:', _wallDiag.medX.toFixed(3), _wallDiag.medY.toFixed(3),
-            'â†’ predicted mapped center:', predLon.toFixed(6), predLat.toFixed(6));
+            '? predicted mapped center:', predLon.toFixed(6), predLat.toFixed(6));
           console.log('[walls] rooms lon/lat bbox center:', roomsCx.toFixed(6), roomsCy.toFixed(6));
           const offsetM = Math.sqrt(((predLon - roomsCx) * 111320 * Math.cos(roomsCy * Math.PI / 180)) ** 2 + ((predLat - roomsCy) * 110540) ** 2);
           console.log('[walls] predicted walls center offset from rooms center:', offsetM.toFixed(1), 'm');
         }
         usedPathA = true;
       } else {
-        console.log(`[walls] localPlanarFit target is ${(distDeg * 111000).toFixed(0)}m from rooms centroid â€” falling back to independent fit`);
+        console.log(`[walls] localPlanarFit target is ${(distDeg * 111000).toFixed(0)}m from rooms centroid — falling back to independent fit`);
       }
     }
     if (!usedPathA && fitTransform && !fitTransform.localPlanarFit && roomsFC?.features?.length) {
       // Path C: rooms went through fitFloorplanToBuilding (rooms already lon/lat).
       // fitTransform carries geographic fine-tuning (rotation, scale, translate, nudge) but
-      // no Revit-local â†’ lon/lat step. Walls share the same coordinate space as rooms, so
-      // the identical transform positions them correctly â€” re-deriving independently would
+      // no Revit-local ? lon/lat step. Walls share the same coordinate space as rooms, so
+      // the identical transform positions them correctly — re-deriving independently would
       // introduce drift by ignoring the rotation and refinement already baked into fitTransform.
       console.log('[walls] Path C: rooms used fitFloorplanToBuilding; reusing exact rooms fitTransform');
       if (_wallDiag) {
         const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
         console.log('[walls] rooms bbox center:', ((rbx0 + rbx1) / 2).toFixed(6), ((rby0 + rby1) / 2).toFixed(6),
-          'â€” walls IQR centroid:', _wallDiag.medX.toFixed(6), _wallDiag.medY.toFixed(6));
+          '— walls IQR centroid:', _wallDiag.medX.toFixed(6), _wallDiag.medY.toFixed(6));
       }
       usedPathA = true;
     }
@@ -4262,7 +4176,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.warn(`[walls] dropped ${beforeFilter - fc.features.length} features with out-of-range coordinates`);
   }
   } else {
-    console.log('[walls] pre-baked lon/lat â€” skipping all transforms');
+    console.log('[walls] pre-baked lon/lat — skipping all transforms');
   }
 
   if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
@@ -4311,7 +4225,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   ensureLayerOrder(map);
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null, clipFeature = null, clipBufferMeters = null }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4352,9 +4266,6 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   fc = applyDoorSwingDirection(fc, roomsFC, {
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
-  if (clipFeature) {
-    fc = clipFeatureCollectionToBuildingFootprint(fc, clipFeature, { bufferMeters: clipBufferMeters });
-  }
 
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
@@ -4752,7 +4663,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, clipFeature = null, clipBufferMeters = null }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4789,10 +4700,6 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
       fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
     }
-  }
-
-  if (clipFeature) {
-    fc = clipFeatureCollectionToBuildingFootprint(fc, clipFeature, { bufferMeters: clipBufferMeters });
   }
 
   console.log("[stairs] loaded features", fc.features.length);
@@ -5488,16 +5395,7 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const {
-    buildingId,
-    floor,
-    roomPatches,
-    onOptionsCollected,
-    currentFloorContextRef,
-    airtableLookup,
-    clipToBuildingFootprint = false,
-    buildingFootprintClipBufferMeters = null
-  } = options;
+  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5818,7 +5716,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
   try {
     if (fc.__mfGeoreferenced || fc.__mfNoFit) {
-      // Already-correct rooms must skip both fit paths below â€” the local-planar-fit
+      // Already-correct rooms must skip both fit paths below — the local-planar-fit
       // branch (taken when !isLikelyLonLat) has no flag check of its own, so without
       // this guard __mfNoFit/__mfGeoreferenced only protected the bbox-fit branch.
     } else if (fitBuilding && !isLikelyLonLat(fc)) {
@@ -5946,18 +5844,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         finalRoomsFC: fc
       })
     : null;
-  if (clipToBuildingFootprint && fitBuilding) {
-    const clipped = clipFeatureCollectionToBuildingFootprint(fc, fitBuilding, {
-      bufferMeters: buildingFootprintClipBufferMeters
-    });
-    if (clipped && clipped !== fc) {
-      fc = clipped;
-      data.__mfTransformed = true;
-      if (!snapCorner) {
-        floorCache.set(url, fc);
-      }
-    }
-  }
   if (fitTransform) {
     cachedTransform.fitTransform = fitTransform;
     floorTransformCache.set(url, cachedTransform);
@@ -6214,9 +6100,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           fitTransform: fitTransform || cachedTransform.fitTransform || null,
           roomsFC: patchedFC,
           buildingLabel: overlayBuildingLabel,
-          overlayFloorAdjust,
-          clipFeature: clipToBuildingFootprint ? fitBuilding : null,
-          clipBufferMeters: buildingFootprintClipBufferMeters
+          overlayFloorAdjust
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -6225,9 +6109,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         affine,
         rotationOverride,
         fitTransform: fitTransform || cachedTransform.fitTransform || null,
-        overlayFloorAdjust,
-        clipFeature: clipToBuildingFootprint ? fitBuilding : null,
-        clipBufferMeters: buildingFootprintClipBufferMeters
+        overlayFloorAdjust
       });
     }
   }
@@ -6965,8 +6847,8 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
 function sanitizeVacancyLanguage(text) {
   if (!text) return text;
   return String(text)
-    .replace(/^\s*vacant\s*[:\-â€“]\s*/i, '')
-    .replace(/^\s*vacant\?\s*[:\-â€“]\s*/i, '')
+    .replace(/^\s*vacant\s*[:\-–]\s*/i, '')
+    .replace(/^\s*vacant\?\s*[:\-–]\s*/i, '')
     .replace(/\bvacancy status\b/ig, 'availability')
     .replace(/\bvacant\b/ig, 'available');
 }
@@ -7448,10 +7330,10 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
     // IQR gives a spread estimate that is immune to extreme outliers.
     const iqrX  = Math.max(1e-9, pct(xs, 0.75) - pct(xs, 0.25));
     const iqrY  = Math.max(1e-9, pct(ys, 0.75) - pct(ys, 0.25));
-    // Clip window: 2Ã— IQR on each side of the median (â‰ˆ 4Ã— IQR total width).
+    // Clip window: 2× IQR on each side of the median (˜ 4× IQR total width).
     // This is equivalent to keeping centroids within ~2 building-widths of the
     // building core, which removes drawing borders and site-context linework
-    // that are typically 5â€“20Ã— the building size away from the footprint.
+    // that are typically 5–20× the building size away from the footprint.
     const clipXMin = medX - iqrX * 2;
     const clipXMax = medX + iqrX * 2;
     const clipYMin = medY - iqrY * 2;
@@ -8769,7 +8651,7 @@ function matchBuildingFeature(features = [], input) {
 
 function shouldFitFloorplanToBuilding(roomsFC, buildingFeature, options = {}) {
   try {
-    // Never fit Sarpy County buildings â€” they use real-world WGS84 coordinates.
+    // Never fit Sarpy County buildings — they use real-world WGS84 coordinates.
     if (options.isSarpyCounty) return false;
     if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
     if (roomsFC.__mfGeoreferenced || roomsFC.__mfNoFit) return false;
@@ -11774,16 +11656,7 @@ const StakeholderMap = ({
         const name = String(entry?.name || entry?.label || entry?.id || '').trim();
         const folder = String(entry?.folder || entry?.path || name).trim();
         if (!name || !folder) return null;
-        const clipToFootprint = entry?.clipToFootprint === true;
-        const footprintClipBufferMeters = Number(entry?.footprintClipBufferMeters);
-        return {
-          name,
-          folder,
-          clipToFootprint,
-          footprintClipBufferMeters: Number.isFinite(footprintClipBufferMeters)
-            ? footprintClipBufferMeters
-            : null
-        };
+        return { name, folder };
       })
       .filter((entry) => {
         const key = normalizeDashboardKey(entry?.name || entry?.folder || '');
@@ -11833,20 +11706,6 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
-  const floorplanFootprintClipSettings = useMemo(() => {
-    const settings = new Map();
-    floorplanBuildingOptions.forEach((entry) => {
-      if (!entry?.clipToFootprint) return;
-      const bufferMeters = Number.isFinite(entry?.footprintClipBufferMeters)
-        ? Number(entry.footprintClipBufferMeters)
-        : 4;
-      [entry?.name, entry?.folder].forEach((value) => {
-        const key = normalizeDashboardKey(value || '');
-        if (key) settings.set(key, bufferMeters);
-      });
-    });
-    return settings;
-  }, [floorplanBuildingOptions]);
   const dashboardManifestScope = useMemo(() => ({
     allowedBuildingKeys: floorplanBuildingOptions.flatMap((entry) => [entry?.name, entry?.folder]).filter(Boolean),
     campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`
@@ -19214,20 +19073,6 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
-      const clipSettingKeys = [
-        selectedBuildingId,
-        selectedBuilding,
-        fitBuilding?.properties?.id,
-        fitBuilding?.properties?.name,
-        buildingFolder,
-        urlFolder
-      ]
-        .map((value) => normalizeDashboardKey(value || ''))
-        .filter(Boolean);
-      const buildingFootprintClipBufferMeters = clipSettingKeys
-        .map((key) => floorplanFootprintClipSettings.get(key))
-        .find((value) => Number.isFinite(value));
-      const clipToBuildingFootprint = Number.isFinite(buildingFootprintClipBufferMeters);
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const suppressAutoWalls = config?.enableWallsOverlay === false;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
@@ -19244,8 +19089,6 @@ const StakeholderMap = ({
         wallsBasePath: basePath,
         wallsFloorId: floorId,
         wallsRawFCRef,
-        clipToBuildingFootprint,
-        buildingFootprintClipBufferMeters,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -20442,7 +20285,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (isCopilotPlanner && effectiveStrict) {
         scenarioConstraints.practicalFloorFirstOnStrictMiss = true;
         scenarioConstraints.practicalNearRangeTolerance = 0.12;
-        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict Â±5% fails, near-range floor options up to Â±12% are preferred before emergency fallback.');
+        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict ±5% fails, near-range floor options up to ±12% are preferred before emergency fallback.');
       }
       const maxBuildingsParsed = effectiveMaxBuildings === 'auto'
         ? null
@@ -21255,9 +21098,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             const roomText = uniqueLabels.length
               ? `Rooms: ${uniqueLabels.slice(0, 12).join(', ')}`
               : uniqueOcc.length
-                ? `Rooms: (not labeled) â€” ${uniqueOcc.slice(0, 3).join(', ')}`
+                ? `Rooms: (not labeled) — ${uniqueOcc.slice(0, 3).join(', ')}`
                 : 'Rooms: (not labeled)';
-            return `${building} â€” ${roomText}`;
+            return `${building} — ${roomText}`;
           });
         setAskResult({
           answer: `Here are the rooms matching that request across campus.`,
@@ -21789,7 +21632,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         setExportingCherokeePhotos(false);
         return;
       }
-      // Build file list with download URLs â€” SDK call, no CORS issue
+      // Build file list with download URLs — SDK call, no CORS issue
       const files = [];
       await Promise.all(
         Object.entries(byBuilding).map(async ([building, items]) => {
@@ -21823,7 +21666,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
       } catch (fetchErr) {
         if (fetchErr.name === 'AbortError') {
-          throw new Error('Export server timed out (>90s) â€” it may be cold-starting. Wait 30s and try again.');
+          throw new Error('Export server timed out (>90s) — it may be cold-starting. Wait 30s and try again.');
         }
         throw new Error(`Cannot reach export server: ${fetchErr.message}`);
       } finally {
@@ -26488,7 +26331,7 @@ useEffect(() => {
       if (maintenanceWorkflowActive) {
         const popupText = [
           `${String(m.issueType || 'Issue')}`,
-          `${maintenancePriorityLabel(m.priority)} â€¢ ${maintenanceStatusLabel(m.status)}`,
+          `${maintenancePriorityLabel(m.priority)} • ${maintenanceStatusLabel(m.status)}`,
           String(m.description || '').trim()
         ].filter(Boolean).join('\n');
         mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(popupText));
@@ -29605,7 +29448,7 @@ useEffect(() => {
                         {opLabel}
                       </div>
                       <div style={{ fontSize: 10, color: '#667085' }}>
-                        {roomCount} rooms â€¢ {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
+                        {roomCount} rooms • {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
                       </div>
                     </div>
                     <button
@@ -30341,13 +30184,13 @@ useEffect(() => {
                         <div style={{ marginTop: 3, fontSize: 11, color: '#334155' }}>{issue.description || '(No description)'}</div>
                         <div style={{ marginTop: 3, fontSize: 10.5, color: '#667085' }}>{locationBits.join(' / ')}</div>
                         <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
-                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` â€¢ Assigned: ${issue.assignedTo}` : ''}
+                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` • Assigned: ${issue.assignedTo}` : ''}
                         </div>
                       </button>
                       {!!issuePhotoUrls.length && (
                         <div style={{ marginBottom: 6, fontSize: 10.5, color: '#667085' }}>
                           Photos: {issuePhotoUrls.length}
-                          {issuePhotoUrls.length > 0 ? ' â€¢ ' : ''}
+                          {issuePhotoUrls.length > 0 ? ' • ' : ''}
                           {issuePhotoUrls.slice(0, 2).map((url, idx) => (
                             <React.Fragment key={`issue-photo-link-${issue.id}-${idx}`}>
                               <a
@@ -30358,7 +30201,7 @@ useEffect(() => {
                               >
                                 Open {idx + 1}
                               </a>
-                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' â€¢ ' : ''}
+                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' • ' : ''}
                             </React.Fragment>
                           ))}
                         </div>
@@ -31479,7 +31322,7 @@ useEffect(() => {
                       }}
                       title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                     >
-                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checkingâ€¦' : 'Unavailable')}
+                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
                     </span>
                     <button
                       onClick={() => setAiInfoOpen(true)}
@@ -31515,7 +31358,7 @@ useEffect(() => {
                   }}
                   title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                 >
-                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checkingâ€¦' : 'Unavailable')}
+                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
                 </span>
                 <button
                   onClick={() => setAiInfoOpen(true)}
@@ -31632,7 +31475,7 @@ useEffect(() => {
           aria-label="Close help"
           onClick={closeEngagementHelp}
         >
-          Ã—
+          ×
         </button>
         <h4>How to Use This Map</h4>
         <ul>
@@ -32659,7 +32502,7 @@ useEffect(() => {
                 checked={aiCreateScenarioStrict}
                 onChange={(e) => setAiCreateScenarioStrict(e.target.checked)}
               />
-              Strict fit (Â±5% target)
+              Strict fit (±5% target)
             </label>
             <button
               className="btn"
@@ -32905,7 +32748,7 @@ useEffect(() => {
                             const occupant = String(c.occupant || '').trim();
                             const dept = String(c.occupantDept || c.department || '').trim();
                             if (occupant) {
-                              return `âš ï¸ Occupied â€” requires relocation${dept ? ` of ${dept}` : ''}`;
+                              return `?? Occupied — requires relocation${dept ? ` of ${dept}` : ''}`;
                             }
                             return '';
                           })()}
@@ -33057,6 +32900,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
 
