@@ -23,6 +23,10 @@
                                {
                                    "name":  "Wirth Hall",
                                    "folder":  "Wirth Building"
+                               },
+                               {
+                                   "name":  "Main/Administration",
+                                   "folder":  "Main_Administration"
                                }
                            ],
     "technicalAssessmentSaveMode":  "per-assessor",

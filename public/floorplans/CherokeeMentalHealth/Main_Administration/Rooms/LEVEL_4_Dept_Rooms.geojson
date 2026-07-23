@@ -1,0 +1,1618 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.033058560530819, 
+              42.212405662214344
+            ], 
+            [
+              -71.032950252643715, 
+              42.212405662214344
+            ], 
+            [
+              -71.032950252643715, 
+              42.212424892983577
+            ], 
+            [
+              -71.032950252643715, 
+              42.212447786756471
+            ], 
+            [
+              -71.032969417023153, 
+              42.212447786756471
+            ], 
+            [
+              -71.032969417023153, 
+              42.212465494655262
+            ], 
+            [
+              -71.033058560530819, 
+              42.212465494655262
+            ], 
+            [
+              -71.033058560530819, 
+              42.212405662214344
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "67", 
+        "NCES_Type": "Program Service Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679258, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 522.03999999999996, 
+        "Name": "CLASSROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a89a"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.033058560530819, 
+              42.212523229593749
+            ], 
+            [
+              -71.033058560530819, 
+              42.212465494655262
+            ], 
+            [
+              -71.032969417023153, 
+              42.212465494655262
+            ], 
+            [
+              -71.032969417023153, 
+              42.212490720436243
+            ], 
+            [
+              -71.032950252643715, 
+              42.212490720436243
+            ], 
+            [
+              -71.032950252643715, 
+              42.212523229593749
+            ], 
+            [
+              -71.032979617418661, 
+              42.212523229593749
+            ], 
+            [
+              -71.033058560530819, 
+              42.212523229593749
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "68", 
+        "NCES_Type": "Program Service Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679262, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 495.17000000000002, 
+        "Name": "CLASSROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a89e"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032768500141913, 
+              42.212464508696918
+            ], 
+            [
+              -71.032768500141913, 
+              42.212523715588091
+            ], 
+            [
+              -71.032777214181664, 
+              42.212523715588091
+            ], 
+            [
+              -71.032833470908400, 
+              42.212523715588091
+            ], 
+            [
+              -71.032877054416488, 
+              42.212523715588091
+            ], 
+            [
+              -71.032877054416488, 
+              42.212464508696918
+            ], 
+            [
+              -71.032768500141913, 
+              42.212464508696918
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "69", 
+        "NCES_Type": "Program Service Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679265, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 558.61000000000001, 
+        "Name": "CLASSROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8a1"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032877054416488, 
+              42.212405662214344
+            ], 
+            [
+              -71.032768500141913, 
+              42.212405662214344
+            ], 
+            [
+              -71.032768500141913, 
+              42.212464508696918
+            ], 
+            [
+              -71.032877054416488, 
+              42.212464508696918
+            ], 
+            [
+              -71.032877054416488, 
+              42.212424892983577
+            ], 
+            [
+              -71.032877054416488, 
+              42.212405662214344
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "70", 
+        "NCES_Type": "Training Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679268, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 541.24000000000001, 
+        "Name": "SHARED TRAINING ROOM CPR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8a4"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.033058560530819, 
+              42.212575861422941
+            ], 
+            [
+              -71.033058560530819, 
+              42.212571927256455
+            ], 
+            [
+              -71.033058560530819, 
+              42.212522370818775
+            ], 
+            [
+              -71.033058560530819, 
+              42.212523229593749
+            ], 
+            [
+              -71.033054831882566, 
+              42.212523229593749
+            ], 
+            [
+              -71.032979617418661, 
+              42.212523229593749
+            ], 
+            [
+              -71.032979617418661, 
+              42.212536736919759
+            ], 
+            [
+              -71.032950252643715, 
+              42.212536736919759
+            ], 
+            [
+              -71.032950252643715, 
+              42.212564667458267
+            ], 
+            [
+              -71.032979617418661, 
+              42.212564667458267
+            ], 
+            [
+              -71.032979617418661, 
+              42.212575861422941
+            ], 
+            [
+              -71.033024559212450, 
+              42.212575861422941
+            ], 
+            [
+              -71.033058560530819, 
+              42.212575861422941
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "71", 
+        "NCES_Type": "Medical/Nurse Triage Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679280, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 552.13000000000000, 
+        "Name": "NURSING", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8b0"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032979617418661, 
+              42.212523229593749
+            ], 
+            [
+              -71.032950252643715, 
+              42.212523229593749
+            ], 
+            [
+              -71.032950252643715, 
+              42.212536736919759
+            ], 
+            [
+              -71.032979617418661, 
+              42.212536736919759
+            ], 
+            [
+              -71.032979617418661, 
+              42.212523229593749
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "72", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679283, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 27.090000000000000, 
+        "Name": "CLOS", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8b3"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032877054416488, 
+              42.212523715588091
+            ], 
+            [
+              -71.032833470908400, 
+              42.212523715588091
+            ], 
+            [
+              -71.032833470908400, 
+              42.212536307163177
+            ], 
+            [
+              -71.032833470908400, 
+              42.212552278972964
+            ], 
+            [
+              -71.032877054416488, 
+              42.212552278972964
+            ], 
+            [
+              -71.032877054416488, 
+              42.212523715588091
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "73", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679291, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 98.329999999999998, 
+        "Name": "CORRIDOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8bb"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032833470908400, 
+              42.212523715588091
+            ], 
+            [
+              -71.032777214181664, 
+              42.212523715588091
+            ], 
+            [
+              -71.032777214181664, 
+              42.212536307163177
+            ], 
+            [
+              -71.032796069458200, 
+              42.212536307163177
+            ], 
+            [
+              -71.032796069458200, 
+              42.212544266152449
+            ], 
+            [
+              -71.032809669985554, 
+              42.212544266152449
+            ], 
+            [
+              -71.032809669985554, 
+              42.212536307163177
+            ], 
+            [
+              -71.032833470908400, 
+              42.212536307163177
+            ], 
+            [
+              -71.032833470908400, 
+              42.212523715588091
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "74", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679294, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 65.400000000000006, 
+        "Name": "CORR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8be"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032768500141913, 
+              42.212523715588091
+            ], 
+            [
+              -71.032764790907180, 
+              42.212523715588091
+            ], 
+            [
+              -71.032764790907180, 
+              42.212522341961716
+            ], 
+            [
+              -71.032760711582640, 
+              42.212522341961716
+            ], 
+            [
+              -71.032739744403344, 
+              42.212537871348530
+            ], 
+            [
+              -71.032739744403344, 
+              42.212552278972964
+            ], 
+            [
+              -71.032777214181664, 
+              42.212552278972964
+            ], 
+            [
+              -71.032777214181664, 
+              42.212536307163177
+            ], 
+            [
+              -71.032777214181664, 
+              42.212523715588091
+            ], 
+            [
+              -71.032768500141913, 
+              42.212523715588091
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "75", 
+        "NCES_Type": "Restroom - Bath/Shower", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679297, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 68.129999999999995, 
+        "Name": "BATH", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8c1"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032809669985554, 
+              42.212552278972964
+            ], 
+            [
+              -71.032833470908400, 
+              42.212552278972964
+            ], 
+            [
+              -71.032833470908400, 
+              42.212536307163177
+            ], 
+            [
+              -71.032809669985554, 
+              42.212536307163177
+            ], 
+            [
+              -71.032809669985554, 
+              42.212544266152449
+            ], 
+            [
+              -71.032809669985554, 
+              42.212547242342929
+            ], 
+            [
+              -71.032809669985554, 
+              42.212552278972964
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "76", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679318, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 28.480000000000000, 
+        "Name": "CLOSET", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8d6"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032777214181664, 
+              42.212552278972964
+            ], 
+            [
+              -71.032796069458200, 
+              42.212552278972964
+            ], 
+            [
+              -71.032796069458200, 
+              42.212547242342929
+            ], 
+            [
+              -71.032796069458200, 
+              42.212544266152449
+            ], 
+            [
+              -71.032796069458200, 
+              42.212536307163177
+            ], 
+            [
+              -71.032777214181664, 
+              42.212536307163177
+            ], 
+            [
+              -71.032777214181664, 
+              42.212552278972964
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "77", 
+        "NCES_Type": "Single Stall Restroom", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679321, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 22.059999999999999, 
+        "Name": "TOILET", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8d9"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032768360392524, 
+              42.212572883368566
+            ], 
+            [
+              -71.032768360392524, 
+              42.212596235016917
+            ], 
+            [
+              -71.032877054416488, 
+              42.212596235016917
+            ], 
+            [
+              -71.032877054416488, 
+              42.212552278972964
+            ], 
+            [
+              -71.032833470908400, 
+              42.212552278972964
+            ], 
+            [
+              -71.032809669985554, 
+              42.212552278972964
+            ], 
+            [
+              -71.032796069458200, 
+              42.212552278972964
+            ], 
+            [
+              -71.032777214181664, 
+              42.212552278972964
+            ], 
+            [
+              -71.032739744403344, 
+              42.212552278972964
+            ], 
+            [
+              -71.032739744403344, 
+              42.212558475744132
+            ], 
+            [
+              -71.032759197022315, 
+              42.212572883368566
+            ], 
+            [
+              -71.032768360392524, 
+              42.212572883368566
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "78", 
+        "NCES_Type": "Training Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679332, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 433.04000000000002, 
+        "Name": "TRAINING ROOM\r\n& APARTMENT", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8e4"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032768360392524, 
+              42.212653756802098
+            ], 
+            [
+              -71.032819925770326, 
+              42.212653756802098
+            ], 
+            [
+              -71.032819925770326, 
+              42.212653069988910
+            ], 
+            [
+              -71.032823654418564, 
+              42.212653069988910
+            ], 
+            [
+              -71.032850780670486, 
+              42.212653069988910
+            ], 
+            [
+              -71.032855108110994, 
+              42.212653069988910
+            ], 
+            [
+              -71.032876428792235, 
+              42.212653069988910
+            ], 
+            [
+              -71.032877054416488, 
+              42.212653069988910
+            ], 
+            [
+              -71.032877054416488, 
+              42.212596235016917
+            ], 
+            [
+              -71.032768360392524, 
+              42.212596235016917
+            ], 
+            [
+              -71.032768360392524, 
+              42.212653756802098
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "79", 
+        "NCES_Type": "Training Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679335, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 528.70000000000005, 
+        "Name": "TRAINING ROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8e7"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032950252643715, 
+              42.212654443615286
+            ], 
+            [
+              -71.032950252643715, 
+              42.212639862972843
+            ], 
+            [
+              -71.032950252643715, 
+              42.212612033584115
+            ], 
+            [
+              -71.032979617418661, 
+              42.212612033584115
+            ], 
+            [
+              -71.032979617418661, 
+              42.212599213071293
+            ], 
+            [
+              -71.032979617418661, 
+              42.212587995122576
+            ], 
+            [
+              -71.032979617418661, 
+              42.212575861422941
+            ], 
+            [
+              -71.032979617418661, 
+              42.212564667458267
+            ], 
+            [
+              -71.032950252643715, 
+              42.212564667458267
+            ], 
+            [
+              -71.032950252643715, 
+              42.212536736919759
+            ], 
+            [
+              -71.032950252643715, 
+              42.212523229593749
+            ], 
+            [
+              -71.032950252643715, 
+              42.212490720436243
+            ], 
+            [
+              -71.032950252643715, 
+              42.212465494655262
+            ], 
+            [
+              -71.032950252643715, 
+              42.212447786756471
+            ], 
+            [
+              -71.032950252643715, 
+              42.212424892983577
+            ], 
+            [
+              -71.032877054416488, 
+              42.212424892983577
+            ], 
+            [
+              -71.032877054416488, 
+              42.212464508696918
+            ], 
+            [
+              -71.032877054416488, 
+              42.212523715588091
+            ], 
+            [
+              -71.032877054416488, 
+              42.212552278972964
+            ], 
+            [
+              -71.032877054416488, 
+              42.212596235016917
+            ], 
+            [
+              -71.032877054416488, 
+              42.212654443615286
+            ], 
+            [
+              -71.032912601249322, 
+              42.212654443615286
+            ], 
+            [
+              -71.032950252643715, 
+              42.212654443615286
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "80", 
+        "NCES_Type": "Training Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679351, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 1640.4400000000001, 
+        "Name": "LARGE TRAINING AREA", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a8f7"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.033005297500310, 
+              42.212653242375318
+            ], 
+            [
+              -71.033005297500310, 
+              42.212653929188505
+            ], 
+            [
+              -71.033058560530819, 
+              42.212653929188505
+            ], 
+            [
+              -71.033058560530819, 
+              42.212599213071293
+            ], 
+            [
+              -71.033024559212450, 
+              42.212599213071293
+            ], 
+            [
+              -71.033004345650198, 
+              42.212599213071293
+            ], 
+            [
+              -71.032992908843113, 
+              42.212599213071293
+            ], 
+            [
+              -71.032979617418661, 
+              42.212599213071293
+            ], 
+            [
+              -71.032979617418661, 
+              42.212612033584115
+            ], 
+            [
+              -71.032950252643715, 
+              42.212612033584115
+            ], 
+            [
+              -71.032950252643715, 
+              42.212639862972843
+            ], 
+            [
+              -71.032979617418661, 
+              42.212639862972843
+            ], 
+            [
+              -71.032979617418661, 
+              42.212653242375318
+            ], 
+            [
+              -71.033005297500310, 
+              42.212653242375318
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "81", 
+        "NCES_Type": "Break Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679360, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 439.92000000000002, 
+        "Name": "STUDENT BREAK ROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a900"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.033058560530819, 
+              42.212599213071293
+            ], 
+            [
+              -71.033058560530819, 
+              42.212575861422941
+            ], 
+            [
+              -71.033024559212450, 
+              42.212575861422941
+            ], 
+            [
+              -71.033024559212450, 
+              42.212587995122576
+            ], 
+            [
+              -71.033024559212450, 
+              42.212599213071293
+            ], 
+            [
+              -71.033058560530819, 
+              42.212599213071293
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "82", 
+        "NCES_Type": "Restroom - Bath/Shower", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679367, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 61.350000000000001, 
+        "Name": "BATH", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a907"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032992908843113, 
+              42.212599213071293
+            ], 
+            [
+              -71.033004345650198, 
+              42.212599213071293
+            ], 
+            [
+              -71.033004345650198, 
+              42.212587995122576
+            ], 
+            [
+              -71.033024559212450, 
+              42.212587995122576
+            ], 
+            [
+              -71.033024559212450, 
+              42.212575861422941
+            ], 
+            [
+              -71.032979617418661, 
+              42.212575861422941
+            ], 
+            [
+              -71.032979617418661, 
+              42.212587995122576
+            ], 
+            [
+              -71.032992908843113, 
+              42.212587995122576
+            ], 
+            [
+              -71.032992908843113, 
+              42.212599213071293
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "83", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679370, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 55.399999999999999, 
+        "Name": "CORR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a90a"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.033004345650198, 
+              42.212599213071293
+            ], 
+            [
+              -71.033024559212450, 
+              42.212599213071293
+            ], 
+            [
+              -71.033024559212450, 
+              42.212587995122576
+            ], 
+            [
+              -71.033004345650198, 
+              42.212587995122576
+            ], 
+            [
+              -71.033004345650198, 
+              42.212599213071293
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "84", 
+        "NCES_Type": "Staff Toilet/Changing", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679373, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 16.5, 
+        "Name": "RR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a90d"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032979617418661, 
+              42.212599213071293
+            ], 
+            [
+              -71.032992908843113, 
+              42.212599213071293
+            ], 
+            [
+              -71.032992908843113, 
+              42.212587995122576
+            ], 
+            [
+              -71.032979617418661, 
+              42.212587995122576
+            ], 
+            [
+              -71.032979617418661, 
+              42.212599213071293
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "85", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679376, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 10.279999999999999, 
+        "Name": "CLOS", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a910"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032950252643715, 
+              42.212653064494411
+            ], 
+            [
+              -71.032950252643715, 
+              42.212653242375318
+            ], 
+            [
+              -71.032979617418661, 
+              42.212653242375318
+            ], 
+            [
+              -71.032979617418661, 
+              42.212639862972843
+            ], 
+            [
+              -71.032950252643715, 
+              42.212639862972843
+            ], 
+            [
+              -71.032950252643715, 
+              42.212653064494411
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "86", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679386, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 26.770000000000000, 
+        "Name": "CLOS", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a91a"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032955121389591, 
+              42.212708591485203
+            ], 
+            [
+              -71.033005297500310, 
+              42.212708591485203
+            ], 
+            [
+              -71.033005297500310, 
+              42.212653929188505
+            ], 
+            [
+              -71.033005297500310, 
+              42.212653242375318
+            ], 
+            [
+              -71.032979617418661, 
+              42.212653242375318
+            ], 
+            [
+              -71.032950252643715, 
+              42.212653242375318
+            ], 
+            [
+              -71.032950252643715, 
+              42.212654443615286
+            ], 
+            [
+              -71.032948390607871, 
+              42.212654443615286
+            ], 
+            [
+              -71.032912601249322, 
+              42.212654443615286
+            ], 
+            [
+              -71.032912601249322, 
+              42.212673674384519
+            ], 
+            [
+              -71.032912601249322, 
+              42.212690276466894
+            ], 
+            [
+              -71.032957315329156, 
+              42.212690276466894
+            ], 
+            [
+              -71.032957315329156, 
+              42.212670870580446
+            ], 
+            [
+              -71.032981187474562, 
+              42.212670870580446
+            ], 
+            [
+              -71.032981187474562, 
+              42.212690276466894
+            ], 
+            [
+              -71.032957315329156, 
+              42.212690276466894
+            ], 
+            [
+              -71.032956288639753, 
+              42.212690276466894
+            ], 
+            [
+              -71.032955453293312, 
+              42.212690276466894
+            ], 
+            [
+              -71.032912601249322, 
+              42.212690276466894
+            ], 
+            [
+              -71.032912601249322, 
+              42.212721869873484
+            ], 
+            [
+              -71.032937193421731, 
+              42.212721869873484
+            ], 
+            [
+              -71.032955121389591, 
+              42.212708591485203
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "87", 
+        "NCES_Type": "Stair", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679401, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 417.42000000000002, 
+        "Name": "STAIR HALL", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a929"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032819925770326, 
+              42.212708591485203
+            ], 
+            [
+              -71.032869746577788, 
+              42.212708591485203
+            ], 
+            [
+              -71.032887674545648, 
+              42.212721869873484
+            ], 
+            [
+              -71.032912601249322, 
+              42.212721869873484
+            ], 
+            [
+              -71.032912601249322, 
+              42.212690276466894
+            ], 
+            [
+              -71.032912601249322, 
+              42.212673674384519
+            ], 
+            [
+              -71.032878290828066, 
+              42.212673674384519
+            ], 
+            [
+              -71.032850780670486, 
+              42.212673674384519
+            ], 
+            [
+              -71.032819925770326, 
+              42.212673674384519
+            ], 
+            [
+              -71.032819925770326, 
+              42.212708591485203
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "88", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679404, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 314.43000000000001, 
+        "Name": "OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a92c"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032912601249322, 
+              42.212654443615286
+            ], 
+            [
+              -71.032878916452319, 
+              42.212654443615286
+            ], 
+            [
+              -71.032878290828066, 
+              42.212654443615286
+            ], 
+            [
+              -71.032878290828066, 
+              42.212673674384519
+            ], 
+            [
+              -71.032912601249322, 
+              42.212673674384519
+            ], 
+            [
+              -71.032912601249322, 
+              42.212654443615286
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "89", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679407, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 56.880000000000003, 
+        "Name": "CLOSET", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a92f"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032878290828066, 
+              42.212653069988910
+            ], 
+            [
+              -71.032855108110994, 
+              42.212653069988910
+            ], 
+            [
+              -71.032855108110994, 
+              42.212666520763598
+            ], 
+            [
+              -71.032850780670486, 
+              42.212666520763598
+            ], 
+            [
+              -71.032850780670486, 
+              42.212673674384519
+            ], 
+            [
+              -71.032878290828066, 
+              42.212673674384519
+            ], 
+            [
+              -71.032878290828066, 
+              42.212653069988910
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "90", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679410, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 39.829999999999998, 
+        "Name": "CLOSET", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a932"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032819925770326, 
+              42.212653069988910
+            ], 
+            [
+              -71.032819925770326, 
+              42.212673674384519
+            ], 
+            [
+              -71.032850780670486, 
+              42.212673674384519
+            ], 
+            [
+              -71.032850780670486, 
+              42.212666520763598
+            ], 
+            [
+              -71.032850780670486, 
+              42.212653069988910
+            ], 
+            [
+              -71.032819925770326, 
+              42.212653069988910
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "91", 
+        "NCES_Type": "Closet", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679413, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 45.939999999999998, 
+        "Name": "CLOSET", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a935"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -71.032981187474562, 
+              42.212690276466894
+            ], 
+            [
+              -71.032981187474562, 
+              42.212670870580446
+            ], 
+            [
+              -71.032957315329156, 
+              42.212670870580446
+            ], 
+            [
+              -71.032957315329156, 
+              42.212688897346013
+            ], 
+            [
+              -71.032957315329156, 
+              42.212690276466894
+            ], 
+            [
+              -71.032981187474562, 
+              42.212690276466894
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "92", 
+        "NCES_Type": "Elevator/Lift", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5679432, 
+        "occupancyStatus": "Occupied", 
+        "Building": "Main/Administration", 
+        "Area_SF": 35.899999999999999, 
+        "Name": "ELEVATOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "Administration", 
+        "Level": "LEVEL 4", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a948"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection", 
+  "name": "Main/Administration - LEVEL 4"
+}

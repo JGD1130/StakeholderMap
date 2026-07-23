@@ -127,6 +127,10 @@
                       {
                           "id":  "Wirth Building",
                           "name":  "Wirth Hall"
+                      },
+                      {
+                          "id":  "Main_Administration",
+                          "name":  "Main/Administration"
                       }
                   ],
     "floorsByBuilding":  {
@@ -518,6 +522,28 @@
                                                         "id":  "LEVEL_2",
                                                         "url":  "floorplans/CherokeeMentalHealth/Wirth Building/Rooms/LEVEL_2_Dept_Rooms.geojson"
                                                     }
-                                                ]
+                                                ],
+                             "Main_Administration":  [
+                                                         {
+                                                             "id":  "BASEMENT",
+                                                             "url":  "floorplans/CherokeeMentalHealth/Main_Administration/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                                         },
+                                                         {
+                                                             "id":  "LEVEL_1",
+                                                             "url":  "floorplans/CherokeeMentalHealth/Main_Administration/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                                         },
+                                                         {
+                                                             "id":  "LEVEL_2",
+                                                             "url":  "floorplans/CherokeeMentalHealth/Main_Administration/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                                         },
+                                                         {
+                                                             "id":  "LEVEL_3",
+                                                             "url":  "floorplans/CherokeeMentalHealth/Main_Administration/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                                         },
+                                                         {
+                                                             "id":  "LEVEL_4",
+                                                             "url":  "floorplans/CherokeeMentalHealth/Main_Administration/Rooms/LEVEL_4_Dept_Rooms.geojson"
+                                                         }
+                                                     ]
                          }
 }
