@@ -3348,6 +3348,92 @@ function pruneDrawingOutsideRooms(fc, marginRatio = 0.12) {
   return keep.length === fc.features.length ? fc : { ...fc, features: keep };
 }
 
+function clipFeatureCollectionToBuildingFootprint(fc, buildingFeature, options = {}) {
+  if (!fc?.features?.length || !buildingFeature) return fc;
+  let clipFeature = buildingFeature;
+  const bufferMeters = Number(options?.bufferMeters);
+  if (Number.isFinite(bufferMeters) && Math.abs(bufferMeters) > 1e-6) {
+    try {
+      const buffered = turf.buffer(buildingFeature, bufferMeters, { units: 'meters' });
+      if (buffered) clipFeature = buffered;
+    } catch {}
+  }
+  if (!clipFeature) return fc;
+
+  const nextFeatures = [];
+  let changed = false;
+  for (const feature of fc.features) {
+    if (!feature?.geometry?.type) continue;
+    const geomType = feature.geometry.type;
+    try {
+      if (geomType === 'Point') {
+        if (turf.booleanPointInPolygon(feature, clipFeature)) {
+          nextFeatures.push(feature);
+        } else {
+          changed = true;
+        }
+        continue;
+      }
+      if (geomType === 'MultiPoint') {
+        const originalCoords = Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates : [];
+        const keptCoords = originalCoords.filter((coord) => {
+          try {
+            return turf.booleanPointInPolygon(turf.point(coord), clipFeature);
+          } catch {
+            return false;
+          }
+        });
+        if (!keptCoords.length) {
+          changed = true;
+          continue;
+        }
+        if (keptCoords.length !== originalCoords.length) {
+          changed = true;
+          nextFeatures.push({
+            ...feature,
+            geometry: {
+              ...feature.geometry,
+              coordinates: keptCoords
+            }
+          });
+          continue;
+        }
+        nextFeatures.push(feature);
+        continue;
+      }
+      if (geomType === 'Polygon' || geomType === 'MultiPolygon') {
+        const clipped = turf.intersect(turf.featureCollection([feature, clipFeature]));
+        if (clipped?.geometry) {
+          const clippedGeometry = clipped.geometry;
+          if (JSON.stringify(clippedGeometry) !== JSON.stringify(feature.geometry)) changed = true;
+          nextFeatures.push({
+            ...feature,
+            geometry: clippedGeometry
+          });
+        } else {
+          changed = true;
+        }
+        continue;
+      }
+      if (!turf.booleanDisjoint(feature, clipFeature)) {
+        nextFeatures.push(feature);
+      } else {
+        changed = true;
+      }
+    } catch {
+      nextFeatures.push(feature);
+    }
+  }
+
+  if (!changed) return fc;
+  if (!nextFeatures.length) return fc;
+  return {
+    ...fc,
+    features: nextFeatures,
+    __mfBuildingFootprintClipped: true
+  };
+}
+
 function autoAlignDrawingToRooms(fc, context = {}) {
   if (!fc?.features?.length || fc.__mfAutoDrawingAlign) return fc;
   const drawing = fc.features.filter((f) => isDrawingFeature(f?.properties || {}));
@@ -4225,7 +4311,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   ensureLayerOrder(map);
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null, clipFeature = null, clipBufferMeters = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4266,6 +4352,9 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   fc = applyDoorSwingDirection(fc, roomsFC, {
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
+  if (clipFeature) {
+    fc = clipFeatureCollectionToBuildingFootprint(fc, clipFeature, { bufferMeters: clipBufferMeters });
+  }
 
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
@@ -4663,7 +4752,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, clipFeature = null, clipBufferMeters = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4700,6 +4789,10 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
       fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
     }
+  }
+
+  if (clipFeature) {
+    fc = clipFeatureCollectionToBuildingFootprint(fc, clipFeature, { bufferMeters: clipBufferMeters });
   }
 
   console.log("[stairs] loaded features", fc.features.length);
@@ -5395,7 +5488,16 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
+  const {
+    buildingId,
+    floor,
+    roomPatches,
+    onOptionsCollected,
+    currentFloorContextRef,
+    airtableLookup,
+    clipToBuildingFootprint = false,
+    buildingFootprintClipBufferMeters = null
+  } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5844,6 +5946,18 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         finalRoomsFC: fc
       })
     : null;
+  if (clipToBuildingFootprint && fitBuilding) {
+    const clipped = clipFeatureCollectionToBuildingFootprint(fc, fitBuilding, {
+      bufferMeters: buildingFootprintClipBufferMeters
+    });
+    if (clipped && clipped !== fc) {
+      fc = clipped;
+      data.__mfTransformed = true;
+      if (!snapCorner) {
+        floorCache.set(url, fc);
+      }
+    }
+  }
   if (fitTransform) {
     cachedTransform.fitTransform = fitTransform;
     floorTransformCache.set(url, cachedTransform);
@@ -6100,7 +6214,9 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           fitTransform: fitTransform || cachedTransform.fitTransform || null,
           roomsFC: patchedFC,
           buildingLabel: overlayBuildingLabel,
-          overlayFloorAdjust
+          overlayFloorAdjust,
+          clipFeature: clipToBuildingFootprint ? fitBuilding : null,
+          clipBufferMeters: buildingFootprintClipBufferMeters
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -6109,7 +6225,9 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         affine,
         rotationOverride,
         fitTransform: fitTransform || cachedTransform.fitTransform || null,
-        overlayFloorAdjust
+        overlayFloorAdjust,
+        clipFeature: clipToBuildingFootprint ? fitBuilding : null,
+        clipBufferMeters: buildingFootprintClipBufferMeters
       });
     }
   }
@@ -11656,7 +11774,16 @@ const StakeholderMap = ({
         const name = String(entry?.name || entry?.label || entry?.id || '').trim();
         const folder = String(entry?.folder || entry?.path || name).trim();
         if (!name || !folder) return null;
-        return { name, folder };
+        const clipToFootprint = entry?.clipToFootprint === true;
+        const footprintClipBufferMeters = Number(entry?.footprintClipBufferMeters);
+        return {
+          name,
+          folder,
+          clipToFootprint,
+          footprintClipBufferMeters: Number.isFinite(footprintClipBufferMeters)
+            ? footprintClipBufferMeters
+            : null
+        };
       })
       .filter((entry) => {
         const key = normalizeDashboardKey(entry?.name || entry?.folder || '');
@@ -11706,6 +11833,20 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const floorplanFootprintClipSettings = useMemo(() => {
+    const settings = new Map();
+    floorplanBuildingOptions.forEach((entry) => {
+      if (!entry?.clipToFootprint) return;
+      const bufferMeters = Number.isFinite(entry?.footprintClipBufferMeters)
+        ? Number(entry.footprintClipBufferMeters)
+        : 4;
+      [entry?.name, entry?.folder].forEach((value) => {
+        const key = normalizeDashboardKey(value || '');
+        if (key) settings.set(key, bufferMeters);
+      });
+    });
+    return settings;
+  }, [floorplanBuildingOptions]);
   const dashboardManifestScope = useMemo(() => ({
     allowedBuildingKeys: floorplanBuildingOptions.flatMap((entry) => [entry?.name, entry?.folder]).filter(Boolean),
     campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`
@@ -19073,6 +19214,20 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
+      const clipSettingKeys = [
+        selectedBuildingId,
+        selectedBuilding,
+        fitBuilding?.properties?.id,
+        fitBuilding?.properties?.name,
+        buildingFolder,
+        urlFolder
+      ]
+        .map((value) => normalizeDashboardKey(value || ''))
+        .filter(Boolean);
+      const buildingFootprintClipBufferMeters = clipSettingKeys
+        .map((key) => floorplanFootprintClipSettings.get(key))
+        .find((value) => Number.isFinite(value));
+      const clipToBuildingFootprint = Number.isFinite(buildingFootprintClipBufferMeters);
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const suppressAutoWalls = config?.enableWallsOverlay === false;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
@@ -19089,6 +19244,8 @@ const StakeholderMap = ({
         wallsBasePath: basePath,
         wallsFloorId: floorId,
         wallsRawFCRef,
+        clipToBuildingFootprint,
+        buildingFootprintClipBufferMeters,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -32900,4 +33057,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
+
 

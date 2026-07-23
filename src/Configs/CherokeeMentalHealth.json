@@ -26,7 +26,9 @@
                                },
                                {
                                    "name":  "Main/Administration",
-                                   "folder":  "Main_Administration"
+                                   "folder":  "Main_Administration",
+                                   "clipToFootprint":  true,
+                                   "footprintClipBufferMeters":  4
                                }
                            ],
     "technicalAssessmentSaveMode":  "per-assessor",
