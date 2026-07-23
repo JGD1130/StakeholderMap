@@ -921,7 +921,7 @@ function parseTimeRange(startValue, endValue, rangeValue) {
   let timeText = String(rangeValue || "").trim();
 
   if ((!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) && timeText) {
-    const parts = timeText.split(/\s*(?:-|–|—|to)\s*/i);
+    const parts = timeText.split(/\s*(?:-|ï¿½|ï¿½|to)\s*/i);
     if (parts.length >= 2) {
       startMinutes = parseTimeToMinutes(parts[0]);
       endMinutes = parseTimeToMinutes(parts[1]);
@@ -945,7 +945,7 @@ function splitScheduleBuildingAndRoom(value) {
   const raw = String(value || "").trim();
   if (!raw) return { building: "", room: "" };
 
-  const explicitDelimiters = [" / ", " - ", " – ", ", "];
+  const explicitDelimiters = [" / ", " - ", " ï¿½ ", ", "];
   for (const delimiter of explicitDelimiters) {
     if (!raw.includes(delimiter)) continue;
     const [left, ...rightParts] = raw.split(delimiter);
@@ -1209,15 +1209,19 @@ const isAirtableRecordId = (value) => /^rec[a-z0-9]{6,}$/i.test(String(value || 
 const isLinkedRecordArray = (value) =>
   Array.isArray(value) && value.length > 0 && value.every((v) => isAirtableRecordId(v));
 
-function pickFieldValue(fields = {}, candidates = []) {
+function pickFieldEntry(fields = {}, candidates = []) {
   for (const key of candidates) {
     if (!key) continue;
     const val = fields[key];
     if (val == null) continue;
     if (typeof val === "string" && !val.trim()) continue;
-    return val;
+    return { fieldName: key, value: val };
   }
-  return "";
+  return { fieldName: "", value: "" };
+}
+
+function pickFieldValue(fields = {}, candidates = []) {
+  return pickFieldEntry(fields, candidates).value;
 }
 
 async function fetchAirtableRows(filterFormula, viewOverride) {
@@ -1908,6 +1912,32 @@ async function getLinkedLabelMap(tableName, primaryFieldName) {
   return map;
 }
 
+async function getLinkedLabelMapForField(tableName, fieldName) {
+  const resolvedTableName = String(tableName || "").trim();
+  const resolvedFieldName = String(fieldName || "").trim();
+  if (!resolvedTableName || !resolvedFieldName) return null;
+  try {
+    const schema = await fetchAirtableBaseSchema();
+    const table = (schema?.tables || []).find((entry) => String(entry?.name || "").trim() === resolvedTableName);
+    if (!table) return null;
+    const field = (table?.fields || []).find((entry) => String(entry?.name || "").trim() === resolvedFieldName);
+    if (!field || field.type !== "multipleRecordLinks") return null;
+    const linkedTableId = String(field?.options?.linkedTableId || "").trim();
+    if (!linkedTableId) return null;
+    const linkedTable = (schema?.tables || []).find((entry) => String(entry?.id || "").trim() === linkedTableId);
+    if (!linkedTable) return null;
+    const primaryFieldId = String(linkedTable?.primaryFieldId || "").trim();
+    const primaryField = (linkedTable?.fields || []).find((entry) => String(entry?.id || "").trim() === primaryFieldId);
+    const primaryFieldName = String(primaryField?.name || "").trim();
+    const linkedTableName = String(linkedTable?.name || "").trim();
+    if (!linkedTableName || !primaryFieldName) return null;
+    return await getLinkedLabelMap(linkedTableName, primaryFieldName);
+  } catch (err) {
+    console.warn("Unable to resolve linked labels for " + resolvedTableName + "." + resolvedFieldName, err?.message || err);
+    return null;
+  }
+}
+
 function resolveLinkedLabel(value, labelMap) {
   if (!isLinkedRecordArray(value)) return value;
   const labels = value
@@ -2048,16 +2078,26 @@ app.get("/api/rooms", async (req, res) => {
 
     const rooms = records.map((r) => {
       const f = r.fields || {};
-      const buildingRaw = pickFieldValue(f, [
+      const buildingLabelEntry = pickFieldEntry(f, [
         AIRTABLE_BUILDING_NAME_FIELD,
-        AIRTABLE_BUILDING_FIELD,
         "Building Name",
+        "BuildingName"
+      ]);
+      const buildingLinkEntry = pickFieldEntry(f, [
+        AIRTABLE_BUILDING_FIELD,
         "Building"
       ]);
+      const buildingEntry =
+        buildingLabelEntry.fieldName && !isLinkedRecordArray(buildingLabelEntry.value)
+          ? buildingLabelEntry
+          : buildingLinkEntry.fieldName
+            ? buildingLinkEntry
+            : buildingLabelEntry;
+      const buildingRaw = buildingEntry.value;
       const building = Array.isArray(buildingRaw)
         ? buildingRaw.join(", ")
         : String(buildingRaw || "");
-      const type = pickFieldValue(f, [
+      const typeEntry = pickFieldEntry(f, [
         process.env.AIRTABLE_TYPE_FIELD,
         "NCES Type Description",
         "NCES_Type",
@@ -2066,7 +2106,8 @@ app.get("/api/rooms", async (req, res) => {
         "Room Type Text",
         "Type"
       ]);
-      const dept = pickFieldValue(f, [
+      const type = typeEntry.value;
+      const deptEntry = pickFieldEntry(f, [
         process.env.AIRTABLE_DEPT_FIELD,
         "Department",
         "Department Owner",
@@ -2074,6 +2115,7 @@ app.get("/api/rooms", async (req, res) => {
         "NCES_Department",
         "NCES Dept"
       ]);
+      const dept = deptEntry.value;
       const areaRaw = pickFieldValue(f, [
         process.env.AIRTABLE_AREA_FIELD,
         "AreaSF",
@@ -2155,14 +2197,35 @@ app.get("/api/rooms", async (req, res) => {
         department: dept,
         occupant,
         seatCount: Number(seatCount ?? 0) || 0,
-        occupancyStatus: occupancyStatus || "Unknown"
+        occupancyStatus: occupancyStatus || "Unknown",
+        __buildingFieldName: buildingEntry.fieldName || "",
+        __buildingRaw: buildingRaw,
+        __typeFieldName: typeEntry.fieldName || "",
+        __deptFieldName: deptEntry.fieldName || ""
       };
     });
 
+    const linkedBuildingFieldNames = uniqueStrings(
+      rooms
+        .filter((room) => isLinkedRecordArray(room?.__buildingRaw))
+        .map((room) => room?.__buildingFieldName)
+    );
     const needsTypeLabels = rooms.some((room) => isLinkedRecordArray(room?.type));
     const needsDeptLabels = rooms.some((room) => isLinkedRecordArray(room?.department));
+    const buildingLabelMaps = new Map();
     let roomTypeLabelMap = null;
     let deptLabelMap = null;
+    if (linkedBuildingFieldNames.length) {
+      const buildingMaps = await Promise.all(
+        linkedBuildingFieldNames.map(async (fieldName) => {
+          const map = await getLinkedLabelMapForField(table, fieldName);
+          return [fieldName, map];
+        })
+      );
+      buildingMaps.forEach(([fieldName, map]) => {
+        if (fieldName && map) buildingLabelMaps.set(fieldName, map);
+      });
+    }
     if (needsTypeLabels) {
       roomTypeLabelMap = await getLinkedLabelMap(
         AIRTABLE_ROOM_TYPE_TABLE,
@@ -2175,16 +2238,25 @@ app.get("/api/rooms", async (req, res) => {
         AIRTABLE_DEPT_PRIMARY_FIELD
       );
     }
-    if (roomTypeLabelMap || deptLabelMap) {
-      rooms.forEach((room) => {
-        if (roomTypeLabelMap && isLinkedRecordArray(room?.type)) {
-          room.type = resolveLinkedLabel(room.type, roomTypeLabelMap);
-        }
-        if (deptLabelMap && isLinkedRecordArray(room?.department)) {
-          room.department = resolveLinkedLabel(room.department, deptLabelMap);
-        }
-      });
-    }
+    rooms.forEach((room) => {
+      const buildingLabelMap = room?.__buildingFieldName
+        ? buildingLabelMaps.get(room.__buildingFieldName)
+        : null;
+      if (buildingLabelMap && isLinkedRecordArray(room?.__buildingRaw)) {
+        const resolvedBuilding = resolveLinkedLabel(room.__buildingRaw, buildingLabelMap);
+        if (resolvedBuilding) room.building = resolvedBuilding;
+      }
+      if (roomTypeLabelMap && isLinkedRecordArray(room?.type)) {
+        room.type = resolveLinkedLabel(room.type, roomTypeLabelMap);
+      }
+      if (deptLabelMap && isLinkedRecordArray(room?.department)) {
+        room.department = resolveLinkedLabel(room.department, deptLabelMap);
+      }
+      delete room.__buildingFieldName;
+      delete room.__buildingRaw;
+      delete room.__typeFieldName;
+      delete room.__deptFieldName;
+    });
 
     res.json({ ok: true, rooms });
   } catch (err) {
@@ -3482,7 +3554,7 @@ function normalizeFicmCode(value = "") {
 function parseFicmTypeText(typeRaw = "") {
   const text = normalizeCopilotText(typeRaw);
   if (!text) return { code: "", label: "" };
-  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-–]?\s*(.+)$/);
+  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-ï¿½]?\s*(.+)$/);
   if (match) {
     return {
       code: normalizeFicmCode(match[1]),
