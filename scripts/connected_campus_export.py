@@ -2,9 +2,9 @@
 """
 Mapfluence Connected Campus Floorplan Export
 
-Use this exporter from a building-specific floor plan view inside a connected-campus
-Revit model. It exports only that building's Rooms / Doors / Stairs for the matching
-building views across floors and intentionally skips DXF / Overall / Axon processing.
+Use this exporter from either a building-specific floor plan view or an OVERALL
+connected-core floor plan view inside a connected-campus Revit model. It exports
+Rooms / Doors / Stairs only and intentionally skips DXF / Axon / Area processing.
 
 This keeps the standard single-building exporter untouched and avoids Revit failure
 mode caused by whole-model DXF export on connected Cherokee-style campus models.
@@ -49,7 +49,8 @@ FILENAME_MAP = {
     "LEVEL 4": "LEVEL_4_Dept",
     "LEVEL 5": "LEVEL_5_Dept",
 }
-EXCLUDED_VIEW_KEYWORDS = ["overall", "axon", "area", "working", "demo", "furniture"]
+EXCLUDED_VIEW_KEYWORDS = ['axon', 'area', 'working', 'demo', 'furniture']
+OVERALL_SCOPE_LABEL = 'Connected Core'
 VIEW_CROP_BBOX_PAD_FEET = 5.0
 FEET_PER_DEGREE_LAT = 364000.0
 
@@ -334,6 +335,12 @@ def extract_building_token(name):
     return prefix
 
 
+def is_overall_view(name):
+    if not name:
+        return False
+    return bool(re.search(r'\bOVERALL\b', name, re.I)) and bool(extract_level_name(name))
+
+
 def is_excluded_view(name):
     low = (name or '').lower()
     for kw in EXCLUDED_VIEW_KEYWORDS:
@@ -427,23 +434,33 @@ if RESTRICT_TO_PHASE:
         raise SystemExit
 
 active_view_name = view.Name or ''
+export_overall_mode = is_overall_view(active_view_name)
 if is_excluded_view(active_view_name):
     TaskDialog.Show(
         "Connected Campus Export",
-        "Switch to a building floor plan view, not an Overall / Axon / Area view.\n\nCurrent view: %s" % active_view_name
+        "Switch to a building floor plan view or an OVERALL floor plan view.\n\nCurrent view: %s" % active_view_name
     )
     raise SystemExit
 
-selected_building = extract_building_token(active_view_name)
 selected_level = extract_level_name(active_view_name)
-if not selected_building or not selected_level:
-    TaskDialog.Show(
-        "Connected Campus Export",
-        "Could not determine the building + level from the active view name.\n\nExpected something like:\n3_Main/Administration - LEVEL 1\n4_North A - BASEMENT"
-    )
-    raise SystemExit
-
-selected_building_key = canon(selected_building)
+if export_overall_mode:
+    if not selected_level:
+        TaskDialog.Show(
+            "Connected Campus Export",
+            "Could not determine the level from the active OVERALL view name.\n\nExpected something like:\n*LEVEL 1 - OVERALL\n*BASEMENT - OVERALL"
+        )
+        raise SystemExit
+    selected_building = OVERALL_SCOPE_LABEL
+    selected_building_key = ''
+else:
+    selected_building = extract_building_token(active_view_name)
+    if not selected_building or not selected_level:
+        TaskDialog.Show(
+            "Connected Campus Export",
+            "Could not determine the building + level from the active view name.\n\nExpected something like:\n3_Main/Administration - LEVEL 1\n4_North A - BASEMENT"
+        )
+        raise SystemExit
+    selected_building_key = canon(selected_building)
 
 views_by_level = {}
 for v in FilteredElementCollector(doc).OfClass(ViewPlan):
@@ -458,9 +475,15 @@ for v in FilteredElementCollector(doc).OfClass(ViewPlan):
     phase = doc.GetElement(phase_param.AsElementId())
     if not phase or (RESTRICT_TO_PHASE and phase.Name not in TARGET_PHASE_NAMES):
         continue
-    building_token = extract_building_token(name)
-    if canon(building_token) != selected_building_key:
-        continue
+    if export_overall_mode:
+        if not is_overall_view(name):
+            continue
+    else:
+        if is_overall_view(name):
+            continue
+        building_token = extract_building_token(name)
+        if canon(building_token) != selected_building_key:
+            continue
     level_name = extract_level_name(name)
     if not level_name or level_name not in ALLOWED_LEVELS:
         continue
@@ -468,10 +491,16 @@ for v in FilteredElementCollector(doc).OfClass(ViewPlan):
         views_by_level[level_name] = v
 
 if not views_by_level:
-    TaskDialog.Show(
-        "Connected Campus Export",
-        "No building-specific floor plan views were found for '%s'.\n\nOpen a building view like '3_Main/Administration - LEVEL 1' and try again." % selected_building
-    )
+    if export_overall_mode:
+        TaskDialog.Show(
+            "Connected Campus Export",
+            "No OVERALL floor plan views were found for the connected-core export.\n\nOpen a view like '*LEVEL 1 - OVERALL' and try again."
+        )
+    else:
+        TaskDialog.Show(
+            "Connected Campus Export",
+            "No building-specific floor plan views were found for '%s'.\n\nOpen a building view like '3_Main/Administration - LEVEL 1' and try again." % selected_building
+        )
     raise SystemExit
 
 dlg = FolderBrowserDialog()
@@ -490,7 +519,7 @@ for folder in [doors_dir, stairs_dir]:
 
 TaskDialog.Show(
     "Connected Campus Export",
-    "Building: %s\nFloors: %s\n\nThis connected-campus exporter skips DXF / Overall / Axon processing and exports Rooms / Doors / Stairs only." % (
+    "Scope: %s\nFloors: %s\n\nThis connected-campus exporter skips DXF / Axon / Area processing and exports Rooms / Doors / Stairs only." % (
         selected_building,
         ', '.join(sorted(views_by_level.keys()))
     )
@@ -661,7 +690,7 @@ for level_name, feats in by_level.items():
 
 TaskDialog.Show(
     "Connected Campus Export Complete",
-    "Building: %s\n\nRooms:\n%s\n\nDoors: %s\nStairs: %s\n\nOutput: %s\n\nNo DXF / wall linework was exported by this tool." % (
+    "Scope: %s\n\nRooms:\n%s\n\nDoors: %s\nStairs: %s\n\nOutput: %s\n\nNo DXF / wall linework was exported by this tool." % (
         selected_building,
         '\n'.join(combined_written) if combined_written else 'none',
         ', '.join(doors_written) if doors_written else 'none',
@@ -669,3 +698,4 @@ TaskDialog.Show(
         out_dir
     )
 )
+

@@ -26,11 +26,35 @@
                                },
                                {
                                    "name":  "Main/Administration",
-                                   "folder":  "Main_Administration"
+                                   "folder":  "Overall"
                                },
                                {
                                    "name":  "North A",
-                                   "folder":  "North A"
+                                   "folder":  "Overall"
+                               },
+                               {
+                                   "name":  "North B",
+                                   "folder":  "Overall"
+                               },
+                               {
+                                   "name":  "North C",
+                                   "folder":  "Overall"
+                               },
+                               {
+                                   "name":  "South A",
+                                   "folder":  "Overall"
+                               },
+                               {
+                                   "name":  "South B",
+                                   "folder":  "Overall"
+                               },
+                               {
+                                   "name":  "South C",
+                                   "folder":  "Overall"
+                               },
+                               {
+                                   "name":  "Rear Center",
+                                   "folder":  "Overall"
                                }
                            ],
     "technicalAssessmentSaveMode":  "per-assessor",

@@ -135,6 +135,10 @@
                       {
                           "id":  "North A",
                           "name":  "North A"
+                      },
+                      {
+                          "id":  "Overall",
+                          "name":  "Connected Core"
                       }
                   ],
     "floorsByBuilding":  {
@@ -565,6 +569,28 @@
                                              {
                                                  "id":  "LEVEL_3",
                                                  "url":  "floorplans/CherokeeMentalHealth/North A/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                             }
+                                         ],
+                             "Overall":  [
+                                             {
+                                                 "id":  "BASEMENT",
+                                                 "url":  "floorplans/CherokeeMentalHealth/Overall/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_1",
+                                                 "url":  "floorplans/CherokeeMentalHealth/Overall/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_2",
+                                                 "url":  "floorplans/CherokeeMentalHealth/Overall/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_3",
+                                                 "url":  "floorplans/CherokeeMentalHealth/Overall/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_4",
+                                                 "url":  "floorplans/CherokeeMentalHealth/Overall/Rooms/LEVEL_4_Dept_Rooms.geojson"
                                              }
                                          ]
                          }

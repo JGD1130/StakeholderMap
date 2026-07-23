@@ -3348,6 +3348,46 @@ function pruneDrawingOutsideRooms(fc, marginRatio = 0.12) {
   return keep.length === fc.features.length ? fc : { ...fc, features: keep };
 }
 
+function filterFeatureCollectionToBuildingFootprint(fc, buildingFeature, options = {}) {
+  if (!fc?.features?.length || !buildingFeature) return fc;
+  let targetFeature = buildingFeature;
+  const bufferMeters = Number(options?.bufferMeters);
+  if (Number.isFinite(bufferMeters) && Math.abs(bufferMeters) > 1e-6) {
+    try {
+      const buffered = turf.buffer(buildingFeature, bufferMeters, { units: 'meters' });
+      if (buffered) targetFeature = buffered;
+    } catch {}
+  }
+  const filteredFeatures = [];
+  for (const feature of fc.features) {
+    if (!feature?.geometry) continue;
+    let anchor = null;
+    try {
+      if (feature.geometry.type === 'Point') {
+        anchor = feature;
+      } else if (feature.geometry.type === 'MultiPoint') {
+        const firstPoint = Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates[0] : null;
+        if (Array.isArray(firstPoint)) anchor = turf.point(firstPoint);
+      } else {
+        anchor = turf.pointOnFeature(feature);
+      }
+    } catch {}
+    if (!anchor) {
+      filteredFeatures.push(feature);
+      continue;
+    }
+    try {
+      if (turf.booleanPointInPolygon(anchor, targetFeature)) {
+        filteredFeatures.push(feature);
+      }
+    } catch {
+      filteredFeatures.push(feature);
+    }
+  }
+  if (filteredFeatures.length === fc.features.length) return fc;
+  return { ...fc, features: filteredFeatures, __mfBuildingFootprintFiltered: true };
+}
+
 function autoAlignDrawingToRooms(fc, context = {}) {
   if (!fc?.features?.length || fc.__mfAutoDrawingAlign) return fc;
   const drawing = fc.features.filter((f) => isDrawingFeature(f?.properties || {}));
@@ -4225,7 +4265,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   ensureLayerOrder(map);
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4266,6 +4306,9 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   fc = applyDoorSwingDirection(fc, roomsFC, {
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
+  if (filterBuildingFeature) {
+    fc = filterFeatureCollectionToBuildingFootprint(fc, filterBuildingFeature, { bufferMeters: filterBufferMeters });
+  }
 
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
@@ -4663,7 +4706,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null }) {
   if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4700,6 +4743,9 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
       fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
     }
+    }
+  if (filterBuildingFeature) {
+    fc = filterFeatureCollectionToBuildingFootprint(fc, filterBuildingFeature, { bufferMeters: filterBufferMeters });
   }
 
   console.log("[stairs] loaded features", fc.features.length);
@@ -5395,7 +5441,16 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
+  const {
+    buildingId,
+    floor,
+    roomPatches,
+    onOptionsCollected,
+    currentFloorContextRef,
+    airtableLookup,
+    filterToBuildingFootprint = false,
+    buildingFootprintFilterBufferMeters = null
+  } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5908,6 +5963,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     floorId: floorId || floor || '',
     floorBasePath
   });
+  if (filterToBuildingFootprint && fitBuilding) {
+    patchedFC = filterFeatureCollectionToBuildingFootprint(patchedFC, fitBuilding, {
+      bufferMeters: buildingFootprintFilterBufferMeters
+    });
+  }
   if ((canUseRoomPatches || canUseAirtable) && typeof onOptionsCollected === 'function') {
     const { typeOptions, deptOptions } = collectFloorOptions(patchedFC?.features || []);
     onOptionsCollected({ typeOptions, deptOptions });
@@ -6100,7 +6160,9 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           fitTransform: fitTransform || cachedTransform.fitTransform || null,
           roomsFC: patchedFC,
           buildingLabel: overlayBuildingLabel,
-          overlayFloorAdjust
+          overlayFloorAdjust,
+          filterBuildingFeature: filterToBuildingFootprint ? fitBuilding : null,
+          filterBufferMeters: buildingFootprintFilterBufferMeters
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -6109,7 +6171,9 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         affine,
         rotationOverride,
         fitTransform: fitTransform || cachedTransform.fitTransform || null,
-        overlayFloorAdjust
+        overlayFloorAdjust,
+        filterBuildingFeature: filterToBuildingFootprint ? fitBuilding : null,
+        filterBufferMeters: buildingFootprintFilterBufferMeters
       });
     }
   }
@@ -11651,12 +11715,29 @@ const StakeholderMap = ({
         if (!entry) return null;
         if (typeof entry === 'string') {
           const name = String(entry).trim();
-          return name ? { name, folder: name } : null;
+          return name
+            ? {
+                name,
+                folder: name,
+                filterToBuildingFootprint: false,
+                buildingFootprintFilterBufferMeters: null
+              }
+            : null;
         }
         const name = String(entry?.name || entry?.label || entry?.id || '').trim();
         const folder = String(entry?.folder || entry?.path || name).trim();
         if (!name || !folder) return null;
-        return { name, folder };
+        const filterToBuildingFootprint = entry?.filterToBuildingFootprint === true;
+        const buildingFootprintFilterBufferMeters = Number(entry?.buildingFootprintFilterBufferMeters);
+        return {
+          ...entry,
+          name,
+          folder,
+          filterToBuildingFootprint,
+          buildingFootprintFilterBufferMeters: Number.isFinite(buildingFootprintFilterBufferMeters)
+            ? buildingFootprintFilterBufferMeters
+            : null
+        };
       })
       .filter((entry) => {
         const key = normalizeDashboardKey(entry?.name || entry?.folder || '');
@@ -11706,6 +11787,19 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const floorplanBuildingFootprintFilterMap = useMemo(() => {
+    const map = new Map();
+    configuredFloorplanBuildingOptions.forEach((entry) => {
+      if (!entry?.filterToBuildingFootprint || !entry?.name) return;
+      const key = normalizeDashboardKey(entry.name || '');
+      if (!key) return;
+      const bufferMeters = Number.isFinite(entry?.buildingFootprintFilterBufferMeters)
+        ? Number(entry.buildingFootprintFilterBufferMeters)
+        : 5;
+      map.set(key, bufferMeters);
+    });
+    return map;
+  }, [configuredFloorplanBuildingOptions]);
   const dashboardManifestScope = useMemo(() => ({
     allowedBuildingKeys: floorplanBuildingOptions.flatMap((entry) => [entry?.name, entry?.folder]).filter(Boolean),
     campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`
@@ -13074,6 +13168,11 @@ const StakeholderMap = ({
     if (floorplanBuildingFolderSet.has(idOrName)) return idOrName;
     return null;
   }, [configuredFloorplanBuildingOptions, floorplanBuildingFolderMap, floorplanBuildingFolderSet]);
+  const resolveFloorplanBuildingFootprintFilter = useCallback((idOrName) => {
+    const key = normalizeDashboardKey(idOrName || '');
+    if (!key) return null;
+    return floorplanBuildingFootprintFilterMap.get(key) ?? null;
+  }, [floorplanBuildingFootprintFilterMap]);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
     if (!floorplansEnabled) return null;
     const normalizedFloorId = normalizeFloorIdValue(floorId);
@@ -17692,8 +17791,23 @@ const StakeholderMap = ({
   const fetchFloorSummary = useCallback(async (buildingKeyOrName, floorId) => {
     const url = buildFloorUrl(buildingKeyOrName, floorId);
     if (!url) return null;
-    return fetchFloorSummaryByUrl(url);
-  }, [buildFloorUrl, fetchFloorSummaryByUrl]);
+    const filterBufferMeters = resolveFloorplanBuildingFootprintFilter(buildingKeyOrName);
+    if (!Number.isFinite(filterBufferMeters)) {
+      return fetchFloorSummaryByUrl(url);
+    }
+    const raw = await fetchGeoJSON(url);
+    const fc = ensureFeatureCollection(raw) || toFeatureCollection(raw);
+    if (!fc?.features?.length) return null;
+    const buildingFeatures = config?.buildings?.features || [];
+    const buildingFeature =
+      matchBuildingFeature(buildingFeatures, buildingKeyOrName) ||
+      matchBuildingFeature(buildingFeatures, resolveBuildingNameFromInput(buildingKeyOrName) || '') ||
+      null;
+    const filtered = buildingFeature
+      ? filterFeatureCollectionToBuildingFootprint(fc, buildingFeature, { bufferMeters: filterBufferMeters })
+      : fc;
+    return filtered?.features?.length ? computeFloorSummary(filtered) : null;
+  }, [buildFloorUrl, config?.buildings?.features, fetchFloorSummaryByUrl, resolveFloorplanBuildingFootprintFilter]);
 
   const fetchBuildingSummary = useCallback(async (buildingId) => {
     if (!buildingId) return null;
@@ -19073,6 +19187,12 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
+      const buildingFootprintFilterBufferMeters =
+        resolveFloorplanBuildingFootprintFilter(selectedBuildingId) ??
+        resolveFloorplanBuildingFootprintFilter(selectedBuilding) ??
+        resolveFloorplanBuildingFootprintFilter(fitBuilding?.properties?.id) ??
+        resolveFloorplanBuildingFootprintFilter(fitBuilding?.properties?.name);
+      const filterToBuildingFootprint = Number.isFinite(buildingFootprintFilterBufferMeters);
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const suppressAutoWalls = config?.enableWallsOverlay === false;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
@@ -19081,6 +19201,8 @@ const StakeholderMap = ({
         roomPatches,
         airtableLookup: airtableRoomLookup,
         currentFloorContextRef,
+        filterToBuildingFootprint,
+        buildingFootprintFilterBufferMeters,
         enableFloorAdjustments: floorAdjustmentsEnabled,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
