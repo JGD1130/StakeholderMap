@@ -1,0 +1,305 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571878559748185, 
+          42.757035072144227
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5902988, 
+        "Type": "Door", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a128c", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571888537457426, 
+          42.757057279103940
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5902990, 
+        "Type": "Door", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a128e", 
+        "Name": "Door", 
+        "bearing_deg": 270.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571867958432108, 
+          42.757059339543495
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5902991, 
+        "Type": "Door", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a128f", 
+        "Name": "Door", 
+        "bearing_deg": 90.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571867958432108, 
+          42.757102908992145
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5902994, 
+        "Type": "Door", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a1292", 
+        "Name": "Door", 
+        "bearing_deg": 90.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571815793197814, 
+          42.756952275710603
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912635, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fb31", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571730855550371, 
+          42.756952275710603
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912636, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fb6f", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571652698439593, 
+          42.756952275710603
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912637, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fbc3", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571494530666357, 
+          42.756952275710603
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912638, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fc13", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571362422818652, 
+          42.756952275710603
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912639, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fc5b", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571329587603486, 
+          42.756989821230285
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912640, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fc9d", 
+        "Name": "Door", 
+        "bearing_deg": 0.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571827641727538, 
+          42.756975398153365
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912643, 
+        "Type": "Door", 
+        "Revit_UniqueId": "2185f381-91b6-46de-ae2c-9c7a9c7be50e-0059fdfd", 
+        "Name": "Door", 
+        "bearing_deg": 180.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571310471738528, 
+          42.757160442174751
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5912674, 
+        "Type": "Door", 
+        "Revit_UniqueId": "38cda8e2-ff42-4d55-87d6-6d7e72c24dbd-005a0d5b", 
+        "Name": "Door", 
+        "bearing_deg": 90.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571867958432108, 
+          42.757142336082708
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 6010670, 
+        "Type": "Door", 
+        "Revit_UniqueId": "568ae92b-a280-451e-8461-f6d387948176-005bac91", 
+        "Name": "Door", 
+        "bearing_deg": 90.0, 
+        "Family": "Door-Single(CE)", 
+        "interactive": false, 
+        "Element": "Door", 
+        "Building": "North A", 
+        "kind": "door"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection", 
+  "name": "North A - BASEMENT Doors"
+}

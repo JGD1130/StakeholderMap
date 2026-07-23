@@ -1,0 +1,402 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571374894955198, 
+          42.757108916247546
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5718434, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005741a2", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571298623208804, 
+          42.757104011967051
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5718878, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057435e", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571300838257145, 
+          42.757121956888746
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5723002, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057537a", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571956613527675, 
+          42.756987417384131
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5912536, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "f41fcf97-fb1a-419d-9e24-e0ce11c31fff-005a37d8", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571385184467857, 
+          42.757099987676114
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5718464, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005741c0", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571305794687319, 
+          42.757069553896365
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5718949, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005743a5", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571300494029288, 
+          42.757107525379645
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5719271, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005744e7", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571311796903032, 
+          42.757126686437395
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5719358, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057453e", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571311796903032, 
+          42.757094239033968
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5719433, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00574589", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571308470889790, 
+          42.757132369330790
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5723003, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057537b", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571293634354177, 
+          42.757115983553000
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5723007, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057537f", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571306393604033, 
+          42.757099773676579
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5723016, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575388", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571967838450576, 
+          42.756971964087427
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5912537, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "f41fcf97-fb1a-419d-9e24-e0ce11c31fff-005a37d9", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571305794687319, 
+          42.757077108841415
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5719273, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005744e9", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571301429439529, 
+          42.757125153584767
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5719360, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00574540", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571294290385453, 
+          42.757131962860001
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5723009, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575381", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571294070226529, 
+          42.757100166275052
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5723018, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057538a", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571967838450576, 
+          42.756989592292555
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 2", 
+        "RevitId": 5912543, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "f41fcf97-fb1a-419d-9e24-e0ce11c31fff-005a37df", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection", 
+  "name": "North A - LEVEL 2 Stairs"
+}

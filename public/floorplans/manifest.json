@@ -131,6 +131,10 @@
                       {
                           "id":  "Main_Administration",
                           "name":  "Main/Administration"
+                      },
+                      {
+                          "id":  "North A",
+                          "name":  "North A"
                       }
                   ],
     "floorsByBuilding":  {
@@ -544,6 +548,24 @@
                                                              "id":  "LEVEL_4",
                                                              "url":  "floorplans/CherokeeMentalHealth/Main_Administration/Rooms/LEVEL_4_Dept_Rooms.geojson"
                                                          }
-                                                     ]
+                                                     ],
+                             "North A":  [
+                                             {
+                                                 "id":  "BASEMENT",
+                                                 "url":  "floorplans/CherokeeMentalHealth/North A/Rooms/BASEMENT_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_1",
+                                                 "url":  "floorplans/CherokeeMentalHealth/North A/Rooms/LEVEL_1_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_2",
+                                                 "url":  "floorplans/CherokeeMentalHealth/North A/Rooms/LEVEL_2_Dept_Rooms.geojson"
+                                             },
+                                             {
+                                                 "id":  "LEVEL_3",
+                                                 "url":  "floorplans/CherokeeMentalHealth/North A/Rooms/LEVEL_3_Dept_Rooms.geojson"
+                                             }
+                                         ]
                          }
 }

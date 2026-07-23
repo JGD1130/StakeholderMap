@@ -1,0 +1,3240 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571872635483317, 
+              42.757150348903224
+            ], 
+            [
+              -95.571901009593972, 
+              42.757150348903224
+            ], 
+            [
+              -95.571901009593972, 
+              42.757129694706435
+            ], 
+            [
+              -95.571889472867667, 
+              42.757129694706435
+            ], 
+            [
+              -95.571872635483317, 
+              42.757129694706435
+            ], 
+            [
+              -95.571872635483317, 
+              42.757150348903224
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "109", 
+        "NCES_Type": "Single Stall Restroom", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5701034, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 42.920000000000002, 
+        "Name": "RR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "f14b4bf3-3578-4404-90ce-ac1312a9460f-0056fdaa"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571936555183143, 
+              42.757150348903224
+            ], 
+            [
+              -95.571936555183143, 
+              42.757082920129577
+            ], 
+            [
+              -95.571872635483317, 
+              42.757082920129577
+            ], 
+            [
+              -95.571872635483317, 
+              42.757127405329143
+            ], 
+            [
+              -95.571901009593972, 
+              42.757127405329143
+            ], 
+            [
+              -95.571901009593972, 
+              42.757129694706435
+            ], 
+            [
+              -95.571901009593972, 
+              42.757150348903224
+            ], 
+            [
+              -95.571936555183143, 
+              42.757150348903224
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "115", 
+        "NCES_Type": "Conference Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702329, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 315.19999999999999, 
+        "Name": "MEETING\r\nROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702b9"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571805285945942, 
+              42.757150348903224
+            ], 
+            [
+              -95.571853615475078, 
+              42.757150348903224
+            ], 
+            [
+              -95.571853615475078, 
+              42.757110921812661
+            ], 
+            [
+              -95.571805285945942, 
+              42.757110921812661
+            ], 
+            [
+              -95.571805285945942, 
+              42.757150348903224
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "116", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702332, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 155.77000000000001, 
+        "Name": "OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702bc"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571805285945942, 
+              42.757073991558151
+            ], 
+            [
+              -95.571805285945942, 
+              42.757110921812661
+            ], 
+            [
+              -95.571853615475078, 
+              42.757110921812661
+            ], 
+            [
+              -95.571853615475078, 
+              42.757073991558151
+            ], 
+            [
+              -95.571805285945942, 
+              42.757073991558151
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "117", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702335, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 151.0, 
+        "Name": "OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702bf"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571853615475078, 
+              42.757035072144227
+            ], 
+            [
+              -95.571805285945942, 
+              42.757035072144227
+            ], 
+            [
+              -95.571805285945942, 
+              42.757035758957414
+            ], 
+            [
+              -95.571805285945942, 
+              42.757073991558151
+            ], 
+            [
+              -95.571853615475078, 
+              42.757073991558151
+            ], 
+            [
+              -95.571853615475078, 
+              42.757035072144227
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "118", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702338, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 153.61000000000001, 
+        "Name": "OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702c2"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571876377124283, 
+              42.757035072144227
+            ], 
+            [
+              -95.571872635483317, 
+              42.757035072144227
+            ], 
+            [
+              -95.571872635483317, 
+              42.757082920129577
+            ], 
+            [
+              -95.571936555183143, 
+              42.757082920129577
+            ], 
+            [
+              -95.571936555183143, 
+              42.757035758957414
+            ], 
+            [
+              -95.571936555183143, 
+              42.757035072144227
+            ], 
+            [
+              -95.571876377124283, 
+              42.757035072144227
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "119", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702341, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 259.93000000000001, 
+        "Name": "OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702c5"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571872635483317, 
+              42.757035072144227
+            ], 
+            [
+              -95.571853615475078, 
+              42.757035072144227
+            ], 
+            [
+              -95.571853615475078, 
+              42.757073991558151
+            ], 
+            [
+              -95.571853615475078, 
+              42.757110921812661
+            ], 
+            [
+              -95.571853615475078, 
+              42.757150348903224
+            ], 
+            [
+              -95.571872635483317, 
+              42.757150348903224
+            ], 
+            [
+              -95.571872635483317, 
+              42.757129694706435
+            ], 
+            [
+              -95.571872635483317, 
+              42.757127405329143
+            ], 
+            [
+              -95.571872635483317, 
+              42.757082920129577
+            ], 
+            [
+              -95.571872635483317, 
+              42.757035072144227
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "120", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702344, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 165.21000000000001, 
+        "Name": "CORR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702c8"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571738673739262, 
+              42.757035758957414
+            ], 
+            [
+              -95.571776505967691, 
+              42.757035758957414
+            ], 
+            [
+              -95.571776505967691, 
+              42.757006533684496
+            ], 
+            [
+              -95.571776505967691, 
+              42.757006304746767
+            ], 
+            [
+              -95.571738673739262, 
+              42.757006304746767
+            ], 
+            [
+              -95.571738673739262, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "121", 
+        "NCES_Type": "General Storage", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702347, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 88.659999999999997, 
+        "Name": "CLOSET", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702cb"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571776505967691, 
+              42.756989821230285
+            ], 
+            [
+              -95.571721836354925, 
+              42.756989821230285
+            ], 
+            [
+              -95.571721836354925, 
+              42.757006304746767
+            ], 
+            [
+              -95.571738673739262, 
+              42.757006304746767
+            ], 
+            [
+              -95.571776505967691, 
+              42.757006304746767
+            ], 
+            [
+              -95.571776505967691, 
+              42.756989821230285
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "122", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702350, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 69.310000000000002, 
+        "Name": "HALL", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702ce"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571680678304304, 
+              42.757035758957414
+            ], 
+            [
+              -95.571738673739262, 
+              42.757035758957414
+            ], 
+            [
+              -95.571738673739262, 
+              42.757006304746767
+            ], 
+            [
+              -95.571721836354925, 
+              42.757006304746767
+            ], 
+            [
+              -95.571721836354925, 
+              42.756989821230285
+            ], 
+            [
+              -95.571680678304304, 
+              42.756989821230285
+            ], 
+            [
+              -95.571680678304304, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "123", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702353, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 198.56999999999999, 
+        "Name": "ADMIN SECRATARY\r\n(BOBBY)", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702d1"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571644197304892, 
+              42.757035758957414
+            ], 
+            [
+              -95.571680678304304, 
+              42.757035758957414
+            ], 
+            [
+              -95.571680678304304, 
+              42.756989821230285
+            ], 
+            [
+              -95.571644197304892, 
+              42.756989821230285
+            ], 
+            [
+              -95.571644197304892, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "124", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702356, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 135.99000000000001, 
+        "Name": "OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702d4"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571606245747375, 
+              42.757035758957414
+            ], 
+            [
+              -95.571644197304892, 
+              42.757035758957414
+            ], 
+            [
+              -95.571644197304892, 
+              42.756989821230285
+            ], 
+            [
+              -95.571608116567859, 
+              42.756989821230285
+            ], 
+            [
+              -95.571608116567859, 
+              42.757008973243131
+            ], 
+            [
+              -95.571606245747375, 
+              42.757008973243131
+            ], 
+            [
+              -95.571606245747375, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "125", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702359, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 133.16000000000000, 
+        "Name": "RN'S PM\r\nSUP OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702d7"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571608116567859, 
+              42.756989821230285
+            ], 
+            [
+              -95.571644197304892, 
+              42.756989821230285
+            ], 
+            [
+              -95.571680678304304, 
+              42.756989821230285
+            ], 
+            [
+              -95.571721836354925, 
+              42.756989821230285
+            ], 
+            [
+              -95.571774615564081, 
+              42.756989821230285
+            ], 
+            [
+              -95.571776505967691, 
+              42.756989821230285
+            ], 
+            [
+              -95.571776505967691, 
+              42.756990508043472
+            ], 
+            [
+              -95.571789913514479, 
+              42.756990508043472
+            ], 
+            [
+              -95.571798332206654, 
+              42.756990508043472
+            ], 
+            [
+              -95.571798332206654, 
+              42.756989821230285
+            ], 
+            [
+              -95.571803914521823, 
+              42.756989821230285
+            ], 
+            [
+              -95.571817040411474, 
+              42.756989821230285
+            ], 
+            [
+              -95.571839490257261, 
+              42.756989821230285
+            ], 
+            [
+              -95.571839490257261, 
+              42.756952275710603
+            ], 
+            [
+              -95.571780080044562, 
+              42.756952275710603
+            ], 
+            [
+              -95.571757630198775, 
+              42.756952275710603
+            ], 
+            [
+              -95.571717136200164, 
+              42.756952275710603
+            ], 
+            [
+              -95.571680343397333, 
+              42.756952275710603
+            ], 
+            [
+              -95.571643967943999, 
+              42.756952275710603
+            ], 
+            [
+              -95.571605304320698, 
+              42.756952275710603
+            ], 
+            [
+              -95.571582854474912, 
+              42.756952275710603
+            ], 
+            [
+              -95.571564374631038, 
+              42.756952275710603
+            ], 
+            [
+              -95.571540989374995, 
+              42.756952275710603
+            ], 
+            [
+              -95.571503884768759, 
+              42.756952275710603
+            ], 
+            [
+              -95.571467624053085, 
+              42.756952275710603
+            ], 
+            [
+              -95.571430368005934, 
+              42.756952275710603
+            ], 
+            [
+              -95.571389981609030, 
+              42.756952275710603
+            ], 
+            [
+              -95.571350070772070, 
+              42.756952275710603
+            ], 
+            [
+              -95.571307665507803, 
+              42.756952275710603
+            ], 
+            [
+              -95.571303923866836, 
+              42.756952275710603
+            ], 
+            [
+              -95.571303923866836, 
+              42.756951588897415
+            ], 
+            [
+              -95.571302364849771, 
+              42.756951588897415
+            ], 
+            [
+              -95.571302364849771, 
+              42.756990508043472
+            ], 
+            [
+              -95.571303923866836, 
+              42.756990508043472
+            ], 
+            [
+              -95.571303923866836, 
+              42.756989821230285
+            ], 
+            [
+              -95.571307665507803, 
+              42.756989821230285
+            ], 
+            [
+              -95.571318578627285, 
+              42.756989821230285
+            ], 
+            [
+              -95.571343091006995, 
+              42.756989821230285
+            ], 
+            [
+              -95.571408881527304, 
+              42.756989821230285
+            ], 
+            [
+              -95.571440997278913, 
+              42.756989821230285
+            ], 
+            [
+              -95.571466253355425, 
+              42.756989821230285
+            ], 
+            [
+              -95.571475313863417, 
+              42.756989821230285
+            ], 
+            [
+              -95.571491839444349, 
+              42.756989821230285
+            ], 
+            [
+              -95.571502128956993, 
+              42.756989821230285
+            ], 
+            [
+              -95.571541349303089, 
+              42.756989821230285
+            ], 
+            [
+              -95.571608116567859, 
+              42.756989821230285
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "126", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702362, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 1810.0300000000000, 
+        "Name": "CORRIDOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702da"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571502128956993, 
+              42.757035758957414
+            ], 
+            [
+              -95.571543220123573, 
+              42.757035758957414
+            ], 
+            [
+              -95.571543220123573, 
+              42.757008973243131
+            ], 
+            [
+              -95.571541349303089, 
+              42.757008973243131
+            ], 
+            [
+              -95.571541349303089, 
+              42.756989821230285
+            ], 
+            [
+              -95.571502128956993, 
+              42.756989821230285
+            ], 
+            [
+              -95.571502128956993, 
+              42.757009981271402
+            ], 
+            [
+              -95.571502128956993, 
+              42.757014560025979
+            ], 
+            [
+              -95.571502128956993, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "127", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702365, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 146.97000000000000, 
+        "Name": "PA OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702dd"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571440997278913, 
+              42.757035758957414
+            ], 
+            [
+              -95.571491839444349, 
+              42.757035758957414
+            ], 
+            [
+              -95.571491839444349, 
+              42.757014560025979
+            ], 
+            [
+              -95.571491839444349, 
+              42.757009981271402
+            ], 
+            [
+              -95.571491839444349, 
+              42.756989821230285
+            ], 
+            [
+              -95.571475313863417, 
+              42.756989821230285
+            ], 
+            [
+              -95.571475313863417, 
+              42.756998749801717
+            ], 
+            [
+              -95.571466253355425, 
+              42.756998749801717
+            ], 
+            [
+              -95.571466253355425, 
+              42.756989821230285
+            ], 
+            [
+              -95.571440997278913, 
+              42.756989821230285
+            ], 
+            [
+              -95.571440997278913, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "128", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702368, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 187.19999999999999, 
+        "Name": "BEHAVIORAL\r\nHEALTH\r\nPROF OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702e0"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571408881527304, 
+              42.757035758957414
+            ], 
+            [
+              -95.571440997278913, 
+              42.757035758957414
+            ], 
+            [
+              -95.571440997278913, 
+              42.756989821230285
+            ], 
+            [
+              -95.571408881527304, 
+              42.756989821230285
+            ], 
+            [
+              -95.571408881527304, 
+              42.757004028890449
+            ], 
+            [
+              -95.571408881527304, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "130", 
+        "NCES_Type": "Break Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702374, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 119.77000000000000, 
+        "Name": "BREAK\r\nROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702e6"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571383313647374, 
+              42.757035758957414
+            ], 
+            [
+              -95.571408881527304, 
+              42.757035758957414
+            ], 
+            [
+              -95.571408881527304, 
+              42.757004028890449
+            ], 
+            [
+              -95.571392667749791, 
+              42.757004028890449
+            ], 
+            [
+              -95.571392667749791, 
+              42.757014102150521
+            ], 
+            [
+              -95.571387678895164, 
+              42.757014102150521
+            ], 
+            [
+              -95.571383313647374, 
+              42.757014102150521
+            ], 
+            [
+              -95.571383313647374, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "131", 
+        "NCES_Type": "Single Stall Restroom", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702377, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 54.890000000000001, 
+        "Name": "RR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702e9"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571344026417236, 
+              42.757035758957414
+            ], 
+            [
+              -95.571376453972263, 
+              42.757035758957414
+            ], 
+            [
+              -95.571376453972263, 
+              42.757014102150521
+            ], 
+            [
+              -95.571365852656200, 
+              42.757014102150521
+            ], 
+            [
+              -95.571361486114185, 
+              42.757014102150521
+            ], 
+            [
+              -95.571365852656200, 
+              42.757009523395944
+            ], 
+            [
+              -95.571365852656200, 
+              42.757004028890449
+            ], 
+            [
+              -95.571343091006995, 
+              42.757004028890449
+            ], 
+            [
+              -95.571343091006995, 
+              42.757035758957414
+            ], 
+            [
+              -95.571344026417236, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "132", 
+        "NCES_Type": "Single Stall Restroom", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702380, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 71.890000000000001, 
+        "Name": "RR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702ec"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571408881527304, 
+              42.756989821230285
+            ], 
+            [
+              -95.571343091006995, 
+              42.756989821230285
+            ], 
+            [
+              -95.571343091006995, 
+              42.757004028890449
+            ], 
+            [
+              -95.571365852656200, 
+              42.757004028890449
+            ], 
+            [
+              -95.571387678895164, 
+              42.757004028890449
+            ], 
+            [
+              -95.571392667749791, 
+              42.757004028890449
+            ], 
+            [
+              -95.571408881527304, 
+              42.757004028890449
+            ], 
+            [
+              -95.571408881527304, 
+              42.756989821230285
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "133", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702383, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 68.480000000000004, 
+        "Name": "HALL", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702ef"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571387678895164, 
+              42.757004028890449
+            ], 
+            [
+              -95.571365852656200, 
+              42.757004028890449
+            ], 
+            [
+              -95.571365852656200, 
+              42.757009523395944
+            ], 
+            [
+              -95.571365852656200, 
+              42.757014102150521
+            ], 
+            [
+              -95.571376453972263, 
+              42.757014102150521
+            ], 
+            [
+              -95.571383313647374, 
+              42.757014102150521
+            ], 
+            [
+              -95.571387678895164, 
+              42.757014102150521
+            ], 
+            [
+              -95.571387678895164, 
+              42.757004028890449
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "134", 
+        "NCES_Type": "General Storage", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702386, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 16.440000000000001, 
+        "Name": "CHEM STOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702f2"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571307665507803, 
+              42.756952275710603
+            ], 
+            [
+              -95.571350070772070, 
+              42.756952275710603
+            ], 
+            [
+              -95.571350070772070, 
+              42.756907255303958
+            ], 
+            [
+              -95.571307665507803, 
+              42.756907255303958
+            ], 
+            [
+              -95.571307665507803, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "135", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702389, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 143.93000000000001, 
+        "Name": "PA OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702f5"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571350070772070, 
+              42.756952275710603
+            ], 
+            [
+              -95.571389981609030, 
+              42.756952275710603
+            ], 
+            [
+              -95.571389981609030, 
+              42.756907255303958
+            ], 
+            [
+              -95.571350070772070, 
+              42.756907255303958
+            ], 
+            [
+              -95.571350070772070, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "136", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702392, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 141.5, 
+        "Name": "PA OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702f8"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571389981609030, 
+              42.756952275710603
+            ], 
+            [
+              -95.571430368005934, 
+              42.756952275710603
+            ], 
+            [
+              -95.571430368005934, 
+              42.756924024434660
+            ], 
+            [
+              -95.571430368005934, 
+              42.756921262803253
+            ], 
+            [
+              -95.571432238826418, 
+              42.756921262803253
+            ], 
+            [
+              -95.571432238826418, 
+              42.756907255303958
+            ], 
+            [
+              -95.571389981609030, 
+              42.756907255303958
+            ], 
+            [
+              -95.571389981609030, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "137", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702395, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 143.36000000000001, 
+        "Name": "PA OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702fb"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571430368005934, 
+              42.756952275710603
+            ], 
+            [
+              -95.571467624053085, 
+              42.756952275710603
+            ], 
+            [
+              -95.571467624053085, 
+              42.756921262803253
+            ], 
+            [
+              -95.571430368005934, 
+              42.756921262803253
+            ], 
+            [
+              -95.571430368005934, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "138", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702398, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 85.439999999999998, 
+        "Name": "STUDENT\r\nOFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-005702fe"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571467624053085, 
+              42.756952275710603
+            ], 
+            [
+              -95.571503884768759, 
+              42.756952275710603
+            ], 
+            [
+              -95.571503884768759, 
+              42.756921262803253
+            ], 
+            [
+              -95.571467624053085, 
+              42.756921262803253
+            ], 
+            [
+              -95.571467624053085, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "139", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702401, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 82.900000000000006, 
+        "Name": "STUDENT\r\nOFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570301"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571503884768759, 
+              42.756952275710603
+            ], 
+            [
+              -95.571540989374995, 
+              42.756952275710603
+            ], 
+            [
+              -95.571540989374995, 
+              42.756941973512802
+            ], 
+            [
+              -95.571540989374995, 
+              42.756921262803253
+            ], 
+            [
+              -95.571523528383835, 
+              42.756921262803253
+            ], 
+            [
+              -95.571503884768759, 
+              42.756921262803253
+            ], 
+            [
+              -95.571503884768759, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "140", 
+        "NCES_Type": "General Storage", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702404, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 82.670000000000002, 
+        "Name": "STORAGE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570304"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571432238826418, 
+              42.756907255303958
+            ], 
+            [
+              -95.571432238826418, 
+              42.756921262803253
+            ], 
+            [
+              -95.571432258409544, 
+              42.756921262803253
+            ], 
+            [
+              -95.571467624053085, 
+              42.756921262803253
+            ], 
+            [
+              -95.571503884768759, 
+              42.756921262803253
+            ], 
+            [
+              -95.571523528383835, 
+              42.756921262803253
+            ], 
+            [
+              -95.571523528383835, 
+              42.756905224681027
+            ], 
+            [
+              -95.571540053964753, 
+              42.756905224681027
+            ], 
+            [
+              -95.571540053964753, 
+              42.756889080244854
+            ], 
+            [
+              -95.571432238826418, 
+              42.756889080244854
+            ], 
+            [
+              -95.571432238826418, 
+              42.756907255303958
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "141", 
+        "NCES_Type": "Porch/Balcony", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702407, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 239.59000000000000, 
+        "Name": "BALCONY", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570307"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571715265379680, 
+              42.756906148996016
+            ], 
+            [
+              -95.571715265379680, 
+              42.756889080244854
+            ], 
+            [
+              -95.571607175141182, 
+              42.756889080244854
+            ], 
+            [
+              -95.571607175141182, 
+              42.756905224681027
+            ], 
+            [
+              -95.571624947935760, 
+              42.756905224681027
+            ], 
+            [
+              -95.571624947935760, 
+              42.756920563508864
+            ], 
+            [
+              -95.571643967943999, 
+              42.756920563508864
+            ], 
+            [
+              -95.571680343397333, 
+              42.756920563508864
+            ], 
+            [
+              -95.571715245796554, 
+              42.756920563508864
+            ], 
+            [
+              -95.571715265379680, 
+              42.756920563508864
+            ], 
+            [
+              -95.571715265379680, 
+              42.756906148996016
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "142", 
+        "NCES_Type": "Porch/Balcony", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702410, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 232.75999999999999, 
+        "Name": "BALCONY", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-0057030a"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571605304320698, 
+              42.756952275710603
+            ], 
+            [
+              -95.571643967943999, 
+              42.756952275710603
+            ], 
+            [
+              -95.571643967943999, 
+              42.756920563508864
+            ], 
+            [
+              -95.571624947935760, 
+              42.756920563508864
+            ], 
+            [
+              -95.571605304320698, 
+              42.756920563508864
+            ], 
+            [
+              -95.571605304320698, 
+              42.756941973512802
+            ], 
+            [
+              -95.571605304320698, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "143", 
+        "NCES_Type": "Lactation/Wellness Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702413, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 91.400000000000006, 
+        "Name": "LACTATION\r\nROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-0057030d"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571643967943999, 
+              42.756952275710603
+            ], 
+            [
+              -95.571680343397333, 
+              42.756952275710603
+            ], 
+            [
+              -95.571680343397333, 
+              42.756920563508864
+            ], 
+            [
+              -95.571643967943999, 
+              42.756920563508864
+            ], 
+            [
+              -95.571643967943999, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "144", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702416, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 85.409999999999997, 
+        "Name": "WORK ROOM / \r\nOFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570310"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571680343397333, 
+              42.756952275710603
+            ], 
+            [
+              -95.571717136200164, 
+              42.756952275710603
+            ], 
+            [
+              -95.571717136200164, 
+              42.756920563508864
+            ], 
+            [
+              -95.571680343397333, 
+              42.756920563508864
+            ], 
+            [
+              -95.571680343397333, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "145", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702419, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 86.510000000000005, 
+        "Name": "ON-CALL\r\nPA/PT\r\nOFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570313"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571757630198775, 
+              42.756906148996016
+            ], 
+            [
+              -95.571715265379680, 
+              42.756906148996016
+            ], 
+            [
+              -95.571715265379680, 
+              42.756920563508864
+            ], 
+            [
+              -95.571717136200164, 
+              42.756920563508864
+            ], 
+            [
+              -95.571717136200164, 
+              42.756923325140271
+            ], 
+            [
+              -95.571717136200164, 
+              42.756952275710603
+            ], 
+            [
+              -95.571757630198775, 
+              42.756952275710603
+            ], 
+            [
+              -95.571757630198775, 
+              42.756938081571406
+            ], 
+            [
+              -95.571757630198775, 
+              42.756906148996016
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "146", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702422, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 147.72999999999999, 
+        "Name": "PM SUP OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570316"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571797229232317, 
+              42.756906148996016
+            ], 
+            [
+              -95.571757630198775, 
+              42.756906148996016
+            ], 
+            [
+              -95.571757630198775, 
+              42.756938081571406
+            ], 
+            [
+              -95.571780080044562, 
+              42.756938081571406
+            ], 
+            [
+              -95.571797229232317, 
+              42.756938081571406
+            ], 
+            [
+              -95.571797229232317, 
+              42.756906148996016
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "147", 
+        "NCES_Type": "Patient Services - Counseling/Psych", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702425, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 100.33000000000000, 
+        "Name": "SOCIAL WORK\r\nOFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570319"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571839490257261, 
+              42.756938081571406
+            ], 
+            [
+              -95.571839490257261, 
+              42.756906148996016
+            ], 
+            [
+              -95.571797229232317, 
+              42.756906148996016
+            ], 
+            [
+              -95.571797229232317, 
+              42.756938081571406
+            ], 
+            [
+              -95.571839490257261, 
+              42.756938081571406
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "148", 
+        "NCES_Type": "Patient Services - Counseling/Psych", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702428, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 102.5, 
+        "Name": "SOCIAL WORK\r\nOFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-0057031c"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571839490257261, 
+              42.756952275710603
+            ], 
+            [
+              -95.571839490257261, 
+              42.756938081571406
+            ], 
+            [
+              -95.571797229232317, 
+              42.756938081571406
+            ], 
+            [
+              -95.571780080044562, 
+              42.756938081571406
+            ], 
+            [
+              -95.571780080044562, 
+              42.756952275710603
+            ], 
+            [
+              -95.571839490257261, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "149", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702431, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 59.729999999999997, 
+        "Name": "HALL", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-0057031f"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571757630198775, 
+              42.756952275710603
+            ], 
+            [
+              -95.571780080044562, 
+              42.756952275710603
+            ], 
+            [
+              -95.571780080044562, 
+              42.756938081571406
+            ], 
+            [
+              -95.571757630198775, 
+              42.756938081571406
+            ], 
+            [
+              -95.571757630198775, 
+              42.756952275710603
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "150", 
+        "NCES_Type": "General Storage", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702434, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 21.440000000000001, 
+        "Name": "STOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570322"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571805285945942, 
+              42.757035758957414
+            ], 
+            [
+              -95.571805285945942, 
+              42.757035072144227
+            ], 
+            [
+              -95.571853615475078, 
+              42.757035072144227
+            ], 
+            [
+              -95.571872635483317, 
+              42.757035072144227
+            ], 
+            [
+              -95.571876377124283, 
+              42.757035072144227
+            ], 
+            [
+              -95.571876377124283, 
+              42.757005617933579
+            ], 
+            [
+              -95.571839490257261, 
+              42.757005617933579
+            ], 
+            [
+              -95.571839490257261, 
+              42.756989821230285
+            ], 
+            [
+              -95.571817040411474, 
+              42.756989821230285
+            ], 
+            [
+              -95.571803914521823, 
+              42.756989821230285
+            ], 
+            [
+              -95.571798332206654, 
+              42.756989821230285
+            ], 
+            [
+              -95.571798332206654, 
+              42.756990508043472
+            ], 
+            [
+              -95.571789913514479, 
+              42.756990508043472
+            ], 
+            [
+              -95.571789913514479, 
+              42.757006533684496
+            ], 
+            [
+              -95.571776505967691, 
+              42.757006533684496
+            ], 
+            [
+              -95.571776505967691, 
+              42.757035758957414
+            ], 
+            [
+              -95.571805285945942, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "151", 
+        "NCES_Type": "Stair", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702437, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 291.06999999999999, 
+        "Name": "STAIRS", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-00570325"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571776505967691, 
+              42.756990508043472
+            ], 
+            [
+              -95.571776505967691, 
+              42.756991896048504
+            ], 
+            [
+              -95.571776505967691, 
+              42.757006304746767
+            ], 
+            [
+              -95.571776505967691, 
+              42.757006533684496
+            ], 
+            [
+              -95.571789913514479, 
+              42.757006533684496
+            ], 
+            [
+              -95.571789913514479, 
+              42.756990508043472
+            ], 
+            [
+              -95.571776505967691, 
+              42.756990508043472
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "152", 
+        "NCES_Type": "General Storage", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5702525, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 11.190000000000000, 
+        "Name": "STOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "7b110d46-b9ca-4cf5-900e-4d5b9f499b2a-0057037d"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571608116567859, 
+              42.757035758957414
+            ], 
+            [
+              -95.571606245747375, 
+              42.757035758957414
+            ], 
+            [
+              -95.571606245747375, 
+              42.757032997326007
+            ], 
+            [
+              -95.571606245747375, 
+              42.757008973243131
+            ], 
+            [
+              -95.571608116567859, 
+              42.757008973243131
+            ], 
+            [
+              -95.571608116567859, 
+              42.756989821230285
+            ], 
+            [
+              -95.571541349303089, 
+              42.756989821230285
+            ], 
+            [
+              -95.571541349303089, 
+              42.757008973243131
+            ], 
+            [
+              -95.571543220123573, 
+              42.757008973243131
+            ], 
+            [
+              -95.571543220123573, 
+              42.757032997326007
+            ], 
+            [
+              -95.571543220123573, 
+              42.757035758957414
+            ], 
+            [
+              -95.571541349303089, 
+              42.757035758957414
+            ], 
+            [
+              -95.571541349303089, 
+              42.757040108774270
+            ], 
+            [
+              -95.571608116567859, 
+              42.757040108774270
+            ], 
+            [
+              -95.571608116567859, 
+              42.757035758957414
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "012G", 
+        "NCES_Type": "Conference Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5952329, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 384.64999999999998, 
+        "Name": "CONFERENCE ROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "8ec8d7a6-edf2-46e5-8774-1d9d0b539c06-005ad349"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571607175141182, 
+              42.756889080244854
+            ], 
+            [
+              -95.571607175141182, 
+              42.756886332992110
+            ], 
+            [
+              -95.571540053964753, 
+              42.756886332992110
+            ], 
+            [
+              -95.571540053964753, 
+              42.756889080244854
+            ], 
+            [
+              -95.571540053964753, 
+              42.756905224681027
+            ], 
+            [
+              -95.571540053964753, 
+              42.756920563508864
+            ], 
+            [
+              -95.571543815188846, 
+              42.756920563508864
+            ], 
+            [
+              -95.571605304320698, 
+              42.756920563508864
+            ], 
+            [
+              -95.571607175141182, 
+              42.756920563508864
+            ], 
+            [
+              -95.571607175141182, 
+              42.756905224681027
+            ], 
+            [
+              -95.571607175141182, 
+              42.756889080244854
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "012H", 
+        "NCES_Type": "Private Office - Enclosed", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5952486, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 294.38000000000000, 
+        "Name": "DR FULTON OFFICE", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "8ec8d7a6-edf2-46e5-8774-1d9d0b539c06-005ad3e6"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571605304320698, 
+              42.756923325140271
+            ], 
+            [
+              -95.571605304320698, 
+              42.756920563508864
+            ], 
+            [
+              -95.571540989374995, 
+              42.756920563508864
+            ], 
+            [
+              -95.571540989374995, 
+              42.756924024434660
+            ], 
+            [
+              -95.571540989374995, 
+              42.756941973512802
+            ], 
+            [
+              -95.571564374631038, 
+              42.756941973512802
+            ], 
+            [
+              -95.571564374631038, 
+              42.756952275710603
+            ], 
+            [
+              -95.571582854474912, 
+              42.756952275710603
+            ], 
+            [
+              -95.571582854474912, 
+              42.756941973512802
+            ], 
+            [
+              -95.571605304320698, 
+              42.756941973512802
+            ], 
+            [
+              -95.571605304320698, 
+              42.756923325140271
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "012I", 
+        "NCES_Type": "Waiting/Queue Area", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5952546, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 132.88999999999999, 
+        "Name": "ENTRY", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "8ec8d7a6-edf2-46e5-8774-1d9d0b539c06-005ad422"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571103092247398, 
+              42.757178070379879
+            ], 
+            [
+              -95.571192187225179, 
+              42.757178070379879
+            ], 
+            [
+              -95.571206634197566, 
+              42.757178070379879
+            ], 
+            [
+              -95.571206634197566, 
+              42.757177383566692
+            ], 
+            [
+              -95.571231578470659, 
+              42.757177383566692
+            ], 
+            [
+              -95.571247480444768, 
+              42.757177383566692
+            ], 
+            [
+              -95.571247480444768, 
+              42.757178070379879
+            ], 
+            [
+              -95.571344961827478, 
+              42.757178070379879
+            ], 
+            [
+              -95.571348703468445, 
+              42.757178070379879
+            ], 
+            [
+              -95.571348703468445, 
+              42.757178757193067
+            ], 
+            [
+              -95.571350886092347, 
+              42.757178757193067
+            ], 
+            [
+              -95.571350886092347, 
+              42.757139837779150
+            ], 
+            [
+              -95.571344961827478, 
+              42.757139837779150
+            ], 
+            [
+              -95.571344961827478, 
+              42.757140524592330
+            ], 
+            [
+              -95.571341200603399, 
+              42.757140524592330
+            ], 
+            [
+              -95.571284280251774, 
+              42.757140524592330
+            ], 
+            [
+              -95.571247487448943, 
+              42.757140524592330
+            ], 
+            [
+              -95.571211630056368, 
+              42.757140524592330
+            ], 
+            [
+              -95.571175772663779, 
+              42.757140524592330
+            ], 
+            [
+              -95.571138979860962, 
+              42.757140524592330
+            ], 
+            [
+              -95.571100939844484, 
+              42.757140524592330
+            ], 
+            [
+              -95.571036396537835, 
+              42.757140524592330
+            ], 
+            [
+              -95.570999681685862, 
+              42.757140524592330
+            ], 
+            [
+              -95.57096343453901, 
+              42.757140524592330
+            ], 
+            [
+              -95.570925827609102, 
+              42.757140524592330
+            ], 
+            [
+              -95.570801861919463, 
+              42.757140524592330
+            ], 
+            [
+              -95.570801861919463, 
+              42.757139837779150
+            ], 
+            [
+              -95.570795625851190, 
+              42.757139837779150
+            ], 
+            [
+              -95.570795625851190, 
+              42.757178070379879
+            ], 
+            [
+              -95.570802729483546, 
+              42.757178070379879
+            ], 
+            [
+              -95.570813018996191, 
+              42.757178070379879
+            ], 
+            [
+              -95.570837963269298, 
+              42.757178070379879
+            ], 
+            [
+              -95.570855916667483, 
+              42.757178070379879
+            ], 
+            [
+              -95.570889903239575, 
+              42.757178070379879
+            ], 
+            [
+              -95.570924825221923, 
+              42.757178070379879
+            ], 
+            [
+              -95.570936361948227, 
+              42.757178070379879
+            ], 
+            [
+              -95.570960661252698, 
+              42.757178070379879
+            ], 
+            [
+              -95.570970327158534, 
+              42.757178070379879
+            ], 
+            [
+              -95.570985293722387, 
+              42.757178070379879
+            ], 
+            [
+              -95.570995271431627, 
+              42.757178070379879
+            ], 
+            [
+              -95.571035810282240, 
+              42.757178070379879
+            ], 
+            [
+              -95.571103092247398, 
+              42.757178070379879
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "012S", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5961237, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 1936.5699999999999, 
+        "Name": "CORRIDOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "9ab5b8f0-ca7f-4f32-b5ae-3b2d2971185f-005af615"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571284280251774, 
+              42.757108743741540
+            ], 
+            [
+              -95.571283344841532, 
+              42.757108743741540
+            ], 
+            [
+              -95.571247487448943, 
+              42.757108743741540
+            ], 
+            [
+              -95.571247487448943, 
+              42.757140524592330
+            ], 
+            [
+              -95.571284280251774, 
+              42.757140524592330
+            ], 
+            [
+              -95.571284280251774, 
+              42.757108743741540
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "012W", 
+        "NCES_Type": "Patient Activity Room", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5961249, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 88.359999999999999, 
+        "Name": "MUSIC ROOM", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "9ab5b8f0-ca7f-4f32-b5ae-3b2d2971185f-005af621"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.571343091006995, 
+              42.756989821230285
+            ], 
+            [
+              -95.571318578627285, 
+              42.756989821230285
+            ], 
+            [
+              -95.571318578627285, 
+              42.756999207677168
+            ], 
+            [
+              -95.571307665507803, 
+              42.756999207677168
+            ], 
+            [
+              -95.571307665507803, 
+              42.757042019032482
+            ], 
+            [
+              -95.571308600918044, 
+              42.757042019032482
+            ], 
+            [
+              -95.571308600918044, 
+              42.757091760856071
+            ], 
+            [
+              -95.571283344841532, 
+              42.757091760856071
+            ], 
+            [
+              -95.571283344841532, 
+              42.757108743741540
+            ], 
+            [
+              -95.571284280251774, 
+              42.757108743741540
+            ], 
+            [
+              -95.571284280251774, 
+              42.757140524592330
+            ], 
+            [
+              -95.571344961827478, 
+              42.757140524592330
+            ], 
+            [
+              -95.571344961827478, 
+              42.757117672312965
+            ], 
+            [
+              -95.571344961827478, 
+              42.757100730921024
+            ], 
+            [
+              -95.571344961827478, 
+              42.757089013603320
+            ], 
+            [
+              -95.571344026417236, 
+              42.757089013603320
+            ], 
+            [
+              -95.571344026417236, 
+              42.757035758957414
+            ], 
+            [
+              -95.571343091006995, 
+              42.757035758957414
+            ], 
+            [
+              -95.571343091006995, 
+              42.757004028890449
+            ], 
+            [
+              -95.571343091006995, 
+              42.756989821230285
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "087", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5965866, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 518.25999999999999, 
+        "Name": "CORRIDOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "CCUSO", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "9ab5b8f0-ca7f-4f32-b5ae-3b2d2971185f-005b082a"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -95.572069654264141, 
+              42.757416851873977
+            ], 
+            [
+              -95.572105416311160, 
+              42.757416851873977
+            ], 
+            [
+              -95.572105416311160, 
+              42.757404323414818
+            ], 
+            [
+              -95.572104480900919, 
+              42.757404323414818
+            ], 
+            [
+              -95.572104480900919, 
+              42.757342618995075
+            ], 
+            [
+              -95.572139958156257, 
+              42.757342618995075
+            ], 
+            [
+              -95.572157690645767, 
+              42.757342618995075
+            ], 
+            [
+              -95.572175463440360, 
+              42.757342618995075
+            ], 
+            [
+              -95.572190952515072, 
+              42.757342618995075
+            ], 
+            [
+              -95.572217767608649, 
+              42.757342618995075
+            ], 
+            [
+              -95.572245127170135, 
+              42.757342618995075
+            ], 
+            [
+              -95.572261652751067, 
+              42.757342618995075
+            ], 
+            [
+              -95.572286418135036, 
+              42.757342618995075
+            ], 
+            [
+              -95.572302753661035, 
+              42.757342618995075
+            ], 
+            [
+              -95.572321461865855, 
+              42.757342618995075
+            ], 
+            [
+              -95.572345813260910, 
+              42.757342618995075
+            ], 
+            [
+              -95.572372883549008, 
+              42.757342618995075
+            ], 
+            [
+              -95.572394393597193, 
+              42.757342618995075
+            ], 
+            [
+              -95.572435551647814, 
+              42.757342618995075
+            ], 
+            [
+              -95.572435551647814, 
+              42.757317539561235
+            ], 
+            [
+              -95.572416843442980, 
+              42.757317539561235
+            ], 
+            [
+              -95.572381696260791, 
+              42.757317539561235
+            ], 
+            [
+              -95.572358964673725, 
+              42.757317539561235
+            ], 
+            [
+              -95.572331837776730, 
+              42.757317539561235
+            ], 
+            [
+              -95.572305646289976, 
+              42.757317539561235
+            ], 
+            [
+              -95.572283490155826, 
+              42.757317539561235
+            ], 
+            [
+              -95.572259316345367, 
+              42.757317539561235
+            ], 
+            [
+              -95.572234764819129, 
+              42.757317539561235
+            ], 
+            [
+              -95.572208573332375, 
+              42.757317539561235
+            ], 
+            [
+              -95.572187172629796, 
+              42.757317539561235
+            ], 
+            [
+              -95.572163370575055, 
+              42.757317539561235
+            ], 
+            [
+              -95.572104480900919, 
+              42.757317539561235
+            ], 
+            [
+              -95.572104480900919, 
+              42.757245195238887
+            ], 
+            [
+              -95.572104480900919, 
+              42.757210458456541
+            ], 
+            [
+              -95.572104480900919, 
+              42.757151736908256
+            ], 
+            [
+              -95.572104480900919, 
+              42.757150348903224
+            ], 
+            [
+              -95.572105416311160, 
+              42.757150348903224
+            ], 
+            [
+              -95.572105416311160, 
+              42.757124115328423
+            ], 
+            [
+              -95.572105416311160, 
+              42.757091377233188
+            ], 
+            [
+              -95.572105416311160, 
+              42.757054989726647
+            ], 
+            [
+              -95.572105416311160, 
+              42.757049458889867
+            ], 
+            [
+              -95.572119342089792, 
+              42.757039234062319
+            ], 
+            [
+              -95.572125010444566, 
+              42.757035072144227
+            ], 
+            [
+              -95.572161521342508, 
+              42.757035072144227
+            ], 
+            [
+              -95.572163411746118, 
+              42.757035072144227
+            ], 
+            [
+              -95.572163411746118, 
+              42.757035758957414
+            ], 
+            [
+              -95.572237351442993, 
+              42.757035758957414
+            ], 
+            [
+              -95.572237351442993, 
+              42.757035072144227
+            ], 
+            [
+              -95.572274029402877, 
+              42.757035072144227
+            ], 
+            [
+              -95.572274029402877, 
+              42.757005617933579
+            ], 
+            [
+              -95.572122973414949, 
+              42.757005617933579
+            ], 
+            [
+              -95.572107287131644, 
+              42.756994100477655
+            ], 
+            [
+              -95.572107287131644, 
+              42.756904944824697
+            ], 
+            [
+              -95.572066578132279, 
+              42.756904944824697
+            ], 
+            [
+              -95.572066578132279, 
+              42.756994100477655
+            ], 
+            [
+              -95.572050891848960, 
+              42.757005617933579
+            ], 
+            [
+              -95.571876377124283, 
+              42.757005617933579
+            ], 
+            [
+              -95.571876377124283, 
+              42.757035072144227
+            ], 
+            [
+              -95.571936555183143, 
+              42.757035072144227
+            ], 
+            [
+              -95.571936555183143, 
+              42.757035758957414
+            ], 
+            [
+              -95.572014309158206, 
+              42.757035758957414
+            ], 
+            [
+              -95.572049387042256, 
+              42.757035758957414
+            ], 
+            [
+              -95.572051147925521, 
+              42.757035758957414
+            ], 
+            [
+              -95.572052651991172, 
+              42.757036863298666
+            ], 
+            [
+              -95.572068718853899, 
+              42.757048660190250
+            ], 
+            [
+              -95.572068718853899, 
+              42.757052242473904
+            ], 
+            [
+              -95.572068718853899, 
+              42.757091377233188
+            ], 
+            [
+              -95.572068718853899, 
+              42.757150348903224
+            ], 
+            [
+              -95.572069654264141, 
+              42.757150348903224
+            ], 
+            [
+              -95.572069654264141, 
+              42.757151736908256
+            ], 
+            [
+              -95.572069654264141, 
+              42.757210458456541
+            ], 
+            [
+              -95.572069654264141, 
+              42.757245195238887
+            ], 
+            [
+              -95.572069654264141, 
+              42.757301513920211
+            ], 
+            [
+              -95.572069654264141, 
+              42.757317539561235
+            ], 
+            [
+              -95.572035202995778, 
+              42.757317539561235
+            ], 
+            [
+              -95.572003457518250, 
+              42.757317539561235
+            ], 
+            [
+              -95.571956687006193, 
+              42.757317539561235
+            ], 
+            [
+              -95.571910883516040, 
+              42.757317539561235
+            ], 
+            [
+              -95.571874913342540, 
+              42.757317539561235
+            ], 
+            [
+              -95.571841652733539, 
+              42.757317539561235
+            ], 
+            [
+              -95.571792540788763, 
+              42.757317539561235
+            ], 
+            [
+              -95.571747858454842, 
+              42.757317539561235
+            ], 
+            [
+              -95.571747858454842, 
+              42.757245195238887
+            ], 
+            [
+              -95.571734054269797, 
+              42.757245195238887
+            ], 
+            [
+              -95.571730085660249, 
+              42.757248109140463
+            ], 
+            [
+              -95.571729150250007, 
+              42.757248795953650
+            ], 
+            [
+              -95.571729150250007, 
+              42.757342618995075
+            ], 
+            [
+              -95.571762825018695, 
+              42.757342618995075
+            ], 
+            [
+              -95.571792540788763, 
+              42.757342618995075
+            ], 
+            [
+              -95.571811872600421, 
+              42.757342618995075
+            ], 
+            [
+              -95.571839385190586, 
+              42.757342618995075
+            ], 
+            [
+              -95.571888338326545, 
+              42.757342618995075
+            ], 
+            [
+              -95.571900714606997, 
+              42.757342618995075
+            ], 
+            [
+              -95.571970654427773, 
+              42.757342618995075
+            ], 
+            [
+              -95.572030367034017, 
+              42.757342618995075
+            ], 
+            [
+              -95.572069654264141, 
+              42.757342618995075
+            ], 
+            [
+              -95.572069654264141, 
+              42.757360011714184
+            ], 
+            [
+              -95.572069654264141, 
+              42.757416851873977
+            ]
+          ]
+        ], 
+        "type": "Polygon"
+      }, 
+      "properties": {
+        "Seat Count": "", 
+        "Number": "088", 
+        "NCES_Type": "Corridor/Hallway", 
+        "Workstations": "", 
+        "Element": "Room", 
+        "RevitId": 5965873, 
+        "occupancyStatus": "Occupied", 
+        "Building": "North A", 
+        "Area_SF": 4040.7800000000002, 
+        "Name": "CORRIDOR", 
+        "NCES_Occupancy Status": "", 
+        "NCES_Department": "General", 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "9ab5b8f0-ca7f-4f32-b5ae-3b2d2971185f-005b0831"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection", 
+  "name": "North A - LEVEL 1"
+}

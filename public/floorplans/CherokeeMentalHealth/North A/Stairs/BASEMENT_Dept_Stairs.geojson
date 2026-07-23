@@ -1,0 +1,160 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571296128781498, 
+          42.757097618471605
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5718878, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057435e", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571296128781498, 
+          42.757073474454970
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5718949, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005743a5", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571293634354177, 
+          42.757116482568286
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5719271, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005744e7", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571306457269571, 
+          42.757132349299845
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5719358, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057453e", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571308172188353, 
+          42.757099737518161
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5719433, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00574589", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571296128781498, 
+          42.757092431579395
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5719273, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005744e9", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571294102059298, 
+          42.757131582873527
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "BASEMENT", 
+        "RevitId": 5719360, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00574540", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "North A", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection", 
+  "name": "North A - BASEMENT Stairs"
+}
