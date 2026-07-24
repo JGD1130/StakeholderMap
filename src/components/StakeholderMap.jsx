@@ -9554,6 +9554,73 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
+const CHEROKEE_CLUSTER_BUILDING_KEYS = new Set([
+  'Main/Administration',
+  'North A',
+  'North B',
+  'North C',
+  'South A',
+  'South B',
+  'South C',
+  'Rear Center'
+].map((value) => normalizeDashboardKey(value)).filter(Boolean));
+const CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS = new Set([
+  'Connected Core',
+  'Main/Administration',
+  'North A'
+].map((value) => normalizeDashboardKey(value)).filter(Boolean));
+const getBuildingFeatureLabel = (feature) => String(
+  feature?.properties?.name ??
+  feature?.properties?.Name ??
+  feature?.properties?.id ??
+  ''
+).trim();
+const isCherokeeOverallRoomsUrl = (url = '') => /floorplans\/cherokeementalhealth\/overall\/rooms\//i.test(String(url || '').replace(/\\/g, '/'));
+function getFeatureAnchorForBuildingAssignment(feature) {
+  if (!feature?.geometry) return null;
+  try {
+    if (feature.geometry.type === 'Point') return feature;
+    if (feature.geometry.type === 'MultiPoint') {
+      const firstPoint = Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates[0] : null;
+      if (Array.isArray(firstPoint)) return turf.point(firstPoint);
+    }
+    return turf.pointOnFeature(feature);
+  } catch {
+    return null;
+  }
+}
+function resolveCherokeeOverallRoomBuildingLabel(feature, buildingFeatures = [], fallbackLabel = '') {
+  if (!feature?.geometry || !Array.isArray(buildingFeatures) || !buildingFeatures.length) return fallbackLabel;
+  const anchor = getFeatureAnchorForBuildingAssignment(feature);
+  if (!anchor) return fallbackLabel;
+  let nearestLabel = '';
+  let nearestDistanceKm = Number.POSITIVE_INFINITY;
+  for (const candidate of buildingFeatures) {
+    const label = getBuildingFeatureLabel(candidate);
+    const key = normalizeDashboardKey(label);
+    if (!CHEROKEE_CLUSTER_BUILDING_KEYS.has(key)) continue;
+    try {
+      if (turf.booleanPointInPolygon(anchor, candidate)) return label || fallbackLabel;
+    } catch {}
+    try {
+      const centroid = turf.centroid(candidate);
+      const distanceKm = turf.distance(anchor, centroid, { units: 'kilometers' });
+      if (Number.isFinite(distanceKm) && distanceKm < nearestDistanceKm) {
+        nearestDistanceKm = distanceKm;
+        nearestLabel = label;
+      }
+    } catch {}
+  }
+  return nearestLabel || fallbackLabel;
+}
+function shouldPreferManifestBuildingForCherokee(currentLabel, manifestLabel) {
+  const currentKey = normalizeDashboardKey(currentLabel);
+  const manifestKey = normalizeDashboardKey(manifestLabel);
+  if (!manifestKey || !CHEROKEE_CLUSTER_BUILDING_KEYS.has(manifestKey)) return false;
+  if (!currentKey) return true;
+  if (currentKey === manifestKey) return false;
+  return CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS.has(currentKey);
+}
 const normalizeMaintenanceBuildingFilterKey = (buildingIdValue, buildingNameValue = '') => {
   const idRaw = String(buildingIdValue || '').trim();
   const nameRaw = String(buildingNameValue || '').trim();
@@ -10063,7 +10130,15 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
         merged.roomLabel = manifestRoomLabel;
       }
     }
-    if (!merged.building && manifestMatch.building) merged.building = manifestMatch.building;
+    const mergedBuildingLabel = String(merged.building ?? merged.buildingName ?? merged.buildingLabel ?? '').trim();
+    const manifestBuildingLabel = String(manifestMatch.building ?? manifestMatch.buildingName ?? manifestMatch.buildingLabel ?? '').trim();
+    if ((!mergedBuildingLabel && manifestBuildingLabel) || shouldPreferManifestBuildingForCherokee(mergedBuildingLabel, manifestBuildingLabel)) {
+      merged.building = manifestBuildingLabel;
+      merged.buildingName = manifestBuildingLabel;
+      merged.buildingLabel = manifestBuildingLabel;
+    } else if (!merged.building && manifestBuildingLabel) {
+      merged.building = manifestBuildingLabel;
+    }
     if (!merged.floor && manifestMatch.floor) merged.floor = manifestMatch.floor;
 
     if (!merged.type || isLinkedRecordArray(merged.type)) {
@@ -10311,6 +10386,7 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
     .trim()
     .replace(/^\/+/, '')
     .toLowerCase();
+  const buildingFeatures = Array.isArray(options?.buildingFeatures) ? options.buildingFeatures : [];
 
   const buildingNameById = new Map();
   if (Array.isArray(manifest?.buildings)) {
@@ -10345,8 +10421,12 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
   const results = await runWithLimit(jobs, 6, async (job) => {
     const feats = await fetchRoomsForFloorUrl(job.url);
     const rows = [];
+    const shouldReassignCherokeeOverall = isCherokeeOverallRoomsUrl(job.url) && buildingFeatures.length > 0;
     (feats || []).forEach((feature) => {
-      const row = toDashboardRoomRow(feature, job.buildingLabel);
+      const effectiveBuildingLabel = shouldReassignCherokeeOverall
+        ? resolveCherokeeOverallRoomBuildingLabel(feature, buildingFeatures, job.buildingLabel)
+        : job.buildingLabel;
+      const row = toDashboardRoomRow(feature, effectiveBuildingLabel);
       if (row) rows.push(row);
     });
     return rows;
@@ -11944,8 +12024,9 @@ const StakeholderMap = ({
   }, [configuredFloorplanBuildingOptions]);
   const dashboardManifestScope = useMemo(() => ({
     allowedBuildingKeys: floorplanBuildingOptions.flatMap((entry) => [entry?.name, entry?.folder]).filter(Boolean),
-    campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`
-  }), [floorplanBuildingOptions, floorplanCampus]);
+    campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`,
+    buildingFeatures: Array.isArray(config?.buildings?.features) ? config.buildings.features : []
+  }), [config?.buildings?.features, floorplanBuildingOptions, floorplanCampus]);
   useEffect(() => {
     if (!floorplanBuildingOptions.length) return;
     const currentValid = floorplanBuildingOptions.some((entry) => entry?.name === selectedBuilding);
