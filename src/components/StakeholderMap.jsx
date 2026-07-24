@@ -5449,7 +5449,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     currentFloorContextRef,
     airtableLookup,
     filterToBuildingFootprint = false,
-    buildingFootprintFilterBufferMeters = null
+    buildingFootprintFilterBufferMeters = null,
+    skipBuildingFit = false
   } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
@@ -5533,6 +5534,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   if (data && snapCorner && (data.__mfTransformed || data.__mfFitted || data.__mfFitTransform)) {
     floorCache.delete(url);
+    data = null;
+  }
+  if (data && skipBuildingFit && (data.__mfFitted || data.__mfFitTransform || data.__mfFittedBuilding)) {
+    floorCache.delete(url);
+    floorTransformCache.delete(url);
     data = null;
   }
   if (data && Number.isFinite(postRotateDeg) && data.__mfPostRotation !== postRotateDeg) {
@@ -5784,7 +5790,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           floorCache.set(url, fc);
         }
       }
-    } else {
+    } else if (!skipBuildingFit) {
       const fitCandidate = buildFitCandidate(fc);
       const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
       const isSarpyCounty = /SarpyCounty/i.test(floorBasePath || '');
@@ -11787,6 +11793,19 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const sharedFloorplanFolderSet = useMemo(() => {
+    const counts = new Map();
+    floorplanBuildingOptions.forEach((entry) => {
+      const folder = String(entry?.folder || '').trim();
+      if (!folder) return;
+      counts.set(folder, (counts.get(folder) || 0) + 1);
+    });
+    return new Set(
+      Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([folder]) => folder)
+    );
+  }, [floorplanBuildingOptions]);
   const floorplanBuildingFootprintFilterMap = useMemo(() => {
     const map = new Map();
     configuredFloorplanBuildingOptions.forEach((entry) => {
@@ -19199,6 +19218,12 @@ const StakeholderMap = ({
         resolveFloorplanBuildingFootprintFilter(fitBuilding?.properties?.id) ??
         resolveFloorplanBuildingFootprintFilter(fitBuilding?.properties?.name);
       const filterToBuildingFootprint = Number.isFinite(buildingFootprintFilterBufferMeters);
+      const selectedFolderKey =
+        getBuildingFolderKey(selectedBuildingId) ||
+        getBuildingFolderKey(selectedBuilding) ||
+        getBuildingFolderKey(fitBuilding?.properties?.id) ||
+        getBuildingFolderKey(fitBuilding?.properties?.name);
+      const skipBuildingFit = Boolean(selectedFolderKey && sharedFloorplanFolderSet.has(selectedFolderKey));
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const suppressAutoWalls = config?.enableWallsOverlay === false;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
@@ -19209,6 +19234,7 @@ const StakeholderMap = ({
         currentFloorContextRef,
         filterToBuildingFootprint,
         buildingFootprintFilterBufferMeters,
+        skipBuildingFit,
         enableFloorAdjustments: floorAdjustmentsEnabled,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
