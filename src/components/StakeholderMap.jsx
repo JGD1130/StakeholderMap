@@ -4314,14 +4314,16 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(DOORS_LAYER)) {
-    try {
-      if (!map.hasImage('mf-door-swing')) {
+    let hasDoorIcon = map.hasImage('mf-door-swing');
+    if (!hasDoorIcon) {
+      try {
         await loadIcon(map, 'mf-door-swing', assetUrl('icons/door-swing.png'));
+        hasDoorIcon = map.hasImage('mf-door-swing');
+      } catch (err) {
+        console.warn('Door icon load failed:', err);
       }
-    } catch (err) {
-      console.warn('Door icon load failed:', err);
     }
-    map.addLayer({
+    map.addLayer(hasDoorIcon ? {
       id: DOORS_LAYER,
       type: "symbol",
       source: DOORS_SOURCE,
@@ -4346,6 +4348,22 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
       paint: {
         "icon-color": "#888888",
         "icon-opacity": 0.95
+      }
+    } : {
+      id: DOORS_LAYER,
+      type: "circle",
+      source: DOORS_SOURCE,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 2.2,
+          18, 3.2,
+          20, 4.2
+        ],
+        "circle-color": "#6b7280",
+        "circle-stroke-color": "#f8fafc",
+        "circle-stroke-width": 1.1,
+        "circle-opacity": 0.95
       }
     });
   }
@@ -4754,14 +4772,16 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(STAIRS_LAYER)) {
-    try {
-      if (!map.hasImage('mf-stairs-run')) {
+    let hasStairsIcon = map.hasImage('mf-stairs-run');
+    if (!hasStairsIcon) {
+      try {
         await loadIcon(map, 'mf-stairs-run', assetUrl('icons/stairs-run.png'));
+        hasStairsIcon = map.hasImage('mf-stairs-run');
+      } catch (err) {
+        console.warn('Stairs icon load failed:', err);
       }
-    } catch (err) {
-      console.warn('Stairs icon load failed:', err);
     }
-    map.addLayer({
+    map.addLayer(hasStairsIcon ? {
       id: STAIRS_LAYER,
       type: "symbol",
       source: STAIRS_SOURCE,
@@ -4786,6 +4806,22 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
       paint: {
         "icon-color": "#888888",
         "icon-opacity": 0.95
+      }
+    } : {
+      id: STAIRS_LAYER,
+      type: "circle",
+      source: STAIRS_SOURCE,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 2.6,
+          18, 3.8,
+          20, 5.0
+        ],
+        "circle-color": "#334155",
+        "circle-stroke-color": "#e2e8f0",
+        "circle-stroke-width": 1.2,
+        "circle-opacity": 0.95
       }
     });
   }
