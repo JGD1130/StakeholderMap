@@ -24601,6 +24601,12 @@ useEffect(() => {
         setDashboardError(null);
         return;
       }
+      if (airtableRooms.some(hasDashboardRoomArea)) {
+        setCampusRooms(airtableRooms);
+        setCampusRoomsLoaded(true);
+        setDashboardError(null);
+        return;
+      }
       if (hasInstructionalSeatCoverage(airtableRooms)) {
         setCampusRooms(airtableRooms);
         setCampusRoomsLoaded(true);
