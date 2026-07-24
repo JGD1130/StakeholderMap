@@ -1,0 +1,1260 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572152526915275, 
+          42.756863782452776
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677887, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a33f", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572143125330072, 
+          42.756881861132129
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677936, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a370", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571300838257145, 
+          42.757121956888746
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5722233, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575079", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571300838257145, 
+          42.757116116964831
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5723002, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057537a", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570279361246136, 
+          42.757388648247037
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744756, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-00579da7", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570795710519434, 
+          42.757304288952554
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744838, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-0057a1b5", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572115394020400, 
+          42.757831697770776
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885625, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-00599928", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572115394020400, 
+          42.757816452930761
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885659, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-00599a3f", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572041575643183, 
+          42.758121118602084
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885717, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-0059af2a", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572576334721418, 
+          42.758089754133223
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885765, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-0059b1d2", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571825633910834, 
+          42.757256708274546
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5889490, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "5ee65c9c-c6b1-4bbc-a87c-132a185a8220-0059ddd2", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571825633910834, 
+          42.757404079625836
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5889712, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "5ee65c9c-c6b1-4bbc-a87c-132a185a8220-0059deb0", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572089836882753, 
+          42.758101315488531
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5907757, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a252d", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572339925517738, 
+          42.757558441121915
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5910027, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a2e0b", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572053475978535, 
+          42.757689158919014
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5910212, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a2ec4", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572446464767296, 
+          42.757349487126938
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5912006, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "f41fcf97-fb1a-419d-9e24-e0ce11c31fff-005a35c6", 
+        "Name": "Stair", 
+        "Family": "Assembled Stair", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572154428203817, 
+          42.756875679813447
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677888, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a340", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572174400637039, 
+          42.756853375788175
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677892, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a344", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572156966202542, 
+          42.756839522454740
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677918, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a35e", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572142228895260, 
+          42.756881861132129
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677937, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a371", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572165981944877, 
+          42.756863592134330
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677941, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a375", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572146481812766, 
+          42.756845703773422
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677967, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a38f", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571308470889790, 
+          42.757132369330790
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5722411, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057512b", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571293634354177, 
+          42.757115983553000
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5722500, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575184", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571306393604033, 
+          42.757099773676579
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5722583, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005751d7", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571315525442017, 
+          42.757126783903004
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5723003, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057537b", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571300494029288, 
+          42.757105767206845
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5723007, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057537f", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571311733237494, 
+          42.757094279171085
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5723016, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575388", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570293236498046, 
+          42.757374225170111
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744757, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-00579dee", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570278581737597, 
+          42.757373938997951
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744761, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-00579e36", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570810397704321, 
+          42.757314955890728
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744839, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-0057a1b6", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570795366291591, 
+          42.757293939194568
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744843, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-0057a1ba", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570806605499783, 
+          42.757282451158808
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744852, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-0057a1c3", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572129503124870, 
+          42.757826593665790
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885626, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-00599953", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572129503124870, 
+          42.757811348825769
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885660, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-00599a40", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572069949753825, 
+          42.758122263290730
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885718, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-0059af51", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572070339508102, 
+          42.758110358528825
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885722, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-0059af8f", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572583893661530, 
+          42.758089754133223
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885766, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-0059b1ea", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571834598258974, 
+          42.757252587395428
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5889546, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "5ee65c9c-c6b1-4bbc-a87c-132a185a8220-0059de0a", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571834598258974, 
+          42.757399958746717
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5889713, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "5ee65c9c-c6b1-4bbc-a87c-132a185a8220-0059deb1", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572107088006376, 
+          42.758095019700988
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5907807, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a255f", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572346473389430, 
+          42.757551859162206
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5910080, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a2e40", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572058107561929, 
+          42.757683664413520
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5910213, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "4fbbd4c1-03a1-4077-ac08-6fd8da96a5ec-005a2ec5", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572453948049230, 
+          42.757341932181888
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5912076, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "f41fcf97-fb1a-419d-9e24-e0ce11c31fff-005a360c", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Run", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572174400637039, 
+          42.756873579542756
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677894, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a346", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572174400637039, 
+          42.756839522454740
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677920, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a360", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572164219543296, 
+          42.756880810996783
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677943, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a377", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572165527518095, 
+          42.756846592207538
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5677969, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "1f9d7a8f-f265-4728-a925-62dafe2a6a5e-0056a391", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571294290385453, 
+          42.757131962860001
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5722502, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575186", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571294070226529, 
+          42.757100166275052
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5722585, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-005751d9", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571301806091824, 
+          42.757125970961425
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5723009, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-00575381", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.571301365773976, 
+          42.757094279171085
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5723018, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "6fb2ee5f-eb82-41f0-bcc6-e4247a4ea7a3-0057538a", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570293236498046, 
+          42.757394142752531
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744763, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-00579e38", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570796678354114, 
+          42.757314142949149
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744845, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-0057a1bc", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.570796238036280, 
+          42.757282451158808
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5744854, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "a107dc4d-08a9-43ec-9390-33850078b50e-0057a1c5", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572032533344185, 
+          42.758110358528825
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5885724, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "2ef7f2f4-4638-4e15-a957-07b251bf0571-0059af91", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "geometry": {
+        "coordinates": [
+          -95.572066383337159, 
+          42.757683664413520
+        ], 
+        "type": "Point"
+      }, 
+      "properties": {
+        "Level": "LEVEL 3", 
+        "RevitId": 5911458, 
+        "Type": "Stair", 
+        "Revit_UniqueId": "f41fcf97-fb1a-419d-9e24-e0ce11c31fff-005a33a2", 
+        "Name": "Stair", 
+        "Family": "Non-Monolithic Landing", 
+        "interactive": false, 
+        "Element": "Stair", 
+        "Building": "Connected Core", 
+        "kind": "stair"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection", 
+  "name": "Connected Core - LEVEL 3 Stairs"
+}
