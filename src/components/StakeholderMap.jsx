@@ -4322,6 +4322,9 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
       } catch (err) {
         console.warn('Door icon load failed:', err);
       }
+      if (!hasDoorIcon) {
+        hasDoorIcon = addGeneratedFloorSymbolIcon(map, 'mf-door-swing', 'door');
+      }
     }
     map.addLayer(hasDoorIcon ? {
       id: DOORS_LAYER,
@@ -4779,6 +4782,9 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
         hasStairsIcon = map.hasImage('mf-stairs-run');
       } catch (err) {
         console.warn('Stairs icon load failed:', err);
+      }
+      if (!hasStairsIcon) {
+        hasStairsIcon = addGeneratedFloorSymbolIcon(map, 'mf-stairs-run', 'stairs');
       }
     }
     map.addLayer(hasStairsIcon ? {
@@ -5369,6 +5375,68 @@ async function loadIcon(map, name, url) {
     map.addImage(name, img, { sdf: true });
   } catch (err) {
     console.warn('addImage failed for', name, err);
+  }
+}
+
+function addGeneratedFloorSymbolIcon(map, name, kind) {
+  if (!map || !name || typeof document === 'undefined') return false;
+  try {
+    if (map.hasImage(name)) return true;
+  } catch {}
+  const canvas = document.createElement('canvas');
+  const size = 64;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = '#4b5563';
+  ctx.fillStyle = '#4b5563';
+  ctx.lineWidth = 6;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (kind === 'door') {
+    ctx.beginPath();
+    ctx.moveTo(18, 16);
+    ctx.lineTo(18, 50);
+    ctx.moveTo(18, 50);
+    ctx.lineTo(44, 24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(18, 50, 26, -Math.PI / 2, -Math.PI / 4, false);
+    ctx.stroke();
+  } else if (kind === 'stairs') {
+    ctx.beginPath();
+    ctx.moveTo(16, 48);
+    ctx.lineTo(16, 40);
+    ctx.lineTo(24, 40);
+    ctx.lineTo(24, 32);
+    ctx.lineTo(32, 32);
+    ctx.lineTo(32, 24);
+    ctx.lineTo(40, 24);
+    ctx.lineTo(40, 16);
+    ctx.lineTo(48, 16);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(18, 52);
+    ctx.lineTo(46, 24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(40, 24);
+    ctx.lineTo(46, 24);
+    ctx.lineTo(46, 30);
+    ctx.stroke();
+  } else {
+    return false;
+  }
+
+  try {
+    map.addImage(name, canvas, { pixelRatio: 2 });
+    return true;
+  } catch (err) {
+    console.warn('Generated icon add failed for', name, err);
+    return false;
   }
 }
 
