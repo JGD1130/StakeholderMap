@@ -5450,7 +5450,8 @@ function addGeneratedFloorSymbolIcon(map, name, kind) {
   }
 
   try {
-    map.addImage(name, canvas, { pixelRatio: 2 });
+    const imageData = ctx.getImageData(0, 0, size, size);
+    map.addImage(name, imageData, { pixelRatio: 1 });
     return true;
   } catch (err) {
     console.warn('Generated icon add failed for', name, err);
