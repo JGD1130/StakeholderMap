@@ -4265,8 +4265,8 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   ensureLayerOrder(map);
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null }) {
-  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null, enabled = ENABLE_DOOR_STAIR_OVERLAY }) {
+  if (!enabled) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
   const affineRotationDeg = getAffineRotationDeg(affine);
@@ -4706,8 +4706,8 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null }) {
-  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null, enabled = ENABLE_DOOR_STAIR_OVERLAY }) {
+  if (!enabled) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
   const affineRotationDeg = getAffineRotationDeg(affine);
@@ -5450,7 +5450,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     airtableLookup,
     filterToBuildingFootprint = false,
     buildingFootprintFilterBufferMeters = null,
-    skipBuildingFit = false
+    skipBuildingFit = false,
+    enableDoorStairOverlay = ENABLE_DOOR_STAIR_OVERLAY
   } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
@@ -6168,7 +6169,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           buildingLabel: overlayBuildingLabel,
           overlayFloorAdjust,
           filterBuildingFeature: filterToBuildingFootprint ? fitBuilding : null,
-          filterBufferMeters: buildingFootprintFilterBufferMeters
+          filterBufferMeters: buildingFootprintFilterBufferMeters,
+          enabled: enableDoorStairOverlay
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -6179,7 +6181,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         fitTransform: fitTransform || cachedTransform.fitTransform || null,
         overlayFloorAdjust,
         filterBuildingFeature: filterToBuildingFootprint ? fitBuilding : null,
-        filterBufferMeters: buildingFootprintFilterBufferMeters
+        filterBufferMeters: buildingFootprintFilterBufferMeters,
+        enabled: enableDoorStairOverlay
       });
     }
   }
@@ -19235,6 +19238,7 @@ const StakeholderMap = ({
         filterToBuildingFootprint,
         buildingFootprintFilterBufferMeters,
         skipBuildingFit,
+        enableDoorStairOverlay: config?.enableDoorStairOverlay === true,
         enableFloorAdjustments: floorAdjustmentsEnabled,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
