@@ -4338,9 +4338,9 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
         "icon-image": doorIconName,
         "icon-size": useGeneratedDoorIcon ? [
           "interpolate", ["linear"], ["zoom"],
-          16, 0.72,
-          18, 0.92,
-          20, 1.12
+          16, 0.24,
+          18, 0.30,
+          20, 0.38
         ] : [
           "interpolate", ["linear"], ["zoom"],
           16, 0.18,
@@ -4808,9 +4808,9 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
         "icon-image": stairsIconName,
         "icon-size": useGeneratedStairsIcon ? [
           "interpolate", ["linear"], ["zoom"],
-          16, 0.82,
-          18, 1.04,
-          20, 1.26
+          16, 0.26,
+          18, 0.33,
+          20, 0.40
         ] : [
           "interpolate", ["linear"], ["zoom"],
           16, 0.20,
@@ -5402,7 +5402,7 @@ function addGeneratedFloorSymbolIcon(map, name, kind) {
     if (map.hasImage(name)) return true;
   } catch {}
   const canvas = document.createElement('canvas');
-  const size = 64;
+  const size = 48;
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -5410,40 +5410,37 @@ function addGeneratedFloorSymbolIcon(map, name, kind) {
   ctx.clearRect(0, 0, size, size);
   ctx.strokeStyle = '#4b5563';
   ctx.fillStyle = '#4b5563';
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 4;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   if (kind === 'door') {
     ctx.beginPath();
-    ctx.moveTo(18, 16);
-    ctx.lineTo(18, 50);
-    ctx.moveTo(18, 50);
-    ctx.lineTo(44, 24);
+    ctx.moveTo(14, 10);
+    ctx.lineTo(14, 36);
+    ctx.lineTo(32, 18);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(18, 50, 26, -Math.PI / 2, -Math.PI / 4, false);
+    ctx.arc(14, 36, 18, -Math.PI / 2, -Math.PI / 4, false);
     ctx.stroke();
   } else if (kind === 'stairs') {
     ctx.beginPath();
-    ctx.moveTo(16, 48);
-    ctx.lineTo(16, 40);
-    ctx.lineTo(24, 40);
-    ctx.lineTo(24, 32);
-    ctx.lineTo(32, 32);
-    ctx.lineTo(32, 24);
-    ctx.lineTo(40, 24);
-    ctx.lineTo(40, 16);
-    ctx.lineTo(48, 16);
+    ctx.moveTo(12, 34);
+    ctx.lineTo(12, 28);
+    ctx.lineTo(18, 28);
+    ctx.lineTo(18, 22);
+    ctx.lineTo(24, 22);
+    ctx.lineTo(24, 16);
+    ctx.lineTo(30, 16);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(18, 52);
-    ctx.lineTo(46, 24);
+    ctx.moveTo(18, 38);
+    ctx.lineTo(34, 22);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(40, 24);
-    ctx.lineTo(46, 24);
-    ctx.lineTo(46, 30);
+    ctx.moveTo(29, 22);
+    ctx.lineTo(34, 22);
+    ctx.lineTo(34, 27);
     ctx.stroke();
   } else {
     return false;
