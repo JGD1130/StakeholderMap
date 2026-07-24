@@ -4314,16 +4314,20 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(DOORS_LAYER)) {
-    let hasDoorIcon = map.hasImage('mf-door-swing');
+    let doorIconName = 'mf-door-swing';
+    let useGeneratedDoorIcon = false;
+    let hasDoorIcon = map.hasImage(doorIconName);
     if (!hasDoorIcon) {
       try {
-        await loadIcon(map, 'mf-door-swing', assetUrl('icons/door-swing.png'));
-        hasDoorIcon = map.hasImage('mf-door-swing');
+        await loadIcon(map, doorIconName, assetUrl('icons/door-swing.png'));
+        hasDoorIcon = map.hasImage(doorIconName);
       } catch (err) {
         console.warn('Door icon load failed:', err);
       }
       if (!hasDoorIcon) {
-        hasDoorIcon = addGeneratedFloorSymbolIcon(map, 'mf-door-swing', 'door');
+        doorIconName = 'mf-door-swing-generated';
+        useGeneratedDoorIcon = addGeneratedFloorSymbolIcon(map, doorIconName, 'door');
+        hasDoorIcon = useGeneratedDoorIcon;
       }
     }
     map.addLayer(hasDoorIcon ? {
@@ -4331,8 +4335,13 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
       type: "symbol",
       source: DOORS_SOURCE,
       layout: {
-        "icon-image": "mf-door-swing",
-        "icon-size": [
+        "icon-image": doorIconName,
+        "icon-size": useGeneratedDoorIcon ? [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.72,
+          18, 0.92,
+          20, 1.12
+        ] : [
           "interpolate", ["linear"], ["zoom"],
           16, 0.18,
           18, 0.26,
@@ -4775,16 +4784,20 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(STAIRS_LAYER)) {
-    let hasStairsIcon = map.hasImage('mf-stairs-run');
+    let stairsIconName = 'mf-stairs-run';
+    let useGeneratedStairsIcon = false;
+    let hasStairsIcon = map.hasImage(stairsIconName);
     if (!hasStairsIcon) {
       try {
-        await loadIcon(map, 'mf-stairs-run', assetUrl('icons/stairs-run.png'));
-        hasStairsIcon = map.hasImage('mf-stairs-run');
+        await loadIcon(map, stairsIconName, assetUrl('icons/stairs-run.png'));
+        hasStairsIcon = map.hasImage(stairsIconName);
       } catch (err) {
         console.warn('Stairs icon load failed:', err);
       }
       if (!hasStairsIcon) {
-        hasStairsIcon = addGeneratedFloorSymbolIcon(map, 'mf-stairs-run', 'stairs');
+        stairsIconName = 'mf-stairs-run-generated';
+        useGeneratedStairsIcon = addGeneratedFloorSymbolIcon(map, stairsIconName, 'stairs');
+        hasStairsIcon = useGeneratedStairsIcon;
       }
     }
     map.addLayer(hasStairsIcon ? {
@@ -4792,8 +4805,13 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
       type: "symbol",
       source: STAIRS_SOURCE,
       layout: {
-        "icon-image": "mf-stairs-run",
-        "icon-size": [
+        "icon-image": stairsIconName,
+        "icon-size": useGeneratedStairsIcon ? [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.82,
+          18, 1.04,
+          20, 1.26
+        ] : [
           "interpolate", ["linear"], ["zoom"],
           16, 0.20,
           18, 0.28,
