@@ -12607,6 +12607,36 @@ const StakeholderMap = ({
     const dashboardManifestRef = useRef(null);
     const manifestHydrationRoomsRef = useRef(null);
     const campusRoomsRefreshTimerRef = useRef(null);
+    const getManifestHydrationRooms = useCallback(async () => {
+      let manifest = dashboardManifestRef.current;
+      const hasManifest =
+        manifest &&
+        typeof manifest === 'object' &&
+        manifest.floorsByBuilding &&
+        Object.keys(manifest.floorsByBuilding).length > 0;
+      if (!hasManifest) {
+        manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+        const fetchedValid =
+          manifest &&
+          typeof manifest === 'object' &&
+          manifest.floorsByBuilding &&
+          Object.keys(manifest.floorsByBuilding).length > 0;
+        if (!fetchedValid) {
+          throw new Error('Dashboard manifest unavailable');
+        }
+        dashboardManifestRef.current = manifest;
+      }
+
+      let manifestRooms = manifestHydrationRoomsRef.current;
+      if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
+        manifestRooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
+        if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
+          throw new Error('Manifest hydration rooms unavailable');
+        }
+        manifestHydrationRoomsRef.current = manifestRooms;
+      }
+      return manifestRooms;
+    }, [dashboardManifestScope]);
     const airtableRoomLookup = useMemo(
       () => buildAirtableRoomLookup(airtableRooms.length ? airtableRooms : campusRooms),
       [airtableRooms, campusRooms]
@@ -18120,9 +18150,31 @@ const StakeholderMap = ({
     if (!buildingId) return null;
     const resolvedKey = resolveBuildingPlanKey(buildingId) || buildingId;
     if (!resolvedKey) return null;
+    const folderKey = getBuildingFolderKey(resolvedKey);
+    const isSharedFolderBuilding = Boolean(folderKey && sharedFloorplanFolderSet.has(folderKey));
+    if (isSharedFolderBuilding) {
+      const buildingKey = normalizeDashboardKey(resolvedKey);
+      const sourceRooms = (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length)
+        ? campusRooms
+        : await getManifestHydrationRooms().catch(() => []);
+      if (buildingKey && Array.isArray(sourceRooms) && sourceRooms.length) {
+        const scoped = sourceRooms.filter((room) => {
+          const roomBuilding =
+            room?.building ??
+            room?.buildingName ??
+            room?.buildingLabel ??
+            '';
+          return normalizeDashboardKey(roomBuilding) === buildingKey;
+        });
+        const summary = summarizeRoomRowsForPanels(scoped);
+        if (summary) {
+          buildingStatsCache.current[resolvedKey] = summary;
+          return summary;
+        }
+      }
+    }
     if (buildingStatsCache.current[resolvedKey]) return buildingStatsCache.current[resolvedKey];
 
-    const folderKey = getBuildingFolderKey(resolvedKey);
     let available = folderKey ? getAvailableFloors(folderKey) : [];
     if (!available.length) {
       available = await ensureFloorsForBuilding(resolvedKey);
@@ -18177,7 +18229,18 @@ const StakeholderMap = ({
     const summary = finalizeCombinedSummary(combined);
     buildingStatsCache.current[resolvedKey] = summary;
     return summary;
-  }, [fetchFloorSummary, resolveBuildingPlanKey, getAvailableFloors, getBuildingFolderKey, buildFloorUrl, ensureFloorsForBuilding]);
+  }, [
+    fetchFloorSummary,
+    resolveBuildingPlanKey,
+    getAvailableFloors,
+    getBuildingFolderKey,
+    buildFloorUrl,
+    ensureFloorsForBuilding,
+    sharedFloorplanFolderSet,
+    campusRoomsLoaded,
+    campusRooms,
+    getManifestHydrationRooms
+  ]);
 
   const computeBuildingTotals = useCallback(async (buildingId) => {
     if (!buildingId) {
@@ -20277,6 +20340,51 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     return rows;
   }
 
+  try {
+    const hydratedRooms = await getManifestHydrationRooms();
+    if (Array.isArray(hydratedRooms) && hydratedRooms.length) {
+      for (const row of hydratedRooms) {
+        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
+        const buildingKey = normalizeDashboardKey(buildingName);
+        if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) continue;
+
+        const floorName = String(row?.floor ?? row?.floorName ?? row?.floorId ?? '').trim();
+        const revitId = row?.revitId ?? row?.RevitId ?? row?.id ?? null;
+        const roomIdKey = (buildingName && floorName && revitId != null) ? rId(buildingName, floorName, revitId) : null;
+        const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
+        const merged = patch ? { ...row, ...patch } : row;
+        const deptVal = String(getDeptFromProps(merged) || '').trim();
+        if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
+
+        const roomNum =
+          merged.roomNumber ??
+          merged.Number ??
+          merged.RoomNumber ??
+          merged.number ??
+          merged.Room ??
+          merged.roomId ??
+          '';
+        const typeVal = getRoomTypeLabelFromProps(merged) || merged.type || merged.Name || '';
+        const areaVal = resolveAreaSf(merged);
+        const seatCountVal = getSeatCount(merged);
+        const occupantVal = getOccupantValue(merged);
+        rows.push({
+          building: buildingName,
+          floor: floorName,
+          roomNumber: roomNum || '',
+          type: typeVal || '',
+          department: deptVal || '',
+          area: Number.isFinite(areaVal) ? areaVal : '',
+          seatCount: seatCountVal ?? '',
+          occupant: occupantVal || '',
+          roomId: roomIdKey || String(merged.roomId ?? merged.id ?? '') || '',
+          revitId: revitId ?? null
+        });
+      }
+      return rows;
+    }
+  } catch {}
+
   for (const buildingName of targetBuildings) {
     if (!buildingName) continue;
     const floors = await ensureFloorsForBuilding(buildingName);
@@ -20325,7 +20433,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
   }
   return rows;
-  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
+  }, [
+    buildFloorUrl,
+    campusRooms,
+    campusRoomsLoaded,
+    ensureFloorsForBuilding,
+    roomPatches,
+    floorplanBuildingNames,
+    getManifestHydrationRooms
+  ]);
 
   const buildMoveScenarioInventory = useCallback(async () => {
     const rows = await collectSpaceRows('__all__', '');
@@ -20400,6 +20516,44 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       return { campusRow, buildingRows };
     }
 
+    try {
+      const hydratedRooms = await getManifestHydrationRooms();
+      if (Array.isArray(hydratedRooms) && hydratedRooms.length) {
+        const rowsInScope = hydratedRooms.filter((row) => {
+          const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
+          const buildingKey = normalizeDashboardKey(buildingName);
+          if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) return false;
+          const deptVal = String(getDeptFromProps(row) || '').trim();
+          if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) return false;
+          return true;
+        });
+
+        const rowsByBuilding = new Map();
+        rowsInScope.forEach((row) => {
+          const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
+          if (!buildingName) return;
+          const list = rowsByBuilding.get(buildingName) || [];
+          list.push(row);
+          rowsByBuilding.set(buildingName, list);
+        });
+
+        Array.from(rowsByBuilding.entries()).forEach(([buildingName, rowsForBuilding]) => {
+          const summary = summarizeRoomRowsForPanels(rowsForBuilding);
+          const row = summary ? toSummaryRow(summary, buildingName) : null;
+          if (row && (row.rooms || row.totalSf)) {
+            buildingRows.push(row);
+          }
+        });
+
+        buildingRows.sort((a, b) => (Number(b.totalSf) || 0) - (Number(a.totalSf) || 0));
+        const campusSummary = summarizeRoomRowsForPanels(rowsInScope);
+        const campusRow = includeAllBuildings && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
+          ? toSummaryRow(campusSummary, 'Campus Total', 'campus')
+          : null;
+        return { campusRow, buildingRows };
+      }
+    } catch {}
+
     for (const buildingName of targetBuildings) {
       if (!buildingName) continue;
       const floors = await ensureFloorsForBuilding(buildingName);
@@ -20446,7 +20600,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       : null;
 
     return { campusRow, buildingRows };
-  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
+  }, [
+    buildFloorUrl,
+    campusRooms,
+    campusRoomsLoaded,
+    ensureFloorsForBuilding,
+    roomPatches,
+    floorplanBuildingNames,
+    getManifestHydrationRooms
+  ]);
 
   const onCreateMoveScenario = useCallback(async (opts = {}) => {
     const forceRelaxed = Boolean(opts?.forceRelaxed);
