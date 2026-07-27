@@ -12,6 +12,7 @@ import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
 import ClientRoleManagerPanel from './ClientRoleManagerPanel.jsx';
 import { surveyConfigs } from '../surveyConfigs';
+import cherokeeOverallRoomBuildingMap from '../Configs/CherokeeOverallRoomBuildingMap.json';
 import * as turf from '@turf/turf';
 import { bId, fId, rId, canon } from '../utils/idUtils';
 import { computeFloorSummary } from '../utils/floorSummary';
@@ -9634,6 +9635,56 @@ const getBuildingFeatureLabel = (feature) => String(
   ''
 ).trim();
 const isCherokeeOverallRoomsUrl = (url = '') => /floorplans\/cherokeementalhealth\/overall\/rooms\//i.test(String(url || '').replace(/\\/g, '/'));
+const CHEROKEE_OVERALL_ROOM_BUILDING_LOOKUP = new Map(
+  Object.entries(cherokeeOverallRoomBuildingMap || {})
+    .map(([roomId, buildingLabel]) => [String(roomId || '').trim(), String(buildingLabel || '').trim()])
+    .filter(([roomId, buildingLabel]) => roomId && buildingLabel)
+);
+const getCherokeeOverallRoomLookupLabel = (feature) => {
+  const props = feature?.properties || {};
+  const idCandidates = [props.Revit_UniqueId, props.RevitId, props['Revit_UniqueId'], props['RevitId']];
+  for (const candidate of idCandidates) {
+    const lookupLabel = CHEROKEE_OVERALL_ROOM_BUILDING_LOOKUP.get(String(candidate || '').trim());
+    if (lookupLabel) return lookupLabel;
+  }
+  return '';
+};
+const CHEROKEE_OVERALL_FIT_ROTATION_DEG = 88;
+const CHEROKEE_OVERALL_FIT_SCALE = 0.74;
+const isCherokeeLegacyStandaloneRoomsUrl = (url = '') => /floorplans\/cherokeementalhealth\/(main_administration|north%20a|north a)\/rooms\//i.test(String(url || '').replace(/\\/g, '/'));
+function fitCherokeeOverallFeatureCollectionToCluster(fc, buildingFeatures = []) {
+  if (!fc?.features?.length || !Array.isArray(buildingFeatures) || !buildingFeatures.length) return fc;
+  const clusterFeatures = buildingFeatures.filter((feature) =>
+    isCherokeeClusterBuildingKey(normalizeDashboardKey(getBuildingFeatureLabel(feature)))
+  );
+  if (!clusterFeatures.length) return fc;
+  let roomPivot = null;
+  let clusterPivot = null;
+  try {
+    roomPivot = turf.centroid(fc)?.geometry?.coordinates || null;
+  } catch {}
+  try {
+    clusterPivot = turf.centroid({ type: 'FeatureCollection', features: clusterFeatures })?.geometry?.coordinates || null;
+  } catch {}
+  if (!Array.isArray(roomPivot) || roomPivot.length < 2 || !Array.isArray(clusterPivot) || clusterPivot.length < 2) {
+    return fc;
+  }
+  try {
+    let fitted = turf.transformRotate(fc, CHEROKEE_OVERALL_FIT_ROTATION_DEG, { pivot: roomPivot });
+    fitted = turf.transformScale(fitted, CHEROKEE_OVERALL_FIT_SCALE, { origin: roomPivot });
+    const currentPivot = turf.centroid(fitted)?.geometry?.coordinates || roomPivot;
+    const fromPoint = turf.point(currentPivot);
+    const toPoint = turf.point(clusterPivot);
+    const distanceKm = turf.distance(fromPoint, toPoint, { units: 'kilometers' });
+    const bearingDeg = turf.bearing(fromPoint, toPoint);
+    if (Number.isFinite(distanceKm) && distanceKm > 1e-9 && Number.isFinite(bearingDeg)) {
+      fitted = turf.transformTranslate(fitted, distanceKm, bearingDeg, { units: 'kilometers' });
+    }
+    return fitted;
+  } catch {
+    return fc;
+  }
+}
 function getFeatureAnchorForBuildingAssignment(feature) {
   if (!feature?.geometry) return null;
   try {
@@ -10490,6 +10541,7 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
       if (!url) return;
       const normalizedUrl = String(url).replace(/^\/+/, '').toLowerCase();
       if (allowedCampusPrefix && !normalizedUrl.startsWith(allowedCampusPrefix)) return;
+      if (isCherokeeLegacyStandaloneRoomsUrl(url)) return;
       jobs.push({ url, buildingLabel });
     });
   });
@@ -10499,12 +10551,19 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
   const results = await runWithLimit(jobs, 6, async (job) => {
     const feats = await fetchRoomsForFloorUrl(job.url);
     const rows = [];
+    const rawFeatures = feats || [];
     const shouldReassignCherokeeOverall = isCherokeeOverallRoomsUrl(job.url) && buildingFeatures.length > 0;
-    (feats || []).forEach((feature) => {
+    const needsCherokeeGeometryFallback = shouldReassignCherokeeOverall && rawFeatures.some((feature) => !getCherokeeOverallRoomLookupLabel(feature));
+    const fittedFeatures = needsCherokeeGeometryFallback
+      ? (fitCherokeeOverallFeatureCollectionToCluster({ type: 'FeatureCollection', features: rawFeatures }, buildingFeatures)?.features || rawFeatures)
+      : rawFeatures;
+    rawFeatures.forEach((feature, index) => {
+      const lookupBuildingLabel = shouldReassignCherokeeOverall ? getCherokeeOverallRoomLookupLabel(feature) : '';
+      const sourceFeature = lookupBuildingLabel ? feature : (fittedFeatures[index] || feature);
       const effectiveBuildingLabel = shouldReassignCherokeeOverall
-        ? resolveCherokeeOverallRoomBuildingLabel(feature, buildingFeatures, job.buildingLabel)
+        ? (lookupBuildingLabel || resolveCherokeeOverallRoomBuildingLabel(sourceFeature, buildingFeatures, job.buildingLabel))
         : job.buildingLabel;
-      const row = toDashboardRoomRow(feature, effectiveBuildingLabel);
+      const row = toDashboardRoomRow(sourceFeature, effectiveBuildingLabel);
       if (row) rows.push(row);
     });
     return rows;
