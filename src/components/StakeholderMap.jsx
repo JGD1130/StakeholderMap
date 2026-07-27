@@ -9554,6 +9554,12 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
+const getDashboardRoomBuildingLabel = (room = {}) => String(
+  room?.building ??
+  room?.buildingName ??
+  room?.buildingLabel ??
+  ''
+).trim();
 const CHEROKEE_CLUSTER_BUILDING_KEYS = new Set([
   'Main/Administration',
   'North A',
@@ -9569,6 +9575,58 @@ const CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS = new Set([
   'Main/Administration',
   'North A'
 ].map((value) => normalizeDashboardKey(value)).filter(Boolean));
+const isCherokeeClusterBuildingKey = (value = '') =>
+  CHEROKEE_CLUSTER_BUILDING_KEYS.has(String(value || '').trim());
+const isCherokeeLegacyClusterBuildingKey = (value = '') =>
+  CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS.has(String(value || '').trim());
+const isCherokeeClusterRoom = (room = {}) => {
+  const buildingKey = normalizeDashboardKey(getDashboardRoomBuildingLabel(room));
+  return isCherokeeClusterBuildingKey(buildingKey) || isCherokeeLegacyClusterBuildingKey(buildingKey);
+};
+function pickBestManifestRoomCandidate(room = {}, candidates = []) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+  const roomFloorTokens = normalizeFloorTokens(
+    room?.floor ?? room?.floorName ?? room?.floorId ?? ''
+  );
+  const roomTypeKey = normalizeTypeMatch(room?.type ?? room?.roomType ?? '');
+  const roomDeptKey = normalizeDashboardKey(
+    room?.department ?? getDeptFromProps(room) ?? ''
+  );
+  const roomArea = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
+  const scored = candidates
+    .map((candidate, index) => {
+      const candidateFloorTokens = normalizeFloorTokens(
+        candidate?.floor ?? candidate?.floorName ?? candidate?.floorId ?? ''
+      );
+      const floorMatch = roomFloorTokens.length
+        ? candidateFloorTokens.some((token) => roomFloorTokens.includes(token))
+        : true;
+      const candidateTypeKey = normalizeTypeMatch(candidate?.type ?? candidate?.roomType ?? '');
+      const candidateDeptKey = normalizeDashboardKey(
+        candidate?.department ?? getDeptFromProps(candidate) ?? ''
+      );
+      const candidateArea = Number(candidate?.areaSF ?? candidate?.area ?? candidate?.sf ?? 0);
+      const areaDelta = Number.isFinite(roomArea) && roomArea > 0 && Number.isFinite(candidateArea) && candidateArea > 0
+        ? Math.abs(candidateArea - roomArea)
+        : Number.POSITIVE_INFINITY;
+      let score = 0;
+      if (floorMatch) score += 100;
+      if (roomTypeKey && candidateTypeKey && roomTypeKey === candidateTypeKey) score += 20;
+      if (roomDeptKey && candidateDeptKey && roomDeptKey === candidateDeptKey) score += 14;
+      if (Number.isFinite(areaDelta)) {
+        if (areaDelta <= 1) score += 18;
+        else if (areaDelta <= 5) score += 12;
+        else if (areaDelta <= 20) score += 6;
+      }
+      return { candidate, score, areaDelta, index };
+    })
+    .sort((a, b) =>
+      b.score - a.score ||
+      a.areaDelta - b.areaDelta ||
+      a.index - b.index
+    );
+  return scored[0]?.candidate || null;
+}
 const getBuildingFeatureLabel = (feature) => String(
   feature?.properties?.name ??
   feature?.properties?.Name ??
@@ -9619,6 +9677,7 @@ function shouldPreferManifestBuildingForCherokee(currentLabel, manifestLabel) {
   if (!manifestKey || !CHEROKEE_CLUSTER_BUILDING_KEYS.has(manifestKey)) return false;
   if (!currentKey) return true;
   if (currentKey === manifestKey) return false;
+  if (CHEROKEE_CLUSTER_BUILDING_KEYS.has(currentKey)) return true;
   return CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS.has(currentKey);
 }
 const normalizeMaintenanceBuildingFilterKey = (buildingIdValue, buildingNameValue = '') => {
@@ -9987,7 +10046,17 @@ function buildAirtableRoomLookup(rooms = []) {
   const byBuildingRoom = new Map();
   const byBuildingRoomList = new Map();
   const byRoomId = new Map();
-  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId };
+  const byRoomIdList = new Map();
+  if (!Array.isArray(rooms)) {
+    return {
+      byGuid,
+      byComposite,
+      byBuildingRoom,
+      byBuildingRoomList,
+      byRoomId,
+      byRoomIdList
+    };
+  }
 
   const setUnique = (map, key, room) => {
     if (!key) return;
@@ -10041,10 +10110,11 @@ function buildAirtableRoomLookup(rooms = []) {
     }
     if (roomIdKey) {
       setUnique(byRoomId, roomIdKey, room);
+      addToList(byRoomIdList, roomIdKey, room);
     }
   });
 
-  return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId };
+  return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId, byRoomIdList };
 }
 
 function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) {
@@ -10107,6 +10177,14 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
             return Number.isFinite(seatCount) && seatCount > 0;
           }) || ranked[0] || null;
       }
+    }
+    if (!manifestMatch && roomIdKey && isCherokeeClusterRoom(room)) {
+      const candidates = (manifestLookup.byRoomIdList?.get(roomIdKey) || []).filter((candidate) =>
+        isCherokeeClusterBuildingKey(
+          normalizeDashboardKey(getDashboardRoomBuildingLabel(candidate))
+        )
+      );
+      manifestMatch = pickBestManifestRoomCandidate(room, candidates);
     }
     if (!manifestMatch && roomIdKey) {
       manifestMatch = manifestLookup.byRoomId?.get(roomIdKey) || null;
@@ -22070,22 +22148,36 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           setExportingSpaceData(false);
           return;
         }
-        const headers = ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'ClassroomSF', 'Classrooms', 'LabSF', 'Labs', 'OfficeSF', 'Offices', 'KeyDepts'];
+        const isCherokeeSummaryExport = universityId === 'cherokee-mental-health';
+        const headers = isCherokeeSummaryExport
+          ? ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'OfficeSF', 'Offices', 'KeyDepts']
+          : ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'ClassroomSF', 'Classrooms', 'LabSF', 'Labs', 'OfficeSF', 'Offices', 'KeyDepts'];
         const csvLines = [headers.join(',')];
         summaryRows.forEach((r) => {
-          csvLines.push([
-            esc(r.buildingId),
-            esc(r.buildingName),
-            esc(r.totalSf),
-            esc(r.rooms),
-            esc(r.classroomSf),
-            esc(r.classrooms),
-            esc(r.labSf),
-            esc(r.labs),
-            esc(r.officeSf),
-            esc(r.offices),
-            esc(r.keyDepts)
-          ].join(','));
+          const values = isCherokeeSummaryExport
+            ? [
+                esc(r.buildingId),
+                esc(r.buildingName),
+                esc(r.totalSf),
+                esc(r.rooms),
+                esc(r.officeSf),
+                esc(r.offices),
+                esc(r.keyDepts)
+              ]
+            : [
+                esc(r.buildingId),
+                esc(r.buildingName),
+                esc(r.totalSf),
+                esc(r.rooms),
+                esc(r.classroomSf),
+                esc(r.classrooms),
+                esc(r.labSf),
+                esc(r.labs),
+                esc(r.officeSf),
+                esc(r.offices),
+                esc(r.keyDepts)
+              ];
+          csvLines.push(values.join(','));
         });
         const csvBlob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
         const a = document.createElement('a');
