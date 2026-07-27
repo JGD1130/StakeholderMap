@@ -86,6 +86,18 @@ const classScheduleCache = {
   mtimeMs: 0,
   payload: null
 };
+const HASTINGS_CLASS_SCHEDULE_BUILDING_ALIASES = {
+  FC: "Farrell-Fleharty",
+  GC: "Gray Center",
+  HMC: "Hurley-McDonald Hall",
+  JDAC: "Jackson Dinsdale Art Center",
+  KIEGYM: "Physical Fitness Facility",
+  MCCMCK: "McCormick Hall",
+  MR: "Morrison-Reeves Science Center",
+  SCOTT: "Scott Studio Theater",
+  SEAT: "Scott Studio Theater",
+  WILSON: "Wilson Center"
+};
 const requestContextStorage = new AsyncLocalStorage();
 const aiRuntimeHealth = {
   keyPresent: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
@@ -824,6 +836,33 @@ function parseScheduleNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function formatClassScheduleSessionLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^\s*(\d{4})\s*\/\s*([A-Za-z]+)\s*\/\s*(\d+)\s*$/);
+  if (!match) return raw;
+  const year = String(match[1]).trim();
+  const term = String(match[2] || "").trim();
+  const session = String(match[3] || "").trim();
+  const termLabel = term ? `${term.charAt(0).toUpperCase()}${term.slice(1).toLowerCase()}` : "";
+  if (termLabel && session) return `${termLabel} ${year} Block ${session}`;
+  if (termLabel) return `${termLabel} ${year}`;
+  return raw;
+}
+
+function normalizeClassScheduleRoomLabel(value) {
+  return String(value || "")
+    .replace(/^[\s\-–—]+|[\s\-–—]+$/g, "")
+    .trim();
+}
+
+function normalizeHastingsScheduleBuildingName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const aliasKey = raw.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  return HASTINGS_CLASS_SCHEDULE_BUILDING_ALIASES[aliasKey] || raw;
+}
+
 function normalizeScheduleDayTokens(value) {
   const raw = String(value || "").trim();
   if (!raw) return [];
@@ -981,17 +1020,18 @@ function detectClassScheduleHeader(rows) {
       building: getIndex([/\bbuilding\b/]),
       room: getIndex([/\broom\b/, /\blocation\b/, /\bclassroom\b/]),
       combinedLocation: getIndex([/\bbuilding room\b/, /\broom location\b/, /\blocation\b/]),
+      termSession: getIndex([/\byear term session\b/, /\bterm session\b/, /\bsession\b/]),
       course: getIndex([/\bcourse\b/, /\bclass\b/, /\bcrn\b/]),
       subject: getIndex([/\bsubject\b/, /\bdept\b/]),
       number: getIndex([/\bnumber\b/, /\bcatalog\b/]),
       section: getIndex([/\bsection\b/]),
       title: getIndex([/\btitle\b/, /\bname\b/]),
       instructor: getIndex([/\binstructor\b/, /\bfaculty\b/, /\bteacher\b/]),
-      days: getIndex([/\bdays\b/, /\bmeeting pattern\b/, /\bmeeting days\b/]),
+      days: getIndex([/\bday\b/, /\bdays\b/, /\bmeeting pattern\b/, /\bmeeting days\b/]),
       start: getIndex([/\bstart\b/]),
       end: getIndex([/\bend\b/]),
       time: getIndex([/\btime\b/, /\bmeeting time\b/]),
-      enrollment: getIndex([/\benrollment\b/, /\bregistered\b/, /\benrl\b/]),
+      enrollment: getIndex([/\benrollment\b/, /\bregistered\b/, /\benrl\b/, /\bfilled\b/]),
       capacity: getIndex([/\bcapacity\b/, /\bcap\b/, /\bmax\b/])
     };
     let score = 0;
@@ -1027,14 +1067,30 @@ function parseClassScheduleSheet(sheet, sheetName) {
     const directRoom = String(row[headerMap.room] || "").trim();
     const combinedLocation = String(row[headerMap.combinedLocation] || "").trim();
     const split = splitScheduleBuildingAndRoom(combinedLocation || directRoom);
-    const building = directBuilding || split.building;
-    const room = directRoom && directBuilding ? directRoom : (directRoom || split.room);
+    const hasDistinctDirectBuilding = Boolean(directBuilding) && (
+      !combinedLocation ||
+      normalizeScheduleHeaderKey(directBuilding) !== normalizeScheduleHeaderKey(combinedLocation)
+    );
+    const hasDistinctDirectRoom = Boolean(directRoom) && (
+      !combinedLocation ||
+      normalizeScheduleHeaderKey(directRoom) !== normalizeScheduleHeaderKey(combinedLocation)
+    );
+    const building = normalizeHastingsScheduleBuildingName(
+      (hasDistinctDirectBuilding ? directBuilding : '') || split.building || directBuilding
+    );
+    const room = normalizeClassScheduleRoomLabel(
+      hasDistinctDirectBuilding && directRoom
+        ? directRoom
+        : (hasDistinctDirectRoom ? directRoom : (split.room || directRoom))
+    );
     const subject = String(row[headerMap.subject] || "").trim();
     const number = String(row[headerMap.number] || "").trim();
     const courseField = String(row[headerMap.course] || "").trim();
     const section = String(row[headerMap.section] || "").trim();
     const title = String(row[headerMap.title] || "").trim();
     const instructor = String(row[headerMap.instructor] || "").trim();
+    const sessionRaw = String(row[headerMap.termSession] || "").trim();
+    const sessionLabel = formatClassScheduleSessionLabel(sessionRaw);
     const daysText = String(row[headerMap.days] || "").trim();
     const dayTokens = normalizeScheduleDayTokens(daysText);
     const { startMinutes, endMinutes, startTime, endTime, timeText } = parseTimeRange(
@@ -1056,6 +1112,8 @@ function parseClassScheduleSheet(sheet, sheetName) {
       section,
       title,
       instructor,
+      sessionRaw,
+      sessionLabel,
       daysText,
       dayTokens,
       startMinutes,
@@ -1083,12 +1141,22 @@ async function resolveClassScheduleFilePath() {
 
   try {
     const entries = await fsp.readdir(AI_DOCS_DIR, { withFileTypes: true });
-    const hit = entries.find((entry) =>
-      entry.isFile() &&
-      /\.(xlsx|xls)$/i.test(entry.name) &&
-      /(schedule|registrar|course).*\.(xlsx|xls)$/i.test(entry.name)
-    );
-    if (hit) return path.join(AI_DOCS_DIR, hit.name);
+    const candidates = entries
+      .filter((entry) => entry.isFile() && /\.(xlsx|xls)$/i.test(entry.name))
+      .map((entry) => {
+        const lower = String(entry.name || "").toLowerCase();
+        let score = 0;
+        if (/(schedule|registrar|course)/i.test(lower)) score += 6;
+        if (/classroom/i.test(lower)) score += 5;
+        if (/\bblock\b/i.test(lower)) score += 4;
+        if (/clean/i.test(lower)) score += 4;
+        if (/fall/i.test(lower)) score += 1;
+        if (/(block\s*1\s*(?:&|and)\s*2|1\s*&\s*2)/i.test(lower)) score += 6;
+        return { entry, score };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name));
+    if (candidates.length) return path.join(AI_DOCS_DIR, candidates[0].entry.name);
   } catch {}
   return null;
 }
