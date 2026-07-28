@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import { AsyncLocalStorage } from "async_hooks";
 import fs from "fs";
 import fsp from "fs/promises";
@@ -852,7 +852,7 @@ function formatClassScheduleSessionLabel(value) {
 
 function normalizeClassScheduleRoomLabel(value) {
   return String(value || "")
-    .replace(/^[\s\-–—]+|[\s\-–—]+$/g, "")
+    .replace(/^[\s\-â€“â€”]+|[\s\-â€“â€”]+$/g, "")
     .trim();
 }
 
@@ -960,7 +960,7 @@ function parseTimeRange(startValue, endValue, rangeValue) {
   let timeText = String(rangeValue || "").trim();
 
   if ((!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) && timeText) {
-    const parts = timeText.split(/\s*(?:-|�|�|to)\s*/i);
+    const parts = timeText.split(/\s*(?:-|ï¿½|ï¿½|to)\s*/i);
     if (parts.length >= 2) {
       startMinutes = parseTimeToMinutes(parts[0]);
       endMinutes = parseTimeToMinutes(parts[1]);
@@ -984,7 +984,7 @@ function splitScheduleBuildingAndRoom(value) {
   const raw = String(value || "").trim();
   if (!raw) return { building: "", room: "" };
 
-  const explicitDelimiters = [" / ", " - ", " � ", ", "];
+  const explicitDelimiters = [" / ", " - ", " ï¿½ ", ", "];
   for (const delimiter of explicitDelimiters) {
     if (!raw.includes(delimiter)) continue;
     const [left, ...rightParts] = raw.split(delimiter);
@@ -3622,7 +3622,7 @@ function normalizeFicmCode(value = "") {
 function parseFicmTypeText(typeRaw = "") {
   const text = normalizeCopilotText(typeRaw);
   if (!text) return { code: "", label: "" };
-  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-�]?\s*(.+)$/);
+  const match = text.match(/^([A-Za-z0-9]{2,4})\s*[-ï¿½]?\s*(.+)$/);
   if (match) {
     return {
       code: normalizeFicmCode(match[1]),
@@ -6899,7 +6899,7 @@ app.post("/ask-mapfluence", async (req, res) => {
         {
           role: "system",
           content:
-            "Answer questions using only the provided data and attached reference documents. If the question requires data that is not present, say so in missingData and answer with what you can. For vacancy queries, prefer listing rooms when roomRows are provided. Never fabricate.\n\nConcision rules (default):\n- Keep answers concise by default.\n- Provide a short executive summary first (target 2-4 sentences, ~60-120 words).\n- Use bullets for key points (max 5 bullets, one line each).\n- Do not repeat the same details in both answer and bullets.\n- Only provide long-form detail if the user explicitly asks for a detailed/long response.\n\nPriority rules:\n1) If docsFirst=true (or the question is narrative/history/planning context), prioritize attached reference documents over room tables.\n2) If the question is quantitative space data, prioritize provided structured data.\n3) For doc-based narrative answers, use resultType='none' unless the user explicitly asks for a table.\n\nWhen the user asks for a \"best new suitable home\" or relocation, do NOT treat current department or occupant assignments as constraints. Search campus-wide unless the user explicitly restricts to a building/floor. If context.excludeBuildings is provided, do not recommend those buildings. Use room type similarity and total SF/room counts to suggest best fits. You may include currently occupied rooms and note the displacement; do not require vacancy unless the user explicitly asks for vacant-only.\n\nIf attached reference docs are used, include them in dataUsed by filename."
+            "Answer questions using only the provided data and attached reference documents. If the question requires data that is not present, say so in missingData and answer with what you can. For vacancy queries, prefer listing rooms when roomRows are provided. Never fabricate.\n\nConcision rules (default):\n- Keep answers concise by default.\n- Provide a short executive summary first (target 2-4 sentences, ~60-120 words).\n- Use bullets for key points (max 5 bullets, one line each).\n- Do not repeat the same details in both answer and bullets.\n- Only provide long-form detail if the user explicitly asks for a detailed/long response.\n\nPriority rules:\n1) If docsFirst=true (or the question is narrative/history/planning context), prioritize attached reference documents over room tables.\n2) If the question is quantitative space data, prioritize provided structured data.\n3) For doc-based narrative answers, use resultType='none' unless the user explicitly asks for a table.\n\nClass schedule interpretation rules:\n- For schedule questions about a day such as Monday, Tuesdays, or Friday at a certain time, treat any class whose meeting pattern includes that day as a match, even if it also meets on other days.\n- Do not interpret \"on Monday\" or \"on Mondays\" to mean \"Monday-only\" unless the user explicitly asks for Monday-only classes.\n- If classes meet on the requested day as part of a multi-day pattern such as MTRF or ALL, describe them as classes that meet on that day and note the multi-day pattern when helpful.\n- Do not answer with absolute phrases like \"No classes are scheduled on Monday\" when the provided schedule rows show classes that do meet on Monday as part of a multi-day schedule.\n\nWhen the user asks for a \"best new suitable home\" or relocation, do NOT treat current department or occupant assignments as constraints. Search campus-wide unless the user explicitly restricts to a building/floor. If context.excludeBuildings is provided, do not recommend those buildings. Use room type similarity and total SF/room counts to suggest best fits. You may include currently occupied rooms and note the displacement; do not require vacancy unless the user explicitly asks for vacant-only.\n\nIf attached reference docs are used, include them in dataUsed by filename."
         },
         {
           role: "user",
@@ -7313,6 +7313,7 @@ app.post("/api/photo-export", async (req, res) => {
 app.listen(8787, () => {
   console.log("[ai-server] running at http://localhost:8787");
 });
+
 
 
 
