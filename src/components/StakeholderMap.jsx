@@ -1114,6 +1114,7 @@ const DEPARTMENTS = [
   'Biology','Chemistry','Physics','Psychology','History, Religion, Philosophy','Languages & Literatures','Math','Art','Digital Art','Communication','Academic Support','Athletics','Esports','Forensics','CIO','CFO','President Office','Alumni & Foundation','Business Economics','Classroom','Creighton Coll of Nursing','Admin-General','Bronco Blend'
 ];
 const DEPARTMENT_NAMES = DEPARTMENTS;
+const ROOM_EDIT_NO_DEPARTMENT_OPTION = { value: '__NO_DEPARTMENT__', label: 'No Department' };
 
 const norm = (s) => (s ?? '').toString().trim();
 
@@ -1344,6 +1345,19 @@ function mergeTypeOptions(prev = [], next = []) {
     if (opt?.value) map.set(opt.value, opt);
   });
   return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function mergeStringOptions(prev = [], next = []) {
+  const seen = new Set();
+  (prev || []).forEach((item) => {
+    const value = norm(item);
+    if (value) seen.add(value);
+  });
+  (next || []).forEach((item) => {
+    const value = norm(item);
+    if (value) seen.add(value);
+  });
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
 }
 
 function assertCanonicalIds(buildingName, floorLabel, docPath) {
@@ -6955,11 +6969,6 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
   }
 }
 
-const toFiniteNumberOrNull = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
-
 const normalizeBuildingResourceDoc = (doc, idx = 0) => {
   if (!doc) return null;
   if (typeof doc === 'string') {
@@ -7062,33 +7071,6 @@ const normalizeBuildingResourcesCatalog = (rawCatalog) => {
       })
       .filter(Boolean)
   };
-};
-
-const hasConditionAssessmentContent = (condition) => {
-  if (!condition) return false;
-  return Boolean(
-    condition.averageScore != null ||
-    condition.notes ||
-    condition.scale ||
-    condition.sourceUrl ||
-    condition.sourceLabel ||
-    Object.keys(condition.architecture || {}).length ||
-    Object.keys(condition.engineering || {}).length ||
-    Object.keys(condition.functionality || {}).length
-  );
-};
-
-const isImageResourceUrl = (url) => /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(String(url || '').trim());
-
-const formatDeferredCostSummary = (deferred, formatCurrency) => {
-  if (!deferred) return '';
-  if (deferred.totalCost != null) return formatCurrency(deferred.totalCost);
-  if (deferred.totalLow != null && deferred.totalHigh != null) {
-    return `${formatCurrency(deferred.totalLow)} - ${formatCurrency(deferred.totalHigh)}`;
-  }
-  if (deferred.totalLow != null) return formatCurrency(deferred.totalLow);
-  if (deferred.totalHigh != null) return formatCurrency(deferred.totalHigh);
-  return '';
 };
 
 // Fit a rooms FeatureCollection to a building feature by scaling to bbox and aligning centroids
@@ -10321,10 +10303,6 @@ const TECHNICAL_BUILDING_COLOR_MODE = {
   STAGE_COMPLETED: 'stage-completed',
   TECHNICAL_SCORE: 'technical-score'
 };
-const TECHNICAL_BUILDING_COLOR_MODE = {
-  STAGE_COMPLETED: 'stage-completed',
-  TECHNICAL_SCORE: 'technical-score'
-};
 const MAINTENANCE_ISSUE_TYPES = [
   'Electrical',
   'HVAC',
@@ -11630,6 +11608,12 @@ const StakeholderMap = ({
   const floorAdjustDragRef = useRef(null);
   const [typeOptions, setTypeOptions] = useState(baseTypeOptions);
   const [deptOptions, setDeptOptions] = useState(baseDeptOptions);
+  const roomEditDeptOptions = useMemo(() => ([
+    ROOM_EDIT_NO_DEPARTMENT_OPTION,
+    ...deptOptions
+      .map((dept) => String(dept || '').trim())
+      .filter((dept) => dept && dept !== ROOM_EDIT_NO_DEPARTMENT_OPTION.value && dept.toLowerCase() !== ROOM_EDIT_NO_DEPARTMENT_OPTION.label.toLowerCase())
+  ]), [deptOptions]);
   const [roomEditIncluded, setRoomEditIncluded] = useState(new Set());
   const [exportBuildingFilter, setExportBuildingFilter] = useState('__all__');
   const [exportDeptFilter, setExportDeptFilter] = useState('');
@@ -17435,7 +17419,37 @@ const StakeholderMap = ({
     else console.warn(log);
   }, [floorplansEnabled, universityId]);
 
+  const syncAirtableRoomEditOptions = useCallback(async (rooms = []) => {
+    const roomDeptOptions = (rooms || [])
+      .map((room) => norm(room?.department ?? room?.Department ?? room?.Dept ?? room?.NCES_Department ?? room?.['NCES_Department']))
+      .filter(Boolean);
+    if (roomDeptOptions.length) {
+      setDeptOptions((prev) => mergeStringOptions(prev, roomDeptOptions));
+    }
+    try {
+      const res = await guardedAiFetch('/ai/api/departments', { cache: 'no-store', timeoutMs: 8000 });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {}
+      if (res.ok && data?.ok && Array.isArray(data.departments) && data.departments.length) {
+        setDeptOptions((prev) => mergeStringOptions(prev, data.departments));
+      } else if (!res.ok) {
+        console.warn('[airtableDeptOptions] Department list request failed', res.status, data);
+      }
+    } catch (err) {
+      console.warn('[airtableDeptOptions] Failed to refresh department options', err);
+    }
+  }, []);
+
   const refreshCampusRoomsFromApi = useCallback(async () => {
+    if (aiStatus !== 'ok') {
+      setAirtableScopeCheck({
+        level: 'warn',
+        label: 'Waking AI server',
+        detail: 'Waiting for the AI server to wake up before refreshing Airtable data.'
+      });
+    }
     try {
       const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
       let data = null;
@@ -17445,6 +17459,7 @@ const StakeholderMap = ({
       if (res.ok && data?.ok && Array.isArray(data.rooms)) {
         const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
         setAirtableRooms(scopedRooms);
+        await syncAirtableRoomEditOptions(scopedRooms);
         setAirtableLastSyncedAt(new Date());
         recordAirtableScopeCheck('Manual refresh', data.rooms, scopedRooms);
         return true;
@@ -17456,7 +17471,7 @@ const StakeholderMap = ({
       detail: 'Airtable sync failed before scope validation.'
     });
     return false;
-  }, [filterRoomsToConfiguredCampus, recordAirtableScopeCheck]);
+  }, [aiStatus, filterRoomsToConfiguredCampus, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
 
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
@@ -17469,12 +17484,12 @@ const StakeholderMap = ({
   const handleRefreshAirtable = useCallback(async () => {
     if (airtableRefreshPending) return;
     setAirtableRefreshPending(true);
-    setAirtableRefreshMessage('');
+    setAirtableRefreshMessage(aiStatus !== 'ok' ? 'Waking AI server...' : '');
     const ok = await refreshCampusRoomsFromApi();
     const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setAirtableRefreshMessage(ok ? `Refreshed ${timeLabel}` : 'Refresh failed');
     setAirtableRefreshPending(false);
-  }, [airtableRefreshPending, refreshCampusRoomsFromApi]);
+  }, [aiStatus, airtableRefreshPending, refreshCampusRoomsFromApi]);
 
   useEffect(() => () => {
     if (campusRoomsRefreshTimerRef.current) {
@@ -17510,84 +17525,93 @@ const StakeholderMap = ({
         );
 
         const typeValue = String(properties.type ?? '').trim();
+        const typeProvided = Object.prototype.hasOwnProperty.call(properties, 'type');
         const officeTypeLabel = getRoomTypeLabelFromProps(properties) || typeValue;
         const allowOfficeFields = isAllowedOfficeType(officeTypeLabel);
+        const occupancyStatusProvided =
+          Object.prototype.hasOwnProperty.call(properties, 'occupancyStatus') ||
+          Object.prototype.hasOwnProperty.call(properties, 'OccupancyStatus') ||
+          Object.prototype.hasOwnProperty.call(properties, 'Occupancy Status');
         const occStatus = allowOfficeFields
           ? String(properties.occupancyStatus ?? '').trim()
           : '';
         const deptValue = String(properties.department ?? '').trim();
+        const departmentProvided = Object.prototype.hasOwnProperty.call(properties, 'department');
         const occupantProvided = properties.occupant != null;
         const occupantValue = String(properties.occupant ?? '').trim();
         const seatCountProvided = properties.seatCount != null;
         const seatCountRaw = properties.seatCount;
         const seatCountNum = Number(seatCountRaw);
         const seatCountValue = Number.isFinite(seatCountNum) && seatCountNum > 0 ? seatCountNum : null;
+        const commentsProvided = Object.prototype.hasOwnProperty.call(properties, 'comments');
+        const commentsValue = String(properties.comments ?? '');
+        const roomNumberValue = String(
+          roomNumber ??
+          properties.roomNumber ??
+          properties.RoomNumber ??
+          properties.Number ??
+          roomLabel ??
+          ''
+        ).trim();
+        const roomGuidValue = String(
+          roomGuid ??
+          properties.Revit_UniqueId ??
+          properties.revit_unique_id ??
+          properties.revitUniqueId ??
+          properties.RevitUniqueId ??
+          properties['Room GUID'] ??
+          properties.roomGuid ??
+          ''
+        ).trim();
 
         const payload = {
-          type: typeValue || '',
-          department: deptValue || '',
-          comments: properties.comments || '',
           updatedAt: serverTimestamp()
         };
+        if (typeProvided) payload.type = typeValue;
+        if (departmentProvided) payload.department = deptValue;
+        if (commentsProvided) payload.comments = commentsValue;
         if (allowOfficeFields) {
-          payload.occupant = properties.occupant || '';
-          payload.occupancyStatus = properties.occupancyStatus || '';
+          if (occupantProvided) payload.occupant = occupantValue;
+          if (occupancyStatusProvided) payload.occupancyStatus = occStatus;
         }
         if (seatCountProvided) {
           payload.seatCount = seatCountValue;
         }
 
-          await setDoc(roomRef, payload, { merge: true });
+        await setDoc(roomRef, payload, { merge: true });
 
-          const airtableId =
-            properties.airtableId ||
-            properties.AirtableId ||
-            properties.airtableID ||
-            properties['Airtable ID'] ||
-            properties['Airtable Id'] ||
-            null;
-          const airtablePayload = {};
-          if (occStatus) airtablePayload.occupancyStatus = occStatus;
-          if (typeValue) airtablePayload.type = typeValue;
-          if (deptValue) airtablePayload.department = deptValue;
-          if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
-          if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
-          const roomNumberValue = String(
-            roomNumber ??
-            properties.roomNumber ??
-            properties.RoomNumber ??
-            properties.Number ??
-            roomLabel ??
-            ''
-          ).trim();
-          const roomGuidValue = String(
-            roomGuid ??
-            properties.Revit_UniqueId ??
-            properties.revit_unique_id ??
-            properties.revitUniqueId ??
-            properties.RevitUniqueId ??
-            properties['Room GUID'] ??
-            properties.roomGuid ??
-            ''
-          ).trim();
-          let didUpdateAirtable = false;
-          if (airtableId && Object.keys(airtablePayload).length) {
-            try {
-              const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(airtablePayload)
-              });
-              if (!resp.ok) {
-                const text = await resp.text().catch(() => '');
-                console.warn('Airtable update failed', resp.status, text);
-              } else {
-                didUpdateAirtable = true;
-              }
-            } catch (err) {
-              console.warn('Airtable update failed', err);
+        const airtableId =
+          properties.airtableId ||
+          properties.AirtableId ||
+          properties.airtableID ||
+          properties['Airtable ID'] ||
+          properties['Airtable Id'] ||
+          null;
+        const airtablePayload = {};
+        if (allowOfficeFields && occupancyStatusProvided) airtablePayload.occupancyStatus = occStatus;
+        if (typeProvided) airtablePayload.type = typeValue;
+        if (departmentProvided) airtablePayload.department = deptValue;
+        if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
+        if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
+        if (commentsProvided) airtablePayload.comments = commentsValue;
+        let didUpdateAirtable = false;
+        if (airtableId && Object.keys(airtablePayload).length) {
+          try {
+            const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(airtablePayload)
+            });
+            if (!resp.ok) {
+              const text = await resp.text().catch(() => '');
+              console.warn('Airtable update failed', resp.status, text);
+            } else {
+              didUpdateAirtable = true;
             }
+          } catch (err) {
+            console.warn('Airtable update failed', err);
           }
+        }
           if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
             try {
               const resp = await guardedAiFetch('/ai/api/rooms', {
@@ -23251,6 +23275,7 @@ useEffect(() => {
             setAirtableRooms(scopedRooms);
             setAirtableLastSyncedAt(new Date());
             recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
+            void syncAirtableRoomEditOptions(scopedRooms);
           }
           if (isSarpyPublicReadonlyMode) {
             if (!cancelled) {
@@ -23306,7 +23331,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode]);
+  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -30882,7 +30907,9 @@ useEffect(() => {
                       onClick={handleRefreshAirtable}
                       disabled={airtableRefreshPending}
                     >
-                      {airtableRefreshPending ? 'Refreshing Airtable...' : 'Refresh Airtable Data'}
+                      {airtableRefreshPending
+                        ? (aiStatus !== 'ok' ? 'Waking AI Server...' : 'Refreshing Airtable...')
+                        : 'Refresh Airtable Data'}
                     </button>
                   )}
                 </div>
@@ -31247,11 +31274,18 @@ useEffect(() => {
 
           <ComboInput
             label="Department"
-            value={roomEditData.properties?.department ?? roomEditData.feature?.properties?.department ?? ''}
+            value={(roomEditData.properties?.department ?? roomEditData.feature?.properties?.department ?? roomEditData.feature?.properties?.Department ?? '') || ROOM_EDIT_NO_DEPARTMENT_OPTION.value}
             onChange={(val) =>
-              setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, department: val } }) : prev))
+              setRoomEditData((prev) => (prev ? ({
+                ...prev,
+                properties: {
+                  ...prev.properties,
+                  department: val === ROOM_EDIT_NO_DEPARTMENT_OPTION.value ? '' : val,
+                  departmentTouched: true
+                }
+              }) : prev))
             }
-            options={deptOptions}
+            options={roomEditDeptOptions}
             placeholder="Search or choose a department..."
           />
 
@@ -31404,6 +31438,9 @@ useEffect(() => {
                         ? sharedProps.seatCount
                         : fallbackProps.seatCount)
                     : undefined;
+                  const departmentOverrideProvided =
+                    sharedProps.departmentTouched === true ||
+                    (Object.prototype.hasOwnProperty.call(sharedProps, 'department') && String(sharedProps.department ?? '').trim() !== '');
                   const propsForTarget = {
                     ...tgt.properties,
                     ...sharedProps,
@@ -31412,7 +31449,7 @@ useEffect(() => {
                         ? sharedProps.type
                         : fallbackProps.type,
                     department:
-                      sharedProps.department != null && String(sharedProps.department).trim() !== ''
+                      departmentOverrideProvided
                         ? sharedProps.department
                         : fallbackProps.department,
                     ...(editHasOfficeType ? { occupancyStatus: occupancyStatusValue, occupant: occupantValue } : {}),
