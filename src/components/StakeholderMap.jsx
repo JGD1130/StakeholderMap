@@ -12642,12 +12642,6 @@ const StakeholderMap = ({
 
   const baseTypeOptions = useMemo(() => buildTypeOptionList(ROOM_TYPES), []);
   const baseDeptOptions = useMemo(() => Array.from(new Set([...Object.keys(DEPT_COLORS), ...DEPARTMENTS])).sort(), []);
-  const roomEditDeptOptions = useMemo(() => ([
-    ROOM_EDIT_NO_DEPARTMENT_OPTION,
-    ...deptOptions
-      .map((dept) => String(dept || '').trim())
-      .filter((dept) => dept && dept !== ROOM_EDIT_NO_DEPARTMENT_OPTION.value && dept.toLowerCase() !== ROOM_EDIT_NO_DEPARTMENT_OPTION.label.toLowerCase())
-  ]), [deptOptions]);
 
   // ===== STATS STATE + REFS =====
   const [buildingStats, setBuildingStats] = useState(null); // { totalSf, rooms, classroomSf, classroomCount, totalsByDept }
@@ -12675,6 +12669,12 @@ const StakeholderMap = ({
   const floorAdjustDragRef = useRef(null);
   const [typeOptions, setTypeOptions] = useState(baseTypeOptions);
   const [deptOptions, setDeptOptions] = useState(baseDeptOptions);
+  const roomEditDeptOptions = useMemo(() => ([
+    ROOM_EDIT_NO_DEPARTMENT_OPTION,
+    ...deptOptions
+      .map((dept) => String(dept || '').trim())
+      .filter((dept) => dept && dept !== ROOM_EDIT_NO_DEPARTMENT_OPTION.value && dept.toLowerCase() !== ROOM_EDIT_NO_DEPARTMENT_OPTION.label.toLowerCase())
+  ]), [deptOptions]);
   const [roomEditIncluded, setRoomEditIncluded] = useState(new Set());
   const [exportBuildingFilter, setExportBuildingFilter] = useState('__all__');
   const [exportDeptFilter, setExportDeptFilter] = useState('');
@@ -33908,6 +33908,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
