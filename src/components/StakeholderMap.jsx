@@ -4434,6 +4434,21 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   }
 }
 let aiLockUntil = 0;
+const AI_HEALTH_TIMEOUT_MS = 12000;
+const AI_ROOMS_TIMEOUT_MS = 25000;
+const AI_ROOMS_READY_TIMEOUT_MS = 12000;
+const AI_WAKE_RETRY_DELAY_MS = 2500;
+
+function isAbortLikeError(err) {
+  if (!err) return false;
+  if (err?.name === 'AbortError') return true;
+  const message = String(err?.message || '').toLowerCase();
+  return message.includes('abort') || message.includes('timeout');
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 function resolveAiUrl(url) {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return url;
@@ -17465,7 +17480,7 @@ const StakeholderMap = ({
       setDeptOptions((prev) => mergeStringOptions(prev, roomDeptOptions));
     }
     try {
-      const res = await guardedAiFetch('/ai/api/departments', { cache: 'no-store', timeoutMs: 8000 });
+      const res = await guardedAiFetch('/ai/api/departments', { cache: 'no-store', timeoutMs: 15000 });
       let data = null;
       try {
         data = await res.json();
@@ -17480,6 +17495,40 @@ const StakeholderMap = ({
     }
   }, []);
 
+  const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
+    const timeoutMs = preferWarmup || aiStatus !== 'ok' ? AI_ROOMS_TIMEOUT_MS : AI_ROOMS_READY_TIMEOUT_MS;
+    const attempts = preferWarmup || aiStatus !== 'ok' ? 2 : 1;
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {}
+        if (!res.ok) {
+          const msg = data?.error || data?.message || ('Rooms fetch failed (' + res.status + ')');
+          throw new Error(msg);
+        }
+        if (data?.ok && Array.isArray(data.rooms)) {
+          return {
+            rawRooms: data.rooms,
+            scopedRooms: filterRoomsToConfiguredCampus(data.rooms)
+          };
+        }
+        throw new Error('Rooms payload missing or invalid');
+      } catch (err) {
+        lastError = err;
+        if (attempt < attempts - 1 && isAbortLikeError(err)) {
+          await wait(AI_WAKE_RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastError || new Error('Rooms payload missing or invalid');
+  }, [aiStatus, filterRoomsToConfiguredCampus]);
+
   const refreshCampusRoomsFromApi = useCallback(async () => {
     if (aiStatus !== 'ok') {
       setAirtableScopeCheck({
@@ -17489,28 +17538,24 @@ const StakeholderMap = ({
       });
     }
     try {
-      const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
-      let data = null;
-      try {
-        data = await res.json();
-      } catch {}
-      if (res.ok && data?.ok && Array.isArray(data.rooms)) {
-        const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
-        setAirtableRooms(scopedRooms);
-        await syncAirtableRoomEditOptions(scopedRooms);
-        setAirtableLastSyncedAt(new Date());
-        recordAirtableScopeCheck('Manual refresh', data.rooms, scopedRooms);
-        return true;
-      }
-    } catch {}
-    setAirtableScopeCheck({
-      level: 'warn',
-      label: 'Refresh failed',
-      detail: 'Airtable sync failed before scope validation.'
-    });
-    return false;
-  }, [aiStatus, filterRoomsToConfiguredCampus, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
-
+      const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: aiStatus !== 'ok' });
+      setAirtableRooms(scopedRooms);
+      await syncAirtableRoomEditOptions(scopedRooms);
+      setAirtableLastSyncedAt(new Date());
+      recordAirtableScopeCheck('Manual refresh', rawRooms, scopedRooms);
+      return true;
+    } catch (err) {
+      const detail = isAbortLikeError(err)
+        ? 'AI server is still waking up. Please try again in a few seconds.'
+        : 'Airtable sync failed before scope validation.';
+      setAirtableScopeCheck({
+        level: 'warn',
+        label: 'Refresh failed',
+        detail
+      });
+      return false;
+    }
+  }, [aiStatus, fetchCampusRoomsPayload, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
     campusRoomsRefreshTimerRef.current = setTimeout(() => {
@@ -19044,13 +19089,13 @@ const StakeholderMap = ({
     const healthUrl = resolveAiUrl('/ai/health');
     const ping = async () => {
       try {
-        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: 3000 });
+        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: AI_HEALTH_TIMEOUT_MS });
         const raw = await r.text();
         let data = null;
         try { data = JSON.parse(raw); } catch {}
         setAiStatus(r.ok && data?.aiReady !== false ? 'ok' : 'down');
-      } catch {
-        setAiStatus('down');
+      } catch (err) {
+        setAiStatus(isAbortLikeError(err) ? 'unknown' : 'down');
       }
     };
     ping();
@@ -23312,42 +23357,31 @@ useEffect(() => {
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
       try {
-        const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs: 8000 });
-        let data = null;
-        try {
-          data = await res.json();
-        } catch {}
-        if (!res.ok) {
-          const msg = data?.error || data?.message || `Rooms fetch failed (${res.status})`;
-          throw new Error(msg);
+        const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: true });
+        if (!cancelled) {
+          setAirtableRooms(scopedRooms);
+          setAirtableLastSyncedAt(new Date());
+          recordAirtableScopeCheck('Initial load', rawRooms, scopedRooms);
+          void syncAirtableRoomEditOptions(scopedRooms);
         }
-        if (data?.ok && Array.isArray(data.rooms)) {
-          const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
+        if (isSarpyPublicReadonlyMode) {
           if (!cancelled) {
-            setAirtableRooms(scopedRooms);
-            setAirtableLastSyncedAt(new Date());
-            recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
-            void syncAirtableRoomEditOptions(scopedRooms);
+            setCampusRooms(scopedRooms);
+            setCampusRoomsLoaded(true);
+            setDashboardError(null);
           }
-          if (isSarpyPublicReadonlyMode) {
-            if (!cancelled) {
-              setCampusRooms(scopedRooms);
-              setCampusRoomsLoaded(true);
-              setDashboardError(null);
-            }
-            return;
+          return;
+        }
+        if (scopedRooms.some(hasDashboardRoomArea)) {
+          return;
+        }
+        if (!floorplansEnabled) {
+          if (!cancelled) {
+            setCampusRooms(scopedRooms);
+            setCampusRoomsLoaded(true);
+            setDashboardError(null);
           }
-          if (scopedRooms.some(hasDashboardRoomArea)) {
-            return;
-          }
-          if (!floorplansEnabled) {
-            if (!cancelled) {
-              setCampusRooms(scopedRooms);
-              setCampusRoomsLoaded(true);
-              setDashboardError(null);
-            }
-            return;
-          }
+          return;
         }
         throw new Error('Rooms payload missing or invalid');
       } catch (err) {
@@ -23372,6 +23406,13 @@ useEffect(() => {
             setCampusRooms(rooms);
             setDashboardError(null);
             setCampusRoomsLoaded(true);
+            setAirtableScopeCheck({
+              level: 'warn',
+              label: 'Waking AI server',
+              detail: isAbortLikeError(err)
+                ? 'Map loaded from floorplans while the AI server wakes up. Airtable data should appear automatically when it is ready.'
+                : 'Map loaded from floorplans while Airtable data is temporarily unavailable.'
+            });
           }
         } catch (fallbackErr) {
           if (!cancelled) setDashboardError(fallbackErr);
@@ -23383,7 +23424,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
+  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
