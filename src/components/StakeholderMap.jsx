@@ -23466,6 +23466,14 @@ useEffect(() => {
           }
           return;
         }
+        if (isSarpyCountyInstance) {
+          if (!cancelled) {
+            setCampusRooms(scopedRooms);
+            setCampusRoomsLoaded(true);
+            setDashboardError(null);
+          }
+          return;
+        }
         if (scopedRooms.some(hasDashboardRoomArea)) {
           return;
         }
@@ -23518,7 +23526,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
+  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -24032,7 +24040,7 @@ useEffect(() => {
       }
       return;
     }
-    if (isSarpyPublicReadonlyMode) {
+    if (isSarpyPublicReadonlyMode || isSarpyCountyInstance) {
       setCampusRooms(airtableRooms);
       setCampusRoomsLoaded(true);
       setDashboardError(null);
@@ -24134,7 +24142,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode]);
+  }, [airtableRooms, floorplansEnabled, isSarpyCountyInstance, isSarpyPublicReadonlyMode]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
