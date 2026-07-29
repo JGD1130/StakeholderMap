@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import { AsyncLocalStorage } from "async_hooks";
 import fs from "fs";
 import fsp from "fs/promises";
@@ -1814,6 +1814,63 @@ async function resolveLinkedFields(
     }
   }
   return next;
+}
+
+async function listAirtableDepartments() {
+  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
+    throw new Error("Missing Airtable config.");
+  }
+
+  if (AIRTABLE_DEPT_TABLE) {
+    const records = await fetchAirtableTableRecords(AIRTABLE_DEPT_TABLE, {
+      pageSize: 100,
+      maxRecords: 500
+    });
+    return uniqueStrings(records.map((record) => {
+      const fields = record?.fields || {};
+      const rawValue = pickFieldValue(fields, [
+        AIRTABLE_DEPT_PRIMARY_FIELD,
+        AIRTABLE_DEPT_FIELD,
+        "Department Name",
+        "Department",
+        "Name",
+        "Title",
+        "Label"
+      ]);
+      if (Array.isArray(rawValue)) {
+        return rawValue.map((value) => String(value ?? "").trim()).find(Boolean) || "";
+      }
+      return String(rawValue ?? "").trim();
+    }));
+  }
+
+  const records = await fetchAirtableAllRecords({
+    table: AIRTABLE_TABLE || "Rooms",
+    view: AIRTABLE_VIEW || "Mapfluence_Rooms",
+    fields: uniqueStrings([
+      ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
+      "Department",
+      "Department Owner",
+      "Dept",
+      "NCES_Department",
+      "NCES Dept"
+    ])
+  });
+  return uniqueStrings(records.map((record) => {
+    const fields = record?.fields || {};
+    const rawValue = pickFieldValue(fields, [
+      process.env.AIRTABLE_DEPT_FIELD,
+      "Department",
+      "Department Owner",
+      "Dept",
+      "NCES_Department",
+      "NCES Dept"
+    ]);
+    if (Array.isArray(rawValue)) {
+      return rawValue.map((value) => String(value ?? "").trim()).find(Boolean) || "";
+    }
+    return String(rawValue ?? "").trim();
+  }));
 }
 
 function isAirtableInvalidValueForField(errorText = "", fieldName = "") {
@@ -7198,6 +7255,19 @@ app.get("/demo/sample", async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.get("/api/departments", async (req, res) => {
+  try {
+    const departments = await listAirtableDepartments();
+    return res.json({
+      ok: true,
+      departments,
+      source: AIRTABLE_DEPT_TABLE ? "department-table" : "room-rows"
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });
 

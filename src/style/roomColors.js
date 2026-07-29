@@ -3,6 +3,8 @@
 
 // Known palette for every department the client listed.
 // Any missing department gets a stable fallback from a hash palette.
+const NO_DEPARTMENT_COLOR = "#e6e6e6";
+
 export const DEPT_COLORS = {
   "Academic Support": "#f68a69",
   "Admissions": "#b3b3b3",
@@ -61,6 +63,7 @@ export const DEPT_COLORS = {
   "Student Union": "#7cb0ef",
   "Teacher Education": "#2E86AB",
   "Theatre": "#f1374c",
+  "No Department": NO_DEPARTMENT_COLOR,
   "Unknown": "#8d776c",
   "VPAA": "#1568f9",
   "VPAA - Academic Admin": "#dde80d",
@@ -79,10 +82,12 @@ function hashStr(s) {
 }
 
 export function getDeptColor(name) {
-  if (!name) return "#AAAAAA";
-  const known = DEPT_COLORS[name];
+  const normalized = String(name ?? "").trim();
+  if (!normalized) return NO_DEPARTMENT_COLOR;
+  if (/^no department$/i.test(normalized)) return NO_DEPARTMENT_COLOR;
+  const known = DEPT_COLORS[normalized];
   if (known) return known;
-  const idx = hashStr(name) % HASH_PALETTE.length;
+  const idx = hashStr(normalized) % HASH_PALETTE.length;
   return HASH_PALETTE[idx];
 }
 
@@ -90,5 +95,5 @@ export function getDeptColor(name) {
 export function DEPT_FILL_MATCH(deptProp = ["get","Department"]) {
   // build match expression: ["match", ["to-string", <prop>], "Dept A", "#hex", ... , "#fallback"]
   const flat = Object.entries(DEPT_COLORS).flat();
-  return ["match", ["to-string", deptProp], ...flat, "#AAAAAA"];
+  return ["match", ["to-string", deptProp], "", NO_DEPARTMENT_COLOR, ...flat, NO_DEPARTMENT_COLOR];
 }

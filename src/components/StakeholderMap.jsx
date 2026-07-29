@@ -1,4 +1,4 @@
-﻿import * as React from 'react';
+import * as React from 'react';
 const { useRef, useEffect, useState, useCallback, useMemo, useLayoutEffect } = React;
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -759,9 +759,9 @@ const adjustHexColor = (hex, delta = 0) => {
 };
 
 const colorForDept = (name) => {
-  if (!name) return '#AAAAAA';
+  if (!name) return '#e6e6e6';
   try {
-    return getDeptColor(name) || '#AAAAAA';
+    return getDeptColor(name) || '#e6e6e6';
   } catch {
     // fall back to hash palette
   }
@@ -1354,6 +1354,19 @@ function mergeTypeOptions(prev = [], next = []) {
   return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function mergeStringOptions(prev = [], next = []) {
+  const seen = new Set();
+  (prev || []).forEach((item) => {
+    const value = norm(item);
+    if (value) seen.add(value);
+  });
+  (next || []).forEach((item) => {
+    const value = norm(item);
+    if (value) seen.add(value);
+  });
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
+}
+
 function assertCanonicalIds(buildingName, floorLabel, docPath) {
   if (!buildingName || !floorLabel || !docPath) return;
   const nameFragment = String(buildingName).trim();
@@ -1672,6 +1685,37 @@ function collectFloorOptions(features) {
   return {
     typeOptions: Array.from(typeMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
     deptOptions: Array.from(depts).filter(Boolean).sort(),
+  };
+}
+
+function collectAirtableRoomOptions(rows = []) {
+  const roomTypeValues = [];
+  const deptValues = [];
+
+  (rows || []).forEach((room) => {
+    const typeValue = norm(
+      room?.type ??
+      room?.roomType ??
+      room?.Type ??
+      room?.RoomType ??
+      room?.['Room Type'] ??
+      room?.RoomTypeDescription ??
+      room?.roomTypeDescription
+    );
+    const deptValue = norm(
+      room?.department ??
+      room?.Department ??
+      room?.Dept ??
+      room?.NCES_Department ??
+      room?.['NCES_Department']
+    );
+    if (typeValue) roomTypeValues.push(typeValue);
+    if (deptValue) deptValues.push(deptValue);
+  });
+
+  return {
+    typeOptions: buildTypeOptionList(roomTypeValues),
+    deptOptions: mergeStringOptions([], deptValues)
   };
 }
 
@@ -13161,13 +13205,7 @@ const StakeholderMap = ({
   const [engagementRoomSentimentOn, setEngagementRoomSentimentOn] = useState(false);
   const [engagementRoomSentimentOnly, setEngagementRoomSentimentOnly] = useState(false);
   const [engagementRoomFillStyle, setEngagementRoomFillStyle] = useState('solid');
-    const mergeOptionsList = (prev, next) => {
-      const seen = new Set(prev);
-      (next || []).forEach((item) => {
-        if (item) seen.add(item);
-      });
-      return Array.from(seen).sort();
-    };
+    const mergeOptionsList = mergeStringOptions;
 
   const setFloorHighlight = useCallback((idOrIds) => {
     const map = mapRef.current;
@@ -18872,9 +18910,45 @@ const StakeholderMap = ({
     else console.warn(log);
   }, [floorplansEnabled, universityId]);
 
+  const syncAirtableRoomEditOptions = useCallback(async (rooms = []) => {
+    const { typeOptions: roomTypeOptions, deptOptions: roomDeptOptions } = collectAirtableRoomOptions(rooms);
+    if (roomTypeOptions?.length) {
+      setTypeOptions((prev) => mergeTypeOptions(prev, roomTypeOptions));
+    }
+    if (roomDeptOptions?.length) {
+      setDeptOptions((prev) => mergeStringOptions(prev, roomDeptOptions));
+    }
+    try {
+      const res = await guardedAiAirtableFetch('/ai/api/departments', {
+        cache: 'no-store',
+        timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS,
+        warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS,
+        retries: 1
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {}
+      if (res.ok && data?.ok && Array.isArray(data.departments) && data.departments.length) {
+        setDeptOptions((prev) => mergeStringOptions(prev, data.departments));
+      } else if (!res.ok) {
+        console.warn('[airtableDeptOptions] Department list request failed', res.status, data);
+      }
+    } catch (err) {
+      console.warn('[airtableDeptOptions] Failed to refresh department options', err);
+    }
+  }, []);
+
   const refreshCampusRoomsFromApi = useCallback(async () => {
     const aiRoomsUrl = resolveAiUrl('/ai/api/rooms');
     let failureDetail = 'Airtable sync failed before scope validation.';
+    if (aiStatus !== 'ok') {
+      setAirtableScopeCheck({
+        level: 'warn',
+        label: 'Waking AI server',
+        detail: 'Waiting for the AI server to wake up before refreshing Airtable data.'
+      });
+    }
     try {
       const res = await guardedAiAirtableFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS, warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS, retries: 1 });
       let data = null;
@@ -18886,6 +18960,7 @@ const StakeholderMap = ({
       if (res.ok && data?.ok && Array.isArray(data.rooms)) {
         const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
         setAirtableRooms(scopedRooms);
+        await syncAirtableRoomEditOptions(scopedRooms);
         setAirtableLastSyncedAt(new Date());
         recordAirtableScopeCheck('Manual refresh', data.rooms, scopedRooms);
         return true;
@@ -18915,7 +18990,7 @@ const StakeholderMap = ({
       detail: failureDetail
     });
     return false;
-  }, [filterRoomsToConfiguredCampus, recordAirtableScopeCheck]);
+  }, [aiStatus, filterRoomsToConfiguredCampus, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
 
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
@@ -18928,12 +19003,12 @@ const StakeholderMap = ({
   const handleRefreshAirtable = useCallback(async () => {
     if (airtableRefreshPending) return;
     setAirtableRefreshPending(true);
-    setAirtableRefreshMessage('');
+    setAirtableRefreshMessage(aiStatus !== 'ok' ? 'Waking AI server...' : '');
     const ok = await refreshCampusRoomsFromApi();
     const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setAirtableRefreshMessage(ok ? `Refreshed ${timeLabel}` : 'Refresh failed');
     setAirtableRefreshPending(false);
-  }, [airtableRefreshPending, refreshCampusRoomsFromApi]);
+  }, [aiStatus, airtableRefreshPending, refreshCampusRoomsFromApi]);
 
   useEffect(() => () => {
     if (campusRoomsRefreshTimerRef.current) {
@@ -18975,12 +19050,18 @@ const StakeholderMap = ({
         );
 
         const typeValue = String(properties.type ?? '').trim();
+        const typeProvided = Object.prototype.hasOwnProperty.call(properties, 'type');
         const officeTypeLabel = getRoomTypeLabelFromProps(properties) || typeValue;
         const allowOfficeFields = isAllowedOfficeType(officeTypeLabel);
+        const occupancyStatusProvided =
+          Object.prototype.hasOwnProperty.call(properties, 'occupancyStatus') ||
+          Object.prototype.hasOwnProperty.call(properties, 'OccupancyStatus') ||
+          Object.prototype.hasOwnProperty.call(properties, 'Occupancy Status');
         const occStatus = allowOfficeFields
           ? String(properties.occupancyStatus ?? '').trim()
           : '';
         const deptValue = String(properties.department ?? '').trim();
+        const departmentProvided = Object.prototype.hasOwnProperty.call(properties, 'department');
         const occupantProvided = properties.occupant != null;
         const occupantValue = String(properties.occupant ?? '').trim();
         const seatCountProvided = properties.seatCount != null;
@@ -19009,17 +19090,23 @@ const StakeholderMap = ({
         ).trim();
 
         const payload = {
-          type: typeValue || '',
-          department: deptValue || '',
-          comments: properties.comments || '',
           updatedAt: serverTimestamp(),
           updatedByUid: actorUid,
           updatedByEmail: actorEmail,
           updatedByRole: actorRole
         };
+        if (typeProvided) {
+          payload.type = typeValue;
+        }
+        if (departmentProvided) {
+          payload.department = deptValue;
+        }
+        if (commentsProvided) {
+          payload.comments = commentsValue;
+        }
         if (allowOfficeFields) {
-          payload.occupant = properties.occupant || '';
-          payload.occupancyStatus = properties.occupancyStatus || '';
+          if (occupantProvided) payload.occupant = occupantValue;
+          if (occupancyStatusProvided) payload.occupancyStatus = occStatus;
         }
         if (seatCountProvided) {
           payload.seatCount = seatCountValue;
@@ -19049,11 +19136,16 @@ const StakeholderMap = ({
           payload.createdByRole = actorRole;
         }
 
-        const trackedAuditValues = {
-          type: payload.type ?? null,
-          department: payload.department ?? null,
-          comments: payload.comments ?? null
-        };
+        const trackedAuditValues = {};
+        if (typeProvided) {
+          trackedAuditValues.type = payload.type ?? null;
+        }
+        if (departmentProvided) {
+          trackedAuditValues.department = payload.department ?? null;
+        }
+        if (commentsProvided) {
+          trackedAuditValues.comments = payload.comments ?? null;
+        }
         if (Object.prototype.hasOwnProperty.call(payload, 'occupant')) {
           trackedAuditValues.occupant = payload.occupant ?? null;
         }
@@ -19106,9 +19198,9 @@ const StakeholderMap = ({
           properties['Airtable Id'] ||
           null;
         const airtablePayload = {};
-        if (occStatus) airtablePayload.occupancyStatus = occStatus;
-        if (typeValue) airtablePayload.type = typeValue;
-        if (deptValue) airtablePayload.department = deptValue;
+        if (allowOfficeFields && occupancyStatusProvided) airtablePayload.occupancyStatus = occStatus;
+        if (typeProvided) airtablePayload.type = typeValue;
+        if (departmentProvided) airtablePayload.department = deptValue;
         if (allowOfficeFields && occupantProvided) airtablePayload.occupant = occupantValue;
         if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
         if (commentsProvided) airtablePayload.comments = commentsValue;
@@ -24936,6 +25028,7 @@ useEffect(() => {
             setAirtableRooms(scopedRooms);
             setAirtableLastSyncedAt(new Date());
             recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
+            void syncAirtableRoomEditOptions(scopedRooms);
           }
           if (isSarpyPublicReadonlyMode) {
             if (!cancelled) {
@@ -24991,7 +25084,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, dashboardManifestScope]);
+  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, dashboardManifestScope, syncAirtableRoomEditOptions]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -32344,7 +32437,9 @@ useEffect(() => {
                       onClick={handleRefreshAirtable}
                       disabled={airtableRefreshPending}
                     >
-                      {airtableRefreshPending ? 'Refreshing Airtable...' : 'Refresh Airtable Data'}
+                      {airtableRefreshPending
+                        ? (aiStatus !== 'ok' ? 'Waking AI Server...' : 'Refreshing Airtable...')
+                        : 'Refresh Airtable Data'}
                     </button>
                   )}
                 </div>
@@ -32724,7 +32819,8 @@ useEffect(() => {
                 ...prev,
                 properties: {
                   ...prev.properties,
-                  department: val === ROOM_EDIT_NO_DEPARTMENT_OPTION.value ? '' : val
+                  department: val === ROOM_EDIT_NO_DEPARTMENT_OPTION.value ? '' : val,
+                  departmentTouched: true
                 }
               }) : prev))
             }
@@ -32987,6 +33083,9 @@ useEffect(() => {
                         ? sharedProps.seatCount
                         : fallbackProps.seatCount)
                     : undefined;
+                  const departmentOverrideProvided =
+                    sharedProps.departmentTouched === true ||
+                    (Object.prototype.hasOwnProperty.call(sharedProps, 'department') && String(sharedProps.department ?? '').trim() !== '');
                   const displayPropsForTarget = {
                     ...tgt.properties,
                     ...sharedProps,
@@ -32995,7 +33094,7 @@ useEffect(() => {
                         ? sharedProps.type
                         : fallbackProps.type,
                     department:
-                      sharedProps.department != null && String(sharedProps.department).trim() !== ''
+                      departmentOverrideProvided
                         ? sharedProps.department
                         : fallbackProps.department,
                     ...(editHasOfficeType ? { occupancyStatus: occupancyStatusValue, occupant: occupantValue } : {}),
