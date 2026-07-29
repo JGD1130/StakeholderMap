@@ -11455,6 +11455,7 @@ const StakeholderMap = ({
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || String(import.meta.env.VITE_AI_BASE_URL || '').trim());
+  const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
     const amount = Number(value);
@@ -31039,7 +31040,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {hasConfiguredAiBackend && (mode === 'admin' || publicAirtableControlsAllowed) && (
+                  {airtableControlsAllowed && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -31057,19 +31058,19 @@ useEffect(() => {
                     ? 'Summary export adds a campus total (when exporting all buildings) plus one row per building.'
                     : '')}
                 </div>
-                {(mode === 'admin' || publicAirtableControlsAllowed) && airtableRefreshMessage && (
+                {airtableControlsAllowed && airtableRefreshMessage && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {hasConfiguredAiBackend && (mode === 'admin' || publicAirtableControlsAllowed) && (
+                {airtableControlsAllowed && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
                   </div>
                 )}
-                {hasConfiguredAiBackend && (mode === 'admin' || publicAirtableControlsAllowed) && (
+                {airtableControlsAllowed && (
                   <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
                     Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
@@ -32580,5 +32581,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
