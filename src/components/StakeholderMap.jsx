@@ -11414,6 +11414,26 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
+    if (isSarpyCountyInstance) {
+      if (!configuredDashboardBuildingKeys.size) return [];
+      return rooms.filter((room) => {
+        if (!room || typeof room !== 'object') return false;
+        const buildingCandidates = [
+          getRoomBuildingId(room),
+          getRoomBuildingLabel(room),
+          room?.building,
+          room?.buildingName,
+          room?.buildingLabel,
+          room?.Building,
+          room?.BuildingName,
+          room?.['Building Name']
+        ]
+          .map((value) => normalizeDashboardKey(value))
+          .filter(Boolean);
+        return buildingCandidates.some((key) => configuredDashboardBuildingKeys.has(key));
+      });
+    }
+
     // Dedicated floorplan campuses already fetch tenant-specific Airtable rows.
     // Trust the backend payload and avoid over-filtering valid room rows.
     if (floorplansEnabled) return rooms;
@@ -11473,7 +11493,8 @@ const StakeholderMap = ({
     universityName,
     activeUniversityName,
     configuredDashboardBuildingKeys,
-    floorplansEnabled
+    floorplansEnabled,
+    isSarpyCountyInstance
   ]);
   // ---- Map view modes ----
   const MAP_VIEWS = {
@@ -11500,7 +11521,12 @@ const StakeholderMap = ({
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
-  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
+  const shouldDelaySarpyAiBootstrap = isSarpyCountyInstance && aiEnabledForCurrentView && !configuredAiServerUrl;
+  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(
+    isSarpyCountyInstance
+      ? configuredAiServerUrl
+      : (configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost())
+  );
   const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
@@ -11513,11 +11539,18 @@ const StakeholderMap = ({
     }).format(amount);
   }, []);
   useEffect(() => {
+    if (shouldDelaySarpyAiBootstrap) {
+      setRuntimeAiBaseUrl(null, {
+        configured: true,
+        enabled: false
+      });
+      return;
+    }
     setRuntimeAiBaseUrl(configuredAiServerUrl || null, {
       configured: !aiEnabledForCurrentView || Boolean(configuredAiServerUrl) || hasFallbackAiBase,
       enabled: aiEnabledForCurrentView
     });
-  }, [configuredAiServerUrl, hasFallbackAiBase, aiEnabledForCurrentView]);
+  }, [configuredAiServerUrl, hasFallbackAiBase, aiEnabledForCurrentView, shouldDelaySarpyAiBootstrap]);
   useEffect(() => {
     let cancelled = false;
     if (!isHastingsCollegeInstance) {
@@ -23358,6 +23391,23 @@ useEffect(() => {
     return () => unsub();
   }, [universityId]);
 
+  useEffect(() => {
+    if (!isSarpyCountyInstance) return;
+    selectedBuildingIdRef.current = '';
+    setSelectedBuilding('');
+    setSelectedBuildingId('');
+    setSelectedFloor(undefined);
+    setAvailableFloors([]);
+    setAirtableRooms([]);
+    setCampusRooms([]);
+    setCampusRoomsLoaded(false);
+    setDashboardError(null);
+    setDashboardTitle(defaultDashboardTitle);
+    setAirtableScopeCheck(null);
+    setAirtableLastSyncedAt(null);
+    manifestHydrationRoomsRef.current = [];
+  }, [universityId, isSarpyCountyInstance, defaultDashboardTitle]);
+
   // Admin auth actions used by controls panel
   async function handleAdminSignIn() {
     try {
@@ -23394,25 +23444,7 @@ useEffect(() => {
         setEngagementScopeMode(storedScope);
       }
 
-      const storedBuildingId = String(stored?.selectedBuildingId || '').trim();
-      if (isSarpyCountyInstance && storedBuildingId) {
-        setSelectedBuildingId(storedBuildingId);
-        selectedBuildingIdRef.current = storedBuildingId;
-      }
-
-      const storedBuildingName = String(stored?.selectedBuilding || '').trim();
-      const resolvedBuilding =
-        resolveBuildingNameFromInput(storedBuildingName || storedBuildingId) ||
-        storedBuildingName ||
-        '';
-      if (isSarpyCountyInstance && resolvedBuilding) {
-        setSelectedBuilding(resolvedBuilding);
-      }
-
-      const storedFloor = normalizeFloorIdValue(stored?.selectedFloor || '');
-      if (isSarpyCountyInstance && storedFloor) {
-        setSelectedFloor(storedFloor);
-      }
+      // Keep Sarpy county-wide on initial load instead of restoring a saved floorplan scope.
     } finally {
       requestAnimationFrame(() => {
         adminCombinedPrefsRestoringRef.current = false;
@@ -23421,7 +23453,6 @@ useEffect(() => {
   }, [
     isAdminCombinedMode,
     adminCombinedPrefsStorageKey,
-    isSarpyCountyInstance,
     resolveBuildingNameFromInput,
     MAP_VIEWS.TECHNICAL,
     MAP_VIEWS.ASSESSMENT
@@ -23464,9 +23495,7 @@ useEffect(() => {
         const bSnap = await getDocs(bCol);
         if (!bSnap.empty) {
           const opts = bSnap.docs.map(d => ({ id: d.id, name: d.data()?.name || d.id }));
-          // (removed setBuildingOptions)
-          // If nothing is selected yet, default to the first
-          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
+          void opts;
           return;
         }
         // Fallback to local manifest if Firestore empty
@@ -23474,14 +23503,13 @@ useEffect(() => {
         if (res.ok) {
           const m = await res.json(); // { buildings: { [id]: { name, floors: [...] } } }
           const opts = Object.entries(m.buildings || {}).map(([id, v]) => ({ id, name: v?.name || id }));
-          // (removed setBuildingOptions)
-          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
+          void opts;
         }
       } catch (e) {
         console.warn('Building options load failed:', e);
       }
     })();
-  }, [universityId, isSarpyCountyInstance, selectedBuilding]);
+  }, [universityId]);
 
   // ---------- Load floor manifest when building changes ----------
   useEffect(() => {
@@ -23532,6 +23560,13 @@ useEffect(() => {
       setDashboardLoading(true);
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
+      if (shouldDelaySarpyAiBootstrap) {
+        if (!cancelled) {
+          setDashboardLoading(false);
+          setDashboardError(null);
+        }
+        return;
+      }
       try {
         const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: true });
         if (!cancelled) {
@@ -23569,7 +23604,7 @@ useEffect(() => {
         }
         throw new Error('Rooms payload missing or invalid');
       } catch (err) {
-        if (!floorplansEnabled || isSarpyPublicReadonlyMode) {
+        if (!floorplansEnabled || isSarpyPublicReadonlyMode || isSarpyCountyInstance) {
           if (!cancelled) {
             setCampusRooms([]);
             setCampusRoomsLoaded(true);
@@ -23608,7 +23643,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
+  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, shouldDelaySarpyAiBootstrap, syncAirtableRoomEditOptions]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -32732,5 +32767,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
