@@ -11440,6 +11440,7 @@ const StakeholderMap = ({
     MAINTENANCE: 'maintenance'
   };
   const isAdminMode = mode === 'admin';
+  const isClientMode = mode === 'client';
   const isAdminCombinedMode = isAdminMode && engagementMode;
   const isTechnicalOnlyMode = Boolean(technicalMode);
   const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
@@ -11495,7 +11496,7 @@ const StakeholderMap = ({
     };
   }, [isHastingsCollegeInstance]);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
-  const showAuthAccessControls = isAdminMode;
+  const showAuthAccessControls = isAdminMode || isClientMode;
   const defaultMapView = isTechnicalOnlyMode
     ? MAP_VIEWS.TECHNICAL
     : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
