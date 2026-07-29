@@ -1121,6 +1121,7 @@ const DEPARTMENTS = [
   'Biology','Chemistry','Physics','Psychology','History, Religion, Philosophy','Languages & Literatures','Math','Art','Digital Art','Communication','Academic Support','Athletics','Esports','Forensics','CIO','CFO','President Office','Alumni & Foundation','Business Economics','Classroom','Creighton Coll of Nursing','Admin-General','Bronco Blend'
 ];
 const DEPARTMENT_NAMES = DEPARTMENTS;
+const ROOM_EDIT_NO_DEPARTMENT_OPTION = { value: '__NO_DEPARTMENT__', label: 'No Department' };
 
 const norm = (s) => (s ?? '').toString().trim();
 
@@ -12641,6 +12642,12 @@ const StakeholderMap = ({
 
   const baseTypeOptions = useMemo(() => buildTypeOptionList(ROOM_TYPES), []);
   const baseDeptOptions = useMemo(() => Array.from(new Set([...Object.keys(DEPT_COLORS), ...DEPARTMENTS])).sort(), []);
+  const roomEditDeptOptions = useMemo(() => ([
+    ROOM_EDIT_NO_DEPARTMENT_OPTION,
+    ...deptOptions
+      .map((dept) => String(dept || '').trim())
+      .filter((dept) => dept && dept !== ROOM_EDIT_NO_DEPARTMENT_OPTION.value && dept.toLowerCase() !== ROOM_EDIT_NO_DEPARTMENT_OPTION.label.toLowerCase())
+  ]), [deptOptions]);
 
   // ===== STATS STATE + REFS =====
   const [buildingStats, setBuildingStats] = useState(null); // { totalSf, rooms, classroomSf, classroomCount, totalsByDept }
@@ -32494,12 +32501,21 @@ useEffect(() => {
             boxShadow: '0 18px 36px rgba(0,0,0,0.2)'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }} {...roomEditDragHandleProps}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }} {...roomEditDragHandleProps}>
             <h4 style={{ margin: 0 }}>
               {roomEditTargets.length > 1
                 ? `Edit ${roomEditTargets.length} Rooms`
                 : `Edit Room ${roomEditData.feature?.properties?.name || roomEditData.roomLabel || ''}`}
             </h4>
+            <button
+              type="button"
+              className="btn"
+              style={{ padding: '4px 10px', lineHeight: 1 }}
+              onClick={closeRoomEdit}
+              title="Close"
+            >
+              ×
+            </button>
           </div>
 
           {roomEditTargets.length > 1 && (
@@ -32575,11 +32591,17 @@ useEffect(() => {
 
           <ComboInput
             label="Department"
-            value={roomEditData.properties?.department ?? roomEditData.feature?.properties?.department ?? ''}
+            value={(roomEditData.properties?.department ?? roomEditData.feature?.properties?.department ?? roomEditData.feature?.properties?.Department ?? '') || ROOM_EDIT_NO_DEPARTMENT_OPTION.value}
             onChange={(val) =>
-              setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, department: val } }) : prev))
+              setRoomEditData((prev) => (prev ? ({
+                ...prev,
+                properties: {
+                  ...prev.properties,
+                  department: val === ROOM_EDIT_NO_DEPARTMENT_OPTION.value ? '' : val
+                }
+              }) : prev))
             }
-            options={deptOptions}
+            options={roomEditDeptOptions}
             placeholder="Search or choose a department..."
           />
 
@@ -32797,6 +32819,8 @@ useEffect(() => {
                 let popupRefreshPayload = null;
                 let popupRefreshMatchedExact = false;
                 const sharedProps = roomEditData.properties || {};
+                const roomEditOnApply = roomEditData.onApply;
+                const roomEditRefreshPopup = roomEditData.refreshPopup;
                 const trimValue = (value) => String(value ?? '').trim();
                 const mapRefCurrent = mapRef.current;
                 const src = getGeojsonSource(mapRefCurrent, FLOOR_SOURCE);
@@ -32972,12 +32996,16 @@ useEffect(() => {
                       src.setData(updatedFc);
                     }
                   } catch {}
-                  if (popupRefreshPayload) {
-                    roomEditData.onApply?.(popupRefreshPayload);
-                  }
-                  roomEditData.refreshPopup?.();
                   clearRoomEditSelection();
                   closeRoomEdit();
+                  try {
+                    if (popupRefreshPayload) {
+                      roomEditOnApply?.(popupRefreshPayload);
+                    }
+                    roomEditRefreshPopup?.();
+                  } catch (popupErr) {
+                    console.warn('Room edit popup refresh failed', popupErr);
+                  }
                   if (failedSaveCount > 0) {
                     alert(`Saved ${savedCount} ${savedCount === 1 ? 'room' : 'rooms'}, but ${failedSaveCount} ${failedSaveCount === 1 ? 'room failed' : 'rooms failed'}. Reopen the rooms to verify and retry.`);
                   }
@@ -33880,6 +33908,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
