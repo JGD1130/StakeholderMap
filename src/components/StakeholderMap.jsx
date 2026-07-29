@@ -11452,6 +11452,7 @@ const StakeholderMap = ({
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
+  const planningScenarioControlsEnabled = showFullMapfluenceControls || publicPlanningScenarioAllowed;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
