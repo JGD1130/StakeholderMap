@@ -10,9 +10,7 @@ import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, set
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
-import ClientRoleManagerPanel from './ClientRoleManagerPanel.jsx';
 import { surveyConfigs } from '../surveyConfigs';
-import cherokeeOverallRoomBuildingMap from '../Configs/CherokeeOverallRoomBuildingMap.json';
 import * as turf from '@turf/turf';
 import { bId, fId, rId, canon } from '../utils/idUtils';
 import { computeFloorSummary } from '../utils/floorSummary';
@@ -580,13 +578,34 @@ function computeProgramTestFitQuality(summary, target = {}) {
 }
 
 let _runtimeAiBaseUrl = null;
-function setRuntimeAiBaseUrl(url) {
-  _runtimeAiBaseUrl = url ? String(url).trim() : null;
+let _runtimeAiConfigured = false;
+let _runtimeAiEnabled = true;
+function setRuntimeAiBaseUrl(url, { configured = true, enabled = true } = {}) {
+  const nextBase = url ? String(url).trim() : null;
+  const nextConfigured = configured !== false;
+  const nextEnabled = enabled !== false;
+  const changed =
+    _runtimeAiBaseUrl !== nextBase ||
+    _runtimeAiConfigured !== nextConfigured ||
+    _runtimeAiEnabled !== nextEnabled;
+  _runtimeAiBaseUrl = nextBase;
+  _runtimeAiConfigured = nextConfigured;
+  _runtimeAiEnabled = nextEnabled;
+  if (changed) {
+    aiLockUntil = 0;
+  }
 }
+
 function getAiBaseUrl() {
-  if (_runtimeAiBaseUrl) return _runtimeAiBaseUrl;
+  if (_runtimeAiConfigured) {
+    if (!_runtimeAiEnabled) return '';
+    if (_runtimeAiBaseUrl) return _runtimeAiBaseUrl;
+  } else if (_runtimeAiBaseUrl) {
+    return _runtimeAiBaseUrl;
+  }
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
   if (envBase) return envBase;
+  if (_runtimeAiConfigured) return '';
   if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
     return DEFAULT_PUBLIC_AI_BASE_URL;
   }
@@ -759,7 +778,7 @@ const adjustHexColor = (hex, delta = 0) => {
 };
 
 const colorForDept = (name) => {
-  if (!name) return '#e6e6e6';
+  if (!name) return getDeptColor('') || '#e6e6e6';
   try {
     return getDeptColor(name) || '#e6e6e6';
   } catch {
@@ -1160,15 +1179,19 @@ const resolveFirstBuildingInput = (values = [], getBuildingFolderKeyFn) => {
 };
 
 function getDeptFromProps(props = {}) {
-  return (
-    props.department ||
-    props.Department ||
-    props.Dept ||
-    props.NCES_Department ||
-    props["NCES_Department"] ||
-    props["Department Owner Text"] ||
-    ""
-  );
+  const keys = [
+    'department',
+    'Department',
+    'Dept',
+    'NCES_Department',
+    'Department Owner Text'
+  ];
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(props, key)) {
+      return String(props[key] ?? '').trim();
+    }
+  }
+  return "";
 }
 
 function getTypeFromProps(props = {}) {
@@ -1256,7 +1279,7 @@ function resolveLegendEntryForProps(props = {}, mode = 'department') {
       color: status === 'Vacant' ? '#ff7043' : '#cfd8dc'
     };
   }
-  const dept = getDeptFromProps(props) || 'Unspecified';
+  const dept = getDeptFromProps(props) || ROOM_EDIT_NO_DEPARTMENT_OPTION.label;
   return { name: dept, color: getDeptColor(dept) || '#e6e6e6' };
 }
 
@@ -1601,17 +1624,7 @@ function isTeachingCategory(categoryCode) {
 }
 
 function detectRoomTypeFlags(props = {}) {
-  const rawType = pickFirstDefined(props, [
-    'RoomType',
-    'roomType',
-    'Name',
-    'type',
-    'RoomTypeName',
-    'NCES_Type Description_Sh',
-    'NCES_Type Description',
-    'NCES Type Description',
-    'NCES_Type Description_Short'
-  ]) ?? '';
+  const rawType = getTypeFromProps(props) || '';
   const normed = String(rawType).toLowerCase();
   const isOfficeText = normed.includes('office');
   const isTeachingText = normed.includes('classroom') || normed.includes('lab') || normed.includes('studio');
@@ -1685,37 +1698,6 @@ function collectFloorOptions(features) {
   return {
     typeOptions: Array.from(typeMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
     deptOptions: Array.from(depts).filter(Boolean).sort(),
-  };
-}
-
-function collectAirtableRoomOptions(rows = []) {
-  const roomTypeValues = [];
-  const deptValues = [];
-
-  (rows || []).forEach((room) => {
-    const typeValue = norm(
-      room?.type ??
-      room?.roomType ??
-      room?.Type ??
-      room?.RoomType ??
-      room?.['Room Type'] ??
-      room?.RoomTypeDescription ??
-      room?.roomTypeDescription
-    );
-    const deptValue = norm(
-      room?.department ??
-      room?.Department ??
-      room?.Dept ??
-      room?.NCES_Department ??
-      room?.['NCES_Department']
-    );
-    if (typeValue) roomTypeValues.push(typeValue);
-    if (deptValue) deptValues.push(deptValue);
-  });
-
-  return {
-    typeOptions: buildTypeOptionList(roomTypeValues),
-    deptOptions: mergeStringOptions([], deptValues)
   };
 }
 
@@ -2115,7 +2097,6 @@ function resolveNcesCategory(p = {}) {
 
 function resolveAreaSf(p = {}) {
   const v =
-    p.areaSF ??
     p.Area_SF ??
     p['Area_SF'] ??
     p.area ??
@@ -2177,19 +2158,6 @@ const FLOORPLAN_ADJUST_FLOOR_PREFIX = 'mfFloorAdjustFloor:';
 const floorAdjustCache = new Map();
 const floorAdjustUrlCache = new Map();
 const floorAdjustFloorCache = new Map();
-let activeFloorAdjustStorageScope = '';
-
-function normalizeFloorAdjustStorageScope(value) {
-  return canon(value || '');
-}
-
-function setActiveFloorAdjustStorageScope(value) {
-  activeFloorAdjustStorageScope = normalizeFloorAdjustStorageScope(value);
-}
-
-function getFloorAdjustStoragePrefix(prefix) {
-  return activeFloorAdjustStorageScope ? `${prefix}${activeFloorAdjustStorageScope}:` : prefix;
-}
 
 function buildDrawingAlignKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
@@ -2202,27 +2170,13 @@ function buildFloorAdjustKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
   const floorKey = fId(floorId || '');
   if (!key || !floorKey) return null;
-  return `${getFloorAdjustStoragePrefix(FLOORPLAN_ADJUST_STORAGE_PREFIX)}${key}/${floorKey}`;
-}
-
-function normalizeFloorplanPathToken(value) {
-  let text = String(value || '');
-  for (let i = 0; i < 3; i += 1) {
-    try {
-      const decoded = decodeURIComponent(text);
-      if (!decoded || decoded === text) break;
-      text = decoded;
-    } catch {
-      break;
-    }
-  }
-  return text;
+  return `${FLOORPLAN_ADJUST_STORAGE_PREFIX}${key}/${floorKey}`;
 }
 
 function buildFloorAdjustUrlKey(url) {
-  const key = canon(normalizeFloorplanPathToken(url || ''));
+  const key = canon(url || '');
   if (!key) return null;
-  return `${getFloorAdjustStoragePrefix(FLOORPLAN_ADJUST_URL_PREFIX)}${key}`;
+  return `${FLOORPLAN_ADJUST_URL_PREFIX}${key}`;
 }
 
 function buildFloorAdjustFloorKey(basePath, floorId) {
@@ -2230,7 +2184,7 @@ function buildFloorAdjustFloorKey(basePath, floorId) {
   const key = canon(folder || basePath || '');
   const floorKey = fId(floorId || '');
   if (!key || !floorKey) return null;
-  return `${getFloorAdjustStoragePrefix(FLOORPLAN_ADJUST_FLOOR_PREFIX)}${key}/${floorKey}`;
+  return `${FLOORPLAN_ADJUST_FLOOR_PREFIX}${key}/${floorKey}`;
 }
 
 function getDrawingAlignSignature(align) {
@@ -2299,8 +2253,7 @@ function loadFloorAdjust(buildingLabel, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
     floorAdjustCache.set(key, safe);
     return safe;
@@ -2347,8 +2300,7 @@ function loadFloorAdjustByUrl(url) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
     floorAdjustUrlCache.set(key, safe);
     return safe;
@@ -2395,8 +2347,7 @@ function loadFloorAdjustByBasePath(basePath, floorId) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
     floorAdjustFloorCache.set(key, safe);
     return safe;
@@ -2436,8 +2387,7 @@ function parseStoredFloorAdjust(raw) {
           ]
         : null,
       savedAt: Number.isFinite(savedAt) ? savedAt : 0,
-      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-      georeferenced: Boolean(parsed?.georeferenced)
+      pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
     };
   } catch {
     return null;
@@ -2557,8 +2507,7 @@ function saveFloorAdjust(buildingLabel, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-    georeferenced: Boolean(adjust.georeferenced)
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2598,8 +2547,7 @@ function saveFloorAdjustByUrl(url, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-    georeferenced: Boolean(adjust.georeferenced)
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2639,8 +2587,7 @@ function saveFloorAdjustByBasePath(basePath, floorId, adjust) {
         ]
       : null,
     savedAt: Date.now(),
-    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null,
-    georeferenced: Boolean(adjust.georeferenced)
+    pivot: (Array.isArray(pivot) && pivot.length >= 2) ? pivot : null
   };
   try {
     window.localStorage.setItem(key, JSON.stringify(safe));
@@ -2789,14 +2736,6 @@ function pickLatestFloorAdjust({ base, url, label }) {
   return labelCandidate || candidates[0] || { source: 'label', adjust: null, savedAt: 0 };
 }
 
-function getCurrentStoredFloorAdjust({ buildingLabel, floorId, url = null, basePath = null }) {
-  return pickLatestFloorAdjust({
-    base: basePath ? loadFloorAdjustByBasePath(basePath, floorId) : null,
-    url: url ? loadFloorAdjustByUrl(url) : null,
-    label: loadFloorAdjust(buildingLabel, floorId)
-  }).adjust;
-}
-
 function getFloorAdjustAnchorLngLat(fc) {
   if (!fc?.features?.length) return null;
   try {
@@ -2809,49 +2748,7 @@ function getFloorAdjustAnchorLngLat(fc) {
   }
 }
 
-function hasGeoFloorAdjustDelta(adjust) {
-  if (!adjust) return false;
-  return (
-    Math.abs((adjust.translateLngLat?.[0] || 0)) > 1e-12 ||
-    Math.abs((adjust.translateLngLat?.[1] || 0)) > 1e-12 ||
-    Math.abs((adjust.anchorLngLat?.[0] || 0)) > 1e-12 ||
-    Math.abs((adjust.anchorLngLat?.[1] || 0)) > 1e-12
-  );
-}
-
-function shouldReplayFloorAdjustDirectly(fc, adjust) {
-  if (!fc?.features?.length || !hasFloorAdjust(adjust)) return false;
-  return Boolean(fc.__mfGeoreferenced || fc.__mfNoFit || hasGeoFloorAdjustDelta(adjust));
-}
-
-function buildOverlayFloorAdjust({ adjust, baseRoomsFC, fitTransform, finalRoomsFC }) {
-  if (!hasFloorAdjust(adjust)) return null;
-  const overlayAdjust = {
-    ...adjust,
-    anchorLngLat: null
-  };
-  const targetAnchor = getFloorAdjustAnchorLngLat(finalRoomsFC) ||
-    (Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null);
-  if (!targetAnchor || !baseRoomsFC?.features?.length) return overlayAdjust;
-  const preview = applyFloorAdjustWithTransform(baseRoomsFC, overlayAdjust, fitTransform, {
-    updateFitTransform: false
-  });
-  const previewAnchor = getFloorAdjustAnchorLngLat(preview?.fc || preview || null);
-  if (!previewAnchor) return overlayAdjust;
-  const deltaLng = targetAnchor[0] - previewAnchor[0];
-  const deltaLat = targetAnchor[1] - previewAnchor[1];
-  if (Math.abs(deltaLng) <= 1e-12 && Math.abs(deltaLat) <= 1e-12) return overlayAdjust;
-  const baseTranslate = Array.isArray(overlayAdjust.translateLngLat) ? overlayAdjust.translateLngLat : [0, 0];
-  return {
-    ...overlayAdjust,
-    translateLngLat: [
-      (Number(baseTranslate[0]) || 0) + deltaLng,
-      (Number(baseTranslate[1]) || 0) + deltaLat
-    ]
-  };
-}
-
-function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
+function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
   if (!fc?.features?.length || !adjust) return { fc, fitTransform };
   const sig = getFloorAdjustSignature(adjust);
   if (sig && fc.__mfUserAdjustSignature === sig) return { fc, fitTransform };
@@ -2893,8 +2790,7 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
   }
 
   let nextTransform = fitTransform;
-  const shouldUpdateFitTransform = options?.updateFitTransform !== false;
-  if (shouldUpdateFitTransform && (Number.isFinite(scale) || Number.isFinite(rotationDeg) || Array.isArray(translateMeters))) {
+  if (Number.isFinite(scale) || Number.isFinite(rotationDeg) || Array.isArray(translateMeters)) {
     nextTransform = nextTransform || {
       rotationDeg: 0,
       rotationPivot: pivot,
@@ -2926,96 +2822,6 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
     }
   }
   return { fc: out, fitTransform: nextTransform };
-}
-
-function summarizeFloorplanAlignment(fc, buildingFeature) {
-  if (!fc?.features?.length || !buildingFeature) return null;
-  try {
-    const fitCandidate = buildFitCandidate(fc) || fc;
-    const hull = buildHullFeature(fitCandidate, 1600) || buildHullFeature(fc, 1600);
-    if (!hull) return null;
-
-    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(hull);
-    const [bxMin, byMin, bxMax, byMax] = turf.bbox(buildingFeature);
-    if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
-      return null;
-    }
-
-    const rW = Math.max(1e-9, rxMax - rxMin);
-    const rH = Math.max(1e-9, ryMax - ryMin);
-    const bW = Math.max(1e-9, bxMax - bxMin);
-    const bH = Math.max(1e-9, byMax - byMin);
-    const scaleRatio = Math.min(bW / rW, bH / rH);
-    const scaleError = Number.isFinite(scaleRatio) && scaleRatio > 0
-      ? Math.abs(Math.log(scaleRatio))
-      : Number.POSITIVE_INFINITY;
-
-    const roomsCenter = turf.centroid(hull);
-    const buildingCenter = turf.centroid(buildingFeature);
-    const distKm = turf.distance(roomsCenter, buildingCenter, { units: 'kilometers' });
-    const diagKm = turf.distance(
-      turf.point([bxMin, byMin]),
-      turf.point([bxMax, byMax]),
-      { units: 'kilometers' }
-    );
-    const offsetRatio =
-      Number.isFinite(distKm) && Number.isFinite(diagKm) && diagKm > 1e-9
-        ? distKm / diagKm
-        : 0;
-    const overlap = overlapScore(hull, buildingFeature);
-
-    return {
-      overlap,
-      offsetRatio,
-      scaleError,
-      score: (overlap * 4) - (offsetRatio * 2) - scaleError
-    };
-  } catch {
-    return null;
-  }
-}
-
-function shouldRejectSavedFloorAdjust({ baseline, adjusted }) {
-  if (!baseline || !adjusted) return false;
-  if (adjusted.overlap + 0.12 < baseline.overlap) return true;
-  if (adjusted.offsetRatio > baseline.offsetRatio + 0.18) return true;
-  if (
-    adjusted.score + 0.35 < baseline.score &&
-    adjusted.overlap < baseline.overlap &&
-    adjusted.offsetRatio >= baseline.offsetRatio
-  ) {
-    return true;
-  }
-  return false;
-}
-const KNOWN_BAD_FLOOR_ADJUST_SCOPE_KEYS = new Set([
-  'hazzelrig/level_1',
-  'hazelrigg_student_union/level_1'
-]);
-function shouldIgnoreKnownBadFloorAdjust({ buildingLabel = '', buildingId = '', floorId = '', floorBasePath = '', url = '' } = {}) {
-  const floorKey = fId(floorId || '');
-  if (!floorKey) return false;
-  const scopeTokens = new Set();
-  const pushScope = (value) => {
-    const token = canon(value || '');
-    if (token && token !== 'na') scopeTokens.add(token);
-  };
-  pushScope(buildingLabel);
-  pushScope(buildingId);
-  pushScope(url);
-  pushScope(floorBasePath);
-  const folderFromBase = getBuildingFolderFromBasePath(floorBasePath || '');
-  const folderFromUrl = getBuildingFolderFromBasePath(url || '');
-  pushScope(folderFromBase);
-  pushScope(folderFromUrl);
-  pushScope(BUILDING_FOLDER_TO_NAME?.[folderFromBase] || '');
-  pushScope(BUILDING_FOLDER_TO_NAME?.[folderFromUrl] || '');
-  for (const scope of scopeTokens) {
-    if (KNOWN_BAD_FLOOR_ADJUST_SCOPE_KEYS.has(scope + '/' + floorKey)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function isDrawingFeature(props = {}) {
@@ -3394,46 +3200,6 @@ function pruneDrawingOutsideRooms(fc, marginRatio = 0.12) {
   return keep.length === fc.features.length ? fc : { ...fc, features: keep };
 }
 
-function filterFeatureCollectionToBuildingFootprint(fc, buildingFeature, options = {}) {
-  if (!fc?.features?.length || !buildingFeature) return fc;
-  let targetFeature = buildingFeature;
-  const bufferMeters = Number(options?.bufferMeters);
-  if (Number.isFinite(bufferMeters) && Math.abs(bufferMeters) > 1e-6) {
-    try {
-      const buffered = turf.buffer(buildingFeature, bufferMeters, { units: 'meters' });
-      if (buffered) targetFeature = buffered;
-    } catch {}
-  }
-  const filteredFeatures = [];
-  for (const feature of fc.features) {
-    if (!feature?.geometry) continue;
-    let anchor = null;
-    try {
-      if (feature.geometry.type === 'Point') {
-        anchor = feature;
-      } else if (feature.geometry.type === 'MultiPoint') {
-        const firstPoint = Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates[0] : null;
-        if (Array.isArray(firstPoint)) anchor = turf.point(firstPoint);
-      } else {
-        anchor = turf.pointOnFeature(feature);
-      }
-    } catch {}
-    if (!anchor) {
-      filteredFeatures.push(feature);
-      continue;
-    }
-    try {
-      if (turf.booleanPointInPolygon(anchor, targetFeature)) {
-        filteredFeatures.push(feature);
-      }
-    } catch {
-      filteredFeatures.push(feature);
-    }
-  }
-  if (filteredFeatures.length === fc.features.length) return fc;
-  return { ...fc, features: filteredFeatures, __mfBuildingFootprintFiltered: true };
-}
-
 function autoAlignDrawingToRooms(fc, context = {}) {
   if (!fc?.features?.length || fc.__mfAutoDrawingAlign) return fc;
   const drawing = fc.features.filter((f) => isDrawingFeature(f?.properties || {}));
@@ -3583,6 +3349,7 @@ const assetUrl = (path) => `${PUBLIC_BASE}${path}`.replace(/\/{2,}/g, '/');
 const FLOORPLAN_MANIFEST_URL = assetUrl('floorplans/manifest.json');
 const BUILDING_RESOURCES_URL = assetUrl('Data/building-resources.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
+const DEMO_EDITING_ENABLED = String(import.meta.env.VITE_DEMO_EDITING_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_OVERLAY_LOGS = false;
 const ENABLE_DOOR_STAIR_OVERLAY = false;
 const ENABLE_WALLS_OVERLAY = false;
@@ -4017,22 +3784,6 @@ async function loadWallsFC({ basePath, floorId, affine }) {
   return applyAffineIfPresent(rawFC, affine);
 }
 
-// Rooms with no affine.json can still already be real-world lon/lat (e.g. the
-// script.py WGS84 export from commit 732b643), in which case shouldFitFloorplanToBuilding
-// must not rescale them onto the building bbox. When a companion walls file exists we use
-// it as corroboration, but some exports embed walls in the room GeoJSON and do not ship a
-// separate walls asset at all.
-async function isFloorAlreadyGeoreferenced(roomsFC, basePath, floorId) {
-  if (!isLikelyLonLat(roomsFC)) return false;
-  try {
-    const wallsFC = await loadWallsFC({ basePath, floorId, affine: null });
-    if (!wallsFC?.features?.length) return true;
-    return isLikelyLonLat(wallsFC);
-  } catch {
-    return true;
-  }
-}
-
 function applyAffine(fc, M) {
   function mapCoords(coords) {
     if (!coords) return coords;
@@ -4115,8 +3866,9 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, wallsRawFCRef, floorAdjust, overlayFloorAdjust = null }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
   if (!basePath || !floorId || !map) return;
+
   const cleanFloor = String(floorId).trim();
   const candidates = [
     `${basePath}/${cleanFloor}_-_Map_Export_Walls_RAW.geojson`,
@@ -4129,146 +3881,42 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   let fc = ensureFeatureCollection(raw);
   if (!fc?.features?.length) return;
 
-  console.log('[walls] raw first coord after ensureFeatureCollection:',
-    JSON.stringify(fc?.features?.[0]?.geometry?.coordinates?.[0]?.[0]));
   console.log("[walls] loaded features", fc.features.length);
 
-  if (!isLikelyLonLat(fc)) {
-  // Use the same isLikelyLonLat span check used by applyAffineIfPresent ï¿½ it
-  // computes the full bbox and requires span = 0.25ï¿½. The previous inline
-  // looksLikeLonLat only sampled 20 points and checked |x|=180 && |y|=90,
-  // which Revit local coords (e.g. [-50, 100] ft) pass, causing the affine
-  // to be silently skipped and walls to render misaligned.
-  const shouldApplyAffine = affine && !isLikelyLonLat(fc);
+  function looksLikeLonLat(sampleFC, maxSamples = 20) {
+    let checked = 0;
+
+    const visit = (coords) => {
+      if (!coords || checked >= maxSamples) return true;
+      if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+        const x = coords[0];
+        const y = coords[1];
+        checked += 1;
+        return Math.abs(x) <= 180 && Math.abs(y) <= 90;
+      }
+      for (const c of coords) {
+        const ok = visit(c);
+        if (!ok) return false;
+      }
+      return true;
+    };
+
+    for (const f of sampleFC?.features || []) {
+      const ok = visit(f?.geometry?.coordinates);
+      if (!ok) return false;
+      if (checked >= maxSamples) break;
+    }
+    return checked > 0;
+  }
+
+  const shouldApplyAffine = affine && !looksLikeLonLat(fc);
   if (shouldApplyAffine) {
     fc = applyAffineTransform(fc, affine);
     console.log("[walls] applied affine");
   } else if (affine) {
     console.log("[walls] skipped affine (already lon/lat)");
   }
-
-  // When walls are not already lon/lat and no affine.json exists:
-  //   A) rooms used fitLocalFloorplanToBuilding ? fitTransform has localPlanarFit.
-  //      Reuse it directly: walls and rooms share the same Revit coordinate system,
-  //      so the same scale/centerFrom/centerTo maps walls to the rooms' position.
-  //   C) rooms used fitFloorplanToBuilding (already lon/lat) ? fitTransform has
-  //      geographic fine-tuning but no localPlanarFit. Walls share the same
-  //      coordinate space as rooms, so the identical transform positions them
-  //      correctly. Re-deriving via Path B would discard rotation and nudge.
-  //   B) No usable fitTransform (rooms from Airtable, or stale cached transform
-  //      for a different building): fall back to independent fit against the
-  //      rooms envelope.
-  // Compute walls IQR centroid in source (Revit) space for diagnostics.
-  const _wallDiag = (() => {
-    const centroids = (fc.features || []).filter(f => f?.geometry?.coordinates).map(f => {
-      const pts = [];
-      const flat = c => { if (typeof c[0] === 'number') { pts.push(c); } else c.forEach(flat); };
-      flat(f.geometry.coordinates);
-      if (!pts.length) return null;
-      return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
-    }).filter(Boolean);
-    if (!centroids.length) return null;
-    const xs = centroids.map(c => c[0]).sort((a, b) => a - b);
-    const ys = centroids.map(c => c[1]).sort((a, b) => a - b);
-    const mid = arr => arr[Math.floor(arr.length / 2)];
-    return { medX: mid(xs), medY: mid(ys) };
-  })();
-
-  if (!isLikelyLonLat(fc) && !affine) {
-    let usedPathA = false;
-    if (fitTransform?.localPlanarFit && roomsFC?.features?.length) {
-      // Validate that localCenterTo is near the current rooms centroid.
-      // A stale cached transform from a different building will fail this check.
-      const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
-      const roomsCx = (rbx0 + rbx1) / 2;
-      const roomsCy = (rby0 + rby1) / 2;
-      const [ftx, fty] = fitTransform.localCenterTo;
-      const distDeg = Math.sqrt((ftx - roomsCx) ** 2 + (fty - roomsCy) ** 2);
-      if (distDeg < 0.005) {
-        // Path A: transform is for this building ï¿½ reuse it.
-        console.log('[walls] Path A: localCenterFrom=', JSON.stringify(fitTransform.localCenterFrom),
-          'localCenterTo=', JSON.stringify(fitTransform.localCenterTo),
-          'scale=', fitTransform.localScale);
-        if (_wallDiag) {
-          const predLon = ftx + (_wallDiag.medX - fitTransform.localCenterFrom[0]) * fitTransform.localScale;
-          const predLat = fty + (_wallDiag.medY - fitTransform.localCenterFrom[1]) * fitTransform.localScale;
-          console.log('[walls] walls source IQR centroid:', _wallDiag.medX.toFixed(3), _wallDiag.medY.toFixed(3),
-            '? predicted mapped center:', predLon.toFixed(6), predLat.toFixed(6));
-          console.log('[walls] rooms lon/lat bbox center:', roomsCx.toFixed(6), roomsCy.toFixed(6));
-          const offsetM = Math.sqrt(((predLon - roomsCx) * 111320 * Math.cos(roomsCy * Math.PI / 180)) ** 2 + ((predLat - roomsCy) * 110540) ** 2);
-          console.log('[walls] predicted walls center offset from rooms center:', offsetM.toFixed(1), 'm');
-        }
-        usedPathA = true;
-      } else {
-        console.log(`[walls] localPlanarFit target is ${(distDeg * 111000).toFixed(0)}m from rooms centroid ï¿½ falling back to independent fit`);
-      }
-    }
-    if (!usedPathA && fitTransform && !fitTransform.localPlanarFit && roomsFC?.features?.length) {
-      // Path C: rooms went through fitFloorplanToBuilding (rooms already lon/lat).
-      // fitTransform carries geographic fine-tuning (rotation, scale, translate, nudge) but
-      // no Revit-local ? lon/lat step. Walls share the same coordinate space as rooms, so
-      // the identical transform positions them correctly ï¿½ re-deriving independently would
-      // introduce drift by ignoring the rotation and refinement already baked into fitTransform.
-      console.log('[walls] Path C: rooms used fitFloorplanToBuilding; reusing exact rooms fitTransform');
-      if (_wallDiag) {
-        const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
-        console.log('[walls] rooms bbox center:', ((rbx0 + rbx1) / 2).toFixed(6), ((rby0 + rby1) / 2).toFixed(6),
-          'ï¿½ walls IQR centroid:', _wallDiag.medX.toFixed(6), _wallDiag.medY.toFixed(6));
-      }
-      usedPathA = true;
-    }
-    if (!usedPathA && roomsFC?.features?.length) {
-      // Path B: independent fit to the rooms envelope.
-      console.log('[walls] Path B: fitting walls to rooms envelope');
-      if (roomsFC?.features?.length) {
-        const [rbx0, rby0, rbx1, rby1] = turf.bbox(roomsFC);
-        console.log('[walls] rooms bbox:', rbx0.toFixed(6), rby0.toFixed(6), rbx1.toFixed(6), rby1.toFixed(6));
-      }
-      const envelope = turf.envelope(roomsFC);
-      if (envelope) {
-        const locallyFitted = fitLocalFloorplanToBuilding(fc, envelope);
-        if (locallyFitted?.features?.length) {
-          fc = locallyFitted;
-          fitTransform = null;
-        }
-      }
-    }
-  }
-
-  if (wallsRawFCRef) wallsRawFCRef.current = JSON.parse(JSON.stringify(fc));
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
-
-  // Drop any features whose coordinates didn't land in valid lon/lat space.
-  // This catches the case where fitLocalFloorplanToBuilding bailed early (bad bbox)
-  // and left raw Revit-space coordinates in the collection.
-  const beforeFilter = fc.features.length;
-  fc = {
-    ...fc,
-    features: fc.features.filter(f => {
-      if (!f?.geometry?.coordinates) return false;
-      const valid = (coords) => {
-        if (!Array.isArray(coords)) return false;
-        if (typeof coords[0] === 'number') {
-          const [lon, lat] = coords;
-          return Number.isFinite(lon) && Number.isFinite(lat) &&
-                 lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90;
-        }
-        return coords.every(valid);
-      };
-      return valid(f.geometry.coordinates);
-    })
-  };
-  if (fc.features.length < beforeFilter) {
-    console.warn(`[walls] dropped ${beforeFilter - fc.features.length} features with out-of-range coordinates`);
-  }
-  } else {
-    console.log('[walls] pre-baked lon/lat ï¿½ skipping all transforms');
-  }
-
-  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
-    const adjustedWalls = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform);
-    if (adjustedWalls?.fc) fc = adjustedWalls.fc;
-  }
 
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
@@ -4283,7 +3931,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   if (!map.getLayer(WALLS_LAYER)) {
-    const beforeId = map.getLayer(FLOOR_ROOM_LABEL_LAYER) ? FLOOR_ROOM_LABEL_LAYER : undefined;
+    const beforeId = map.getLayer(FLOOR_FILL_ID) ? FLOOR_FILL_ID : undefined;
     map.addLayer({
       id: WALLS_LAYER,
       type: "line",
@@ -4304,15 +3952,10 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
       }
     }, beforeId);
   }
-
-  // Walls always load via the fire-and-forget path (ENABLE_WALLS_OVERLAY is false),
-  // so ensureLayerOrder in loadFloorGeojson fires before this layer exists.
-  // Call it here to guarantee walls land above fills but below room outlines.
-  ensureLayerOrder(map);
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null, enabled = ENABLE_DOOR_STAIR_OVERLAY }) {
-  if (!enabled) return;
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel }) {
+  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
   const affineRotationDeg = getAffineRotationDeg(affine);
@@ -4342,52 +3985,28 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
     adjustBearings: true,
     bearingRotationDeg: affineRotationDeg
   });
-  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
-    const adjustedDoors = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform);
-    if (adjustedDoors?.fc) fc = adjustedDoors.fc;
-    if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
-      fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
-    }
-  }
   fc = applyDoorSwingDirection(fc, roomsFC, {
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
-  if (filterBuildingFeature) {
-    fc = filterFeatureCollectionToBuildingFootprint(fc, filterBuildingFeature, { bufferMeters: filterBufferMeters });
-  }
 
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(DOORS_LAYER)) {
-    let doorIconName = 'mf-door-swing';
-    let useGeneratedDoorIcon = false;
-    let hasDoorIcon = map.hasImage(doorIconName);
-    if (!hasDoorIcon) {
-      try {
-        await loadIcon(map, doorIconName, assetUrl('icons/door-swing.png'));
-        hasDoorIcon = map.hasImage(doorIconName);
-      } catch (err) {
-        console.warn('Door icon load failed:', err);
+    try {
+      if (!map.hasImage('mf-door-swing')) {
+        await loadIcon(map, 'mf-door-swing', assetUrl('icons/door-swing.png'));
       }
-      if (!hasDoorIcon) {
-        doorIconName = 'mf-door-swing-generated';
-        useGeneratedDoorIcon = addGeneratedFloorSymbolIcon(map, doorIconName, 'door');
-        hasDoorIcon = useGeneratedDoorIcon;
-      }
+    } catch (err) {
+      console.warn('Door icon load failed:', err);
     }
-    map.addLayer(hasDoorIcon ? {
+    map.addLayer({
       id: DOORS_LAYER,
       type: "symbol",
       source: DOORS_SOURCE,
       layout: {
-        "icon-image": doorIconName,
-        "icon-size": useGeneratedDoorIcon ? [
-          "interpolate", ["linear"], ["zoom"],
-          16, 0.24,
-          18, 0.30,
-          20, 0.38
-        ] : [
+        "icon-image": "mf-door-swing",
+        "icon-size": [
           "interpolate", ["linear"], ["zoom"],
           16, 0.18,
           18, 0.26,
@@ -4406,22 +4025,6 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
       paint: {
         "icon-color": "#888888",
         "icon-opacity": 0.95
-      }
-    } : {
-      id: DOORS_LAYER,
-      type: "circle",
-      source: DOORS_SOURCE,
-      paint: {
-        "circle-radius": [
-          "interpolate", ["linear"], ["zoom"],
-          16, 2.2,
-          18, 3.2,
-          20, 4.2
-        ],
-        "circle-color": "#6b7280",
-        "circle-stroke-color": "#f8fafc",
-        "circle-stroke-width": 1.1,
-        "circle-opacity": 0.95
       }
     });
   }
@@ -4782,8 +4385,8 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, filterBuildingFeature = null, filterBufferMeters = null, enabled = ENABLE_DOOR_STAIR_OVERLAY }) {
-  if (!enabled) return;
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform }) {
+  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
   const affineRotationDeg = getAffineRotationDeg(affine);
@@ -4813,16 +4416,6 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     adjustBearings: true,
     bearingRotationDeg: affineRotationDeg
   });
-  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
-    const adjustedStairs = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform);
-    if (adjustedStairs?.fc) fc = adjustedStairs.fc;
-    if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
-      fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
-    }
-    }
-  if (filterBuildingFeature) {
-    fc = filterFeatureCollectionToBuildingFootprint(fc, filterBuildingFeature, { bufferMeters: filterBufferMeters });
-  }
 
   console.log("[stairs] loaded features", fc.features.length);
 
@@ -4830,34 +4423,20 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(STAIRS_LAYER)) {
-    let stairsIconName = 'mf-stairs-run';
-    let useGeneratedStairsIcon = false;
-    let hasStairsIcon = map.hasImage(stairsIconName);
-    if (!hasStairsIcon) {
-      try {
-        await loadIcon(map, stairsIconName, assetUrl('icons/stairs-run.png'));
-        hasStairsIcon = map.hasImage(stairsIconName);
-      } catch (err) {
-        console.warn('Stairs icon load failed:', err);
+    try {
+      if (!map.hasImage('mf-stairs-run')) {
+        await loadIcon(map, 'mf-stairs-run', assetUrl('icons/stairs-run.png'));
       }
-      if (!hasStairsIcon) {
-        stairsIconName = 'mf-stairs-run-generated';
-        useGeneratedStairsIcon = addGeneratedFloorSymbolIcon(map, stairsIconName, 'stairs');
-        hasStairsIcon = useGeneratedStairsIcon;
-      }
+    } catch (err) {
+      console.warn('Stairs icon load failed:', err);
     }
-    map.addLayer(hasStairsIcon ? {
+    map.addLayer({
       id: STAIRS_LAYER,
       type: "symbol",
       source: STAIRS_SOURCE,
       layout: {
-        "icon-image": stairsIconName,
-        "icon-size": useGeneratedStairsIcon ? [
-          "interpolate", ["linear"], ["zoom"],
-          16, 0.26,
-          18, 0.33,
-          20, 0.40
-        ] : [
+        "icon-image": "mf-stairs-run",
+        "icon-size": [
           "interpolate", ["linear"], ["zoom"],
           16, 0.20,
           18, 0.28,
@@ -4877,30 +4456,25 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
         "icon-color": "#888888",
         "icon-opacity": 0.95
       }
-    } : {
-      id: STAIRS_LAYER,
-      type: "circle",
-      source: STAIRS_SOURCE,
-      paint: {
-        "circle-radius": [
-          "interpolate", ["linear"], ["zoom"],
-          16, 2.6,
-          18, 3.8,
-          20, 5.0
-        ],
-        "circle-color": "#334155",
-        "circle-stroke-color": "#e2e8f0",
-        "circle-stroke-width": 1.2,
-        "circle-opacity": 0.95
-      }
     });
   }
 }
 let aiLockUntil = 0;
-const AI_STATUS_PING_TIMEOUT_MS = 8000;
-const AI_WARMUP_TIMEOUT_MS = 45000;
-const AI_ROOMS_FETCH_TIMEOUT_MS = 45000;
-let aiWarmupPromise = null;
+const AI_HEALTH_TIMEOUT_MS = 12000;
+const AI_ROOMS_TIMEOUT_MS = 25000;
+const AI_ROOMS_READY_TIMEOUT_MS = 12000;
+const AI_WAKE_RETRY_DELAY_MS = 2500;
+
+function isAbortLikeError(err) {
+  if (!err) return false;
+  if (err?.name === 'AbortError') return true;
+  const message = String(err?.message || '').toLowerCase();
+  return message.includes('abort') || message.includes('timeout');
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 function resolveAiUrl(url) {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return url;
@@ -4937,51 +4511,6 @@ async function guardedAiFetch(url, opts = {}) {
   }
   return res;
 }
-async function ensureAiBackendReady({ force = false, timeoutMs = AI_WARMUP_TIMEOUT_MS } = {}) {
-  const aiBase = getAiBaseUrl();
-  if (!aiBase) return false;
-  if (!force && aiWarmupPromise) return aiWarmupPromise;
-  let currentPromise = null;
-  currentPromise = (async () => {
-    try {
-      const res = await guardedAiFetch('/ai/health', { cache: 'no-store', timeoutMs });
-      if (!res.ok) return false;
-      const raw = await res.text();
-      let data = null;
-      try { data = JSON.parse(raw); } catch {}
-      return data?.aiReady !== false;
-    } catch {
-      return false;
-    } finally {
-      if (aiWarmupPromise === currentPromise) aiWarmupPromise = null;
-    }
-  })();
-  aiWarmupPromise = currentPromise;
-  return currentPromise;
-}
-async function guardedAiAirtableFetch(url, opts = {}) {
-  const warmupTimeoutMsRaw = Number(opts.warmupTimeoutMs);
-  const warmupTimeoutMs = Number.isFinite(warmupTimeoutMsRaw) && warmupTimeoutMsRaw > 0
-    ? warmupTimeoutMsRaw
-    : AI_WARMUP_TIMEOUT_MS;
-  const retriesRaw = Number(opts.retries);
-  const retries = Number.isFinite(retriesRaw) && retriesRaw >= 0 ? Math.floor(retriesRaw) : 1;
-  const fetchOpts = { ...opts };
-  delete fetchOpts.warmupTimeoutMs;
-  delete fetchOpts.retries;
-  await ensureAiBackendReady({ timeoutMs: warmupTimeoutMs });
-  let lastErr = null;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      return await guardedAiFetch(url, fetchOpts);
-    } catch (err) {
-      lastErr = err;
-      if (err?.name !== 'AbortError' || attempt >= retries) throw err;
-      await ensureAiBackendReady({ force: true, timeoutMs: warmupTimeoutMs });
-    }
-  }
-  throw lastErr || new Error('AI Airtable request failed.');
-}
 
 async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS) {
   if (!buildingKey) return [];
@@ -4990,14 +4519,6 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '');
-  const buildFloorRoomsUrl = (floorId) => {
-    const normalizedFloorId = normalizeFloorIdValue(floorId);
-    if (!normalizedFloorId) return null;
-    const campusSeg = encodeURIComponent(String(campus || DEFAULT_FLOORPLAN_CAMPUS).trim());
-    const buildingSeg = encodeURIComponent(String(buildingKey || '').trim());
-    const floorSeg = encodeURIComponent(normalizedFloorId);
-    return assetUrl('floorplans/' + campusSeg + '/' + buildingSeg + '/Rooms/' + floorSeg + '_Dept_Rooms.geojson');
-  };
   const normalizeFloorEntries = (floors = []) => {
     const entries = Array.isArray(floors) ? floors : (floors ? [floors] : []);
     if (!entries.length) return [];
@@ -5024,15 +4545,7 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
     );
     globalFloors = matchKey ? floorsByBuilding[matchKey] : null;
   }
-  const normalizedGlobal = normalizeFloorEntries(globalFloors || []).map((entry) => ({
-    ...entry,
-    url: entry?.url || buildFloorRoomsUrl(entry?.id)
-  })).filter((entry) => {
-    if (!entry?.url) return true;
-    const normalizedUrl = String(entry.url || '').replace(/^\/+/, '').toLowerCase();
-    const expectedPrefix = `floorplans/${String(campus || DEFAULT_FLOORPLAN_CAMPUS).toLowerCase()}/`;
-    return normalizedUrl.startsWith(expectedPrefix);
-  });
+  const normalizedGlobal = normalizeFloorEntries(globalFloors || []);
 
   // Prefer global manifest mappings when they already provide floor URLs.
   // This avoids unnecessary per-building manifest fetches (and noisy 503/404 console errors)
@@ -5045,10 +4558,7 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
   const url = assetUrl(`floorplans/${campusSeg}/${buildingSeg}/manifest.json`);
   const manifest = await fetchJSON(url);
 
-  const manifestEntries = normalizeFloorEntries(manifest?.floors).map((entry) => ({
-    ...entry,
-    url: entry?.url || buildFloorRoomsUrl(entry?.id)
-  }));
+  const manifestEntries = normalizeFloorEntries(manifest?.floors);
   if (!manifestEntries.length) return normalizedGlobal;
   if (normalizedGlobal.length && manifestEntries.some((e) => !e.url)) {
     const globalMap = new Map(
@@ -5505,79 +5015,15 @@ async function loadIcon(map, name, url) {
   }
 }
 
-function addGeneratedFloorSymbolIcon(map, name, kind) {
-  if (!map || !name || typeof document === 'undefined') return false;
-  try {
-    if (map.hasImage(name)) return true;
-  } catch {}
-  const canvas = document.createElement('canvas');
-  const size = 48;
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return false;
-  ctx.clearRect(0, 0, size, size);
-  ctx.strokeStyle = '#4b5563';
-  ctx.fillStyle = '#4b5563';
-  ctx.lineWidth = 4;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  if (kind === 'door') {
-    ctx.beginPath();
-    ctx.moveTo(14, 10);
-    ctx.lineTo(14, 36);
-    ctx.lineTo(32, 18);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(14, 36, 18, -Math.PI / 2, -Math.PI / 4, false);
-    ctx.stroke();
-  } else if (kind === 'stairs') {
-    ctx.beginPath();
-    ctx.moveTo(12, 34);
-    ctx.lineTo(12, 28);
-    ctx.lineTo(18, 28);
-    ctx.lineTo(18, 22);
-    ctx.lineTo(24, 22);
-    ctx.lineTo(24, 16);
-    ctx.lineTo(30, 16);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(18, 38);
-    ctx.lineTo(34, 22);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(29, 22);
-    ctx.lineTo(34, 22);
-    ctx.lineTo(34, 27);
-    ctx.stroke();
-  } else {
-    return false;
-  }
-
-  try {
-    const imageData = ctx.getImageData(0, 0, size, size);
-    map.addImage(name, imageData, { pixelRatio: 1 });
-    return true;
-  } catch (err) {
-    console.warn('Generated icon add failed for', name, err);
-    return false;
-  }
-}
-
 function ensureLayerOrder(map) {
   if (!map) return;
   try {
-    // Walls above room fills but below room outlines.
+    // Make sure walls sit under room fills.
     if (map.getLayer(WALLS_LAYER) && map.getLayer(FLOOR_FILL_ID)) {
-      if (map.getLayer(FLOOR_LINE_ID)) {
-        map.moveLayer(WALLS_LAYER, FLOOR_LINE_ID);
-      } else {
-        map.moveLayer(WALLS_LAYER);
-      }
+      map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID);
     }
 
-    // Keep room outlines above fills and walls.
+    // Keep room outlines above fills.
     if (map.getLayer(FLOOR_LINE_ID) && map.getLayer(FLOOR_FILL_ID)) {
       map.moveLayer(FLOOR_LINE_ID);
     }
@@ -5670,18 +5116,7 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const {
-    buildingId,
-    floor,
-    roomPatches,
-    onOptionsCollected,
-    currentFloorContextRef,
-    airtableLookup,
-    filterToBuildingFootprint = false,
-    buildingFootprintFilterBufferMeters = null,
-    skipBuildingFit = false,
-    enableDoorStairOverlay = ENABLE_DOOR_STAIR_OVERLAY
-  } = options;
+  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5736,19 +5171,15 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   });
   const skipAffine = shouldSkipAffine({ buildingLabel: affineBuildingLabel, floorBasePath });
   const basePostRotateDeg = getFloorplanPostRotationOverride(affineBuildingLabel || buildingId || '', floorId || floor || '') || 0;
-  const floorAdjustEnabled = options?.enableFloorAdjustments !== false;
-  const floorAdjustFromBase = floorAdjustEnabled && floorBasePath && floorId
-    ? loadFloorAdjustByBasePath(floorBasePath, floorId)
-    : null;
-  const floorAdjustFromUrl = floorAdjustEnabled ? loadFloorAdjustByUrl(url) : null;
-  const floorAdjustFromLabel = floorAdjustEnabled ? loadFloorAdjust(floorAdjustLabel, floorId || floor) : null;
-  const floorAdjustPick = floorAdjustEnabled
-    ? pickLatestFloorAdjust({
-        base: floorAdjustFromBase,
-        url: floorAdjustFromUrl,
-        label: floorAdjustFromLabel
-      })
-    : { source: 'disabled', adjust: null, savedAt: 0 };
+  const floorAdjustFromBase =
+    floorBasePath && floorId ? loadFloorAdjustByBasePath(floorBasePath, floorId) : null;
+  const floorAdjustFromUrl = loadFloorAdjustByUrl(url);
+  const floorAdjustFromLabel = loadFloorAdjust(floorAdjustLabel, floorId || floor);
+  const floorAdjustPick = pickLatestFloorAdjust({
+    base: floorAdjustFromBase,
+    url: floorAdjustFromUrl,
+    label: floorAdjustFromLabel
+  });
   const floorAdjust = floorAdjustPick.adjust;
   const postRotateDeg = basePostRotateDeg;
 
@@ -5764,11 +5195,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   if (data && snapCorner && (data.__mfTransformed || data.__mfFitted || data.__mfFitTransform)) {
     floorCache.delete(url);
-    data = null;
-  }
-  if (data && skipBuildingFit && (data.__mfFitted || data.__mfFitTransform || data.__mfFittedBuilding)) {
-    floorCache.delete(url);
-    floorTransformCache.delete(url);
     data = null;
   }
   if (data && Number.isFinite(postRotateDeg) && data.__mfPostRotation !== postRotateDeg) {
@@ -5995,22 +5421,12 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     } catch {}
   };
 
-  if (!fc.__mfGeoreferenced && !fc.__mfNoFit && !affine && floorBasePath && floorId) {
-    if (await isFloorAlreadyGeoreferenced(fc, floorBasePath, floorId)) {
-      fc.__mfGeoreferenced = true;
-    }
-  }
-
   let summary = computeFloorSummary(fc);
   cacheFloorSummary(summary, fc);
 
   let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
   try {
-    if (fc.__mfGeoreferenced || fc.__mfNoFit) {
-      // Already-correct rooms must skip both fit paths below ï¿½ the local-planar-fit
-      // branch (taken when !isLikelyLonLat) has no flag check of its own, so without
-      // this guard __mfNoFit/__mfGeoreferenced only protected the bbox-fit branch.
-    } else if (fitBuilding && !isLikelyLonLat(fc)) {
+    if (fitBuilding && !isLikelyLonLat(fc)) {
       const locallyFitted = fitLocalFloorplanToBuilding(fc, fitBuilding);
       if (locallyFitted?.features?.length) {
         fc = locallyFitted;
@@ -6020,11 +5436,10 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           floorCache.set(url, fc);
         }
       }
-    } else if (!skipBuildingFit) {
+    } else {
       const fitCandidate = buildFitCandidate(fc);
       const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
-      const isSarpyCounty = /SarpyCounty/i.test(floorBasePath || '');
-      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding, { isSarpyCounty })) {
+      if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding)) {
         const fitted = fitFloorplanToBuilding(fitSource, fitBuilding);
         if (fitted?.features?.length) {
           fitTransform = fitted.__mfFitTransform || null;
@@ -6106,47 +5521,36 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       }
     }
   }
-  const preUserAdjustFc = fc;
-  const preUserAdjustFitTransform = fitTransform || null;
   const adjustPivotBase =
     fitTransform?.scaleOrigin ||
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  const shouldDirectReplayFloorAdjust = shouldReplayFloorAdjustDirectly(fc, floorAdjust);
-  if (floorAdjust && hasFloorAdjust(floorAdjust)) {
-    const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform, {
-      updateFitTransform: !shouldDirectReplayFloorAdjust
-    });
-    if (adjustedResult?.fc && adjustedResult.fc !== fc) {
-      fc = adjustedResult.fc;
-      fitTransform = adjustedResult.fitTransform || fitTransform;
-      data.__mfTransformed = true;
-      if (!snapCorner) {
-        floorCache.set(url, fc);
+  if (floorAdjust) {
+    const hasAdjust = hasFloorAdjust(floorAdjust);
+    if (hasAdjust) {
+      const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform);
+      if (adjustedResult?.fc && adjustedResult.fc !== fc) {
+        fc = adjustedResult.fc;
+        fitTransform = adjustedResult.fitTransform || fitTransform;
+        data.__mfTransformed = true;
+        if (!snapCorner) {
+          floorCache.set(url, fc);
+        }
       }
     }
   }
-  const overlayFloorAdjust = shouldDirectReplayFloorAdjust
-    ? buildOverlayFloorAdjust({
-        adjust: floorAdjust,
-        baseRoomsFC: preUserAdjustFc,
-        fitTransform: preUserAdjustFitTransform,
-        finalRoomsFC: fc
-      })
-    : null;
   if (fitTransform) {
     cachedTransform.fitTransform = fitTransform;
     floorTransformCache.set(url, cachedTransform);
   }
+
   if (fc && Array.isArray(fc.features) && currentFloorContextRef && typeof currentFloorContextRef === 'object') {
     currentFloorContextRef.current = {
       url,
       buildingId,
       floor,
       fc,
-      fitTransform: fitTransform || null,
-      rotationOverride: rotationOverride || null,
       floorAdjustLabel,
       floorAdjustFloorId: floorId || floor || '',
       floorAdjustBasePath: floorBasePath || null,
@@ -6199,11 +5603,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     floorId: floorId || floor || '',
     floorBasePath
   });
-  if (filterToBuildingFootprint && fitBuilding) {
-    patchedFC = filterFeatureCollectionToBuildingFootprint(patchedFC, fitBuilding, {
-      bufferMeters: buildingFootprintFilterBufferMeters
-    });
-  }
   if ((canUseRoomPatches || canUseAirtable) && typeof onOptionsCollected === 'function') {
     const { typeOptions, deptOptions } = collectFloorOptions(patchedFC?.features || []);
     onOptionsCollected({ typeOptions, deptOptions });
@@ -6350,27 +5749,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       roomsFC: patchedFC,
       affine,
       rotationOverride,
-      fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null,
-      floorAdjust,
-      overlayFloorAdjust
+      fitTransform
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
   // ---- end walls overlay ----
-
-  // When drawing features were split out of the Rooms GeoJSON into a companion
-  // LEVEL_N_Walls.geojson, auto-load them into WALLS_SOURCE without blocking room display.
-  if (!options?.enableWalls && !options?.suppressAutoWalls && floorBasePath && floorId) {
-    tryLoadWallsOverlay({
-      basePath: floorBasePath, floorId, map, roomsFC: patchedFC,
-      affine, rotationOverride,
-      fitTransform: fitTransform || cachedTransform?.fitTransform || null,
-      wallsRawFCRef: options.wallsRawFCRef || null,
-      floorAdjust,
-      overlayFloorAdjust
-    }).catch(() => {});
-  }
 
   // ---- DOORS + STAIRS OVERLAY (optional) ----
     const overlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
@@ -6395,11 +5778,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           rotationOverride,
           fitTransform: fitTransform || cachedTransform.fitTransform || null,
           roomsFC: patchedFC,
-          buildingLabel: overlayBuildingLabel,
-          overlayFloorAdjust,
-          filterBuildingFeature: filterToBuildingFootprint ? fitBuilding : null,
-          filterBufferMeters: buildingFootprintFilterBufferMeters,
-          enabled: enableDoorStairOverlay
+          buildingLabel: overlayBuildingLabel
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -6407,11 +5786,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         map,
         affine,
         rotationOverride,
-        fitTransform: fitTransform || cachedTransform.fitTransform || null,
-        overlayFloorAdjust,
-        filterBuildingFeature: filterToBuildingFootprint ? fitBuilding : null,
-        filterBufferMeters: buildingFootprintFilterBufferMeters,
-        enabled: enableDoorStairOverlay
+        fitTransform: fitTransform || cachedTransform.fitTransform || null
       });
     }
   }
@@ -6519,12 +5894,11 @@ function buildLowZoomBuildingMarkerFC(buildingsGeoJson) {
     const props = feature?.properties || {};
     const id = String(props.id ?? props.ID ?? props.name ?? props.Name ?? `building_${idx + 1}`);
     const name = String(props.name ?? props.Name ?? props.id ?? props.ID ?? `Building ${idx + 1}`).trim() || `Building ${idx + 1}`;
-    const facilityType = props.facilityType ?? props.FacilityType ?? null;
 
     markerFeatures.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
-      properties: { id, name, facilityType }
+      properties: { id, name }
     });
   });
 
@@ -7149,8 +6523,8 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
 function sanitizeVacancyLanguage(text) {
   if (!text) return text;
   return String(text)
-    .replace(/^\s*vacant\s*[:\-ï¿½]\s*/i, '')
-    .replace(/^\s*vacant\?\s*[:\-ï¿½]\s*/i, '')
+    .replace(/^\s*vacant\s*[:\-–]\s*/i, '')
+    .replace(/^\s*vacant\?\s*[:\-–]\s*/i, '')
     .replace(/\bvacancy status\b/ig, 'availability')
     .replace(/\bvacant\b/ig, 'available');
 }
@@ -7591,80 +6965,22 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
       : (buildingGeomOrFeature?.type ? { type: 'Feature', properties: {}, geometry: buildingGeomOrFeature } : null);
     if (!building) return localFC;
 
-    // Compute the target bbox first so we have bW/bH for the clip window.
+    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(localFC);
     const [bxMin, byMin, bxMax, byMax] = turf.bbox(building);
-    if (![bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
-      console.warn('[fitLocalFloorplanToBuilding] non-finite building bbox, skipping fit');
+    if (![rxMin, ryMin, rxMax, ryMax, bxMin, byMin, bxMax, byMax].every(Number.isFinite)) {
       return localFC;
     }
-    const bW = Math.max(1e-9, bxMax - bxMin);
-    const bH = Math.max(1e-9, byMax - byMin);
-    const bldgCx = (bxMin + bxMax) / 2;
-    const bldgCy = (byMin + byMax) / 2;
-
-    // Feature centroid in source space (mean of all coordinate pairs in the geometry).
-    const featureCentroid = (feature) => {
-      const pts = [];
-      mapCoords(feature.geometry.coordinates, ([x, y]) => { pts.push([x, y]); return [x, y]; });
-      if (!pts.length) return null;
-      return [
-        pts.reduce((s, p) => s + p[0], 0) / pts.length,
-        pts.reduce((s, p) => s + p[1], 0) / pts.length,
-      ];
-    };
-
-    // Collect all feature centroids and sort to derive robust statistics.
-    // Using median + IQR avoids the circularity of estimating a clip window
-    // from a scale that is itself derived from the skewed (full) bbox.
-    const centroids = localFC.features
-      .filter(f => f?.geometry?.coordinates)
-      .map(f => featureCentroid(f))
-      .filter(Boolean);
-    if (!centroids.length) return localFC;
-
-    const xs = centroids.map(c => c[0]).sort((a, b) => a - b);
-    const ys = centroids.map(c => c[1]).sort((a, b) => a - b);
-    const mid = (arr) => arr[Math.floor(arr.length / 2)];
-    const pct = (arr, p) => arr[Math.max(0, Math.floor(arr.length * p))];
-
-    const medX  = mid(xs);
-    const medY  = mid(ys);
-    // IQR gives a spread estimate that is immune to extreme outliers.
-    const iqrX  = Math.max(1e-9, pct(xs, 0.75) - pct(xs, 0.25));
-    const iqrY  = Math.max(1e-9, pct(ys, 0.75) - pct(ys, 0.25));
-    // Clip window: 2ï¿½ IQR on each side of the median (ï¿½ 4ï¿½ IQR total width).
-    // This is equivalent to keeping centroids within ~2 building-widths of the
-    // building core, which removes drawing borders and site-context linework
-    // that are typically 5ï¿½20ï¿½ the building size away from the footprint.
-    const clipXMin = medX - iqrX * 2;
-    const clipXMax = medX + iqrX * 2;
-    const clipYMin = medY - iqrY * 2;
-    const clipYMax = medY + iqrY * 2;
-
-    const coreFeatures = localFC.features.filter(f => {
-      if (!f?.geometry?.coordinates) return false;
-      const c = featureCentroid(f);
-      if (!c) return false;
-      return c[0] >= clipXMin && c[0] <= clipXMax && c[1] >= clipYMin && c[1] <= clipYMax;
-    });
-
-    // Fall back to full set if clipping removes everything (shouldn't happen).
-    const fitFeatures = coreFeatures.length > 0 ? coreFeatures : localFC.features;
-    if (coreFeatures.length < localFC.features.length) {
-      console.log(`[fitLocalFloorplanToBuilding] clipped ${localFC.features.length - coreFeatures.length} outlier features; using ${fitFeatures.length} for source bbox`);
-    }
-
-    // Derive scale/translate from the cleaned core-feature bbox.
-    const fitFC = { ...localFC, features: fitFeatures };
-    const [rxMin, ryMin, rxMax, ryMax] = turf.bbox(fitFC);
-    if (![rxMin, ryMin, rxMax, ryMax].every(Number.isFinite)) return localFC;
 
     const rW = Math.max(1e-9, rxMax - rxMin);
     const rH = Math.max(1e-9, ryMax - ryMin);
+    const bW = Math.max(1e-9, bxMax - bxMin);
+    const bH = Math.max(1e-9, byMax - byMin);
     const scale = Math.min(bW / rW, bH / rH) * 0.96;
 
     const roomCx = (rxMin + rxMax) / 2;
     const roomCy = (ryMin + ryMax) / 2;
+    const bldgCx = (bxMin + bxMax) / 2;
+    const bldgCy = (byMin + byMax) / 2;
 
     const next = {
       ...localFC,
@@ -7697,11 +7013,6 @@ function fitLocalFloorplanToBuilding(localFC, buildingGeomOrFeature) {
     return localFC;
   }
 }
-
-const toFiniteNumberOrNull = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
 
 const normalizeBuildingResourceDoc = (doc, idx = 0) => {
   if (!doc) return null;
@@ -7805,33 +7116,6 @@ const normalizeBuildingResourcesCatalog = (rawCatalog) => {
       })
       .filter(Boolean)
   };
-};
-
-const hasConditionAssessmentContent = (condition) => {
-  if (!condition) return false;
-  return Boolean(
-    condition.averageScore != null ||
-    condition.notes ||
-    condition.scale ||
-    condition.sourceUrl ||
-    condition.sourceLabel ||
-    Object.keys(condition.architecture || {}).length ||
-    Object.keys(condition.engineering || {}).length ||
-    Object.keys(condition.functionality || {}).length
-  );
-};
-
-const isImageResourceUrl = (url) => /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(String(url || '').trim());
-
-const formatDeferredCostSummary = (deferred, formatCurrency) => {
-  if (!deferred) return '';
-  if (deferred.totalCost != null) return formatCurrency(deferred.totalCost);
-  if (deferred.totalLow != null && deferred.totalHigh != null) {
-    return `${formatCurrency(deferred.totalLow)} - ${formatCurrency(deferred.totalHigh)}`;
-  }
-  if (deferred.totalLow != null) return formatCurrency(deferred.totalLow);
-  if (deferred.totalHigh != null) return formatCurrency(deferred.totalHigh);
-  return '';
 };
 
 // Fit a rooms FeatureCollection to a building feature by scaling to bbox and aligning centroids
@@ -8743,7 +8027,13 @@ async function loadCampusBuildings() {
 }
 
 function getBuildingFolderFromBasePath(basePath) {
-  const decoded = normalizeFloorplanPathToken(basePath || '');
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(String(basePath || ''));
+    } catch {
+      return String(basePath || '');
+    }
+  })();
   const parts = decoded.split('/').filter(Boolean);
   if (!parts.length) return '';
   const floorIdx = parts.indexOf('floorplans');
@@ -8951,10 +8241,8 @@ function matchBuildingFeature(features = [], input) {
   return best;
 }
 
-function shouldFitFloorplanToBuilding(roomsFC, buildingFeature, options = {}) {
+function shouldFitFloorplanToBuilding(roomsFC, buildingFeature) {
   try {
-    // Never fit Sarpy County buildings ï¿½ they use real-world WGS84 coordinates.
-    if (options.isSarpyCounty) return false;
     if (!roomsFC || !roomsFC.features?.length || !buildingFeature) return false;
     if (roomsFC.__mfGeoreferenced || roomsFC.__mfNoFit) return false;
     const forceKey = normalizeSnapKey(buildingFeature?.properties?.id || buildingFeature?.properties?.name || '');
@@ -9038,16 +8326,7 @@ const BUILDINGS_LIST = [
   { name: 'Taylor Hall', folder: 'Taylor Hall' },
   { name: 'Wilson Center', folder: 'WilsonCenter' },
   { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
-  { name: '180th Shop', folder: '180th Shop', campus: 'SarpyCounty' },
   { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
-  { name: 'Bellevue Shop', folder: 'Bellevue Shop', campus: 'SarpyCounty' },
-  { name: 'Gretna Shop', folder: 'Gretna Shop', campus: 'SarpyCounty' },
-  { name: 'Juvenile Justice Center', folder: 'Juvenile Justice Center', campus: 'SarpyCounty' },
-  { name: 'Springfield Shop', folder: 'Springfield Shop', campus: 'SarpyCounty' },
-  { name: 'Public Works Fleet', folder: 'Public Works Fleet', campus: 'SarpyCounty' },
-  { name: "Sheriff's Garage", folder: "Sheriff's Garage", campus: 'SarpyCounty' },
-  { name: "Sheriff's Office", folder: "Sheriff's Office", campus: 'SarpyCounty' },
-  { name: '1246 Building', folder: '1246 Building', campus: 'SarpyCounty' },
 
   // add more as you add folders...
 ];
@@ -9337,17 +8616,6 @@ const normalizeClassScheduleRoomKey = (buildingName, roomLabel) => {
   return `${buildingKey}||${roomKey}`;
 };
 
-const buildScheduleSessionKey = (value = '') => canon(String(value || '').trim());
-const SCHEDULE_DAY_QUERY_OPTIONS = [
-  { label: 'Monday', tokens: ['M'], regex: /\bmon(day)?\b/i },
-  { label: 'Tuesday', tokens: ['T', 'TU'], regex: /\btue?s(day)?\b/i },
-  { label: 'Wednesday', tokens: ['W'], regex: /\bwed(nesday)?\b/i },
-  { label: 'Thursday', tokens: ['R', 'TH'], regex: /\bthu(r|rs|rsday|rsdays|rsd)?\b|\bthursday\b/i },
-  { label: 'Friday', tokens: ['F'], regex: /\bfri(day)?\b/i },
-  { label: 'Saturday', tokens: ['SA'], regex: /\bsat(urday)?\b/i },
-  { label: 'Sunday', tokens: ['SU'], regex: /\bsun(day)?\b/i }
-];
-
 const getScheduleDayTokensForDate = (date = new Date()) => {
   switch (date.getDay()) {
     case 0: return ['SU'];
@@ -9391,115 +8659,27 @@ const extractMinimumSeatCountFromQuestion = (question = '') => {
   return 0;
 };
 
-const parseScheduleQueryTimeToMinutes = (question = '') => {
-  const raw = String(question || '');
-  const patterns = [
-    /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i,
-    /\b(\d{1,2})(?::(\d{2}))\s*(am|pm)?\b/i
-  ];
-  for (const pattern of patterns) {
-    const match = raw.match(pattern);
-    if (!match) continue;
-    let hours = Number(match[1]);
-    const minutes = Number(match[2] || 0);
-    const meridiem = String(match[3] || '').toUpperCase();
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 12 || minutes < 0 || minutes > 59) continue;
-    if (meridiem === 'PM' && hours < 12) hours += 12;
-    if (meridiem === 'AM' && hours === 12) hours = 0;
-    if (!meridiem && hours < 8) hours += 12;
-    if (hours > 23) continue;
-    const displayMeridiem = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    return {
-      minutes: (hours * 60) + minutes,
-      label: `${displayHours}:${String(minutes).padStart(2, '0')} ${displayMeridiem}`
-    };
-  }
-  return null;
-};
-
-const extractScheduledClassroomAvailabilityRequest = (question = '') => {
-  const raw = String(question || '');
-  const text = raw.toLowerCase();
-  const asksAvailability =
-    /\b(empty|available|open|vacant)\b/.test(text) &&
-    /\bclassroom(s)?\b|\bteaching room(s)?\b|\broom(s)?\b/.test(text);
-  if (!asksAvailability) return null;
-  const dayOption = SCHEDULE_DAY_QUERY_OPTIONS.find((option) => option.regex.test(raw));
-  const timeInfo = parseScheduleQueryTimeToMinutes(raw);
-  if (!dayOption || !timeInfo) return null;
-  const blockMatch = text.match(/\b(?:block|session)\s*(1|2)\b/);
-  const sessionLabel = blockMatch ? `Fall 2026 Block ${blockMatch[1]}` : '';
-  return {
-    dayLabel: dayOption.label,
-    dayTokens: dayOption.tokens,
-    targetMinutes: timeInfo.minutes,
-    timeLabel: timeInfo.label,
-    sessionLabel,
-    sessionKey: sessionLabel ? buildScheduleSessionKey(sessionLabel) : ''
-  };
-};
-
-const getScheduleEntriesForDayTokens = (entries = [], dayTokens = []) => {
-  const targetTokens = Array.isArray(dayTokens) ? dayTokens.filter(Boolean) : [];
-  return (entries || []).filter((entry) => {
-    const entryTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
-    if (!entryTokens.length || !targetTokens.length) return true;
-    return targetTokens.some((token) => entryTokens.includes(token));
-  });
-};
-
-const getScheduleEntriesForSession = (entries = [], sessionKey = '') => {
-  const targetKey = buildScheduleSessionKey(sessionKey);
-  if (!targetKey) return entries || [];
-  return (entries || []).filter((entry) => {
-    const entryKey = buildScheduleSessionKey(entry?.sessionKey || entry?.sessionLabel || entry?.sessionRaw || entry?.sheet || '');
-    return entryKey === targetKey;
-  });
-};
-
-const isScheduleEntryActiveForMoment = (entry, options = {}) => {
-  if (!entry) return false;
-  const targetDayTokens = Array.isArray(options?.dayTokens) ? options.dayTokens : [];
-  const entryDayTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
-  if (targetDayTokens.length && entryDayTokens.length && !targetDayTokens.some((token) => entryDayTokens.includes(token))) {
-    return false;
-  }
-  const startMinutes = Number(entry?.startMinutes);
-  const endMinutes = Number(entry?.endMinutes);
-  const targetMinutes = Number(options?.minutes);
-  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || !Number.isFinite(targetMinutes)) return false;
-  return targetMinutes >= startMinutes && targetMinutes < endMinutes;
-};
-
 const isScheduleEntryActiveAt = (entry, date = new Date()) => {
   if (!entry) return false;
+  const dayTokens = Array.isArray(entry.dayTokens) ? entry.dayTokens : [];
+  if (dayTokens.length) {
+    const todaysTokens = getScheduleDayTokensForDate(date);
+    if (!todaysTokens.some((token) => dayTokens.includes(token))) return false;
+  }
+  const startMinutes = Number(entry.startMinutes);
+  const endMinutes = Number(entry.endMinutes);
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) return false;
   const nowMinutes = (date.getHours() * 60) + date.getMinutes();
-  return isScheduleEntryActiveForMoment(entry, {
-    dayTokens: getScheduleDayTokensForDate(date),
-    minutes: nowMinutes
-  });
+  return nowMinutes >= startMinutes && nowMinutes < endMinutes;
 };
 
-const getScheduleEntriesForToday = (entries = [], date = new Date()) => (
-  getScheduleEntriesForDayTokens(entries, getScheduleDayTokensForDate(date))
-);
-
-const buildScheduleSnapshotForMoment = (entries = [], options = {}) => {
-  const sessionEntries = getScheduleEntriesForSession(entries, options?.sessionKey || '');
-  const dayEntries = getScheduleEntriesForDayTokens(sessionEntries, options?.dayTokens || []);
-  const activeEntries = dayEntries.filter((entry) => isScheduleEntryActiveForMoment(entry, options));
-  const targetMinutes = Number(options?.minutes);
-  const upcomingEntries = dayEntries.filter((entry) => {
-    const startMinutes = Number(entry?.startMinutes);
-    return Number.isFinite(startMinutes) && Number.isFinite(targetMinutes) && startMinutes >= targetMinutes;
+const getScheduleEntriesForToday = (entries = [], date = new Date()) => {
+  const todaysTokens = getScheduleDayTokensForDate(date);
+  return (entries || []).filter((entry) => {
+    const dayTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
+    if (!dayTokens.length) return true;
+    return todaysTokens.some((token) => dayTokens.includes(token));
   });
-  return {
-    entries: sessionEntries,
-    dayEntries,
-    activeEntries,
-    upcomingEntries
-  };
 };
 
 const formatScheduleEntryTime = (entry) => {
@@ -9509,13 +8689,6 @@ const formatScheduleEntryTime = (entry) => {
   const endText = String(entry?.endTime || '').trim();
   if (startText && endText) return `${startText} - ${endText}`;
   return startText || endText || 'Time TBD';
-};
-
-const formatScheduleEntryCourseLabel = (entry, options = {}) => {
-  const baseLabel = String(entry?.courseCode || entry?.title || 'Scheduled class').trim();
-  const sessionLabel = String(entry?.sessionLabel || entry?.sessionRaw || '').trim();
-  if (options?.includeSession && sessionLabel) return `${sessionLabel}: ${baseLabel}`;
-  return baseLabel;
 };
 
 const BUILDING_SNAP_CORNERS = {
@@ -9644,11 +8817,7 @@ const FLOORPLAN_NO_FIT = new Set([
   'calvin_h_french_chapel/basement',
   'calvin_h_french_memorial_chapel/basement',
   'kiewit/level_2',
-  'kiewit_building/level_2',
-  // Temporary unblock: real-world WGS84 export (commit 732b643) has no affine.json,
-  // so __mfGeoreferenced never gets set and shouldFitFloorplanToBuilding was still
-  // rescaling already-correct rooms. General fix lives in loadFloorGeojson.
-  '1102_building/level_1'
+  'kiewit_building/level_2'
 ]);
 
 const DOOR_SWING_FLIP_OVERRIDES = {
@@ -9769,182 +8938,190 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
-const getDashboardRoomBuildingLabel = (room = {}) => String(
-  room?.building ??
-  room?.buildingName ??
-  room?.buildingLabel ??
-  ''
-).trim();
-const CHEROKEE_CLUSTER_BUILDING_KEYS = new Set([
-  'Main/Administration',
-  'North A',
-  'North B',
-  'North C',
-  'South A',
-  'South B',
-  'South C',
-  'Rear Center'
-].map((value) => normalizeDashboardKey(value)).filter(Boolean));
-const CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS = new Set([
-  'Connected Core',
-  'Main/Administration',
-  'North A'
-].map((value) => normalizeDashboardKey(value)).filter(Boolean));
-const isCherokeeClusterBuildingKey = (value = '') =>
-  CHEROKEE_CLUSTER_BUILDING_KEYS.has(String(value || '').trim());
-const isCherokeeLegacyClusterBuildingKey = (value = '') =>
-  CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS.has(String(value || '').trim());
-const isCherokeeClusterRoom = (room = {}) => {
-  const buildingKey = normalizeDashboardKey(getDashboardRoomBuildingLabel(room));
-  return isCherokeeClusterBuildingKey(buildingKey) || isCherokeeLegacyClusterBuildingKey(buildingKey);
+const normalizeBuildingResourceUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const withoutLeadingSlash = raw.replace(/^\/+/, '');
+  return assetUrl(withoutLeadingSlash);
 };
-function pickBestManifestRoomCandidate(room = {}, candidates = []) {
-  if (!Array.isArray(candidates) || !candidates.length) return null;
-  const roomFloorTokens = normalizeFloorTokens(
-    room?.floor ?? room?.floorName ?? room?.floorId ?? ''
+const toFiniteNumberOrNull = (value) => {
+  const raw = typeof value === 'string'
+    ? value.replace(/[$,]/g, '').trim()
+    : value;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+};
+const normalizeConditionScoreMap = (rawMap) => {
+  if (!rawMap || typeof rawMap !== 'object') return null;
+  const out = {};
+  Object.entries(rawMap).forEach(([key, value]) => {
+    const metric = String(key || '').trim();
+    if (!metric) return;
+    const score = toFiniteNumberOrNull(value);
+    if (score == null || score <= 0) return;
+    out[metric] = score;
+  });
+  return Object.keys(out).length ? out : null;
+};
+const hasConditionAssessmentContent = (condition) => {
+  if (!condition) return false;
+  const hasScores = ['architecture', 'engineering', 'functionality']
+    .some((section) => condition?.[section] && Object.keys(condition[section]).length > 0);
+  return Boolean(
+    condition.averageScore != null ||
+    condition.notes ||
+    condition.sourceUrl ||
+    condition.scale ||
+    hasScores
   );
-  const roomTypeKey = normalizeTypeMatch(room?.type ?? room?.roomType ?? '');
-  const roomDeptKey = normalizeDashboardKey(
-    room?.department ?? getDeptFromProps(room) ?? ''
-  );
-  const roomArea = Number(room?.areaSF ?? room?.area ?? room?.sf ?? 0);
-  const scored = candidates
-    .map((candidate, index) => {
-      const candidateFloorTokens = normalizeFloorTokens(
-        candidate?.floor ?? candidate?.floorName ?? candidate?.floorId ?? ''
-      );
-      const floorMatch = roomFloorTokens.length
-        ? candidateFloorTokens.some((token) => roomFloorTokens.includes(token))
-        : true;
-      const candidateTypeKey = normalizeTypeMatch(candidate?.type ?? candidate?.roomType ?? '');
-      const candidateDeptKey = normalizeDashboardKey(
-        candidate?.department ?? getDeptFromProps(candidate) ?? ''
-      );
-      const candidateArea = Number(candidate?.areaSF ?? candidate?.area ?? candidate?.sf ?? 0);
-      const areaDelta = Number.isFinite(roomArea) && roomArea > 0 && Number.isFinite(candidateArea) && candidateArea > 0
-        ? Math.abs(candidateArea - roomArea)
-        : Number.POSITIVE_INFINITY;
-      let score = 0;
-      if (floorMatch) score += 100;
-      if (roomTypeKey && candidateTypeKey && roomTypeKey === candidateTypeKey) score += 20;
-      if (roomDeptKey && candidateDeptKey && roomDeptKey === candidateDeptKey) score += 14;
-      if (Number.isFinite(areaDelta)) {
-        if (areaDelta <= 1) score += 18;
-        else if (areaDelta <= 5) score += 12;
-        else if (areaDelta <= 20) score += 6;
-      }
-      return { candidate, score, areaDelta, index };
-    })
-    .sort((a, b) =>
-      b.score - a.score ||
-      a.areaDelta - b.areaDelta ||
-      a.index - b.index
-    );
-  return scored[0]?.candidate || null;
-}
-const getBuildingFeatureLabel = (feature) => String(
-  feature?.properties?.name ??
-  feature?.properties?.Name ??
-  feature?.properties?.id ??
-  ''
-).trim();
-const isCherokeeOverallRoomsUrl = (url = '') => /floorplans\/cherokeementalhealth\/overall\/rooms\//i.test(String(url || '').replace(/\\/g, '/'));
-const CHEROKEE_OVERALL_ROOM_BUILDING_LOOKUP = new Map(
-  Object.entries(cherokeeOverallRoomBuildingMap || {})
-    .map(([roomId, buildingLabel]) => [String(roomId || '').trim(), String(buildingLabel || '').trim()])
-    .filter(([roomId, buildingLabel]) => roomId && buildingLabel)
-);
-const getCherokeeOverallRoomLookupLabel = (feature) => {
-  const props = feature?.properties || {};
-  const idCandidates = [props.Revit_UniqueId, props.RevitId, props['Revit_UniqueId'], props['RevitId']];
-  for (const candidate of idCandidates) {
-    const lookupLabel = CHEROKEE_OVERALL_ROOM_BUILDING_LOOKUP.get(String(candidate || '').trim());
-    if (lookupLabel) return lookupLabel;
+};
+const formatConditionMetricLabel = (rawMetric) => {
+  const key = String(rawMetric || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!key) return '';
+  return key.charAt(0).toUpperCase() + key.slice(1);
+};
+const formatConditionScore = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '';
+  return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '');
+};
+const normalizeResourceDoc = (rawDoc, index = 0) => {
+  if (!rawDoc) return null;
+  if (typeof rawDoc === 'string') {
+    const url = normalizeBuildingResourceUrl(rawDoc);
+    if (!url) return null;
+    return {
+      label: `Document ${index + 1}`,
+      description: '',
+      url
+    };
   }
+  if (typeof rawDoc !== 'object') return null;
+  const url = normalizeBuildingResourceUrl(rawDoc.url || rawDoc.path || rawDoc.href || '');
+  if (!url) return null;
+  return {
+    label: String(rawDoc.label || rawDoc.name || rawDoc.title || `Document ${index + 1}`).trim() || `Document ${index + 1}`,
+    description: String(rawDoc.description || rawDoc.notes || '').trim(),
+    url
+  };
+};
+const normalizeBuildingResourceCatalog = (rawCatalog) => {
+  const out = { updatedAt: '', byBuildingKey: new Map() };
+  if (!rawCatalog) return out;
+  const rows = Array.isArray(rawCatalog?.buildings)
+    ? rawCatalog.buildings
+    : (Array.isArray(rawCatalog) ? rawCatalog : []);
+  out.updatedAt = String(rawCatalog?.updatedAt || rawCatalog?.lastUpdated || '').trim();
+  rows.forEach((row) => {
+    if (!row || typeof row !== 'object') return;
+    const deferredRaw = row.deferredMaintenance || row.deferred || row.maintenance || null;
+    const deferredItems = Array.isArray(deferredRaw?.items)
+      ? deferredRaw.items
+          .map((item) => {
+            if (item == null) return null;
+            if (typeof item === 'string') {
+              const label = item.trim();
+              return label ? { label, priority: '', cost: null } : null;
+            }
+            if (typeof item !== 'object') return null;
+            const label = String(item.label || item.name || item.issue || item.scope || '').trim();
+            if (!label) return null;
+            return {
+              label,
+              priority: String(item.priority || item.rank || '').trim(),
+              cost: toFiniteNumberOrNull(item.cost ?? item.amount ?? item.total)
+            };
+          })
+          .filter(Boolean)
+      : [];
+    const deferred = deferredRaw
+      ? {
+          summary: String(deferredRaw.summary || deferredRaw.description || deferredRaw.notes || '').trim(),
+          priority: String(deferredRaw.priority || deferredRaw.rank || '').trim(),
+          totalLow: toFiniteNumberOrNull(deferredRaw.totalLow ?? deferredRaw.low ?? deferredRaw.min),
+          totalHigh: toFiniteNumberOrNull(deferredRaw.totalHigh ?? deferredRaw.high ?? deferredRaw.max),
+          totalCost: toFiniteNumberOrNull(deferredRaw.totalCost ?? deferredRaw.total ?? deferredRaw.amount),
+          sourceLabel: String(deferredRaw.sourceLabel || deferredRaw.sourceName || 'Open source').trim() || 'Open source',
+          sourceUrl: normalizeBuildingResourceUrl(deferredRaw.sourceUrl || deferredRaw.source || deferredRaw.sheetUrl || deferredRaw.link),
+          updatedAt: String(deferredRaw.updatedAt || deferredRaw.lastUpdated || '').trim(),
+          items: deferredItems
+        }
+      : null;
+    const conditionRaw = row.conditionAssessment || row.assessment || row.condition || row.facilityCondition || null;
+    const condition = conditionRaw
+      ? {
+          averageScore: toFiniteNumberOrNull(
+            conditionRaw.averageScore ??
+            conditionRaw.avgScore ??
+            conditionRaw.average ??
+            conditionRaw.avg ??
+            conditionRaw.score
+          ),
+          scale: String(conditionRaw.scale || conditionRaw.scoreScale || '').trim(),
+          notes: String(conditionRaw.notes || conditionRaw.summary || conditionRaw.description || '').trim(),
+          architecture: normalizeConditionScoreMap(conditionRaw.architecture || conditionRaw.arch || conditionRaw.architectural),
+          engineering: normalizeConditionScoreMap(conditionRaw.engineering || conditionRaw.mep),
+          functionality: normalizeConditionScoreMap(conditionRaw.functionality || conditionRaw.functional || conditionRaw.program),
+          sourceLabel: String(conditionRaw.sourceLabel || conditionRaw.sourceName || 'Open source').trim() || 'Open source',
+          sourceUrl: normalizeBuildingResourceUrl(conditionRaw.sourceUrl || conditionRaw.source || conditionRaw.sheetUrl || conditionRaw.link),
+          updatedAt: String(conditionRaw.updatedAt || conditionRaw.lastUpdated || '').trim()
+        }
+      : null;
+    const remodelPdfsRaw =
+      row.remodelPdfs ||
+      row.scenarioPdfs ||
+      row.planningScenarios ||
+      row.planningDocs ||
+      row.documents ||
+      [];
+    const remodelPdfs = (Array.isArray(remodelPdfsRaw) ? remodelPdfsRaw : [remodelPdfsRaw])
+      .map((doc, idx) => normalizeResourceDoc(doc, idx))
+      .filter(Boolean);
+    const entry = {
+      building: String(row.building || row.buildingName || row.name || row.id || '').trim(),
+      deferredMaintenance: deferred,
+      conditionAssessment: condition,
+      remodelPdfs
+    };
+    const keyValues = [
+      row.building,
+      row.buildingName,
+      row.name,
+      row.id,
+      ...(Array.isArray(row.aliases) ? row.aliases : [])
+    ];
+    const keySet = new Set(
+      keyValues
+        .map((value) => normalizeDashboardKey(value))
+        .filter(Boolean)
+    );
+    keySet.forEach((key) => {
+      if (!out.byBuildingKey.has(key)) {
+        out.byBuildingKey.set(key, entry);
+      }
+    });
+  });
+  return out;
+};
+const formatDeferredCostSummary = (deferred, formatCurrency) => {
+  if (!deferred) return '';
+  const total = Number(deferred.totalCost);
+  if (Number.isFinite(total)) return formatCurrency(total);
+  const low = Number(deferred.totalLow);
+  const high = Number(deferred.totalHigh);
+  if (Number.isFinite(low) && Number.isFinite(high)) {
+    if (Math.abs(low - high) < 1) return formatCurrency(low);
+    return `${formatCurrency(low)} - ${formatCurrency(high)}`;
+  }
+  if (Number.isFinite(low)) return `From ${formatCurrency(low)}`;
+  if (Number.isFinite(high)) return `Up to ${formatCurrency(high)}`;
   return '';
 };
-const CHEROKEE_OVERALL_FIT_ROTATION_DEG = 88;
-const CHEROKEE_OVERALL_FIT_SCALE = 0.74;
-const isCherokeeLegacyStandaloneRoomsUrl = (url = '') => /floorplans\/cherokeementalhealth\/(main_administration|north%20a|north a)\/rooms\//i.test(String(url || '').replace(/\\/g, '/'));
-function fitCherokeeOverallFeatureCollectionToCluster(fc, buildingFeatures = []) {
-  if (!fc?.features?.length || !Array.isArray(buildingFeatures) || !buildingFeatures.length) return fc;
-  const clusterFeatures = buildingFeatures.filter((feature) =>
-    isCherokeeClusterBuildingKey(normalizeDashboardKey(getBuildingFeatureLabel(feature)))
-  );
-  if (!clusterFeatures.length) return fc;
-  let roomPivot = null;
-  let clusterPivot = null;
-  try {
-    roomPivot = turf.centroid(fc)?.geometry?.coordinates || null;
-  } catch {}
-  try {
-    clusterPivot = turf.centroid({ type: 'FeatureCollection', features: clusterFeatures })?.geometry?.coordinates || null;
-  } catch {}
-  if (!Array.isArray(roomPivot) || roomPivot.length < 2 || !Array.isArray(clusterPivot) || clusterPivot.length < 2) {
-    return fc;
-  }
-  try {
-    let fitted = turf.transformRotate(fc, CHEROKEE_OVERALL_FIT_ROTATION_DEG, { pivot: roomPivot });
-    fitted = turf.transformScale(fitted, CHEROKEE_OVERALL_FIT_SCALE, { origin: roomPivot });
-    const currentPivot = turf.centroid(fitted)?.geometry?.coordinates || roomPivot;
-    const fromPoint = turf.point(currentPivot);
-    const toPoint = turf.point(clusterPivot);
-    const distanceKm = turf.distance(fromPoint, toPoint, { units: 'kilometers' });
-    const bearingDeg = turf.bearing(fromPoint, toPoint);
-    if (Number.isFinite(distanceKm) && distanceKm > 1e-9 && Number.isFinite(bearingDeg)) {
-      fitted = turf.transformTranslate(fitted, distanceKm, bearingDeg, { units: 'kilometers' });
-    }
-    return fitted;
-  } catch {
-    return fc;
-  }
-}
-function getFeatureAnchorForBuildingAssignment(feature) {
-  if (!feature?.geometry) return null;
-  try {
-    if (feature.geometry.type === 'Point') return feature;
-    if (feature.geometry.type === 'MultiPoint') {
-      const firstPoint = Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates[0] : null;
-      if (Array.isArray(firstPoint)) return turf.point(firstPoint);
-    }
-    return turf.pointOnFeature(feature);
-  } catch {
-    return null;
-  }
-}
-function resolveCherokeeOverallRoomBuildingLabel(feature, buildingFeatures = [], fallbackLabel = '') {
-  if (!feature?.geometry || !Array.isArray(buildingFeatures) || !buildingFeatures.length) return fallbackLabel;
-  const anchor = getFeatureAnchorForBuildingAssignment(feature);
-  if (!anchor) return fallbackLabel;
-  let nearestLabel = '';
-  let nearestDistanceKm = Number.POSITIVE_INFINITY;
-  for (const candidate of buildingFeatures) {
-    const label = getBuildingFeatureLabel(candidate);
-    const key = normalizeDashboardKey(label);
-    if (!CHEROKEE_CLUSTER_BUILDING_KEYS.has(key)) continue;
-    try {
-      if (turf.booleanPointInPolygon(anchor, candidate)) return label || fallbackLabel;
-    } catch {}
-    try {
-      const centroid = turf.centroid(candidate);
-      const distanceKm = turf.distance(anchor, centroid, { units: 'kilometers' });
-      if (Number.isFinite(distanceKm) && distanceKm < nearestDistanceKm) {
-        nearestDistanceKm = distanceKm;
-        nearestLabel = label;
-      }
-    } catch {}
-  }
-  return nearestLabel || fallbackLabel;
-}
-function shouldPreferManifestBuildingForCherokee(currentLabel, manifestLabel) {
-  const currentKey = normalizeDashboardKey(currentLabel);
-  const manifestKey = normalizeDashboardKey(manifestLabel);
-  if (!manifestKey || !CHEROKEE_CLUSTER_BUILDING_KEYS.has(manifestKey)) return false;
-  if (!currentKey) return true;
-  if (currentKey === manifestKey) return false;
-  if (CHEROKEE_CLUSTER_BUILDING_KEYS.has(currentKey)) return true;
-  return CHEROKEE_LEGACY_CLUSTER_BUILDING_KEYS.has(currentKey);
-}
 const normalizeMaintenanceBuildingFilterKey = (buildingIdValue, buildingNameValue = '') => {
   const idRaw = String(buildingIdValue || '').trim();
   const nameRaw = String(buildingNameValue || '').trim();
@@ -10021,8 +9198,26 @@ const normalizeDeptMatch = (value) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
+const getRoomBuildingId = (room) =>
+  String(
+    room?.buildingId ??
+    room?.BuildingId ??
+    room?.building_id ??
+    room?.['Building Id'] ??
+    room?.BuildingID ??
+    ''
+  ).trim();
+
 const getRoomBuildingLabel = (room) =>
-  room?.building ?? room?.buildingName ?? room?.buildingLabel ?? '';
+  String(
+    room?.building ??
+    room?.buildingName ??
+    room?.buildingLabel ??
+    room?.Building ??
+    room?.BuildingName ??
+    room?.['Building Name'] ??
+    getRoomBuildingId(room)
+  ).trim();
 
 const getDeptCandidates = (rooms = []) => {
   const seen = new Map();
@@ -10197,6 +9392,20 @@ const isClassroomCountQuery = (question = '') => {
   if (!/\bclassroom(s)?\b/.test(text)) return false;
   return /\bhow many\b|\bcount\b|\bnumber of\b/.test(text);
 };
+const isPlanningDocsQuery = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!text) return false;
+  const hasDocIntent = /\b(show|open|view|see|list|display|pull|give)\b/.test(text);
+  const hasPlanningTerms = /\b(planning|remodel|renovation|reno|scenario|master plan)\b/.test(text);
+  const hasDocTerms = /\b(doc|docs|document|documents|pdf|image|images|jpeg|jpg|png|plan|plans)\b/.test(text);
+  return (hasDocIntent && hasPlanningTerms) || (hasPlanningTerms && hasDocTerms);
+};
+const isImageResourceUrl = (urlValue = '') => {
+  const raw = String(urlValue || '').trim();
+  if (!raw) return false;
+  const normalized = raw.split('?')[0].split('#')[0].toLowerCase();
+  return /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(normalized);
+};
 const isRoomVacantForListing = (room) => {
   const status = String(
     room?.occupancyStatus ??
@@ -10311,17 +9520,7 @@ function buildAirtableRoomLookup(rooms = []) {
   const byBuildingRoom = new Map();
   const byBuildingRoomList = new Map();
   const byRoomId = new Map();
-  const byRoomIdList = new Map();
-  if (!Array.isArray(rooms)) {
-    return {
-      byGuid,
-      byComposite,
-      byBuildingRoom,
-      byBuildingRoomList,
-      byRoomId,
-      byRoomIdList
-    };
-  }
+  if (!Array.isArray(rooms)) return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId };
 
   const setUnique = (map, key, room) => {
     if (!key) return;
@@ -10375,11 +9574,10 @@ function buildAirtableRoomLookup(rooms = []) {
     }
     if (roomIdKey) {
       setUnique(byRoomId, roomIdKey, room);
-      addToList(byRoomIdList, roomIdKey, room);
     }
   });
 
-  return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId, byRoomIdList };
+  return { byGuid, byComposite, byBuildingRoom, byBuildingRoomList, byRoomId };
 }
 
 function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) {
@@ -10443,14 +9641,6 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
           }) || ranked[0] || null;
       }
     }
-    if (!manifestMatch && roomIdKey && isCherokeeClusterRoom(room)) {
-      const candidates = (manifestLookup.byRoomIdList?.get(roomIdKey) || []).filter((candidate) =>
-        isCherokeeClusterBuildingKey(
-          normalizeDashboardKey(getDashboardRoomBuildingLabel(candidate))
-        )
-      );
-      manifestMatch = pickBestManifestRoomCandidate(room, candidates);
-    }
     if (!manifestMatch && roomIdKey) {
       manifestMatch = manifestLookup.byRoomId?.get(roomIdKey) || null;
     }
@@ -10473,15 +9663,7 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
         merged.roomLabel = manifestRoomLabel;
       }
     }
-    const mergedBuildingLabel = String(merged.building ?? merged.buildingName ?? merged.buildingLabel ?? '').trim();
-    const manifestBuildingLabel = String(manifestMatch.building ?? manifestMatch.buildingName ?? manifestMatch.buildingLabel ?? '').trim();
-    if ((!mergedBuildingLabel && manifestBuildingLabel) || shouldPreferManifestBuildingForCherokee(mergedBuildingLabel, manifestBuildingLabel)) {
-      merged.building = manifestBuildingLabel;
-      merged.buildingName = manifestBuildingLabel;
-      merged.buildingLabel = manifestBuildingLabel;
-    } else if (!merged.building && manifestBuildingLabel) {
-      merged.building = manifestBuildingLabel;
-    }
+    if (!merged.building && manifestMatch.building) merged.building = manifestMatch.building;
     if (!merged.floor && manifestMatch.floor) merged.floor = manifestMatch.floor;
 
     if (!merged.type || isLinkedRecordArray(merged.type)) {
@@ -10717,23 +9899,9 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
   };
 };
 
-const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
+const buildCampusRoomsFromManifest = async (manifest) => {
   const floorsByBuilding = manifest?.floorsByBuilding || {};
   const jobs = [];
-  const queuedUrls = new Set();
-  const allowedBuildingKeyList = (options?.allowedBuildingKeys || [])
-    .map((value) => String(value || '').trim())
-    .filter(Boolean);
-  const allowedBuildingKeys = new Set(
-    allowedBuildingKeyList
-      .map((value) => normalizeDashboardKey(value))
-      .filter(Boolean)
-  );
-  const allowedCampusPrefix = String(options?.campusPathPrefix || '')
-    .trim()
-    .replace(/^\/+/, '')
-    .toLowerCase();
-  const buildingFeatures = Array.isArray(options?.buildingFeatures) ? options.buildingFeatures : [];
 
   const buildingNameById = new Map();
   if (Array.isArray(manifest?.buildings)) {
@@ -10748,79 +9916,21 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
     });
   }
 
-  const resolveBuildingLabel = (value = '') => {
-    const raw = String(value || '').trim();
-    const normalized = normalizeDashboardKey(raw);
-    if (!normalized) return raw;
-    const matchedFeature = buildingFeatures.find((feature) => {
-      const props = feature?.properties || {};
-      return [props.id, props.name, props.Name, props.buildingId, props.buildingName]
-        .some((candidate) => normalizeDashboardKey(candidate) === normalized);
-    });
-    if (matchedFeature?.properties) {
-      return String(
-        matchedFeature.properties.name ||
-        matchedFeature.properties.Name ||
-        matchedFeature.properties.id ||
-        raw
-      ).trim();
-    }
-    return raw;
-  };
-
-  const pushJob = (url, buildingLabel) => {
-    const rawUrl = String(url || '').trim();
-    if (!rawUrl) return;
-    const normalizedUrl = rawUrl.replace(/^\/+/, '').toLowerCase();
-    if (allowedCampusPrefix && !normalizedUrl.startsWith(allowedCampusPrefix)) return;
-    if (isCherokeeLegacyStandaloneRoomsUrl(rawUrl)) return;
-    if (queuedUrls.has(normalizedUrl)) return;
-    queuedUrls.add(normalizedUrl);
-    jobs.push({ url: rawUrl, buildingLabel: resolveBuildingLabel(buildingLabel) || buildingLabel || '' });
-  };
-
   Object.entries(floorsByBuilding).forEach(([buildingKey, floors]) => {
     const buildingLabel = buildingNameById.get(String(buildingKey)) || buildingKey;
-    if (allowedBuildingKeys.size) {
-      const keyMatches = [buildingKey, buildingLabel].some((value) => allowedBuildingKeys.has(normalizeDashboardKey(value)));
-      if (!keyMatches) return;
-    }
     (floors || []).forEach((floor) => {
       const url = typeof floor === 'string' ? floor : floor?.url;
-      pushJob(url, buildingLabel);
+      if (url) jobs.push({ url, buildingLabel });
     });
   });
-
-  if (!jobs.length && allowedBuildingKeyList.length && allowedCampusPrefix) {
-    const campusParts = allowedCampusPrefix.split('/').filter(Boolean);
-    const campusName = campusParts.length >= 2 ? campusParts[1] : DEFAULT_FLOORPLAN_CAMPUS;
-    await runWithLimit(Array.from(new Set(allowedBuildingKeyList)), 4, async (buildingKey) => {
-      const manifestFloors = await loadFloorManifest(buildingKey, campusName);
-      (manifestFloors || []).forEach((floor) => {
-        pushJob(floor?.url, buildingKey);
-      });
-      return null;
-    });
-  }
 
   if (!jobs.length) return [];
 
   const results = await runWithLimit(jobs, 6, async (job) => {
     const feats = await fetchRoomsForFloorUrl(job.url);
     const rows = [];
-    const rawFeatures = feats || [];
-    const shouldReassignCherokeeOverall = isCherokeeOverallRoomsUrl(job.url) && buildingFeatures.length > 0;
-    const needsCherokeeGeometryFallback = shouldReassignCherokeeOverall && rawFeatures.some((feature) => !getCherokeeOverallRoomLookupLabel(feature));
-    const fittedFeatures = needsCherokeeGeometryFallback
-      ? (fitCherokeeOverallFeatureCollectionToCluster({ type: 'FeatureCollection', features: rawFeatures }, buildingFeatures)?.features || rawFeatures)
-      : rawFeatures;
-    rawFeatures.forEach((feature, index) => {
-      const lookupBuildingLabel = shouldReassignCherokeeOverall ? getCherokeeOverallRoomLookupLabel(feature) : '';
-      const sourceFeature = lookupBuildingLabel ? feature : (fittedFeatures[index] || feature);
-      const effectiveBuildingLabel = shouldReassignCherokeeOverall
-        ? (lookupBuildingLabel || resolveCherokeeOverallRoomBuildingLabel(sourceFeature, buildingFeatures, job.buildingLabel))
-        : job.buildingLabel;
-      const row = toDashboardRoomRow(sourceFeature, effectiveBuildingLabel);
+    (feats || []).forEach((feature) => {
+      const row = toDashboardRoomRow(feature, job.buildingLabel);
       if (row) rows.push(row);
     });
     return rows;
@@ -10831,36 +9941,22 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
 
 const roomRowToDashboardFeature = (room) => {
   if (!room) return null;
-  const resolvedArea = resolvePatchedArea(room);
-  const area = Number.isFinite(resolvedArea)
-    ? Number(resolvedArea)
-    : Number(room.areaSF ?? room.area ?? room.sf ?? 0);
+  const area = Number(room.areaSF ?? room.area ?? room.sf ?? 0);
   if (!Number.isFinite(area) || area <= 0) return null;
   const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
   const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
   const revitId = room.revitId ?? room.RevitId ?? null;
-  const categoryCode = String(getRoomCategoryCode(room) || '').trim();
-  const dept = String(getDeptFromProps(room) || room.department || '').trim();
-  const type = String(getTypeFromProps(room) || room.type || room.roomType || room.Name || '').trim();
-  const buildingName = String(room.building ?? room.buildingName ?? room.buildingLabel ?? '').trim();
-  const floorName = String(room.floor ?? room.floorName ?? room.floorId ?? '').trim();
-  const roomNumber = String(
-    room.roomNumber ??
-    room.Number ??
-    room.RoomNumber ??
-    room.number ??
-    room.Room ??
-    room.roomLabel ??
-    room.roomId ??
+  const categoryCode = String(
+    room.categoryCode ??
+    room.category ??
+    room.NCES_Category ??
+    room['NCES Category'] ??
     ''
   ).trim();
-  const occupancyStatus = String(
-    room.occupancyStatus ??
-    room['Occupancy Status'] ??
-    room.OccupancyStatus ??
-    ''
-  ).trim();
-  const occupant = String(room.occupant ?? room.Occupant ?? '').trim();
+  const dept = String(room.department ?? '').trim();
+  const type = String(room.type ?? '').trim();
+  const occupancyStatus = String(room.occupancyStatus ?? '').trim();
+  const occupant = String(room.occupant ?? '').trim();
   return {
     type: 'Feature',
     properties: {
@@ -10871,29 +9967,20 @@ const roomRowToDashboardFeature = (room) => {
       NCES_Department: dept,
       Department: dept,
       department: dept,
-      Dept: dept,
       NCES_Type: type,
-      Type: type,
-      type,
-      RoomType: type,
-      roomType: type,
-      'Room Type': type,
-      RoomTypeDescription: type,
-      roomTypeDescription: type,
-      'Room Type Description': type,
       __roomType: type,
       NCES_Category: categoryCode,
       'NCES Category': categoryCode,
       categoryCode,
       category: categoryCode,
-      building: buildingName,
-      Building: buildingName,
-      buildingName: buildingName,
-      Floor: floorName,
-      floor: floorName,
-      Number: roomNumber,
-      RoomNumber: roomNumber,
-      roomNumber: roomNumber,
+      building: room.building || '',
+      Building: room.building || '',
+      buildingName: room.building || '',
+      Floor: room.floor ?? room.floorName ?? room.floorId ?? '',
+      floor: room.floor ?? room.floorName ?? room.floorId ?? '',
+      Number: room.roomNumber || room.roomId || '',
+      RoomNumber: room.roomNumber || room.roomId || '',
+      roomNumber: room.roomNumber || room.roomId || '',
       RevitId: revitId != null ? String(revitId) : undefined,
       revitId: revitId != null ? String(revitId) : undefined,
       roomGuid: room.roomGuid || '',
@@ -11249,11 +10336,9 @@ function bringFloorRoomLabelsToFront(map) {
 // Load Firestore rooms at path:
 // universities/{campusId}/buildings/{buildingId}/floors/{floorId}/rooms
 async function loadRooms(db, campusId, buildingId, floorId) {
-  const canonicalBuildingId = bId(buildingId);
-  const canonicalFloorId = fId(floorId);
   const colRef = collection(
     db,
-    `universities/${campusId}/buildings/${canonicalBuildingId}/floors/${canonicalFloorId}/rooms`
+    `universities/${campusId}/buildings/${buildingId}/floors/${floorId}/rooms`
   );
   const snap = await getDocs(colRef);
   const byId = {};
@@ -11480,13 +10565,6 @@ const technicalScoreColorForAverage = (averageScore, scoredFields = 0) => {
 };
 
 const defaultBuildingColor = '#85474b';
-const SARPY_FACILITY_TYPE_COLORS = {
-  'Administrative': '#4A90D9',
-  'Law Enforcement': '#C0392B',
-  'Public Works': '#E8601C',
-  'Recreation': '#27AE60',
-  'Infrastructure': '#7F8C8D'
-};
 const NO_FLOORPLAN_BUILDINGS = [
   '603 E 9th St',
   '603 E. 9th St',
@@ -11998,45 +11076,7 @@ const toTimestampIso = (value) => {
     return '';
   }
 };
-const formatTimestampLabel = (value, fallbackMs = 0) => {
-  const ms = parseFirestoreTimestampMs(value) || Number(fallbackMs) || 0;
-  if (!ms) return '';
-  try {
-    return new Date(ms).toLocaleString();
-  } catch {
-    return '';
-  }
-};
-const ROOM_EDIT_HISTORY_FIELD_LABELS = Object.freeze({
-  type: 'Room Type',
-  department: 'Department',
-  comments: 'Comments',
-  occupant: 'Occupant',
-  occupancyStatus: 'Occupancy Status',
-  seatCount: 'Seat Count'
-});
-const getRoomEditHistoryFieldLabel = (field) => ROOM_EDIT_HISTORY_FIELD_LABELS[field] || field;
-const formatRoomEditHistoryValue = (value) => {
-  if (value == null) return '(blank)';
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed ? trimmed : '(blank)';
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value.toLocaleString() : String(value);
-  }
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  return String(value);
-};
-const formatRoomEditHistorySource = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (!normalized) return '';
-  if (normalized === 'client-room-edit') return 'Client room edit';
-  if (normalized === 'admin-room-edit') return 'Admin room edit';
-  if (normalized === 'create') return 'Created';
-  if (normalized === 'update') return 'Updated';
-  return normalized.replace(/[-_]+/g, ' ');
-};
+
 const TECHNICAL_ASSESSOR_NAME_STORAGE_PREFIX = 'mf:technical-assessor-name';
 const TECHNICAL_ASSESSOR_DEVICE_STORAGE_PREFIX = 'mf:technical-assessor-device';
 
@@ -12268,34 +11308,10 @@ const StakeholderMap = ({
       : { type: 'FeatureCollection', features: [] }),
     [lowZoomBuildingMarkersEnabled, config?.buildings]
   );
-  const sarpyFacilityTypeCircleColorExpr = isSarpyCountyInstance
-    ? [
-        'match',
-        ['get', 'facilityType'],
-        'Administrative', SARPY_FACILITY_TYPE_COLORS['Administrative'],
-        'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
-        'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
-        'Recreation', SARPY_FACILITY_TYPE_COLORS['Recreation'],
-        'Infrastructure', SARPY_FACILITY_TYPE_COLORS['Infrastructure'],
-        defaultBuildingColor
-      ]
-    : null;
-  const classroomMetricsEnabled = (config?.enableClassroomMetrics ?? !isSarpyCountyInstance) !== false;
-  const floorAdjustmentsEnabled = (config?.enableFloorAdjustments ?? true) !== false;
-  const floorAdjustRecoveryEnabled = (config?.enableFloorAdjustRecovery ?? true) !== false;
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
-  const sarpyFacilityTypeLegendItems = isSarpyCountyInstance
-    ? [
-        { label: 'Administrative', color: SARPY_FACILITY_TYPE_COLORS['Administrative'] },
-        { label: 'Law Enforcement', color: SARPY_FACILITY_TYPE_COLORS['Law Enforcement'] },
-        { label: 'Public Works', color: SARPY_FACILITY_TYPE_COLORS['Public Works'] },
-        { label: 'Recreation', color: SARPY_FACILITY_TYPE_COLORS['Recreation'] },
-        { label: 'Infrastructure', color: SARPY_FACILITY_TYPE_COLORS['Infrastructure'] }
-      ]
-    : [];
-  const showClassroomUtilizationDashboard = classroomMetricsEnabled;
-  const showStrategicDashboard = classroomMetricsEnabled;
+  const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
+  const showStrategicDashboard = !isSarpyCountyInstance;
   const hasConfiguredUniversityLogo = Boolean(
     config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
   );
@@ -12308,67 +11324,11 @@ const StakeholderMap = ({
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
-  const floorAdjustStorageScope = String(config?.floorAdjustStorageScope || '').trim();
-  setActiveFloorAdjustStorageScope(floorAdjustStorageScope);
-  const configuredFloorplanBuildingOptions = useMemo(() => {
-    const raw = Array.isArray(config?.floorplanBuildings) ? config.floorplanBuildings : [];
-    const seen = new Set();
-    return raw
-      .map((entry) => {
-        if (!entry) return null;
-        if (typeof entry === 'string') {
-          const name = String(entry).trim();
-          return name
-            ? {
-                name,
-                folder: name,
-                filterToBuildingFootprint: false,
-                buildingFootprintFilterBufferMeters: null
-              }
-            : null;
-        }
-        const name = String(entry?.name || entry?.label || entry?.id || '').trim();
-        const folder = String(entry?.folder || entry?.path || name).trim();
-        if (!name || !folder) return null;
-        const filterToBuildingFootprint = entry?.filterToBuildingFootprint === true;
-        const buildingFootprintFilterBufferMeters = Number(entry?.buildingFootprintFilterBufferMeters);
-        return {
-          ...entry,
-          name,
-          folder,
-          filterToBuildingFootprint,
-          buildingFootprintFilterBufferMeters: Number.isFinite(buildingFootprintFilterBufferMeters)
-            ? buildingFootprintFilterBufferMeters
-            : null
-        };
-      })
-      .filter((entry) => {
-        const key = normalizeDashboardKey(entry?.name || entry?.folder || '');
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-  }, [config?.floorplanBuildings]);
-  const floorplanBuildingFolderMap = useMemo(() => {
-    const merged = { ...BUILDING_FOLDER_MAP };
-    configuredFloorplanBuildingOptions.forEach((entry) => {
-      if (entry?.name && entry?.folder) {
-        merged[entry.name] = entry.folder;
-      }
-    });
-    return merged;
-  }, [configuredFloorplanBuildingOptions]);
-  const floorplanBuildingFolderSet = useMemo(
-    () => new Set(Object.values(floorplanBuildingFolderMap)),
-    [floorplanBuildingFolderMap]
-  );
   const floorplanBuildingOptions = useMemo(
     () => {
       if (!floorplansEnabled) return [];
-      if (configuredFloorplanBuildingOptions.length) return configuredFloorplanBuildingOptions;
-      const targetCampus = floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS;
       if (!isSarpyCountyInstance) {
-        return BUILDINGS_LIST.filter((b) => (b?.campus || DEFAULT_FLOORPLAN_CAMPUS) === targetCampus);
+        return BUILDINGS_LIST.filter((b) => !b?.campus || b.campus === 'Hastings');
       }
       const seen = new Set();
       return (config?.buildings?.features || [])
@@ -12378,68 +11338,18 @@ const StakeholderMap = ({
         })
         .filter((name) => {
           if (!name || seen.has(name)) return false;
-          if (!floorplanBuildingFolderMap[name]) return false;
+          if (!BUILDING_FOLDER_MAP[name]) return false;
           seen.add(name);
           return true;
         })
-        .map((name) => ({ name, folder: floorplanBuildingFolderMap[name] }));
+        .map((name) => ({ name, folder: BUILDING_FOLDER_MAP[name] }));
     },
-    [floorplansEnabled, configuredFloorplanBuildingOptions, floorplanCampus, isSarpyCountyInstance, config?.buildings?.features, floorplanBuildingFolderMap]
+    [floorplansEnabled, isSarpyCountyInstance, config?.buildings?.features]
   );
   const floorplanBuildingNames = useMemo(
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
-  const sharedFloorplanFolderSet = useMemo(() => {
-    const counts = new Map();
-    floorplanBuildingOptions.forEach((entry) => {
-      const folder = String(entry?.folder || '').trim();
-      if (!folder) return;
-      counts.set(folder, (counts.get(folder) || 0) + 1);
-    });
-    return new Set(
-      Array.from(counts.entries())
-        .filter(([, count]) => count > 1)
-        .map(([folder]) => folder)
-    );
-  }, [floorplanBuildingOptions]);
-  const floorplanBuildingFootprintFilterMap = useMemo(() => {
-    const map = new Map();
-    configuredFloorplanBuildingOptions.forEach((entry) => {
-      if (!entry?.filterToBuildingFootprint || !entry?.name) return;
-      const key = normalizeDashboardKey(entry.name || '');
-      if (!key) return;
-      const bufferMeters = Number.isFinite(entry?.buildingFootprintFilterBufferMeters)
-        ? Number(entry.buildingFootprintFilterBufferMeters)
-        : 5;
-      map.set(key, bufferMeters);
-    });
-    return map;
-  }, [configuredFloorplanBuildingOptions]);
-  const dashboardManifestScope = useMemo(() => ({
-    allowedBuildingKeys: floorplanBuildingOptions.flatMap((entry) => [entry?.name, entry?.folder]).filter(Boolean),
-    campusPathPrefix: `floorplans/${String(floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim().toLowerCase()}/`,
-    buildingFeatures: Array.isArray(config?.buildings?.features) ? config.buildings.features : []
-  }), [config?.buildings?.features, floorplanBuildingOptions, floorplanCampus]);
-  useEffect(() => {
-    if (!floorplanBuildingOptions.length) return;
-    const currentValid = floorplanBuildingOptions.some((entry) => entry?.name === selectedBuilding);
-    if (currentValid) return;
-    const selectedFeature = (config?.buildings?.features || []).find((feature) => {
-      const featureId = String(feature?.properties?.id || '').trim();
-      return featureId && featureId === String(selectedBuildingId || '').trim();
-    });
-    const selectedFeatureName = String(
-      selectedFeature?.properties?.name || selectedFeature?.properties?.Name || ''
-    ).trim();
-    const matchedOption = floorplanBuildingOptions.find(
-      (entry) => normalizeDashboardKey(entry?.name || '') === normalizeDashboardKey(selectedFeatureName)
-    );
-    const fallbackName = matchedOption?.name || floorplanBuildingOptions[0]?.name || '';
-    if (fallbackName && fallbackName !== selectedBuilding) {
-      setSelectedBuilding(fallbackName);
-    }
-  }, [config?.buildings?.features, floorplanBuildingOptions, selectedBuilding, selectedBuildingId]);
   const configuredDashboardBuildingKeys = useMemo(() => {
     const out = new Set();
     (config?.buildings?.features || []).forEach((feature) => {
@@ -12461,6 +11371,9 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
+    // For floorplan-enabled campuses (Hastings), the rooms API is already campus-scoped.
+    // Avoid additional client-side filtering that can undercount valid Airtable rows.
+    if (floorplansEnabled) return rooms;
 
     const allowedCampusKeys = new Set(
       [
@@ -12492,14 +11405,7 @@ const StakeholderMap = ({
         .map((value) => canon(value || ''))
         .filter((value) => value && value !== 'na');
 
-      const roomBuildingKey = normalizeDashboardKey(
-        room.building ??
-          room.buildingName ??
-          room.Building ??
-          room.BuildingName ??
-          room['Building Name'] ??
-          ''
-      );
+      const roomBuildingKey = normalizeDashboardKey(getRoomBuildingId(room) || getRoomBuildingLabel(room));
       const hasConfiguredBuildings = configuredDashboardBuildingKeys.size > 0;
       const buildingInScope = (roomBuildingKey && hasConfiguredBuildings)
         ? configuredDashboardBuildingKeys.has(roomBuildingKey)
@@ -12513,15 +11419,9 @@ const StakeholderMap = ({
         return false;
       }
 
-      if (buildingInScope !== null) {
-        if (buildingInScope) return true;
-        // Hastings data is already tenant-scoped by the live Airtable view, so keep
-        // rows whose building labels do not map cleanly to static floorplan names.
-        if (isHastingsCollegeInstance) return true;
-        return false;
-      }
+      if (buildingInScope !== null) return buildingInScope;
 
-      return isHastingsCollegeInstance;
+      return floorplansEnabled;
     });
   }, [
     universityId,
@@ -12540,27 +11440,22 @@ const StakeholderMap = ({
     MAINTENANCE: 'maintenance'
   };
   const isAdminMode = mode === 'admin';
-  const isClientMode = mode === 'client';
-  const isPublicMode = mode === 'public';
   const isAdminCombinedMode = isAdminMode && engagementMode;
-  const technicalRouteSpaceDataEnabled = Boolean(
-    technicalMode && (config?.enableTechnicalRouteSpaceData ?? tenant?.features?.enableTechnicalRouteSpaceData ?? false)
-  );
-  const isTechnicalOnlyMode = Boolean(technicalMode && !technicalRouteSpaceDataEnabled);
-  const isDemoPublicMode = isPublicMode && !engagementMode && !technicalMode;
+  const isTechnicalOnlyMode = Boolean(technicalMode);
+  const isDemoPublicMode = !isAdminMode && !engagementMode && !technicalMode;
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
-  const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
-  const airtableControlsAllowed = isAdminMode || isClientMode || publicAirtableControlsAllowed;
-  const planningScenarioAllowedForCurrentView = showFullMapfluenceControls || publicPlanningScenarioAllowed;
+  const demoEditingEnabled = publicAirtableControlsAllowed;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
-  const isStakeholderTechnicalMode = isAdminCombinedMode || technicalMode;
-  const maintenanceWorkflowEnabled = (config?.enableMaintenanceWorkflow ?? tenant?.features?.enableMaintenanceWorkflow ?? true) !== false;
-  const publicMaintenanceWorkflowEnabled = isDemoPublicMode && maintenanceWorkflowEnabled;
+  const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
+  const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
+  const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
+  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || String(import.meta.env.VITE_AI_BASE_URL || '').trim());
+  const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
     const amount = Number(value);
@@ -12572,9 +11467,11 @@ const StakeholderMap = ({
     }).format(amount);
   }, []);
   useEffect(() => {
-    setRuntimeAiBaseUrl(config?.aiServerUrl || null);
-  }, [config?.aiServerUrl]);
-
+    setRuntimeAiBaseUrl(config?.aiServerUrl || null, {
+      configured: true,
+      enabled: aiEnabledForCurrentView
+    });
+  }, [config?.aiServerUrl, aiEnabledForCurrentView]);
   useEffect(() => {
     let cancelled = false;
     if (!isHastingsCollegeInstance) {
@@ -12598,26 +11495,16 @@ const StakeholderMap = ({
     };
   }, [isHastingsCollegeInstance]);
   const showScenarioAdvancedControls = showFullMapfluenceControls || isSharedPublicPlanningMode;
-
-  // Auth / role
-  const [authUser, setAuthUser] = useState(null);
-  const [userRole, setUserRole] = useState('');
-  const [isAdminUser, setIsAdminUser] = useState(false);
-
-  const showAuthAccessControls = isAdminMode || isClientMode;
-  const configuredDefaultMapView = String(config?.defaultMapView || '').trim().toLowerCase();
-  const defaultMapView = (configuredDefaultMapView && Object.values(MAP_VIEWS).includes(configuredDefaultMapView))
-    ? configuredDefaultMapView
-    : (technicalMode
-        ? MAP_VIEWS.TECHNICAL
-        : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA));
+  const showAuthAccessControls = isAdminMode;
+  const defaultMapView = isTechnicalOnlyMode
+    ? MAP_VIEWS.TECHNICAL
+    : (isAdminCombinedMode ? MAP_VIEWS.ASSESSMENT : MAP_VIEWS.SPACE_DATA);
   const [mapView, setMapView] = useState(defaultMapView);
   const adminAssessmentEngagementMode = showFullMapfluenceControls && mapView === MAP_VIEWS.ASSESSMENT;
   const adminEngagementToolsMode = isAdminCombinedMode || adminAssessmentEngagementMode;
   const stakeholderWorkflowActive = (engagementMode || adminAssessmentEngagementMode) && (!isAdminCombinedMode || mapView === MAP_VIEWS.ASSESSMENT);
   const technicalWorkflowActive = mapView === MAP_VIEWS.TECHNICAL;
-  const spaceDataUiAllowed = !stakeholderWorkflowActive && (!technicalMode || technicalRouteSpaceDataEnabled);
-  const maintenanceWorkflowActive = (showFullMapfluenceControls || publicMaintenanceWorkflowEnabled) && mapView === MAP_VIEWS.MAINTENANCE;
+  const maintenanceWorkflowActive = (showFullMapfluenceControls || isDemoPublicMode) && mapView === MAP_VIEWS.MAINTENANCE;
   const [stakeholderConditionModeOn, setStakeholderConditionModeOn] = useState(false);
   const [engagementHeatmapOn, setEngagementHeatmapOn] = useState(Boolean(engagementMode));
   const [presentationMode, setPresentationMode] = useState(() => {
@@ -12641,12 +11528,10 @@ const StakeholderMap = ({
       ];
     }
     if (isDemoPublicMode) {
-      return publicMaintenanceWorkflowEnabled
-        ? [
-            { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
-            { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
-          ]
-        : [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
+      return [
+        { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
+        { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
+      ];
     }
     if (isAdminCombinedMode) {
       return [
@@ -12654,31 +11539,17 @@ const StakeholderMap = ({
         { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
       ];
     }
-    if (technicalRouteSpaceDataEnabled) {
-      return [
-        { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
-        { value: MAP_VIEWS.TECHNICAL, label: 'Technical' }
-      ];
-    }
     if (isTechnicalOnlyMode) {
       return [{ value: MAP_VIEWS.TECHNICAL, label: 'Technical' }];
     }
     return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-  }, [showFullMapfluenceControls, isDemoPublicMode, publicMaintenanceWorkflowEnabled, isAdminCombinedMode, isTechnicalOnlyMode, technicalRouteSpaceDataEnabled]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
   const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
-  const accessControlLabel = isAdminMode ? 'Admin access' : (isClientMode ? 'Client access' : 'Authorized access');
-  const effectiveUserRole = userRole || (isAdminUser ? 'admin' : 'signed in');
-  const clientAccessSummary = isClientMode
-    ? (effectiveUserRole === 'viewer'
-        ? 'Read-only access'
-        : ((effectiveUserRole === 'editor' || effectiveUserRole === 'admin')
-            ? 'Room edits enabled'
-            : 'Signed-in access'))
-    : null;
+  const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
     if (showFullMapfluenceControls) {
       if (mapView === MAP_VIEWS.MAINTENANCE) {
@@ -12700,22 +11571,10 @@ const StakeholderMap = ({
           : 'Maintenance issue reporting and tracking demo mode.'
       };
     }
-    if (isClientMode) {
-      return {
-        title: `${activeUniversityName} Client Workspace`,
-        subtitle: 'Secure client access for campus space review and room inventory updates.'
-      };
-    }
     if (isAdminCombinedMode) {
       return {
         title: 'Admin Stakeholder + Technical',
         subtitle: 'Engagement markers/heatmaps with technical assessment in one map.'
-      };
-    }
-    if (technicalRouteSpaceDataEnabled) {
-      return {
-        title: 'Technical Assessment + Space Data',
-        subtitle: 'Technical review with floorplans and room inventory on one route.'
       };
     }
     if (isTechnicalOnlyMode) {
@@ -12740,10 +11599,10 @@ const StakeholderMap = ({
       title: `${activeUniversityName} Map`,
       subtitle: 'Campus space visualization view.'
     };
-  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isClientMode, isAdminCombinedMode, isTechnicalOnlyMode, technicalRouteSpaceDataEnabled, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
   const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
-  const showControlsToggle = (showAuthAccessControls || technicalMode) && !presentationMode;
+  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
   useEffect(() => {
     if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
       setMapView(MAP_VIEWS.TECHNICAL);
@@ -12751,12 +11610,8 @@ const StakeholderMap = ({
     }
     if (isAdminCombinedMode && mapView === MAP_VIEWS.SPACE_DATA) {
       setMapView(MAP_VIEWS.ASSESSMENT);
-      return;
     }
-    if (!visibleMapViewOptions.some((option) => option.value === mapView)) {
-      setMapView(visibleMapViewOptions[0]?.value || defaultMapView);
-    }
-  }, [isTechnicalOnlyMode, isAdminCombinedMode, mapView, visibleMapViewOptions, defaultMapView]);
+  }, [isTechnicalOnlyMode, isAdminCombinedMode, mapView]);
   useEffect(() => {
     if (mapView !== MAP_VIEWS.TECHNICAL) {
       setIsTechnicalPanelOpen(false);
@@ -12893,6 +11748,28 @@ const StakeholderMap = ({
   const [airtableRooms, setAirtableRooms] = useState([]);
   const [campusRooms, setCampusRooms] = useState([]);
   const [campusRoomsLoaded, setCampusRoomsLoaded] = useState(false);
+  const exportBuildingOptions = useMemo(() => {
+    const byKey = new Map();
+    floorplanBuildingOptions.forEach((option) => {
+      const label = String(option?.name || '').trim();
+      const key = normalizeDashboardKey(label);
+      if (key && !byKey.has(key)) byKey.set(key, { value: label, label });
+    });
+    if (campusRoomsLoaded && Array.isArray(campusRooms)) {
+      campusRooms.forEach((room) => {
+        const label = getRoomBuildingLabel(room);
+        const id = getRoomBuildingId(room);
+        const value = label || id;
+        const key = normalizeDashboardKey(id || label);
+        if (!key || !value) return;
+        const existing = byKey.get(key);
+        if (!existing || (!existing.label && value)) {
+          byKey.set(key, { value, label: value });
+        }
+      });
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [campusRooms, campusRoomsLoaded, floorplanBuildingOptions]);
   const [airtableRefreshPending, setAirtableRefreshPending] = useState(false);
   const [airtableRefreshMessage, setAirtableRefreshMessage] = useState('');
   const [airtableLastSyncedAt, setAirtableLastSyncedAt] = useState(null);
@@ -12910,10 +11787,6 @@ const StakeholderMap = ({
     missing: false
   });
   const [utilizationHeatmapOn, setUtilizationHeatmapOn] = useState(false);
-  useEffect(() => {
-    if (classroomMetricsEnabled) return;
-    setUtilizationHeatmapOn(false);
-  }, [classroomMetricsEnabled]);
   const [strategicSeatRatio, setStrategicSeatRatio] = useState(STRATEGIC_DEFAULT_SEAT_RATIO);
   const [strategicTargetUtilization, setStrategicTargetUtilization] = useState(STRATEGIC_DEFAULT_TARGET_UTILIZATION);
   const [strategicIncludeLabs, setStrategicIncludeLabs] = useState(STRATEGIC_DEFAULT_INCLUDE_LABS);
@@ -12929,36 +11802,6 @@ const StakeholderMap = ({
     const dashboardManifestRef = useRef(null);
     const manifestHydrationRoomsRef = useRef(null);
     const campusRoomsRefreshTimerRef = useRef(null);
-    const getManifestHydrationRooms = useCallback(async () => {
-      let manifest = dashboardManifestRef.current;
-      const hasManifest =
-        manifest &&
-        typeof manifest === 'object' &&
-        manifest.floorsByBuilding &&
-        Object.keys(manifest.floorsByBuilding).length > 0;
-      if (!hasManifest) {
-        manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
-        const fetchedValid =
-          manifest &&
-          typeof manifest === 'object' &&
-          manifest.floorsByBuilding &&
-          Object.keys(manifest.floorsByBuilding).length > 0;
-        if (!fetchedValid) {
-          throw new Error('Dashboard manifest unavailable');
-        }
-        dashboardManifestRef.current = manifest;
-      }
-
-      let manifestRooms = manifestHydrationRoomsRef.current;
-      if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
-        manifestRooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
-        if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
-          throw new Error('Manifest hydration rooms unavailable');
-        }
-        manifestHydrationRoomsRef.current = manifestRooms;
-      }
-      return manifestRooms;
-    }, [dashboardManifestScope]);
     const airtableRoomLookup = useMemo(
       () => buildAirtableRoomLookup(airtableRooms.length ? airtableRooms : campusRooms),
       [airtableRooms, campusRooms]
@@ -13005,16 +11848,6 @@ const StakeholderMap = ({
     });
     return grouped;
   }, [classScheduleRows]);
-  const classScheduleSessionOptions = useMemo(() => {
-    const seen = new Map();
-    (classScheduleRows || []).forEach((entry) => {
-      const label = String(entry?.sessionLabel || entry?.sessionRaw || entry?.sheet || '').trim();
-      const key = buildScheduleSessionKey(entry?.sessionKey || label);
-      if (!key || seen.has(key)) return;
-      seen.set(key, { key, label });
-    });
-    return Array.from(seen.values());
-  }, [classScheduleRows]);
   const getScheduleEntriesForRoom = useCallback((buildingName, roomLabel) => {
     const key = normalizeClassScheduleRoomKey(buildingName, roomLabel);
     return key ? (classScheduleByRoom.get(key) || []) : [];
@@ -13028,62 +11861,13 @@ const StakeholderMap = ({
       const startMinutes = Number(entry?.startMinutes);
       return Number.isFinite(startMinutes) && startMinutes >= nowMinutes;
     });
-    const sessionLabels = Array.from(new Set(
-      entries
-        .map((entry) => String(entry?.sessionLabel || entry?.sessionRaw || '').trim())
-        .filter(Boolean)
-    ));
     return {
       entries,
       todaysEntries,
       activeEntries,
-      upcomingEntries,
-      sessionLabels,
-      hasMultipleSessions: sessionLabels.length > 1
+      upcomingEntries
     };
   }, [getScheduleEntriesForRoom]);
-  const getPreferredRoomScheduleSession = useCallback((entries = [], date = new Date()) => {
-    const roomSessionMap = new Map();
-    (entries || []).forEach((entry) => {
-      const label = String(entry?.sessionLabel || entry?.sessionRaw || entry?.sheet || '').trim();
-      const key = buildScheduleSessionKey(entry?.sessionKey || label);
-      if (!key || roomSessionMap.has(key)) return;
-      roomSessionMap.set(key, { key, label });
-    });
-    const sessionOptions = roomSessionMap.size
-      ? Array.from(roomSessionMap.values())
-      : classScheduleSessionOptions;
-    if (!sessionOptions.length) return { key: '', label: '' };
-    if (sessionOptions.length === 1) return sessionOptions[0];
-    const block1 = sessionOptions.find((option) => /\bblock\s*1\b/i.test(String(option?.label || '')));
-    const block2 = sessionOptions.find((option) => /\bblock\s*2\b/i.test(String(option?.label || '')));
-    if (block1 && block2) {
-      return date.getMonth() >= 9 ? block2 : block1;
-    }
-    return sessionOptions[0];
-  }, [classScheduleSessionOptions]);
-  const getRoomWeeklyScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
-    const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
-    const preferredSession = getPreferredRoomScheduleSession(entries, date);
-    const sessionEntries = getScheduleEntriesForSession(entries, preferredSession?.key || '');
-    const weeklyDays = SCHEDULE_DAY_QUERY_OPTIONS.slice(0, 5).map((option) => ({
-      label: option.label.slice(0, 3),
-      entries: getScheduleEntriesForDayTokens(sessionEntries, option.tokens)
-    }));
-    const sessionLabels = Array.from(new Set(
-      entries
-        .map((entry) => String(entry?.sessionLabel || entry?.sessionRaw || '').trim())
-        .filter(Boolean)
-    ));
-    return {
-      entries,
-      sessionEntries,
-      weeklyDays,
-      preferredSession,
-      sessionLabels,
-      hasMultipleSessions: sessionLabels.length > 1
-    };
-  }, [classScheduleSessionOptions, getPreferredRoomScheduleSession, getScheduleEntriesForRoom]);
   const buildCurrentlyAvailableClassroomRows = useCallback((rooms = [], options = {}) => {
     const now = options?.now instanceof Date ? options.now : new Date();
     const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
@@ -13102,17 +11886,16 @@ const StakeholderMap = ({
       const schedule = getRoomScheduleSnapshot(building, roomNumber, now);
       if (schedule.activeEntries.length) return;
       const nextEntry = schedule.upcomingEntries[0] || null;
-      const includeSession = Boolean(schedule.hasMultipleSessions);
       rows.push({
         Building: building,
         'Room Number': roomNumber,
         Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
         'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
         Status: nextEntry
-          ? `Available now | Next: ${formatScheduleEntryTime(nextEntry)}${includeSession && nextEntry?.sessionLabel ? ` (${nextEntry.sessionLabel})` : ''}`
+          ? `Available now | Next: ${formatScheduleEntryTime(nextEntry)}`
           : 'Available now',
         'Next Class': nextEntry
-          ? `${formatScheduleEntryCourseLabel(nextEntry, { includeSession })} (${formatScheduleEntryTime(nextEntry)})`
+          ? `${String(nextEntry?.courseCode || nextEntry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(nextEntry)})`
           : 'No more classes today'
       });
     });
@@ -13124,69 +11907,6 @@ const StakeholderMap = ({
       return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
     });
   }, [getRoomScheduleSnapshot]);
-  const buildScheduledAvailabilityRows = useCallback((rooms = [], options = {}) => {
-    const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
-    const targetDayTokens = Array.isArray(options?.dayTokens) ? options.dayTokens.filter(Boolean) : [];
-    const targetMinutes = Number(options?.targetMinutes);
-    if (!targetDayTokens.length || !Number.isFinite(targetMinutes)) return [];
-    const requestedSessionKey = buildScheduleSessionKey(options?.sessionKey || options?.sessionLabel || '');
-    const baseSessionOptions = classScheduleSessionOptions.length
-      ? classScheduleSessionOptions
-      : [{ key: '', label: '' }];
-    const matchedRequestedSessions = requestedSessionKey
-      ? baseSessionOptions.filter((session) => session.key === requestedSessionKey)
-      : [];
-    const effectiveSessionOptions = requestedSessionKey
-      ? (matchedRequestedSessions.length ? matchedRequestedSessions : [{ key: requestedSessionKey, label: String(options?.sessionLabel || '').trim() }])
-      : baseSessionOptions;
-    const includeSessionColumn = !requestedSessionKey && effectiveSessionOptions.filter((session) => String(session?.label || '').trim()).length > 1;
-    const rows = [];
-    const seen = new Set();
-    (rooms || []).forEach((room) => {
-      if (!isScheduledTeachingTypeLabel(room?.type ?? room?.roomType ?? '')) return;
-      const seatCount = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
-      if (minimumSeats && (!Number.isFinite(seatCount) || seatCount < minimumSeats)) return;
-      const building = String(getRoomBuildingLabel(room) || '').trim();
-      const roomNumber = getDisplayRoomNumber(room);
-      if (!building || !roomNumber) return;
-      const entries = getScheduleEntriesForRoom(building, roomNumber);
-      effectiveSessionOptions.forEach((session) => {
-        const dedupeKey = `${normalizeDashboardKey(building)}|${normalizeUtilizationRoomKey(roomNumber)}|${session?.key || '__all__'}`;
-        if (seen.has(dedupeKey)) return;
-        seen.add(dedupeKey);
-        const snapshot = buildScheduleSnapshotForMoment(entries, {
-          dayTokens: targetDayTokens,
-          minutes: targetMinutes,
-          sessionKey: session?.key || ''
-        });
-        if (snapshot.activeEntries.length) return;
-        const nextEntry = snapshot.upcomingEntries[0] || null;
-        const row = {
-          Building: building,
-          'Room Number': roomNumber,
-          Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
-          'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
-          Status: nextEntry
-            ? `Available ${String(options?.dayLabel || 'selected day').trim()} at ${String(options?.timeLabel || '').trim()} | Next: ${formatScheduleEntryTime(nextEntry)}`.trim()
-            : `Available ${String(options?.dayLabel || 'selected day').trim()} at ${String(options?.timeLabel || '').trim()}`.trim(),
-          'Next Class': nextEntry
-            ? `${formatScheduleEntryCourseLabel(nextEntry)} (${formatScheduleEntryTime(nextEntry)})`
-            : 'No more classes scheduled'
-        };
-        if (includeSessionColumn) row.Session = String(session?.label || '').trim() || 'Loaded schedule';
-        rows.push(row);
-      });
-    });
-    return rows.sort((a, b) => {
-      const sessionCompare = String(a?.Session || '').localeCompare(String(b?.Session || ''));
-      if (sessionCompare !== 0) return sessionCompare;
-      const seatDiff = Number(b?.Seats || 0) - Number(a?.Seats || 0);
-      if (seatDiff !== 0) return seatDiff;
-      const buildingCompare = String(a?.Building || '').localeCompare(String(b?.Building || ''));
-      if (buildingCompare !== 0) return buildingCompare;
-      return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
-    });
-  }, [classScheduleSessionOptions, getScheduleEntriesForRoom]);
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
@@ -13205,7 +11925,13 @@ const StakeholderMap = ({
   const [engagementRoomSentimentOn, setEngagementRoomSentimentOn] = useState(false);
   const [engagementRoomSentimentOnly, setEngagementRoomSentimentOnly] = useState(false);
   const [engagementRoomFillStyle, setEngagementRoomFillStyle] = useState('solid');
-    const mergeOptionsList = mergeStringOptions;
+    const mergeOptionsList = (prev, next) => {
+      const seen = new Set(prev);
+      (next || []).forEach((item) => {
+        if (item) seen.add(item);
+      });
+      return Array.from(seen).sort();
+    };
 
   const setFloorHighlight = useCallback((idOrIds) => {
     const map = mapRef.current;
@@ -13233,10 +11959,6 @@ const StakeholderMap = ({
   const [roomEditData, setRoomEditData] = useState(null);
   const [roomEditSelection, setRoomEditSelection] = useState([]);
   const [roomEditPanelPos, setRoomEditPanelPos] = useState(null);
-  const [roomEditHistoryOpen, setRoomEditHistoryOpen] = useState(false);
-  const [roomEditHistoryLoading, setRoomEditHistoryLoading] = useState(false);
-  const [roomEditHistoryEntries, setRoomEditHistoryEntries] = useState([]);
-  const [roomEditHistoryError, setRoomEditHistoryError] = useState('');
   const [programTestFitOpen, setProgramTestFitOpen] = useState(false);
   const [programTestFitTarget, setProgramTestFitTarget] = useState(null);
   const [programTestFitPos, setProgramTestFitPos] = useState(null);
@@ -13316,7 +12038,7 @@ const StakeholderMap = ({
       };
       fc.features.forEach((f) => {
         const p = f.properties || {};
-        const deptVal = getDeptFromProps(p) || 'Unspecified';
+        const deptVal = getDeptFromProps(p) || ROOM_EDIT_NO_DEPARTMENT_OPTION.label;
         const color = getDeptColor(deptVal) || '#e6e6e6';
         deptColorMap.set(deptVal, color);
         const areaVal = resolvePatchedArea(p);
@@ -13507,75 +12229,7 @@ const StakeholderMap = ({
       : [];
   const primaryRoomEditTarget = roomEditTargets[0] || null;
   const roomEditFeatureProps = primaryRoomEditTarget?.feature?.properties || {};
-  const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
-  const roomEditHistoryCanRead = effectiveUserRole === 'admin';
-  const roomEditHistoryTarget = roomEditTargets.length === 1 && primaryRoomEditTarget?.roomId && primaryRoomEditTarget?.buildingId && primaryRoomEditTarget?.floorName
-    ? primaryRoomEditTarget
-    : null;
-  const roomEditHistoryCurrentPatch = roomEditHistoryTarget?.roomId && roomPatches instanceof Map
-    ? roomPatches.get(roomEditHistoryTarget.roomId) || null
-    : null;
-  const roomEditHistoryCreatedLabel = formatTimestampLabel(roomEditHistoryCurrentPatch?.createdAt);
-  const roomEditHistoryUpdatedLabel = formatTimestampLabel(roomEditHistoryCurrentPatch?.updatedAt);
-  useEffect(() => {
-    setRoomEditHistoryOpen(false);
-    setRoomEditHistoryLoading(false);
-    setRoomEditHistoryEntries([]);
-    setRoomEditHistoryError('');
-  }, [roomEditOpen, roomEditHistoryTarget?.roomId, roomEditHistoryTarget?.buildingId, roomEditHistoryTarget?.floorName]);
-  useEffect(() => {
-    if (!roomEditOpen || !roomEditHistoryOpen || !roomEditHistoryCanRead || !roomEditHistoryTarget || !db || !universityId) return undefined;
-    let cancelled = false;
-    setRoomEditHistoryLoading(true);
-    setRoomEditHistoryError('');
-    (async () => {
-      try {
-        const historyCol = collection(
-          db,
-          'universities', universityId,
-          'buildings', bId(roomEditHistoryTarget.buildingId),
-          'floors', fId(roomEditHistoryTarget.floorName),
-          'rooms', roomEditHistoryTarget.roomId,
-          'history'
-        );
-        const snap = await getDocs(historyCol);
-        const next = [];
-        snap.forEach((docSnap) => {
-          next.push({
-            id: docSnap.id,
-            ...(docSnap.data() || {})
-          });
-        });
-        next.sort((a, b) => {
-          const aMs = parseFirestoreTimestampMs(a?.createdAt) || Number(a?.createdAtClientMs || 0);
-          const bMs = parseFirestoreTimestampMs(b?.createdAt) || Number(b?.createdAtClientMs || 0);
-          if (aMs !== bMs) return bMs - aMs;
-          return String(b?.id || '').localeCompare(String(a?.id || ''));
-        });
-        if (cancelled) return;
-        setRoomEditHistoryEntries(next);
-      } catch (err) {
-        if (cancelled) return;
-        console.warn('Room edit history load failed', err);
-        setRoomEditHistoryEntries([]);
-        setRoomEditHistoryError('Unable to load edit history right now.');
-      } finally {
-        if (!cancelled) setRoomEditHistoryLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    db,
-    roomEditHistoryCanRead,
-    roomEditHistoryOpen,
-    roomEditHistoryTarget?.buildingId,
-    roomEditHistoryTarget?.floorName,
-    roomEditHistoryTarget?.roomId,
-    roomEditOpen,
-    universityId
-  ]);
+    const roomEditMergedProps = { ...roomEditFeatureProps, ...(roomEditData?.properties || {}) };
   const closeProgramTestFit = useCallback(() => {
     setProgramTestFitOpen(false);
     setProgramTestFitPos(null);
@@ -13791,7 +12445,6 @@ const StakeholderMap = ({
   const currentFloorUrlRef = useRef(null);
   const lastFloorUrlRef = useRef(null);
   const currentFloorContextRef = useRef({ url: null, key: null, buildingId: null, floorId: null });
-  const wallsRawFCRef = useRef(null);
   const currentRoomFeatureRef = useRef(null);
   const buildingStatsCache = useRef({});
   const floorStatsCache = useRef({});
@@ -13931,33 +12584,26 @@ const StakeholderMap = ({
   const getBuildingFolderKey = useCallback((idOrName) => {
     if (!idOrName) return null;
     const resolvedName = resolveBuildingNameFromInput(idOrName);
-    if (resolvedName && floorplanBuildingFolderMap[resolvedName]) {
-      return floorplanBuildingFolderMap[resolvedName];
+    if (resolvedName && BUILDING_FOLDER_MAP[resolvedName]) {
+      return BUILDING_FOLDER_MAP[resolvedName];
     }
-    const directConfigMatch = configuredFloorplanBuildingOptions.find((entry) => {
-      const entryNameKey = normalizeDashboardKey(entry?.name || '');
-      const entryFolderKey = normalizeDashboardKey(entry?.folder || '');
-      const inputKey = normalizeDashboardKey(idOrName);
-      return inputKey && (inputKey === entryNameKey || inputKey === entryFolderKey);
-    });
-    if (directConfigMatch?.folder) return directConfigMatch.folder;
-    if (floorplanBuildingFolderSet.has(idOrName)) return idOrName;
+    if (BUILDING_FOLDER_SET.has(idOrName)) return idOrName;
     return null;
-  }, [configuredFloorplanBuildingOptions, floorplanBuildingFolderMap, floorplanBuildingFolderSet]);
-  const resolveFloorplanBuildingFootprintFilter = useCallback((idOrName) => {
-    const key = normalizeDashboardKey(idOrName || '');
-    if (!key) return null;
-    return floorplanBuildingFootprintFilterMap.get(key) ?? null;
-  }, [floorplanBuildingFootprintFilterMap]);
+  }, []);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
     if (!floorplansEnabled) return null;
     const normalizedFloorId = normalizeFloorIdValue(floorId);
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
+    const preferSarpyPublicFloorAsset =
+      isSarpyPublicReadonlyMode &&
+      floorplanCampus === 'SarpyCounty';
     const toPreferredAssetUrl = (candidateUrl) => {
       if (!candidateUrl) return candidateUrl;
-      return /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
+      const resolved = /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
+      if (!preferSarpyPublicFloorAsset) return resolved;
+      return resolved.replace(/_Dept_Rooms\.geojson(\?.*)?$/i, '_Dept_Rooms_Public.geojson$1');
     };
     const floors = getAvailableFloors(folderKey);
     if (!floors.includes(normalizedFloorId)) return null;
@@ -14079,7 +12725,7 @@ const StakeholderMap = ({
     setAiCreateScenarioLoading(false);
     setAiCreateScenarioResult(null);
     setAiCreateScenarioErr('');
-    if (!isDemoPublicMode && !isClientMode && (roomEditOpen || roomEditData || roomEditSelection.length)) {
+    if (!(isDemoPublicMode && demoEditingEnabled) && (roomEditOpen || roomEditData || roomEditSelection.length)) {
       setRoomEditOpen(false);
       setRoomEditData(null);
       clearRoomEditSelection();
@@ -14087,7 +12733,7 @@ const StakeholderMap = ({
   }, [
     showFullMapfluenceControls,
     isDemoPublicMode,
-    isClientMode,
+    demoEditingEnabled,
     roomEditOpen,
     roomEditData,
     roomEditSelection.length,
@@ -14315,11 +12961,12 @@ const StakeholderMap = ({
     resetScenarioModeState();
   }, [resetScenarioModeState]);
   useEffect(() => {
-    if (planningScenarioAllowedForCurrentView) return;
+    const planningScenarioAllowed = showFullMapfluenceControls || publicPlanningScenarioAllowed;
+    if (planningScenarioAllowed) return;
     if (!moveScenarioMode) return;
     setMoveScenarioMode(false);
     clearScenario();
-  }, [planningScenarioAllowedForCurrentView, moveScenarioMode, clearScenario]);
+  }, [showFullMapfluenceControls, publicPlanningScenarioAllowed, moveScenarioMode, clearScenario]);
 
   const scenarioOpsCollection = useMemo(() => {
     if (!universityId) return null;
@@ -18389,6 +17036,9 @@ const StakeholderMap = ({
     });
   }, [scenarioPanelPos]);
 
+  // Auth / role
+  const [authUser, setAuthUser] = useState(null);
+  const [isAdminUser, setIsAdminUser] = useState(false);
   const technicalAssessmentSaveMode = String(config?.technicalAssessmentSaveMode || 'building').trim().toLowerCase() === 'per-assessor'
     ? 'per-assessor'
     : 'building';
@@ -18429,15 +17079,10 @@ const StakeholderMap = ({
     const userKey = String(authUser?.uid || authUser?.email || 'session').trim() || 'session';
     return buildAdminCombinedPrefsStorageKey(universityId, userKey);
   }, [isAdminCombinedMode, universityId, authUser?.uid, authUser?.email]);
-  const roomEditEnabledForCurrentTenant = (config?.enableRoomEdit ?? tenant?.features?.enableRoomEdit ?? false) === true;
-  const roleManagementEnabled = (config?.enableRoleManagement ?? tenant?.features?.enableRoleManagement ?? false) === true;
-  const roomEditCanWrite = useMemo(() => {
-    if (showFullMapfluenceControls) return Boolean(isAdminUser);
-    if (isClientMode && roomEditEnabledForCurrentTenant) {
-      return userRole === 'editor' || userRole === 'admin';
-    }
-    return false;
-  }, [isAdminUser, showFullMapfluenceControls, isClientMode, roomEditEnabledForCurrentTenant, userRole]);
+  const roomEditCanWrite = useMemo(
+    () => Boolean(isAdminUser && (showFullMapfluenceControls || (isDemoPublicMode && demoEditingEnabled))),
+    [isAdminUser, showFullMapfluenceControls, isDemoPublicMode, demoEditingEnabled]
+  );
 
   // Marker filters (admin)
   const [showStudentMarkers, setShowStudentMarkers] = useState(false);
@@ -18567,53 +17212,16 @@ const StakeholderMap = ({
   const fetchFloorSummary = useCallback(async (buildingKeyOrName, floorId) => {
     const url = buildFloorUrl(buildingKeyOrName, floorId);
     if (!url) return null;
-    const filterBufferMeters = resolveFloorplanBuildingFootprintFilter(buildingKeyOrName);
-    if (!Number.isFinite(filterBufferMeters)) {
-      return fetchFloorSummaryByUrl(url);
-    }
-    const raw = await fetchGeoJSON(url);
-    const fc = ensureFeatureCollection(raw) || toFeatureCollection(raw);
-    if (!fc?.features?.length) return null;
-    const buildingFeatures = config?.buildings?.features || [];
-    const buildingFeature =
-      matchBuildingFeature(buildingFeatures, buildingKeyOrName) ||
-      matchBuildingFeature(buildingFeatures, resolveBuildingNameFromInput(buildingKeyOrName) || '') ||
-      null;
-    const filtered = buildingFeature
-      ? filterFeatureCollectionToBuildingFootprint(fc, buildingFeature, { bufferMeters: filterBufferMeters })
-      : fc;
-    return filtered?.features?.length ? computeFloorSummary(filtered) : null;
-  }, [buildFloorUrl, config?.buildings?.features, fetchFloorSummaryByUrl, resolveFloorplanBuildingFootprintFilter]);
+    return fetchFloorSummaryByUrl(url);
+  }, [buildFloorUrl, fetchFloorSummaryByUrl]);
 
   const fetchBuildingSummary = useCallback(async (buildingId) => {
     if (!buildingId) return null;
     const resolvedKey = resolveBuildingPlanKey(buildingId) || buildingId;
     if (!resolvedKey) return null;
-    const folderKey = getBuildingFolderKey(resolvedKey);
-    const isSharedFolderBuilding = Boolean(folderKey && sharedFloorplanFolderSet.has(folderKey));
-    if (isSharedFolderBuilding) {
-      const buildingKey = normalizeDashboardKey(resolvedKey);
-      const sourceRooms = (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length)
-        ? campusRooms
-        : await getManifestHydrationRooms().catch(() => []);
-      if (buildingKey && Array.isArray(sourceRooms) && sourceRooms.length) {
-        const scoped = sourceRooms.filter((room) => {
-          const roomBuilding =
-            room?.building ??
-            room?.buildingName ??
-            room?.buildingLabel ??
-            '';
-          return normalizeDashboardKey(roomBuilding) === buildingKey;
-        });
-        const summary = summarizeRoomRowsForPanels(scoped);
-        if (summary) {
-          buildingStatsCache.current[resolvedKey] = summary;
-          return summary;
-        }
-      }
-    }
     if (buildingStatsCache.current[resolvedKey]) return buildingStatsCache.current[resolvedKey];
 
+    const folderKey = getBuildingFolderKey(resolvedKey);
     let available = folderKey ? getAvailableFloors(folderKey) : [];
     if (!available.length) {
       available = await ensureFloorsForBuilding(resolvedKey);
@@ -18668,18 +17276,7 @@ const StakeholderMap = ({
     const summary = finalizeCombinedSummary(combined);
     buildingStatsCache.current[resolvedKey] = summary;
     return summary;
-  }, [
-    fetchFloorSummary,
-    resolveBuildingPlanKey,
-    getAvailableFloors,
-    getBuildingFolderKey,
-    buildFloorUrl,
-    ensureFloorsForBuilding,
-    sharedFloorplanFolderSet,
-    campusRoomsLoaded,
-    campusRooms,
-    getManifestHydrationRooms
-  ]);
+  }, [fetchFloorSummary, resolveBuildingPlanKey, getAvailableFloors, getBuildingFolderKey, buildFloorUrl, ensureFloorsForBuilding]);
 
   const computeBuildingTotals = useCallback(async (buildingId) => {
     if (!buildingId) {
@@ -18911,20 +17508,14 @@ const StakeholderMap = ({
   }, [floorplansEnabled, universityId]);
 
   const syncAirtableRoomEditOptions = useCallback(async (rooms = []) => {
-    const { typeOptions: roomTypeOptions, deptOptions: roomDeptOptions } = collectAirtableRoomOptions(rooms);
-    if (roomTypeOptions?.length) {
-      setTypeOptions((prev) => mergeTypeOptions(prev, roomTypeOptions));
-    }
-    if (roomDeptOptions?.length) {
+    const roomDeptOptions = (rooms || [])
+      .map((room) => norm(room?.department ?? room?.Department ?? room?.Dept ?? room?.NCES_Department ?? room?.['NCES_Department']))
+      .filter(Boolean);
+    if (roomDeptOptions.length) {
       setDeptOptions((prev) => mergeStringOptions(prev, roomDeptOptions));
     }
     try {
-      const res = await guardedAiAirtableFetch('/ai/api/departments', {
-        cache: 'no-store',
-        timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS,
-        warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS,
-        retries: 1
-      });
+      const res = await guardedAiFetch('/ai/api/departments', { cache: 'no-store', timeoutMs: 15000 });
       let data = null;
       try {
         data = await res.json();
@@ -18939,9 +17530,52 @@ const StakeholderMap = ({
     }
   }, []);
 
+  const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
+    if (!getAiBaseUrl()) {
+      throw new Error('AI backend unavailable for this campus');
+    }
+    const timeoutMs = preferWarmup || aiStatus !== 'ok' ? AI_ROOMS_TIMEOUT_MS : AI_ROOMS_READY_TIMEOUT_MS;
+    const attempts = preferWarmup || aiStatus !== 'ok' ? 2 : 1;
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {}
+        if (!res.ok) {
+          const msg = data?.error || data?.message || ('Rooms fetch failed (' + res.status + ')');
+          throw new Error(msg);
+        }
+        if (data?.ok && Array.isArray(data.rooms)) {
+          return {
+            rawRooms: data.rooms,
+            scopedRooms: filterRoomsToConfiguredCampus(data.rooms)
+          };
+        }
+        throw new Error('Rooms payload missing or invalid');
+      } catch (err) {
+        lastError = err;
+        if (attempt < attempts - 1 && isAbortLikeError(err)) {
+          await wait(AI_WAKE_RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastError || new Error('Rooms payload missing or invalid');
+  }, [aiStatus, filterRoomsToConfiguredCampus]);
+
   const refreshCampusRoomsFromApi = useCallback(async () => {
-    const aiRoomsUrl = resolveAiUrl('/ai/api/rooms');
-    let failureDetail = 'Airtable sync failed before scope validation.';
+    if (!getAiBaseUrl()) {
+      setAirtableScopeCheck({
+        level: 'warn',
+        label: 'AI sync unavailable',
+        detail: 'This campus is not configured for Airtable sync from an AI server.'
+      });
+      return false;
+    }
     if (aiStatus !== 'ok') {
       setAirtableScopeCheck({
         level: 'warn',
@@ -18950,48 +17584,24 @@ const StakeholderMap = ({
       });
     }
     try {
-      const res = await guardedAiAirtableFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS, warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS, retries: 1 });
-      let data = null;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        console.error('[refreshCampusRooms] Failed to parse JSON response:', jsonErr);
-      }
-      if (res.ok && data?.ok && Array.isArray(data.rooms)) {
-        const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
-        setAirtableRooms(scopedRooms);
-        await syncAirtableRoomEditOptions(scopedRooms);
-        setAirtableLastSyncedAt(new Date());
-        recordAirtableScopeCheck('Manual refresh', data.rooms, scopedRooms);
-        return true;
-      }
-      if (!res.ok) {
-        console.error('[refreshCampusRooms] Server error: HTTP ' + res.status, data);
-        const serverMessage = String(data?.error || data?.message || '').trim();
-        failureDetail = serverMessage
-          ? 'AI server error (' + res.status + '): ' + serverMessage
-          : 'AI server error (' + res.status + ') while refreshing Airtable rooms.';
-      } else {
-        failureDetail = 'AI server returned an unexpected Airtable response.';
-      }
-    } catch (fetchErr) {
-      console.error('[refreshCampusRooms] Network/fetch error:', fetchErr);
-      if (fetchErr?.name === 'AbortError') {
-        failureDetail = 'AI server timeout after ' + Math.round(AI_ROOMS_FETCH_TIMEOUT_MS / 1000) + 's: ' + aiRoomsUrl;
-      } else if (fetchErr?.message) {
-        failureDetail = 'AI server request failed: ' + fetchErr.message;
-      } else {
-        failureDetail = 'AI server request failed: ' + aiRoomsUrl;
-      }
+      const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: aiStatus !== 'ok' });
+      setAirtableRooms(scopedRooms);
+      await syncAirtableRoomEditOptions(scopedRooms);
+      setAirtableLastSyncedAt(new Date());
+      recordAirtableScopeCheck('Manual refresh', rawRooms, scopedRooms);
+      return true;
+    } catch (err) {
+      const detail = isAbortLikeError(err)
+        ? 'AI server is still waking up. Please try again in a few seconds.'
+        : 'Airtable sync failed before scope validation.';
+      setAirtableScopeCheck({
+        level: 'warn',
+        label: 'Refresh failed',
+        detail
+      });
+      return false;
     }
-    setAirtableScopeCheck({
-      level: 'warn',
-      label: 'Refresh failed',
-      detail: failureDetail
-    });
-    return false;
-  }, [aiStatus, filterRoomsToConfiguredCampus, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
-
+  }, [aiStatus, fetchCampusRoomsPayload, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
     campusRoomsRefreshTimerRef.current = setTimeout(() => {
@@ -19029,12 +17639,6 @@ const StakeholderMap = ({
       }
 
       const roomKey = rId(buildingId, floorName, revitId);
-      const canonicalBuildingId = bId(buildingId);
-      const canonicalFloorId = fId(floorName);
-      const actorUid = String(authUser?.uid || '').trim() || null;
-      const actorEmail = String(authUser?.email || '').trim().toLowerCase() || null;
-      const actorRole = String(effectiveUserRole || '').trim().toLowerCase() || null;
-      const editSource = isClientMode ? 'client-room-edit' : 'admin-room-edit';
 
       try {
         const roomRef = doc(
@@ -19042,9 +17646,9 @@ const StakeholderMap = ({
           'universities',
           universityId,
           'buildings',
-          canonicalBuildingId,
+          buildingId,
           'floors',
-          canonicalFloorId,
+          floorName,
           'rooms',
           roomKey
         );
@@ -19090,20 +17694,11 @@ const StakeholderMap = ({
         ).trim();
 
         const payload = {
-          updatedAt: serverTimestamp(),
-          updatedByUid: actorUid,
-          updatedByEmail: actorEmail,
-          updatedByRole: actorRole
+          updatedAt: serverTimestamp()
         };
-        if (typeProvided) {
-          payload.type = typeValue;
-        }
-        if (departmentProvided) {
-          payload.department = deptValue;
-        }
-        if (commentsProvided) {
-          payload.comments = commentsValue;
-        }
+        if (typeProvided) payload.type = typeValue;
+        if (departmentProvided) payload.department = deptValue;
+        if (commentsProvided) payload.comments = commentsValue;
         if (allowOfficeFields) {
           if (occupantProvided) payload.occupant = occupantValue;
           if (occupancyStatusProvided) payload.occupancyStatus = occStatus;
@@ -19112,83 +17707,7 @@ const StakeholderMap = ({
           payload.seatCount = seatCountValue;
         }
 
-        const roomSnap = await getDoc(roomRef);
-        const existingData = roomSnap.exists() ? (roomSnap.data() || {}) : {};
-        const existingOriginal = existingData.original && typeof existingData.original === 'object'
-          ? existingData.original
-          : {};
-        payload.original = {
-          ...existingOriginal,
-          buildingId: String(buildingId || '').trim(),
-          buildingName: String(buildingName || existingOriginal.buildingName || buildingId || '').trim(),
-          floorLabel: String(floorName || existingOriginal.floorLabel || '').trim(),
-          featureId: String(revitId ?? existingOriginal.featureId ?? '').trim(),
-          roomId: String(roomId || existingOriginal.roomId || roomKey).trim(),
-          roomLabel: String(roomLabel || existingOriginal.roomLabel || roomNumberValue || '').trim(),
-          roomNumber: roomNumberValue,
-          roomGuid: roomGuidValue || String(existingOriginal.roomGuid || '').trim(),
-          lastEditSource: editSource
-        };
-        if (!roomSnap.exists()) {
-          payload.createdAt = serverTimestamp();
-          payload.createdByUid = actorUid;
-          payload.createdByEmail = actorEmail;
-          payload.createdByRole = actorRole;
-        }
-
-        const trackedAuditValues = {};
-        if (typeProvided) {
-          trackedAuditValues.type = payload.type ?? null;
-        }
-        if (departmentProvided) {
-          trackedAuditValues.department = payload.department ?? null;
-        }
-        if (commentsProvided) {
-          trackedAuditValues.comments = payload.comments ?? null;
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, 'occupant')) {
-          trackedAuditValues.occupant = payload.occupant ?? null;
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, 'occupancyStatus')) {
-          trackedAuditValues.occupancyStatus = payload.occupancyStatus ?? null;
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, 'seatCount')) {
-          trackedAuditValues.seatCount = payload.seatCount ?? null;
-        }
-
-        const changes = {};
-        Object.entries(trackedAuditValues).forEach(([field, after]) => {
-          const before = existingData[field] ?? null;
-          if (before !== after) {
-            changes[field] = { before, after };
-          }
-        });
-
-        const historyRef = doc(collection(roomRef, 'history'));
-        const historyPayload = {
-          eventType: roomSnap.exists() ? 'update' : 'create',
-          createdAt: serverTimestamp(),
-          createdAtClientMs: Date.now(),
-          source: editSource,
-          actorUid,
-          actorEmail,
-          actorRole,
-          roomKey,
-          roomId: String(roomId || roomKey).trim(),
-          buildingId: String(buildingId || '').trim(),
-          buildingName: String(buildingName || '').trim(),
-          floorName: String(floorName || '').trim(),
-          roomNumber: roomNumberValue || '',
-          roomLabel: String(roomLabel || roomNumberValue || '').trim(),
-          roomGuid: roomGuidValue || '',
-          changedFields: Object.keys(changes),
-          changes
-        };
-
-        const roomBatch = writeBatch(db);
-        roomBatch.set(roomRef, payload, { merge: true });
-        roomBatch.set(historyRef, historyPayload);
-        await roomBatch.commit();
+        await setDoc(roomRef, payload, { merge: true });
 
         const airtableId =
           properties.airtableId ||
@@ -19207,13 +17726,10 @@ const StakeholderMap = ({
         let didUpdateAirtable = false;
         if (airtableId && Object.keys(airtablePayload).length) {
           try {
-            const resp = await guardedAiAirtableFetch(`/ai/api/rooms/${airtableId}`, {
+            const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(airtablePayload),
-              timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS,
-              warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS,
-              retries: 1
+              body: JSON.stringify(airtablePayload)
             });
             if (!resp.ok) {
               const text = await resp.text().catch(() => '');
@@ -19225,54 +17741,49 @@ const StakeholderMap = ({
             console.warn('Airtable update failed', err);
           }
         }
-        if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
-          try {
-            const resp = await guardedAiAirtableFetch('/ai/api/rooms', {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                roomId: roomGuidValue || roomNumberValue,
-                roomNumber: roomNumberValue || undefined,
-                roomLabel: String((roomLabel ?? roomNumberValue) || '').trim() || undefined,
-                roomGuid: roomGuidValue || undefined,
-                building: buildingId,
-                buildingName: buildingName || '',
-                floor: floorName,
-                ...airtablePayload
-              }),
-              timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS,
-              warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS,
-              retries: 1
-            });
-            if (!resp.ok) {
-              const text = await resp.text().catch(() => '');
-              console.warn('Airtable update by roomId failed', resp.status, text);
-            } else {
-              didUpdateAirtable = true;
+          if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
+            try {
+              const resp = await guardedAiFetch('/ai/api/rooms', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  roomId: roomGuidValue || roomNumberValue,
+                  roomGuid: roomGuidValue || undefined,
+                  building: buildingId,
+                  buildingName: buildingName || '',
+                  floor: floorName,
+                  ...airtablePayload
+                })
+              });
+              if (!resp.ok) {
+                const text = await resp.text().catch(() => '');
+                console.warn('Airtable update by roomId failed', resp.status, text);
+              } else {
+                didUpdateAirtable = true;
+              }
+            } catch (err) {
+              console.warn('Airtable update by roomId failed', err);
             }
-          } catch (err) {
-            console.warn('Airtable update by roomId failed', err);
           }
-        }
 
-        const patchTypeValue = properties.type || '';
-        const patchDeptValue = properties.department || '';
-        const patchPayload = {
-          type: patchTypeValue,
-          Type: patchTypeValue,
-          RoomType: patchTypeValue,
-          'Room Type': patchTypeValue,
-          'Room Type Description': patchTypeValue,
-          RoomTypeDescription: patchTypeValue,
-          roomTypeDescription: patchTypeValue,
-          __roomType: patchTypeValue,
-          __roomCategory: getRoomCategoryLabelFromProps({ ...properties, __roomType: patchTypeValue }),
-          department: patchDeptValue,
-          Department: patchDeptValue,
-          NCES_Department: patchDeptValue,
-          __dept: patchDeptValue,
-          occupant: allowOfficeFields ? (properties.occupant || '') : (properties.occupant ?? ''),
-          occupancyStatus: allowOfficeFields ? (properties.occupancyStatus || '') : (properties.occupancyStatus ?? ''),
+          const patchTypeValue = properties.type || '';
+          const patchDeptValue = properties.department || '';
+          const patchPayload = {
+            type: patchTypeValue,
+            Type: patchTypeValue,
+            RoomType: patchTypeValue,
+            'Room Type': patchTypeValue,
+            'Room Type Description': patchTypeValue,
+            RoomTypeDescription: patchTypeValue,
+            roomTypeDescription: patchTypeValue,
+            __roomType: patchTypeValue,
+            __roomCategory: getRoomCategoryLabelFromProps({ ...properties, __roomType: patchTypeValue }),
+            department: patchDeptValue,
+            Department: patchDeptValue,
+            NCES_Department: patchDeptValue,
+            __dept: patchDeptValue,
+            occupant: allowOfficeFields ? (properties.occupant || '') : (properties.occupant ?? ''),
+            occupancyStatus: allowOfficeFields ? (properties.occupancyStatus || '') : (properties.occupancyStatus ?? ''),
           comments: properties.comments || ''
         };
         if (seatCountProvided) {
@@ -19388,21 +17899,21 @@ const StakeholderMap = ({
             const idx = labelFallbackIndexes[0];
             if (nextRooms[idx]) {
               didApplyDashboardPatch = true;
-              nextRooms[idx] = {
-                ...nextRooms[idx],
-                type: properties.type != null ? properties.type : nextRooms[idx].type,
-                department: properties.department != null ? properties.department : nextRooms[idx].department,
-                occupant: properties.occupant != null ? properties.occupant : nextRooms[idx].occupant,
-                occupancyStatus: properties.occupancyStatus != null
-                  ? properties.occupancyStatus
-                  : nextRooms[idx].occupancyStatus,
-                seatCount: seatCountProvided ? seatCountValue : (nextRooms[idx].seatCount ?? nextRooms[idx].SeatCount ?? nextRooms[idx]['Seat Count']),
-                area: areaValue > 0 ? areaValue : (nextRooms[idx].area ?? nextRooms[idx].areaSF ?? nextRooms[idx].sf),
-                areaSF: areaValue > 0 ? areaValue : (nextRooms[idx].areaSF ?? nextRooms[idx].sf ?? nextRooms[idx].area),
-                sf: areaValue > 0 ? areaValue : (nextRooms[idx].sf ?? nextRooms[idx].areaSF ?? nextRooms[idx].area),
-                roomLabel: nextRooms[idx].roomLabel ?? nextRooms[idx].name ?? nextRooms[idx].number ?? editRoomLabel,
-                comments: properties.comments != null ? properties.comments : nextRooms[idx].comments
-              };
+                nextRooms[idx] = {
+                  ...nextRooms[idx],
+                  type: properties.type != null ? properties.type : nextRooms[idx].type,
+                  department: properties.department != null ? properties.department : nextRooms[idx].department,
+                  occupant: properties.occupant != null ? properties.occupant : nextRooms[idx].occupant,
+                  occupancyStatus: properties.occupancyStatus != null
+                    ? properties.occupancyStatus
+                    : nextRooms[idx].occupancyStatus,
+                  seatCount: seatCountProvided ? seatCountValue : (nextRooms[idx].seatCount ?? nextRooms[idx].SeatCount ?? nextRooms[idx]['Seat Count']),
+                  area: areaValue > 0 ? areaValue : (nextRooms[idx].area ?? nextRooms[idx].areaSF ?? nextRooms[idx].sf),
+                  areaSF: areaValue > 0 ? areaValue : (nextRooms[idx].areaSF ?? nextRooms[idx].sf ?? nextRooms[idx].area),
+                  sf: areaValue > 0 ? areaValue : (nextRooms[idx].sf ?? nextRooms[idx].areaSF ?? nextRooms[idx].area),
+                  roomLabel: nextRooms[idx].roomLabel ?? nextRooms[idx].name ?? nextRooms[idx].number ?? editRoomLabel,
+                  comments: properties.comments != null ? properties.comments : nextRooms[idx].comments
+                };
             }
           }
           if (!didApplyDashboardPatch && editRoomLabel) {
@@ -19472,18 +17983,24 @@ const StakeholderMap = ({
         return null;
       }
     },
-    [
-      db,
-      universityId,
-      scheduleCampusRoomsRefresh,
-      roomEditCanWrite,
-      authUser?.uid,
-      authUser?.email,
-      effectiveUserRole,
-      isClientMode
-    ]
+    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite]
   );
 
+  // Sarpy keeps a guided default building/floor for demos; other campuses stay unselected on load.
+  useEffect(() => {
+    if (!isSarpyCountyInstance) return;
+    if (!floorplansEnabled) return;
+    if (selectedBuilding) return;
+    if (!floorplanBuildingOptions.length) return;
+
+    const first = floorplanBuildingOptions[0].name;
+    setSelectedBuilding(first);
+    const feature = matchBuildingFeature(config?.buildings?.features || [], first);
+    const nextId = String(feature?.properties?.id || '').trim();
+    setSelectedBuildingId(nextId || null);
+    selectedBuildingIdRef.current = nextId || null;
+    setSelectedFloor('LEVEL_1');
+  }, [isSarpyCountyInstance, selectedBuilding, floorplansEnabled, floorplanBuildingOptions, config]);
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
@@ -19567,32 +18084,11 @@ const StakeholderMap = ({
     [db, universityId, buildFloorAdjustDocId]
   );
 
-  const loadFloorAdjustFromDbCandidates = useCallback(
-    async (buildingLabels, floorId) => {
-      if (!universityId || !floorId) return null;
-      const labels = Array.from(new Set((buildingLabels || []).filter(Boolean)));
-      let best = null;
-      for (const label of labels) {
-        const docData = await loadFloorAdjustFromDb(label, floorId);
-        if (!docData) continue;
-        const ts = docData.updatedAt;
-        const updatedAtMs = ts?.toMillis
-          ? ts.toMillis()
-          : (Number.isFinite(ts?.seconds) ? ts.seconds * 1000 : 0);
-        if (!best || updatedAtMs > best.updatedAtMs) {
-          best = { label, data: docData, updatedAtMs };
-        }
-      }
-      return best;
-    },
-    [universityId, loadFloorAdjustFromDb]
-  );
-
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
-      if (!universityId || !buildingLabel || !floorId || !adjust) return false;
+      if (!universityId || !buildingLabel || !floorId || !adjust) return;
       const docId = buildFloorAdjustDocId(buildingLabel, floorId);
-      if (!docId) return false;
+      if (!docId) return;
       try {
         const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
         await setDoc(
@@ -19606,22 +18102,12 @@ const StakeholderMap = ({
             translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
             anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
             pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
-            georeferenced: Boolean(adjust.georeferenced),
             updatedAt: serverTimestamp(),
             updatedBy: authUser?.uid || authUser?.email || null
           },
           { merge: true }
         );
-        return true;
-      } catch (error) {
-        console.warn('Failed to save floor adjustment to Firestore.', {
-          universityId,
-          buildingLabel,
-          floorId,
-          error
-        });
-        return false;
-      }
+      } catch {}
     },
     [db, universityId, buildFloorAdjustDocId, authUser]
   );
@@ -19738,8 +18224,7 @@ const StakeholderMap = ({
         translateMeters: [0, 0],
         translateLngLat: null,
         anchorLngLat: null,
-        pivot: null,
-        georeferenced: Boolean(/SarpyCounty/i.test(adjustBasePath || adjustUrl || ''))
+        pivot: null
       });
     } catch {}
     setFloorAdjustNotice('');
@@ -19841,20 +18326,16 @@ const StakeholderMap = ({
   const drawingAlignActive = Boolean(drawingAlignState);
 
   const floorAdjustContext = getFloorAdjustContext();
-  const floorAdjustByBase = floorAdjustmentsEnabled && floorAdjustContext.basePath
+  const floorAdjustByBase = floorAdjustContext.basePath
     ? loadFloorAdjustByBasePath(floorAdjustContext.basePath, floorAdjustContext.floorId)
     : null;
-  const floorAdjustByUrl = floorAdjustmentsEnabled && floorAdjustContext.url ? loadFloorAdjustByUrl(floorAdjustContext.url) : null;
-  const floorAdjustByLabel = floorAdjustmentsEnabled
-    ? loadFloorAdjust(floorAdjustContext.buildingLabel, floorAdjustContext.floorId)
-    : null;
-  const floorAdjustPick = floorAdjustmentsEnabled
-    ? pickLatestFloorAdjust({
-        base: floorAdjustByBase,
-        url: floorAdjustByUrl,
-        label: floorAdjustByLabel
-      })
-    : { source: 'disabled', adjust: null, savedAt: 0 };
+  const floorAdjustByUrl = floorAdjustContext.url ? loadFloorAdjustByUrl(floorAdjustContext.url) : null;
+  const floorAdjustByLabel = loadFloorAdjust(floorAdjustContext.buildingLabel, floorAdjustContext.floorId);
+  const floorAdjustPick = pickLatestFloorAdjust({
+    base: floorAdjustByBase,
+    url: floorAdjustByUrl,
+    label: floorAdjustByLabel
+  });
   const floorAdjustValue = floorAdjustPick.adjust;
   const floorAdjustDebugInfo = isAdminUser ? {
     source: floorAdjustPick.source,
@@ -19927,7 +18408,9 @@ const StakeholderMap = ({
       floorId = floorIdRaw;
       const campusSeg = encodeURIComponent(floorplanCampus);
       const baseFallbackUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
-      floorUrl = baseFallbackUrl;
+      floorUrl = (isSarpyPublicReadonlyMode && floorplanCampus === 'SarpyCounty')
+        ? baseFallbackUrl.replace(/_Dept_Rooms\.geojson$/i, '_Dept_Rooms_Public.geojson')
+        : baseFallbackUrl;
       if (buildingFloors && !buildingFloors.includes(floorId)) {
         buildingFloors = [...buildingFloors, floorId];
         availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
@@ -19980,7 +18463,7 @@ const StakeholderMap = ({
         label: localAdjustByLabel
       });
       let localAdjust = localPick.adjust;
-      if (!hasFloorAdjust(localAdjust) && floorAdjustRecoveryEnabled) {
+      if (!hasFloorAdjust(localAdjust)) {
         const recoveredAdjust = findMatchingStoredFloorAdjust({
           floorId,
           labels: adjustLabels,
@@ -19998,17 +18481,15 @@ const StakeholderMap = ({
       }
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      void loadFloorAdjustFromDbCandidates(adjustLabels, floorId).then((dbResult) => {
-        if (!dbResult?.data) return;
-        const dbAdjust = dbResult.data;
+      void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
+        if (!dbAdjust) return;
         const dbCandidate = {
           rotationDeg: Number(dbAdjust.rotationDeg) || 0,
           scale: Number(dbAdjust.scale) || 1,
           translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
           translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
           anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
-          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
-          georeferenced: Boolean(dbAdjust.georeferenced)
+          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
         };
         const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
@@ -20071,38 +18552,18 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
-      const buildingFootprintFilterBufferMeters =
-        resolveFloorplanBuildingFootprintFilter(selectedBuildingId) ??
-        resolveFloorplanBuildingFootprintFilter(selectedBuilding) ??
-        resolveFloorplanBuildingFootprintFilter(fitBuilding?.properties?.id) ??
-        resolveFloorplanBuildingFootprintFilter(fitBuilding?.properties?.name);
-      const filterToBuildingFootprint = Number.isFinite(buildingFootprintFilterBufferMeters);
-      const selectedFolderKey =
-        getBuildingFolderKey(selectedBuildingId) ||
-        getBuildingFolderKey(selectedBuilding) ||
-        getBuildingFolderKey(fitBuilding?.properties?.id) ||
-        getBuildingFolderKey(fitBuilding?.properties?.name);
-      const skipBuildingFit = Boolean(selectedFolderKey && sharedFloorplanFolderSet.has(selectedFolderKey));
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
-      const suppressAutoWalls = config?.enableWallsOverlay === false;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
         roomPatches,
         airtableLookup: airtableRoomLookup,
         currentFloorContextRef,
-        filterToBuildingFootprint,
-        buildingFootprintFilterBufferMeters,
-        skipBuildingFit,
-        enableDoorStairOverlay: config?.enableDoorStairOverlay === true,
-        enableFloorAdjustments: floorAdjustmentsEnabled,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
         enableWalls: allowOptionalOverlays,
-        suppressAutoWalls,
         wallsBasePath: basePath,
         wallsFloorId: floorId,
-        wallsRawFCRef,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -20674,19 +19135,20 @@ const StakeholderMap = ({
     const healthUrl = resolveAiUrl('/ai/health');
     const ping = async () => {
       try {
-        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: AI_STATUS_PING_TIMEOUT_MS });
+        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: AI_HEALTH_TIMEOUT_MS });
         const raw = await r.text();
         let data = null;
         try { data = JSON.parse(raw); } catch {}
         setAiStatus(r.ok && data?.aiReady !== false ? 'ok' : 'down');
-      } catch {
-        setAiStatus('down');
+      } catch (err) {
+        setAiStatus(isAbortLikeError(err) ? 'unknown' : 'down');
       }
     };
+    setAiStatus('unknown');
     ping();
     const t = setInterval(ping, 30000);
     return () => clearInterval(t);
-  }, []);
+  }, [config?.aiServerUrl, aiEnabledForCurrentView]);
 
   const handleExportFloor = useCallback(() => {
     const ctx = currentFloorContextRef?.current;
@@ -20814,8 +19276,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
   if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
     for (const row of campusRooms) {
-      const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-      const buildingKey = normalizeDashboardKey(buildingName);
+      const buildingName = getRoomBuildingLabel(row);
+      const buildingKey = normalizeDashboardKey(getRoomBuildingId(row) || buildingName);
       if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) continue;
 
       const floorName = String(row?.floor ?? row?.floorName ?? row?.floorId ?? '').trim();
@@ -20853,51 +19315,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
     return rows;
   }
-
-  try {
-    const hydratedRooms = await getManifestHydrationRooms();
-    if (Array.isArray(hydratedRooms) && hydratedRooms.length) {
-      for (const row of hydratedRooms) {
-        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-        const buildingKey = normalizeDashboardKey(buildingName);
-        if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) continue;
-
-        const floorName = String(row?.floor ?? row?.floorName ?? row?.floorId ?? '').trim();
-        const revitId = row?.revitId ?? row?.RevitId ?? row?.id ?? null;
-        const roomIdKey = (buildingName && floorName && revitId != null) ? rId(buildingName, floorName, revitId) : null;
-        const patch = roomIdKey && roomPatches instanceof Map ? roomPatches.get(roomIdKey) : null;
-        const merged = patch ? { ...row, ...patch } : row;
-        const deptVal = String(getDeptFromProps(merged) || '').trim();
-        if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) continue;
-
-        const roomNum =
-          merged.roomNumber ??
-          merged.Number ??
-          merged.RoomNumber ??
-          merged.number ??
-          merged.Room ??
-          merged.roomId ??
-          '';
-        const typeVal = getRoomTypeLabelFromProps(merged) || merged.type || merged.Name || '';
-        const areaVal = resolveAreaSf(merged);
-        const seatCountVal = getSeatCount(merged);
-        const occupantVal = getOccupantValue(merged);
-        rows.push({
-          building: buildingName,
-          floor: floorName,
-          roomNumber: roomNum || '',
-          type: typeVal || '',
-          department: deptVal || '',
-          area: Number.isFinite(areaVal) ? areaVal : '',
-          seatCount: seatCountVal ?? '',
-          occupant: occupantVal || '',
-          roomId: roomIdKey || String(merged.roomId ?? merged.id ?? '') || '',
-          revitId: revitId ?? null
-        });
-      }
-      return rows;
-    }
-  } catch {}
 
   for (const buildingName of targetBuildings) {
     if (!buildingName) continue;
@@ -20947,15 +19364,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     }
   }
   return rows;
-  }, [
-    buildFloorUrl,
-    campusRooms,
-    campusRoomsLoaded,
-    ensureFloorsForBuilding,
-    roomPatches,
-    floorplanBuildingNames,
-    getManifestHydrationRooms
-  ]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
 
   const buildMoveScenarioInventory = useCallback(async () => {
     const rows = await collectSpaceRows('__all__', '');
@@ -20997,8 +19406,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
     if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
       const rowsInScope = (campusRooms || []).filter((row) => {
-        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-        const buildingKey = normalizeDashboardKey(buildingName);
+        const buildingName = getRoomBuildingLabel(row);
+        const buildingKey = normalizeDashboardKey(getRoomBuildingId(row) || buildingName);
         if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) return false;
         const deptVal = String(getDeptFromProps(row) || '').trim();
         if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) return false;
@@ -21007,16 +19416,30 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
       const rowsByBuilding = new Map();
       rowsInScope.forEach((row) => {
-        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-        if (!buildingName) return;
-        const list = rowsByBuilding.get(buildingName) || [];
-        list.push(row);
-        rowsByBuilding.set(buildingName, list);
+        const buildingName = getRoomBuildingLabel(row);
+        const buildingIdValue = getRoomBuildingId(row);
+        const buildingKey = normalizeDashboardKey(buildingIdValue || buildingName);
+        if (!buildingKey || !(buildingName || buildingIdValue)) return;
+        const entry = rowsByBuilding.get(buildingKey) || {
+          buildingName: buildingName || buildingIdValue,
+          buildingId: buildingIdValue || '',
+          rows: []
+        };
+        if (!entry.buildingName && (buildingName || buildingIdValue)) {
+          entry.buildingName = buildingName || buildingIdValue;
+        }
+        if (!entry.buildingId && buildingIdValue) {
+          entry.buildingId = buildingIdValue;
+        }
+        entry.rows.push(row);
+        rowsByBuilding.set(buildingKey, entry);
       });
 
-      Array.from(rowsByBuilding.entries()).forEach(([buildingName, rowsForBuilding]) => {
-        const summary = summarizeRoomRowsForPanels(rowsForBuilding);
-        const row = summary ? toSummaryRow(summary, buildingName) : null;
+      Array.from(rowsByBuilding.values()).forEach((entry) => {
+        const summary = summarizeRoomRowsForPanels(entry.rows);
+        const row = summary
+          ? toSummaryRow(summary, entry.buildingName, bId(entry.buildingId || entry.buildingName || ''))
+          : null;
         if (row && (row.rooms || row.totalSf)) {
           buildingRows.push(row);
         }
@@ -21029,44 +19452,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         : null;
       return { campusRow, buildingRows };
     }
-
-    try {
-      const hydratedRooms = await getManifestHydrationRooms();
-      if (Array.isArray(hydratedRooms) && hydratedRooms.length) {
-        const rowsInScope = hydratedRooms.filter((row) => {
-          const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-          const buildingKey = normalizeDashboardKey(buildingName);
-          if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) return false;
-          const deptVal = String(getDeptFromProps(row) || '').trim();
-          if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) return false;
-          return true;
-        });
-
-        const rowsByBuilding = new Map();
-        rowsInScope.forEach((row) => {
-          const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-          if (!buildingName) return;
-          const list = rowsByBuilding.get(buildingName) || [];
-          list.push(row);
-          rowsByBuilding.set(buildingName, list);
-        });
-
-        Array.from(rowsByBuilding.entries()).forEach(([buildingName, rowsForBuilding]) => {
-          const summary = summarizeRoomRowsForPanels(rowsForBuilding);
-          const row = summary ? toSummaryRow(summary, buildingName) : null;
-          if (row && (row.rooms || row.totalSf)) {
-            buildingRows.push(row);
-          }
-        });
-
-        buildingRows.sort((a, b) => (Number(b.totalSf) || 0) - (Number(a.totalSf) || 0));
-        const campusSummary = summarizeRoomRowsForPanels(rowsInScope);
-        const campusRow = includeAllBuildings && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
-          ? toSummaryRow(campusSummary, 'Campus Total', 'campus')
-          : null;
-        return { campusRow, buildingRows };
-      }
-    } catch {}
 
     for (const buildingName of targetBuildings) {
       if (!buildingName) continue;
@@ -21114,15 +19499,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       : null;
 
     return { campusRow, buildingRows };
-  }, [
-    buildFloorUrl,
-    campusRooms,
-    campusRoomsLoaded,
-    ensureFloorsForBuilding,
-    roomPatches,
-    floorplanBuildingNames,
-    getManifestHydrationRooms
-  ]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
 
   const onCreateMoveScenario = useCallback(async (opts = {}) => {
     const forceRelaxed = Boolean(opts?.forceRelaxed);
@@ -21398,7 +19775,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (isCopilotPlanner && effectiveStrict) {
         scenarioConstraints.practicalFloorFirstOnStrictMiss = true;
         scenarioConstraints.practicalNearRangeTolerance = 0.12;
-        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict ï¿½5% fails, near-range floor options up to ï¿½12% are preferred before emergency fallback.');
+        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict ±5% fails, near-range floor options up to ±12% are preferred before emergency fallback.');
       }
       const maxBuildingsParsed = effectiveMaxBuildings === 'auto'
         ? null
@@ -22069,65 +20446,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
         return;
       }
-      const scheduledAvailabilityRequest = isHastingsCollegeInstance
-        ? extractScheduledClassroomAvailabilityRequest(q)
-        : null;
-      if (isHastingsCollegeInstance && scheduledAvailabilityRequest) {
-        if (!classScheduleRows.length) {
-          setAskResult({
-            answer: 'Class schedule data is not loaded for Hastings College yet.',
-            bullets: [
-              classScheduleMeta.missing
-                ? 'No class schedule workbook was found on the AI server.'
-                : (classScheduleMeta.error || 'Schedule data needs to be loaded before this query can run.')
-            ],
-            resultType: 'none',
-            columns: [],
-            rows: [],
-            dataUsed: [],
-            missingData: ['Class schedule workbook']
-          });
-          return;
-        }
-        const minimumSeats = extractMinimumSeatCountFromQuestion(q);
-        const rows = buildScheduledAvailabilityRows(scopeRooms, {
-          minimumSeats,
-          dayTokens: scheduledAvailabilityRequest.dayTokens,
-          dayLabel: scheduledAvailabilityRequest.dayLabel,
-          timeLabel: scheduledAvailabilityRequest.timeLabel,
-          targetMinutes: scheduledAvailabilityRequest.targetMinutes,
-          sessionKey: scheduledAvailabilityRequest.sessionKey,
-          sessionLabel: scheduledAvailabilityRequest.sessionLabel
-        });
-        const scopeLabel = forceCampusScope
-          ? 'campus'
-          : (inferredBuilding ? inferredBuilding : 'selected scope');
-        const sessionSuffix = scheduledAvailabilityRequest.sessionLabel
-          ? ` for ${scheduledAvailabilityRequest.sessionLabel}`
-          : (classScheduleSessionOptions.length > 1 ? ' across the loaded block schedules' : '');
-        const answer = rows.length
-          ? `Found ${rows.length.toLocaleString()} classrooms available ${scheduledAvailabilityRequest.dayLabel} at ${scheduledAvailabilityRequest.timeLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''}${sessionSuffix} in ${scopeLabel}.`
-          : `No classrooms were available ${scheduledAvailabilityRequest.dayLabel} at ${scheduledAvailabilityRequest.timeLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''}${sessionSuffix} in ${scopeLabel}.`;
-        const hasSessionColumn = rows.some((row) => String(row?.Session || '').trim());
-        setAskResult({
-          answer,
-          bullets: [
-            scheduledAvailabilityRequest.sessionLabel
-              ? 'Availability is filtered to the requested Hastings block schedule, the loaded class timetable, and classroom seat counts from the room inventory.'
-              : (hasSessionColumn
-                  ? 'Results include a Session column because the loaded Hastings workbook contains both Block 1 and Block 2 schedules.'
-                  : 'Availability is based on the loaded class timetable and classroom seat counts from the room inventory.')
-          ],
-          resultType: rows.length ? 'table' : 'none',
-          columns: rows.length ? (hasSessionColumn
-            ? ['Session', 'Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class']
-            : ['Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class']) : [],
-          rows: rows.slice(0, 100),
-          dataUsed: ['roomRows', 'classScheduleRows'],
-          missingData: []
-        });
-        return;
-      }
       if (isHastingsCollegeInstance && isCurrentEmptyClassroomQuery(q)) {
         if (!classScheduleRows.length) {
           setAskResult({
@@ -22232,6 +20550,97 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         });
         return;
       }
+      if (isPlanningDocsQuery(q)) {
+        const resourceLookup = buildingResourcesCatalog?.byBuildingKey;
+        const lookupIsMap = resourceLookup instanceof Map;
+        const targetCandidates = [
+          inferredBuilding,
+          selectedBuilding,
+          selectedBuildingId,
+          (activeBuildingName && !/^building$/i.test(String(activeBuildingName).trim()) ? activeBuildingName : '')
+        ]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+
+        let matchedLabel = '';
+        let matchedEntry = null;
+        if (lookupIsMap) {
+          for (const candidate of targetCandidates) {
+            const key = normalizeDashboardKey(candidate);
+            if (!key) continue;
+            const hit = resourceLookup.get(key);
+            if (!hit) continue;
+            matchedLabel = candidate;
+            matchedEntry = hit;
+            break;
+          }
+        }
+
+        const docs = Array.isArray(matchedEntry?.remodelPdfs)
+          ? matchedEntry.remodelPdfs.filter((doc) => String(doc?.url || '').trim())
+          : [];
+        if (matchedEntry && docs.length) {
+          const displayBuilding =
+            String(
+              matchedEntry?.building ||
+              resolveBuildingNameFromInput(matchedLabel) ||
+              matchedLabel ||
+              activeBuildingName ||
+              'this building'
+            ).trim() || 'this building';
+          const media = docs.slice(0, 12).map((doc, idx) => ({
+            label: String(doc?.label || `Planning document ${idx + 1}`).trim() || `Planning document ${idx + 1}`,
+            description: String(doc?.description || '').trim(),
+            url: String(doc?.url || '').trim(),
+            mediaType: isImageResourceUrl(doc?.url) ? 'image' : 'document'
+          }));
+          setAskResult({
+            answer: `Here are the planning docs for ${displayBuilding}.`,
+            bullets: [
+              `${media.length.toLocaleString()} linked planning document${media.length === 1 ? '' : 's'} found.`,
+              'Click any preview or "Open file" link to view full-size.'
+            ],
+            resultType: 'none',
+            columns: [],
+            rows: [],
+            media,
+            dataUsed: ['building-resources.json'],
+            missingData: []
+          });
+          return;
+        }
+
+        const availableWithDocs = lookupIsMap
+          ? Array.from(new Set(
+              Array.from(resourceLookup.values())
+                .filter((entry) => Array.isArray(entry?.remodelPdfs) && entry.remodelPdfs.length > 0)
+                .map((entry) => String(entry?.building || '').trim())
+                .filter(Boolean)
+            ))
+          : [];
+        const requestedBuilding = String(
+          resolveBuildingNameFromInput(inferredBuilding || '') ||
+          inferredBuilding ||
+          selectedBuilding ||
+          selectedBuildingId ||
+          ''
+        ).trim();
+        setAskResult({
+          answer: requestedBuilding
+            ? `I could not find linked planning docs for ${requestedBuilding} yet.`
+            : 'Tell me which building you want, and I will show its planning docs.',
+          bullets: availableWithDocs.length
+            ? [`Buildings with linked planning docs: ${availableWithDocs.slice(0, 12).join(', ')}`]
+            : ['No planning docs are linked yet in building-resources.json.'],
+          resultType: 'none',
+          columns: [],
+          rows: [],
+          media: [],
+          dataUsed: ['building-resources.json'],
+          missingData: requestedBuilding ? ['Planning docs for requested building'] : ['Building name']
+        });
+        return;
+      }
       const isLocationQuery =
         /\bwhere\s+(is|are)\b|\blocation of\b|\bwhere\b.*\b(located|location)\b|\bwhich building\b|\bwhat building\b/i.test(q);
       const keywordMatches = (() => {
@@ -22270,9 +20679,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             const roomText = uniqueLabels.length
               ? `Rooms: ${uniqueLabels.slice(0, 12).join(', ')}`
               : uniqueOcc.length
-                ? `Rooms: (not labeled) ï¿½ ${uniqueOcc.slice(0, 3).join(', ')}`
+                ? `Rooms: (not labeled) — ${uniqueOcc.slice(0, 3).join(', ')}`
                 : 'Rooms: (not labeled)';
-            return `${building} ï¿½ ${roomText}`;
+            return `${building} — ${roomText}`;
           });
         setAskResult({
           answer: `Here are the rooms matching that request across campus.`,
@@ -22350,7 +20759,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         classScheduleRowsPayload = filteredScheduleRows.slice(0, 150).map((entry) => ({
           building: String(entry?.building || '').trim(),
           room: String(entry?.room || '').trim(),
-          session: String(entry?.sessionLabel || entry?.sessionRaw || '').trim(),
           courseCode: String(entry?.courseCode || '').trim(),
           section: String(entry?.section || '').trim(),
           title: String(entry?.title || '').trim(),
@@ -22398,6 +20806,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     dashboardMetrics,
     loadedSingleFloor,
     askMapfluence,
+    buildingResourcesCatalog,
     resolveBuildingNameFromInput,
     collectSpaceRows,
     isHastingsCollegeInstance,
@@ -22805,7 +21214,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         setExportingCherokeePhotos(false);
         return;
       }
-      // Build file list with download URLs ï¿½ SDK call, no CORS issue
+      // Build file list with download URLs — SDK call, no CORS issue
       const files = [];
       await Promise.all(
         Object.entries(byBuilding).map(async ([building, items]) => {
@@ -22825,30 +21234,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         setExportingCherokeePhotos(false);
         return;
       }
-      // Server-side fetch + ZIP to avoid CORS on direct storage downloads.
-      // 90s timeout to survive Render free-tier cold starts (~30-60s).
-      const controller = new AbortController();
-      const abortTimer = setTimeout(() => controller.abort(), 90000);
-      let zipResp;
-      try {
-        zipResp = await fetch(resolveAiUrl('/ai/api/photo-export'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files }),
-          signal: controller.signal,
-        });
-      } catch (fetchErr) {
-        if (fetchErr.name === 'AbortError') {
-          throw new Error('Export server timed out (>90s) ï¿½ it may be cold-starting. Wait 30s and try again.');
-        }
-        throw new Error(`Cannot reach export server: ${fetchErr.message}`);
-      } finally {
-        clearTimeout(abortTimer);
-      }
-      if (!zipResp.ok) {
-        const body = await zipResp.text().catch(() => '');
-        throw new Error(`Export server returned ${zipResp.status}: ${body}`);
-      }
+      // Server-side fetch + ZIP to avoid CORS on direct storage downloads
+      const zipResp = await fetch(resolveAiUrl('/ai/api/photo-export'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files }),
+      });
+      if (!zipResp.ok) throw new Error(`Server returned ${zipResp.status}`);
       const zipBlob = await zipResp.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(zipBlob);
@@ -22857,8 +21249,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       URL.revokeObjectURL(link.href);
       setCherokeePhotoExportMessage(`Downloaded ${files.length} photo${files.length !== 1 ? 's' : ''}.`);
     } catch (err) {
-      console.error('[Cherokee photo export] failed:', err.message, err);
-      setCherokeePhotoExportMessage(`Export failed: ${err.message}`);
+      console.error('Cherokee photo export failed:', err);
+      setCherokeePhotoExportMessage('Export failed — see console for details.');
     } finally {
       setExportingCherokeePhotos(false);
     }
@@ -22884,36 +21276,22 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           setExportingSpaceData(false);
           return;
         }
-        const isCherokeeSummaryExport = universityId === 'cherokee-mental-health';
-        const headers = isCherokeeSummaryExport
-          ? ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'OfficeSF', 'Offices', 'KeyDepts']
-          : ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'ClassroomSF', 'Classrooms', 'LabSF', 'Labs', 'OfficeSF', 'Offices', 'KeyDepts'];
+        const headers = ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'ClassroomSF', 'Classrooms', 'LabSF', 'Labs', 'OfficeSF', 'Offices', 'KeyDepts'];
         const csvLines = [headers.join(',')];
         summaryRows.forEach((r) => {
-          const values = isCherokeeSummaryExport
-            ? [
-                esc(r.buildingId),
-                esc(r.buildingName),
-                esc(r.totalSf),
-                esc(r.rooms),
-                esc(r.officeSf),
-                esc(r.offices),
-                esc(r.keyDepts)
-              ]
-            : [
-                esc(r.buildingId),
-                esc(r.buildingName),
-                esc(r.totalSf),
-                esc(r.rooms),
-                esc(r.classroomSf),
-                esc(r.classrooms),
-                esc(r.labSf),
-                esc(r.labs),
-                esc(r.officeSf),
-                esc(r.offices),
-                esc(r.keyDepts)
-              ];
-          csvLines.push(values.join(','));
+          csvLines.push([
+            esc(r.buildingId),
+            esc(r.buildingName),
+            esc(r.totalSf),
+            esc(r.rooms),
+            esc(r.classroomSf),
+            esc(r.classrooms),
+            esc(r.labSf),
+            esc(r.labs),
+            esc(r.officeSf),
+            esc(r.offices),
+            esc(r.keyDepts)
+          ].join(','));
         });
         const csvBlob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
         const a = document.createElement('a');
@@ -24838,28 +23216,15 @@ useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setAuthUser(user || null);
       if (!user) {
-        setUserRole('');
         setIsAdminUser(false);
         return;
       }
-
-      let resolvedRole = '';
       try {
         const roleSnap = await getDoc(doc(db, 'universities', universityId, 'roles', user.uid));
-        resolvedRole = String(roleSnap.data()?.role || '').trim().toLowerCase();
-      } catch {}
-
-      if (!resolvedRole) {
-        try {
-          const tokenResult = await user.getIdTokenResult();
-          if (tokenResult?.claims?.admin === true) {
-            resolvedRole = 'admin';
-          }
-        } catch {}
+        setIsAdminUser(!!roleSnap.exists() && roleSnap.data()?.role === 'admin');
+      } catch {
+        setIsAdminUser(false);
       }
-
-      setUserRole(resolvedRole);
-      setIsAdminUser(resolvedRole === 'admin');
     });
     return () => unsub();
   }, [universityId]);
@@ -24900,6 +23265,25 @@ useEffect(() => {
         setEngagementScopeMode(storedScope);
       }
 
+      const storedBuildingId = String(stored?.selectedBuildingId || '').trim();
+      if (isSarpyCountyInstance && storedBuildingId) {
+        setSelectedBuildingId(storedBuildingId);
+        selectedBuildingIdRef.current = storedBuildingId;
+      }
+
+      const storedBuildingName = String(stored?.selectedBuilding || '').trim();
+      const resolvedBuilding =
+        resolveBuildingNameFromInput(storedBuildingName || storedBuildingId) ||
+        storedBuildingName ||
+        '';
+      if (isSarpyCountyInstance && resolvedBuilding) {
+        setSelectedBuilding(resolvedBuilding);
+      }
+
+      const storedFloor = normalizeFloorIdValue(stored?.selectedFloor || '');
+      if (isSarpyCountyInstance && storedFloor) {
+        setSelectedFloor(storedFloor);
+      }
     } finally {
       requestAnimationFrame(() => {
         adminCombinedPrefsRestoringRef.current = false;
@@ -24950,18 +23334,25 @@ useEffect(() => {
         const bCol = collection(db, 'universities', universityId, 'buildings');
         const bSnap = await getDocs(bCol);
         if (!bSnap.empty) {
+          const opts = bSnap.docs.map(d => ({ id: d.id, name: d.data()?.name || d.id }));
+          // (removed setBuildingOptions)
+          // If nothing is selected yet, default to the first
+          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
           return;
         }
         // Fallback to local manifest if Firestore empty
         const res = await fetch(FLOORPLAN_MANIFEST_URL);
         if (res.ok) {
-          await res.json(); // { buildings: { [id]: { name, floors: [...] } } }
+          const m = await res.json(); // { buildings: { [id]: { name, floors: [...] } } }
+          const opts = Object.entries(m.buildings || {}).map(([id, v]) => ({ id, name: v?.name || id }));
+          // (removed setBuildingOptions)
+          if (isSarpyCountyInstance && !selectedBuilding && opts.length) setSelectedBuilding(opts[0].id);
         }
       } catch (e) {
         console.warn('Building options load failed:', e);
       }
     })();
-  }, [universityId]);
+  }, [universityId, isSarpyCountyInstance, selectedBuilding]);
 
   // ---------- Load floor manifest when building changes ----------
   useEffect(() => {
@@ -25013,42 +23404,31 @@ useEffect(() => {
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
       try {
-        const res = await guardedAiAirtableFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS, warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS, retries: 1 });
-        let data = null;
-        try {
-          data = await res.json();
-        } catch {}
-        if (!res.ok) {
-          const msg = data?.error || data?.message || `Rooms fetch failed (${res.status})`;
-          throw new Error(msg);
+        const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: true });
+        if (!cancelled) {
+          setAirtableRooms(scopedRooms);
+          setAirtableLastSyncedAt(new Date());
+          recordAirtableScopeCheck('Initial load', rawRooms, scopedRooms);
+          void syncAirtableRoomEditOptions(scopedRooms);
         }
-        if (data?.ok && Array.isArray(data.rooms)) {
-          const scopedRooms = filterRoomsToConfiguredCampus(data.rooms);
+        if (isSarpyPublicReadonlyMode) {
           if (!cancelled) {
-            setAirtableRooms(scopedRooms);
-            setAirtableLastSyncedAt(new Date());
-            recordAirtableScopeCheck('Initial load', data.rooms, scopedRooms);
-            void syncAirtableRoomEditOptions(scopedRooms);
+            setCampusRooms(scopedRooms);
+            setCampusRoomsLoaded(true);
+            setDashboardError(null);
           }
-          if (isSarpyPublicReadonlyMode) {
-            if (!cancelled) {
-              setCampusRooms(scopedRooms);
-              setCampusRoomsLoaded(true);
-              setDashboardError(null);
-            }
-            return;
+          return;
+        }
+        if (scopedRooms.some(hasDashboardRoomArea)) {
+          return;
+        }
+        if (!floorplansEnabled) {
+          if (!cancelled) {
+            setCampusRooms(scopedRooms);
+            setCampusRoomsLoaded(true);
+            setDashboardError(null);
           }
-          if (scopedRooms.some(hasDashboardRoomArea)) {
-            return;
-          }
-          if (!floorplansEnabled) {
-            if (!cancelled) {
-              setCampusRooms(scopedRooms);
-              setCampusRoomsLoaded(true);
-              setDashboardError(null);
-            }
-            return;
-          }
+          return;
         }
         throw new Error('Rooms payload missing or invalid');
       } catch (err) {
@@ -25066,13 +23446,20 @@ useEffect(() => {
             manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
             dashboardManifestRef.current = manifest;
           }
-          const rooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
+          const rooms = await buildCampusRoomsFromManifest(manifest);
           if (!rooms.length) throw new Error('No floorplan rooms found for dashboard');
           if (!cancelled) {
             manifestHydrationRoomsRef.current = rooms;
             setCampusRooms(rooms);
             setDashboardError(null);
             setCampusRoomsLoaded(true);
+            setAirtableScopeCheck({
+              level: 'warn',
+              label: 'Waking AI server',
+              detail: isAbortLikeError(err)
+                ? 'Map loaded from floorplans while the AI server wakes up. Airtable data should appear automatically when it is ready.'
+                : 'Map loaded from floorplans while Airtable data is temporarily unavailable.'
+            });
           }
         } catch (fallbackErr) {
           if (!cancelled) setDashboardError(fallbackErr);
@@ -25084,7 +23471,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, filterRoomsToConfiguredCampus, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, dashboardManifestScope, syncAirtableRoomEditOptions]);
+  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -25140,10 +23527,6 @@ useEffect(() => {
   }, [fetchClassSchedule, isHastingsCollegeInstance]);
 
   useEffect(() => {
-    if (!classroomMetricsEnabled) {
-      setUtilizationData({ buildings: {}, rooms: {}, campus: null });
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
@@ -25157,7 +23540,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [classroomMetricsEnabled]);
+  }, []);
 
   const dashboardScopeRooms = useMemo(() => {
     if (!campusRoomsLoaded) return [];
@@ -25569,7 +23952,7 @@ useEffect(() => {
         const query = universityId ? `?campus=${encodeURIComponent(universityId)}` : '';
         const res = await guardedAiFetch(`/ai/enrollment-projections${query}`, {
           cache: 'no-store',
-          timeoutMs: 20000
+          timeoutMs: 8000
         });
         let data = null;
         try {
@@ -25640,7 +24023,7 @@ useEffect(() => {
           }
           let manifestRooms = manifestHydrationRoomsRef.current;
           if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
-            manifestRooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
+            manifestRooms = await buildCampusRoomsFromManifest(manifest);
             if (!Array.isArray(manifestRooms) || !manifestRooms.length) {
               throw new Error('Manifest hydration rooms unavailable');
             }
@@ -25657,12 +24040,6 @@ useEffect(() => {
       if (cancelled) return;
       if (Array.isArray(merged) && merged.length) {
         setCampusRooms(merged);
-        setCampusRoomsLoaded(true);
-        setDashboardError(null);
-        return;
-      }
-      if (airtableRooms.some(hasDashboardRoomArea)) {
-        setCampusRooms(airtableRooms);
         setCampusRoomsLoaded(true);
         setDashboardError(null);
         return;
@@ -25692,7 +24069,7 @@ useEffect(() => {
             if (!fetchedValid) throw new Error('Dashboard manifest unavailable');
             dashboardManifestRef.current = manifest;
           }
-          fallbackManifestRooms = await buildCampusRoomsFromManifest(manifest, dashboardManifestScope);
+          fallbackManifestRooms = await buildCampusRoomsFromManifest(manifest);
           if (!Array.isArray(fallbackManifestRooms) || !fallbackManifestRooms.length) {
             throw new Error('Fallback manifest room hydration unavailable');
           }
@@ -25710,7 +24087,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode, dashboardManifestScope]);
+  }, [airtableRooms, floorplansEnabled, isSarpyPublicReadonlyMode]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
@@ -26128,7 +24505,7 @@ useEffect(() => {
         }
 
         const shouldLoadConditions = mode === 'admin';
-        const shouldLoadMaintenance = mode === 'admin' || publicMaintenanceWorkflowEnabled;
+        const shouldLoadMaintenance = mode === 'admin' || isDemoPublicMode;
         if (!shouldLoadConditions && !shouldLoadMaintenance) {
           setBuildingConditions({});
           setMaintenanceIssues([]);
@@ -26194,7 +24571,7 @@ useEffect(() => {
     mode,
     engagementMode,
     technicalMode,
-    publicMaintenanceWorkflowEnabled,
+    isDemoPublicMode,
     universityId,
     persona,
     markersCollection,
@@ -26920,11 +25297,9 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 10, 12, 12, 15],
-          'circle-color': isSarpyCountyInstance ? sarpyFacilityTypeCircleColorExpr : 'rgba(220,38,38,0.20)',
-          'circle-opacity': isSarpyCountyInstance ? 0.22 : 1,
-          'circle-stroke-color': isSarpyCountyInstance ? sarpyFacilityTypeCircleColorExpr : 'rgba(185,28,28,0.75)',
-          'circle-stroke-width': 1.2,
-          'circle-stroke-opacity': isSarpyCountyInstance ? 0.8 : 1
+          'circle-color': 'rgba(220,38,38,0.20)',
+          'circle-stroke-color': 'rgba(185,28,28,0.75)',
+          'circle-stroke-width': 1.2
         }
       }, 'buildings-labels');
     }
@@ -26937,7 +25312,7 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4.8, 10, 6.3, 12, 8.1],
-          'circle-color': isSarpyCountyInstance ? sarpyFacilityTypeCircleColorExpr : '#dc2626',
+          'circle-color': '#dc2626',
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.2
         }
@@ -27083,7 +25458,7 @@ useEffect(() => {
       showMaintenanceActionPopup(e.lngLat, buildingContext);
       return;
     }
-    const openingTechnicalWorkflow = technicalWorkflowActive;
+    const openingTechnicalWorkflow = technicalMode || technicalWorkflowActive;
     if (openingTechnicalWorkflow) {
       setMapView(MAP_VIEWS.TECHNICAL);
       setIsTechnicalPanelOpen(true);
@@ -27108,8 +25483,8 @@ useEffect(() => {
                 <div style="font-weight:700;margin-bottom:6px;">${buildingName}</div>
                 <div><b>Total SF:</b> ${fmtArea(statsRaw.totalSf)}</div>
                 <div><b>Rooms:</b> ${fmtCount(statsRaw.rooms)}</div>
-                ${classroomMetricsEnabled ? `<div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>` : ''}
-                ${classroomMetricsEnabled ? `<div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>` : ''}
+                ${isSarpyCountyInstance ? '' : `<div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>`}
+                ${isSarpyCountyInstance ? '' : `<div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>`}
               </div>
               <div style="min-width:180px;">
                 <div style="font-weight:600;margin-bottom:4px;">Key Departments</div>
@@ -27525,7 +25900,7 @@ useEffect(() => {
       if (maintenanceWorkflowActive) {
         const popupText = [
           `${String(m.issueType || 'Issue')}`,
-          `${maintenancePriorityLabel(m.priority)} ï¿½ ${maintenanceStatusLabel(m.status)}`,
+          `${maintenancePriorityLabel(m.priority)} • ${maintenanceStatusLabel(m.status)}`,
           String(m.description || '').trim()
         ].filter(Boolean).join('\n');
         mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(popupText));
@@ -27555,27 +25930,6 @@ useEffect(() => {
           map.setPaintProperty('buildings-fill', 'fill-color', finalExpr);
           map.setPaintProperty('buildings-fill', 'fill-opacity', 0.55);
           map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0)');
-        }
-      } catch {}
-    } else if (universityId === 'sarpy-county') {
-      // Sarpy buildings: color by facilityType instead of the flat default
-      try {
-        const facilityTypeExpr = withNoFloorplanOverride([
-          'match',
-          ['get', 'facilityType'],
-          'Administrative', SARPY_FACILITY_TYPE_COLORS['Administrative'],
-          'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
-          'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
-          'Recreation', SARPY_FACILITY_TYPE_COLORS['Recreation'],
-          'Infrastructure', SARPY_FACILITY_TYPE_COLORS['Infrastructure'],
-          defaultBuildingColor
-        ]);
-        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', facilityTypeExpr);
-        map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.7);
-        if (map.getLayer('buildings-fill')) {
-          map.setPaintProperty('buildings-fill', 'fill-color', facilityTypeExpr);
-          map.setPaintProperty('buildings-fill', 'fill-opacity', 0.35);
-          map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0.08)');
         }
       } catch {}
     } else {
@@ -27671,21 +26025,6 @@ useEffect(() => {
       });
     }
 
-    if (!hasEntries && universityId === 'sarpy-county') {
-      const facilityTypeExpr = withNoFloorplanOverride([
-        'match',
-        ['get', 'facilityType'],
-        'Administrative', SARPY_FACILITY_TYPE_COLORS['Administrative'],
-        'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
-        'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
-        'Recreation', SARPY_FACILITY_TYPE_COLORS['Recreation'],
-        'Infrastructure', SARPY_FACILITY_TYPE_COLORS['Infrastructure'],
-        defaultBuildingColor
-      ]);
-      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', facilityTypeExpr);
-      return;
-    }
-
     matchExpr.push(defaultBuildingColor);
     const finalExpr = withNoFloorplanOverride(matchExpr);
 
@@ -27694,7 +26033,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, universityId]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -28076,12 +26415,15 @@ useEffect(() => {
       const adjustUrl = ctx.url || buildFloorUrl(selectedBuilding, ctx.floorId);
       const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
       const basePivot = currentFloorContextRef.current?.floorAdjustBasePivot || null;
-      const adjust = getCurrentStoredFloorAdjust({
-        buildingLabel: ctx.buildingLabel,
-        floorId: ctx.floorId,
-        url: adjustUrl,
-        basePath: adjustBasePath
-      });
+      const adjustByBase = adjustBasePath ? loadFloorAdjustByBasePath(adjustBasePath, ctx.floorId) : null;
+      const adjustBaseHasAdjust = hasFloorAdjust(adjustByBase);
+      const adjustByUrl = adjustUrl ? loadFloorAdjustByUrl(adjustUrl) : null;
+      const adjustUrlHasAdjust = hasFloorAdjust(adjustByUrl);
+      const adjust = adjustBaseHasAdjust
+        ? adjustByBase
+        : (adjustUrlHasAdjust
+            ? adjustByUrl
+            : loadFloorAdjust(ctx.buildingLabel, ctx.floorId));
       const startTranslateLngLat = Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : [0, 0];
       const adjustLabel =
         currentFloorContextRef.current?.floorAdjustLabel ||
@@ -28105,12 +26447,9 @@ useEffect(() => {
       }
       const pivotScreen = map.project({ lng: pivot[0], lat: pivot[1] });
       const startAngle = Math.atan2(e.point.y - pivotScreen.y, e.point.x - pivotScreen.x);
-      const wallsSrcAtDown = getGeojsonSource(map, WALLS_SOURCE);
-      const wallsDataAtDown = wallsSrcAtDown?._data || null;
       floorAdjustDragRef.current = {
         mode,
         baseData: JSON.parse(JSON.stringify(baseData)),
-        wallsBaseData: wallsDataAtDown ? JSON.parse(JSON.stringify(wallsDataAtDown)) : null,
         pivot,
         pivotScreen,
         startAngle,
@@ -28118,7 +26457,6 @@ useEffect(() => {
         startScale: adjust.scale || 1,
         startTranslate: adjust.translateMeters || [0, 0],
         startTranslateLngLat,
-        startAdjust: JSON.parse(JSON.stringify(adjust || {})),
         startLngLat: e.lngLat,
         buildingLabel: ctx.buildingLabel,
         floorId: ctx.floorId,
@@ -28141,10 +26479,6 @@ useEffect(() => {
         const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
         const rotated = turf.transformRotate(drag.baseData, deltaDeg, { pivot: drag.pivot });
         src.setData(rotated);
-        if (drag.wallsBaseData) {
-          const wallsSrc = getGeojsonSource(map, WALLS_SOURCE);
-          if (wallsSrc) wallsSrc.setData(turf.transformRotate(drag.wallsBaseData, deltaDeg, { pivot: drag.pivot }));
-        }
         return;
       }
       if (drag.mode === 'move') {
@@ -28153,24 +26487,13 @@ useEffect(() => {
         const deltaLat = e.lngLat.lat - drag.startLngLat.lat;
         const moved = applyNudgeLngLat(drag.baseData, [deltaLng, deltaLat]);
         src.setData(moved);
-        if (drag.wallsBaseData) {
-          const wallsSrc = getGeojsonSource(map, WALLS_SOURCE);
-          if (wallsSrc) wallsSrc.setData(applyNudgeLngLat(drag.wallsBaseData, [deltaLng, deltaLat]));
-        }
       }
     };
 
     const onMouseUp = (e) => {
       const drag = floorAdjustDragRef.current;
       if (!drag) return;
-      let nextAdjust = drag.startAdjust
-        ? JSON.parse(JSON.stringify(drag.startAdjust))
-        : getCurrentStoredFloorAdjust({
-            buildingLabel: drag.adjustLabel || drag.buildingLabel,
-            floorId: drag.floorId,
-            url: drag.adjustUrl,
-            basePath: drag.adjustBasePath
-          });
+      let nextAdjust = loadFloorAdjust(drag.buildingLabel, drag.floorId);
       if (drag.mode === 'rotate') {
         const angle = Math.atan2(e.point.y - drag.pivotScreen.y, e.point.x - drag.pivotScreen.x);
         const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
@@ -28208,19 +26531,11 @@ useEffect(() => {
       if (anchorLngLat) {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
-      nextAdjust = {
-        ...nextAdjust,
-        georeferenced: Boolean(nextAdjust.georeferenced || /SarpyCounty/i.test(drag.adjustBasePath || drag.adjustUrl || ''))
-      };
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
       saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
       if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
       if (drag.adjustBasePath) saveFloorAdjustByBasePath(drag.adjustBasePath, drag.floorId, nextAdjust);
-      void saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust).then((savedToDb) => {
-        if (savedToDb === false) {
-          setFloorAdjustNotice('Saved on this browser only. Sign in as a Cherokee admin to sync floor adjustments.');
-        }
-      });
+      try { saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust); } catch {}
       const sig = getFloorAdjustSignature(nextAdjust);
       if (sig && currentData) {
         const cached = { ...currentData, __mfUserAdjustSignature: sig };
@@ -28521,15 +26836,33 @@ useEffect(() => {
         rawProps['Room GUID'] ??
         ''
       ).trim();
-      const matchingAirtableRoom = resolveScenarioBaselineRoom({
-        roomGuid: roomGuidValue || "",
-        revitId: revitId != null ? String(revitId) : "",
-        roomNumber: String(roomNum2 ?? "").trim(),
-        roomId: canonicalRoomId || "",
-        buildingId,
-        buildingName,
-        floorName: derivedFloorDefault
-      });
+      const buildingKey = normalizeDashboardKey(buildingId);
+      const floorTokens = normalizeFloorTokens(derivedFloorDefault);
+      const roomNumberKey = String(roomNum2 ?? '').trim();
+      const roomsForAirtableMatch = airtableRooms?.length ? airtableRooms : campusRooms;
+      const matchingAirtableRoom = Array.isArray(roomsForAirtableMatch)
+        ? roomsForAirtableMatch.find((room) => {
+            if (!room) return false;
+            const roomIdValue = String(room?.roomId ?? room?.roomNumber ?? room?.roomLabel ?? '').trim();
+            const roomGuidFromRow = String(room?.roomGuid ?? room?.revitUniqueId ?? '').trim();
+            if (
+              roomGuidValue &&
+              (roomGuidFromRow === roomGuidValue || roomIdValue === roomGuidValue)
+            ) {
+              return true;
+            }
+            const roomBuildingKey = normalizeDashboardKey(
+              room?.building ?? room?.buildingName ?? room?.buildingLabel ?? ''
+            );
+            if (buildingKey && roomBuildingKey !== buildingKey) return false;
+            if (floorTokens.length &&
+              !floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
+            ) {
+              return false;
+            }
+            return roomNumberKey && roomIdValue === roomNumberKey;
+          })
+        : null;
       const airtableIdFromMatch =
         matchingAirtableRoom?.airtableId ||
         matchingAirtableRoom?.AirtableId ||
@@ -28693,38 +27026,25 @@ useEffect(() => {
             </div>
           `
           : '';
-        const weeklyScheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
-          ? getRoomWeeklyScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
+        const scheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
+          ? getRoomScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
           : null;
-        const hasWeeklyScheduleEntries = Boolean(weeklyScheduleSnapshot?.sessionEntries?.length);
-        const weeklyScheduleLines = hasWeeklyScheduleEntries
-          ? weeklyScheduleSnapshot.weeklyDays.map((day) => {
-            const dayEntries = Array.isArray(day?.entries) ? day.entries : [];
-            const lineItems = dayEntries.map((entry) => (
-              `<div style="margin-top:2px;">${formatScheduleEntryTime(entry)}: ${formatScheduleEntryCourseLabel(entry)}</div>`
-            ));
-            return `
-              <div style="min-width:0;">
-                <div><b>${day?.label || ''}:</b></div>
-                <div style="margin-top:2px;padding-left:10px;font-size:12px;line-height:1.35;">
-                  ${dayEntries.length
-                    ? lineItems.join('')
-                    : '<div style="color:#555;">No scheduled classes</div>'}
-                </div>
-              </div>
-            `;
-          })
-          : [];
+        const scheduleLines = scheduleSnapshot?.activeEntries?.length
+          ? scheduleSnapshot.activeEntries.slice(0, 2).map((entry) => (
+            `<div style="margin-top:4px;"><b>Now:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
+          ))
+          : scheduleSnapshot?.upcomingEntries?.length
+            ? scheduleSnapshot.upcomingEntries.slice(0, 2).map((entry, idx) => (
+              `<div style="margin-top:4px;"><b>${idx === 0 ? 'Next' : 'Later'}:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
+            ))
+            : [];
         const scheduleHtml = isClassroomType && isHastingsCollegeInstance
           ? `
             <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e4e7ec;">
-              <div style="font-weight:700;font-size:12px;">Weekly Class Schedule</div>
-              ${weeklyScheduleSnapshot?.preferredSession?.label
-                ? `<div style="margin-top:2px;color:#555;font-size:11px;">Showing ${weeklyScheduleSnapshot.preferredSession.label}</div>`
-                : ''}
-              ${weeklyScheduleLines.length
-                ? `<div style="margin-top:6px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;row-gap:10px;align-items:start;">${weeklyScheduleLines.join('')}</div>`
-                : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No weekly schedule data is available for this room in the selected block.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
+              <div style="font-weight:700;font-size:12px;">Today's Class Schedule</div>
+              ${scheduleLines.length
+                ? scheduleLines.join('')
+                : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No more classes are scheduled for this room today.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
             </div>
           `
           : '';
@@ -28734,7 +27054,7 @@ useEffect(() => {
           : '';
 
         return `
-          <div class="mf-popup" style="min-width:360px;max-width:560px;background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:2px;">
+          <div class="mf-popup" style="min-width:340px;max-width:460px;background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:2px;">
             <div class="mf-popup-body" style="padding:8px 12px 16px 12px;">
               <div class="mf-title">Room ${roomNum2 || '-'}</div>
               <div><b>Room Type:</b></div>
@@ -28960,7 +27280,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, getRoomWeeklyScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
@@ -29523,6 +27843,65 @@ useEffect(() => {
               {askResult.bullets.map((b, i) => <li key={i}>{b}</li>)}
             </ul>
           ) : null}
+          {Array.isArray(askResult.media) && askResult.media.length ? (
+            <div
+              style={{
+                marginTop: 10,
+                display: 'grid',
+                gap: 10,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))'
+              }}
+            >
+              {askResult.media.map((item, idx) => {
+                const label = String(item?.label || `Planning document ${idx + 1}`).trim() || `Planning document ${idx + 1}`;
+                const description = String(item?.description || '').trim();
+                const url = String(item?.url || '').trim();
+                const isImage = isImageResourceUrl(url);
+                return (
+                  <div
+                    key={`ask-media-${idx}`}
+                    style={{
+                      border: '1px solid #e4e7ec',
+                      borderRadius: 8,
+                      background: '#fcfcfd',
+                      padding: 10,
+                      display: 'grid',
+                      gap: 6
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                    {description ? (
+                      <div style={{ fontSize: 12, color: '#475467' }}>{description}</div>
+                    ) : null}
+                    {isImage ? (
+                      <a href={url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+                        <img
+                          src={url}
+                          alt={label}
+                          loading="lazy"
+                          style={{
+                            width: '100%',
+                            maxHeight: 180,
+                            objectFit: 'cover',
+                            borderRadius: 6,
+                            border: '1px solid #eaecf0',
+                            background: '#ffffff'
+                          }}
+                        />
+                      </a>
+                    ) : null}
+                    {url ? (
+                      <div>
+                        <a href={url} target="_blank" rel="noreferrer">
+                          Open file
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
 
           {askResult.resultType === 'table' && askResult.columns?.length && askResult.rows?.length ? (
             <div style={{ marginTop: 10, overflowX: 'auto' }}>
@@ -29554,6 +27933,263 @@ useEffect(() => {
               Missing data: {askResult.missingData.join(', ')}
             </div>
           ) : null}
+        </div>
+      </div>
+    )}
+    {buildingResourceModal.open && buildingResourceModal.entry && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10005,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(0,0,0,0.36)'
+        }}
+      >
+        <div
+          className="mf-ai-modal-panel"
+          style={{
+            width: 'min(640px, 94vw)',
+            maxHeight: '86vh',
+            overflowY: 'auto',
+            padding: 14
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              {buildingResourceModal.kind === 'remodel' ? 'Planning / Remodel Docs' : 'Deferred Maintenance + Condition'}
+              <div style={{ marginTop: 2, fontSize: 12, color: '#475467', fontWeight: 500 }}>
+                {buildingResourceModal.buildingName || activeBuildingName}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {buildingResourceModal.kind === 'deferred' ? (
+                <button className="btn" onClick={onExportBuildingResourcePdf}>Export PDF</button>
+              ) : null}
+              <button className="btn" onClick={closeBuildingResourceModal}>Close</button>
+            </div>
+          </div>
+          {buildingResourceModal.kind === 'remodel' ? (
+            (() => {
+              const docs = Array.isArray(buildingResourceModal.entry?.remodelPdfs)
+                ? buildingResourceModal.entry.remodelPdfs
+                : [];
+              return (
+                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                  {!docs.length ? (
+                    <div style={{ fontSize: 12, color: '#667085' }}>
+                      No planning/remodel documents linked for this building yet.
+                    </div>
+                  ) : (
+                    docs.map((doc, idx) => (
+                      <div
+                        key={`resource-doc-${idx}`}
+                        style={{
+                          display: 'grid',
+                          gap: 4,
+                          padding: 10,
+                          border: '1px solid #e4e7ec',
+                          borderRadius: 8,
+                          background: '#fcfcfd'
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{doc.label || `Document ${idx + 1}`}</div>
+                        {doc.description ? (
+                          <div style={{ fontSize: 12, color: '#475467' }}>{doc.description}</div>
+                        ) : null}
+                        <div>
+                          <a href={doc.url} target="_blank" rel="noreferrer">
+                            Open file
+                          </a>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })()
+          ) : (
+            (() => {
+              const deferred = buildingResourceModal.entry?.deferredMaintenance || null;
+              const condition = buildingResourceModal.entry?.conditionAssessment || null;
+              const costSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
+              const hasDeferredContent = Boolean(
+                deferred &&
+                (
+                  deferred.summary ||
+                  deferred.priority ||
+                  deferred.items?.length ||
+                  deferred.sourceUrl ||
+                  costSummary
+                )
+              );
+              const hasConditionContent = hasConditionAssessmentContent(condition);
+              const hasContent = hasDeferredContent || hasConditionContent;
+              const conditionSections = [
+                { label: 'Architecture', scores: condition?.architecture || null },
+                { label: 'Engineering', scores: condition?.engineering || null },
+                { label: 'Functionality', scores: condition?.functionality || null }
+              ].filter((section) => section.scores && Object.keys(section.scores).length > 0);
+              return (
+                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                  {!hasContent ? (
+                    <div style={{ fontSize: 12, color: '#667085' }}>
+                      No deferred maintenance or condition details linked for this building yet.
+                    </div>
+                  ) : (
+                    <>
+                      {hasDeferredContent ? (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gap: 8,
+                            border: '1px solid #e4e7ec',
+                            borderRadius: 8,
+                            padding: 10,
+                            background: '#fcfcfd'
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>Deferred Maintenance</div>
+                          {deferred.summary ? (
+                            <div style={{ fontSize: 13 }}>
+                              <b>Summary:</b> {deferred.summary}
+                            </div>
+                          ) : null}
+                          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
+                            {deferred.priority ? <div><b>Priority:</b> {deferred.priority}</div> : null}
+                            {costSummary ? <div><b>Estimated Cost:</b> {costSummary}</div> : null}
+                          </div>
+                          {Array.isArray(deferred.items) && deferred.items.length > 0 ? (
+                            <div style={{ marginTop: 2 }}>
+                              <div style={{ fontWeight: 600, marginBottom: 4 }}>Top Items</div>
+                              <div style={{ display: 'grid', gap: 4 }}>
+                                {deferred.items.slice(0, 8).map((item, idx) => (
+                                  <div
+                                    key={`deferred-item-${idx}`}
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: '1fr auto',
+                                      gap: 8,
+                                      alignItems: 'center',
+                                      padding: '6px 8px',
+                                      border: '1px solid #eaecf0',
+                                      borderRadius: 6,
+                                      background: '#f8fafc',
+                                      fontSize: 12
+                                    }}
+                                  >
+                                    <div>
+                                      {item.label}
+                                      {item.priority ? (
+                                        <span style={{ marginLeft: 8, color: '#475467' }}>({item.priority})</span>
+                                      ) : null}
+                                    </div>
+                                    <div>
+                                      {Number.isFinite(Number(item.cost)) ? formatMaintenanceCurrency(item.cost) : ''}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {deferred.sourceUrl ? (
+                            <div>
+                              <a href={deferred.sourceUrl} target="_blank" rel="noreferrer">
+                                {deferred.sourceLabel || 'Open source file'}
+                              </a>
+                            </div>
+                          ) : (
+                            deferred.sourceLabel ? (
+                              <div style={{ fontSize: 12, color: '#475467' }}>
+                                Source: {deferred.sourceLabel}
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      ) : null}
+                      {hasConditionContent ? (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gap: 8,
+                            border: '1px solid #dbe7ff',
+                            borderRadius: 8,
+                            padding: 10,
+                            background: '#f8fbff'
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>Condition Assessment</div>
+                          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
+                            {condition.averageScore != null ? (
+                              <div>
+                                <b>Average Score:</b> {formatConditionScore(condition.averageScore)}
+                                {condition.scale ? (
+                                  <span style={{ color: '#475467' }}> ({condition.scale})</span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                          {condition.notes ? (
+                            <div style={{ fontSize: 13 }}>
+                              <b>Notes:</b> {condition.notes}
+                            </div>
+                          ) : null}
+                          {conditionSections.length ? (
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              {conditionSections.map((section) => (
+                                <div
+                                  key={`condition-section-${section.label}`}
+                                  style={{
+                                    border: '1px solid #e4e7ec',
+                                    borderRadius: 6,
+                                    padding: 8,
+                                    background: '#ffffff'
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>{section.label}</div>
+                                  <div style={{ display: 'grid', gap: 3 }}>
+                                    {Object.entries(section.scores).map(([metric, score]) => (
+                                      <div
+                                        key={`${section.label}-${metric}`}
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr auto',
+                                          gap: 8,
+                                          alignItems: 'center',
+                                          fontSize: 12
+                                        }}
+                                      >
+                                        <span>{formatConditionMetricLabel(metric)}</span>
+                                        <b>{formatConditionScore(score)}</b>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          {condition.sourceUrl ? (
+                            <div>
+                              <a href={condition.sourceUrl} target="_blank" rel="noreferrer">
+                                {condition.sourceLabel || 'Open source file'}
+                              </a>
+                            </div>
+                          ) : (
+                            condition.sourceLabel ? (
+                              <div style={{ fontSize: 12, color: '#475467' }}>
+                                Source: {condition.sourceLabel}
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          )}
         </div>
       </div>
     )}
@@ -29983,7 +28619,7 @@ useEffect(() => {
             />
           </div>
         </div>
-        {spaceDataUiAllowed && (
+        {!stakeholderWorkflowActive && !technicalMode && (
           <div className="dashboard-box">
             <SpaceDashboardPanel
               title={dashboardTitle}
@@ -29996,7 +28632,6 @@ useEffect(() => {
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
               spaceContextTitle={dashboardSpaceContextTitle}
-              facilityTypeLegend={sarpyFacilityTypeLegendItems}
               showUtilizationSection={showClassroomUtilizationDashboard}
               showStrategicSection={showStrategicDashboard}
               strategic={isAdminMode && showStrategicDashboard ? {
@@ -30079,7 +28714,7 @@ useEffect(() => {
       </>
     )}
 
-    {mapView === MAP_VIEWS.SPACE_DATA && spaceDataUiAllowed && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
+    {mapView === MAP_VIEWS.SPACE_DATA && !stakeholderWorkflowActive && !technicalMode && (selectedBuildingId || selectedBuilding) && !isBuildingPanelCollapsed && (() => {
       const containerWidth = mapContainerRef.current?.clientWidth || 1000;
       const containerHeight = mapContainerRef.current?.clientHeight || 800;
       const PANEL_WIDTH = 360;
@@ -30149,9 +28784,9 @@ useEffect(() => {
             <BuildingPanel
               buildingName={activeBuildingName}
               stats={buildingStats}
-              hideClassroomSummary={!classroomMetricsEnabled}
+              hideClassroomSummary={isSarpyCountyInstance}
               keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
-              utilization={classroomMetricsEnabled ? getUtilizationForBuilding(activeBuildingName) : null}
+              utilization={getUtilizationForBuilding(activeBuildingName)}
               floors={availableFloors}
               selectedFloor={panelSelectedFloor}
               onChangeFloor={(fl) => setSelectedFloor(fl)}
@@ -30187,7 +28822,7 @@ useEffect(() => {
               buildingName={activeBuildingName}
               floorLabel={floorStats?.floorLabel || panelSelectedFloor}
               stats={floorStats}
-              hideClassroomSummary={!classroomMetricsEnabled}
+              hideClassroomSummary={isSarpyCountyInstance}
               legendItems={floorLegendItems}
               legendTitle={
                 {
@@ -30241,7 +28876,7 @@ useEffect(() => {
               explainDisabled={!aiEnabledForCurrentView || aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
-              onToggleMoveScenarioMode={planningScenarioAllowedForCurrentView ? handleToggleMoveScenarioMode : undefined}
+              onToggleMoveScenarioMode={planningScenarioControlsEnabled ? handleToggleMoveScenarioMode : undefined}
               rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
               moveActive={mode === 'admin' && floorAdjustMode === 'move'}
               rotateValue={mode === 'admin' ? floorRotateValue : 0}
@@ -30249,8 +28884,8 @@ useEffect(() => {
               rotateNotice={mode === 'admin' ? floorAdjustNotice : ''}
               rotateStored={mode === 'admin' ? floorAdjustStored : false}
               adjustDebugInfo={mode === 'admin' ? floorAdjustDebugInfo : null}
-              onStartRotate={mode === 'admin' && floorAdjustmentsEnabled ? startFloorRotate : undefined}
-              onStartMove={mode === 'admin' && floorAdjustmentsEnabled ? startFloorMove : undefined}
+              onStartRotate={mode === 'admin' ? startFloorRotate : undefined}
+              onStartMove={mode === 'admin' ? startFloorMove : undefined}
               onCancelRotate={mode === 'admin' ? cancelFloorAdjust : undefined}
               onClearRotate={mode === 'admin' ? clearFloorAdjustForFloor : undefined}
               onExportAdjustBackup={mode === 'admin' ? exportFloorAdjustBackup : undefined}
@@ -30263,12 +28898,7 @@ useEffect(() => {
                   ctx.buildingLabel;
                 const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
                 const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
-                const adjust = getCurrentStoredFloorAdjust({
-                  buildingLabel: adjustLabel,
-                  floorId: ctx.floorId,
-                  url: adjustUrl,
-                  basePath: adjustBasePath
-                });
+                const adjust = floorAdjustValue || loadFloorAdjust(adjustLabel, ctx.floorId);
                 const pivot =
                   currentFloorContextRef.current?.floorAdjustBasePivot ||
                   (currentFloorContextRef.current?.fc
@@ -30280,18 +28910,12 @@ useEffect(() => {
                 const adjustWithPivot = {
                   ...adjust,
                   pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
-                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null,
-                  georeferenced: Boolean(adjust.georeferenced || /SarpyCounty/i.test(adjustBasePath || adjustUrl || ''))
+                  anchorLngLat: anchorLngLat || adjust.anchorLngLat || null
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
                 if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, adjustWithPivot);
-                const savedToDb = await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot);
-                if (savedToDb === false) {
-                  setFloorAdjustNotice('Saved on this browser only. Sign in as a Cherokee admin to sync floor adjustments.');
-                } else {
-                  setFloorAdjustNotice('Floor adjustment saved.');
-                }
+                try { await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot); } catch {}
                 if (adjustUrl) {
                   floorCache.delete(adjustUrl);
                   floorTransformCache.delete(adjustUrl);
@@ -30303,15 +28927,15 @@ useEffect(() => {
                 if (!ctx?.buildingLabel || !ctx?.floorId) return;
                 const adjustUrl = ctx.url || currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, ctx.floorId);
                 const adjustBasePath = ctx.basePath || currentFloorContextRef.current?.floorAdjustBasePath || null;
-                const adjustLabel =
-                  currentFloorContextRef.current?.floorAdjustLabel ||
-                  ctx.buildingLabel;
-                const adjust = getCurrentStoredFloorAdjust({
-                  buildingLabel: adjustLabel,
-                  floorId: ctx.floorId,
-                  url: adjustUrl,
-                  basePath: adjustBasePath
-                });
+                const adjustByBase = adjustBasePath ? loadFloorAdjustByBasePath(adjustBasePath, ctx.floorId) : null;
+                const adjustBaseHasAdjust = hasFloorAdjust(adjustByBase);
+                const adjustByUrl = adjustUrl ? loadFloorAdjustByUrl(adjustUrl) : null;
+                const adjustUrlHasAdjust = hasFloorAdjust(adjustByUrl);
+                const adjust = adjustBaseHasAdjust
+                  ? adjustByBase
+                  : (adjustUrlHasAdjust
+                      ? adjustByUrl
+                      : loadFloorAdjust(ctx.buildingLabel, ctx.floorId));
                 const nextScale = Math.max(0.5, Math.min(2.5, (adjust.scale || 1) + delta));
                 const factor = nextScale / (adjust.scale || 1);
                 const src = getGeojsonSource(mapRef.current, FLOOR_SOURCE);
@@ -30321,29 +28945,23 @@ useEffect(() => {
                 if (baseData && scalePivot && Number.isFinite(factor) && Math.abs(factor - 1) > 1e-6) {
                   scaled = turf.transformScale(baseData, factor, { origin: scalePivot });
                   if (src) src.setData(scaled);
-                  const wallsSrc = getGeojsonSource(mapRef.current, WALLS_SOURCE);
-                  if (wallsSrc?._data) {
-                    wallsSrc.setData(turf.transformScale(wallsSrc._data, factor, { origin: scalePivot }));
-                  }
                 }
                 const nextAdjust = { ...adjust, scale: nextScale };
+                const adjustLabel =
+                  currentFloorContextRef.current?.floorAdjustLabel ||
+                  ctx.buildingLabel;
                 const adjustPivot =
                   currentFloorContextRef.current?.floorAdjustBasePivot ||
                   (baseData ? (turf.centroid(baseData)?.geometry?.coordinates || null) : null);
                 const nextAdjustWithPivot = {
                   ...nextAdjust,
                   pivot: Array.isArray(adjustPivot) ? adjustPivot : nextAdjust.pivot,
-                  anchorLngLat: getFloorAdjustAnchorLngLat(scaled || src?._data || baseData) || nextAdjust.anchorLngLat || null,
-                  georeferenced: Boolean(nextAdjust.georeferenced || /SarpyCounty/i.test(adjustBasePath || adjustUrl || ''))
+                  anchorLngLat: getFloorAdjustAnchorLngLat(scaled || src?._data || baseData) || nextAdjust.anchorLngLat || null
                 };
                 saveFloorAdjust(adjustLabel, ctx.floorId, nextAdjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, nextAdjustWithPivot);
                 if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, nextAdjustWithPivot);
-                void saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot).then((savedToDb) => {
-                  if (savedToDb === false) {
-                    setFloorAdjustNotice('Scaled on this browser only. Sign in as a Cherokee admin to sync floor adjustments.');
-                  }
-                });
+                try { saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot); } catch {}
                 const sig = getFloorAdjustSignature(nextAdjustWithPivot);
                 const currentData = baseData || currentFloorContextRef.current?.fc || null;
                 if (sig && currentData) {
@@ -30655,7 +29273,7 @@ useEffect(() => {
                         {opLabel}
                       </div>
                       <div style={{ fontSize: 10, color: '#667085' }}>
-                        {roomCount} rooms ï¿½ {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
+                        {roomCount} rooms • {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
                       </div>
                     </div>
                     <button
@@ -31112,14 +29730,9 @@ useEffect(() => {
                   <button onClick={handleAdminSignIn}>Sign in with Google</button>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.15 }}>
-                      <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                        {authUser.email} ({effectiveUserRole})
-                      </span>
-                      {clientAccessSummary ? (
-                        <span style={{ fontSize: 11, color: '#465569' }}>{clientAccessSummary}</span>
-                      ) : null}
-                    </div>
+                    <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {authUser.email} {isAdminUser ? '(admin)' : '(no admin)'}
+                    </span>
                     <button onClick={handleAdminSignOut}>Sign out</button>
                   </div>
                 )}
@@ -31127,9 +29740,6 @@ useEffect(() => {
             </div>
           )}
 
-          {isAdminMode && isAdminUser && roleManagementEnabled && (
-            <ClientRoleManagerPanel universityId={universityId} enabled />
-          )}
           {/* Map View */}
           {showMapViewSelector && (
             <div className="control-section theme-selector" style={{ marginTop: 6 }}>
@@ -31391,13 +30001,13 @@ useEffect(() => {
                         <div style={{ marginTop: 3, fontSize: 11, color: '#334155' }}>{issue.description || '(No description)'}</div>
                         <div style={{ marginTop: 3, fontSize: 10.5, color: '#667085' }}>{locationBits.join(' / ')}</div>
                         <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
-                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` ï¿½ Assigned: ${issue.assignedTo}` : ''}
+                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` • Assigned: ${issue.assignedTo}` : ''}
                         </div>
                       </button>
                       {!!issuePhotoUrls.length && (
                         <div style={{ marginBottom: 6, fontSize: 10.5, color: '#667085' }}>
                           Photos: {issuePhotoUrls.length}
-                          {issuePhotoUrls.length > 0 ? ' ï¿½ ' : ''}
+                          {issuePhotoUrls.length > 0 ? ' • ' : ''}
                           {issuePhotoUrls.slice(0, 2).map((url, idx) => (
                             <React.Fragment key={`issue-photo-link-${issue.id}-${idx}`}>
                               <a
@@ -31408,7 +30018,7 @@ useEffect(() => {
                               >
                                 Open {idx + 1}
                               </a>
-                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' ï¿½ ' : ''}
+                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' • ' : ''}
                             </React.Fragment>
                           ))}
                         </div>
@@ -32356,7 +30966,7 @@ useEffect(() => {
                   </button>
                   {!floorplanBuildingOptions.length && (
                     <div style={{ fontSize: 11, color: '#555', textAlign: 'center' }}>
-                      Floorplans will appear here after building floor data is added.
+                      Floorplans will appear here after Sarpy floor data is added.
                     </div>
                   )}
                 </div>
@@ -32380,7 +30990,7 @@ useEffect(() => {
               </div>
               )}
 
-              {spaceDataUiAllowed && (
+              {!stakeholderWorkflowActive && !technicalMode && (
               <div
                 className="floorplans-section"
                 style={{
@@ -32399,8 +31009,8 @@ useEffect(() => {
                     onChange={(e) => setExportBuildingFilter(e.target.value)}
                   >
                     <option value="__all__">All buildings</option>
-                    {floorplanBuildingOptions.map((b) => (
-                      <option key={b.name} value={b.name}>{b.name}</option>
+                    {exportBuildingOptions.map((b) => (
+                      <option key={b.value} value={b.value}>{b.label}</option>
                     ))}
                   </select>
                   <input
@@ -32481,7 +31091,7 @@ useEffect(() => {
           */}
 
 
-            {spaceDataUiAllowed && aiEnabledForCurrentView && (
+            {!stakeholderWorkflowActive && !technicalMode && aiEnabledForCurrentView && (
             <div
               style={{
                 marginTop: 4,
@@ -32531,7 +31141,7 @@ useEffect(() => {
                       }}
                       title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                     >
-                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checkingï¿½' : 'Unavailable')}
+                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
                     </span>
                     <button
                       onClick={() => setAiInfoOpen(true)}
@@ -32567,7 +31177,7 @@ useEffect(() => {
                   }}
                   title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                 >
-                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checkingï¿½' : 'Unavailable')}
+                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
                 </span>
                 <button
                   onClick={() => setAiInfoOpen(true)}
@@ -32684,7 +31294,7 @@ useEffect(() => {
           aria-label="Close help"
           onClick={closeEngagementHelp}
         >
-          ï¿½
+          ×
         </button>
         <h4>How to Use This Map</h4>
         <ul>
@@ -32723,21 +31333,12 @@ useEffect(() => {
             boxShadow: '0 18px 36px rgba(0,0,0,0.2)'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }} {...roomEditDragHandleProps}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }} {...roomEditDragHandleProps}>
             <h4 style={{ margin: 0 }}>
               {roomEditTargets.length > 1
                 ? `Edit ${roomEditTargets.length} Rooms`
                 : `Edit Room ${roomEditData.feature?.properties?.name || roomEditData.roomLabel || ''}`}
             </h4>
-            <button
-              type="button"
-              className="btn"
-              style={{ padding: '4px 10px', lineHeight: 1 }}
-              onClick={closeRoomEdit}
-              title="Close"
-            >
-              ×
-            </button>
           </div>
 
           {roomEditTargets.length > 1 && (
@@ -32923,104 +31524,6 @@ useEffect(() => {
             />
           </div>
 
-
-          {roomEditHistoryCanRead && roomEditHistoryTarget && (
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 700 }}>Edit History</div>
-                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                    Admin-only audit trail for this room.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setRoomEditHistoryOpen((prev) => !prev)}
-                >
-                  {roomEditHistoryOpen ? 'Hide History' : 'View History'}
-                </button>
-              </div>
-
-              {(roomEditHistoryCreatedLabel || roomEditHistoryUpdatedLabel) && (
-                <div style={{ marginBottom: 10, fontSize: 12, color: '#555', display: 'grid', gap: 4 }}>
-                  {roomEditHistoryCreatedLabel && (
-                    <div>
-                      Created {roomEditHistoryCreatedLabel}
-                      {roomEditHistoryCurrentPatch?.createdByEmail ? ` by ${roomEditHistoryCurrentPatch.createdByEmail}` : ''}
-                    </div>
-                  )}
-                  {roomEditHistoryUpdatedLabel && (
-                    <div>
-                      Last updated {roomEditHistoryUpdatedLabel}
-                      {roomEditHistoryCurrentPatch?.updatedByEmail ? ` by ${roomEditHistoryCurrentPatch.updatedByEmail}` : ''}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {roomEditHistoryOpen && (
-                <div style={{ maxHeight: 240, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fafafa', padding: 10 }}>
-                  {roomEditHistoryLoading ? (
-                    <div style={{ fontSize: 12, color: '#666' }}>Loading edit history...</div>
-                  ) : roomEditHistoryError ? (
-                    <div style={{ fontSize: 12, color: '#b42318' }}>{roomEditHistoryError}</div>
-                  ) : roomEditHistoryEntries.length === 0 ? (
-                    <div style={{ fontSize: 12, color: '#666' }}>No recorded edits yet for this room.</div>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      {roomEditHistoryEntries.map((entry) => {
-                        const whenLabel = formatTimestampLabel(entry?.createdAt, entry?.createdAtClientMs) || 'Pending timestamp';
-                        const actorLabel = String(entry?.actorEmail || entry?.actorUid || 'Unknown user').trim() || 'Unknown user';
-                        const actorRoleLabel = String(entry?.actorRole || '').trim();
-                        const sourceLabel = formatRoomEditHistorySource(entry?.source || entry?.eventType);
-                        const changedFields = Array.isArray(entry?.changedFields) && entry.changedFields.length
-                          ? entry.changedFields
-                          : Object.keys(entry?.changes || {});
-                        return (
-                          <div key={entry.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-                              <div style={{ fontWeight: 700 }}>
-                                {entry?.eventType === 'create' ? 'Created room record' : 'Updated room record'}
-                              </div>
-                              <div style={{ fontSize: 12, color: '#666' }}>{whenLabel}</div>
-                            </div>
-                            <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
-                              {actorLabel}
-                              {actorRoleLabel ? ` (${actorRoleLabel})` : ''}
-                              {sourceLabel ? ` | ${sourceLabel}` : ''}
-                            </div>
-                            <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                              {changedFields.length ? changedFields.map((field) => {
-                                const change = entry?.changes?.[field] || {};
-                                return (
-                                  <div key={`${entry.id}-${field}`} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: '6px 8px' }}>
-                                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>
-                                      {getRoomEditHistoryFieldLabel(field)}
-                                    </div>
-                                    <div style={{ fontSize: 12, color: '#666' }}>
-                                      Before: {formatRoomEditHistoryValue(change?.before)}
-                                    </div>
-                                    <div style={{ fontSize: 12, color: '#111' }}>
-                                      After: {formatRoomEditHistoryValue(change?.after)}
-                                    </div>
-                                  </div>
-                                );
-                              }) : (
-                                <div style={{ fontSize: 12, color: '#666' }}>
-                                  No field-level changes were captured for this entry.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         <div className="mf-actions">
           <button className="btn" onClick={closeRoomEdit}>Cancel</button>
           <button
@@ -33030,21 +31533,13 @@ useEffect(() => {
                 const targets = roomEditTargets.length
                   ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
                   : [];
-                if (!targets.length) {
-                  alert('Select at least one room to save.');
-                  return;
-                }
+                if (!targets.length) return;
                 let savedCount = 0;
-                let attemptedSaveCount = 0;
-                let failedSaveCount = 0;
                 const multiEdit = targets.length > 1;
                 const activePopupRoomKey = roomEditData?.roomId || String(roomEditData?.revitId ?? '');
                 let popupRefreshPayload = null;
                 let popupRefreshMatchedExact = false;
                 const sharedProps = roomEditData.properties || {};
-                const roomEditOnApply = roomEditData.onApply;
-                const roomEditRefreshPopup = roomEditData.refreshPopup;
-                const trimValue = (value) => String(value ?? '').trim();
                 const mapRefCurrent = mapRef.current;
                 const src = getGeojsonSource(mapRefCurrent, FLOOR_SOURCE);
                 const sourceData = src ? (src._data || src.serialize?.().data || null) : null;
@@ -33086,7 +31581,7 @@ useEffect(() => {
                   const departmentOverrideProvided =
                     sharedProps.departmentTouched === true ||
                     (Object.prototype.hasOwnProperty.call(sharedProps, 'department') && String(sharedProps.department ?? '').trim() !== '');
-                  const displayPropsForTarget = {
+                  const propsForTarget = {
                     ...tgt.properties,
                     ...sharedProps,
                     type:
@@ -33101,40 +31596,9 @@ useEffect(() => {
                     ...(editHasSeatCountType ? { seatCount: seatCountValue } : {})
                   };
                   if (editHasOfficeType) {
-                    displayPropsForTarget.OccupancyStatus = occupancyStatusValue;
-                    displayPropsForTarget['Occupancy Status'] = occupancyStatusValue;
+                    propsForTarget.OccupancyStatus = occupancyStatusValue;
+                    propsForTarget['Occupancy Status'] = occupancyStatusValue;
                   }
-                  const propsForTarget = {};
-                  if (trimValue(displayPropsForTarget.type) !== trimValue(fallbackProps.type)) {
-                    propsForTarget.type = displayPropsForTarget.type;
-                  }
-                  if (trimValue(displayPropsForTarget.department) !== trimValue(fallbackProps.department)) {
-                    propsForTarget.department = displayPropsForTarget.department;
-                  }
-                  if (trimValue(displayPropsForTarget.comments) !== trimValue(fallbackProps.comments)) {
-                    propsForTarget.comments = displayPropsForTarget.comments;
-                  }
-                  if (editHasOfficeType) {
-                    if (trimValue(displayPropsForTarget.occupant) !== trimValue(fallbackProps.occupant)) {
-                      propsForTarget.occupant = displayPropsForTarget.occupant;
-                    }
-                    if (trimValue(displayPropsForTarget.occupancyStatus) !== trimValue(fallbackProps.occupancyStatus)) {
-                      propsForTarget.occupancyStatus = displayPropsForTarget.occupancyStatus;
-                      propsForTarget.OccupancyStatus = occupancyStatusValue;
-                      propsForTarget['Occupancy Status'] = occupancyStatusValue;
-                    }
-                  }
-                  if (editHasSeatCountType) {
-                    const nextSeatCount = Number(displayPropsForTarget.seatCount);
-                    const prevSeatCount = Number(fallbackProps.seatCount);
-                    const normalizedNextSeatCount = Number.isFinite(nextSeatCount) && nextSeatCount > 0 ? nextSeatCount : null;
-                    const normalizedPrevSeatCount = Number.isFinite(prevSeatCount) && prevSeatCount > 0 ? prevSeatCount : null;
-                    if (normalizedNextSeatCount !== normalizedPrevSeatCount) {
-                      propsForTarget.seatCount = displayPropsForTarget.seatCount;
-                    }
-                  }
-                  if (!Object.keys(propsForTarget).length) continue;
-                  attemptedSaveCount += 1;
                   const saved = await saveRoomEdits({
                     roomId: tgt.roomId,
                     buildingId: tgt.buildingId,
@@ -33149,10 +31613,10 @@ useEffect(() => {
                     savedCount += 1;
                     const targetRoomKey = tgt.roomId || String(tgt.revitId ?? '');
                     const popupPayloadForTarget = {
-                      type: displayPropsForTarget.type ?? fallbackProps.type ?? '',
-                      department: displayPropsForTarget.department ?? fallbackProps.department ?? '',
-                      occupant: displayPropsForTarget.occupant ?? fallbackProps.occupant ?? '',
-                      seatCount: displayPropsForTarget.seatCount ?? fallbackProps.seatCount ?? null
+                      type: propsForTarget.type ?? fallbackProps.type ?? '',
+                      department: propsForTarget.department ?? fallbackProps.department ?? '',
+                      occupant: propsForTarget.occupant ?? fallbackProps.occupant ?? '',
+                      seatCount: propsForTarget.seatCount ?? fallbackProps.seatCount ?? null
                     };
                     const hasExactPopupMatch =
                       Boolean(activePopupRoomKey) &&
@@ -33170,12 +31634,12 @@ useEffect(() => {
                       if (fid != null) {
                         const feat = patchedFeatures.find((f) => (f.id ?? f.properties?.RevitId) === fid);
                         if (feat && feat.properties) {
-                          feat.properties.department = displayPropsForTarget.department ?? feat.properties.department;
-                          feat.properties.department = feat.properties.department || displayPropsForTarget.department || '';
+                          feat.properties.department = propsForTarget.department ?? feat.properties.department;
+                          feat.properties.department = feat.properties.department || propsForTarget.department || '';
                           feat.properties.Department = feat.properties.department;
                           feat.properties.NCES_Department = feat.properties.department;
                           feat.properties.__dept = feat.properties.department;
-                          feat.properties.type = displayPropsForTarget.type ?? feat.properties.type;
+                          feat.properties.type = propsForTarget.type ?? feat.properties.type;
                           feat.properties.Type = feat.properties.type;
                           feat.properties.RoomType = feat.properties.type;
                           feat.properties['Room Type'] = feat.properties.type;
@@ -33185,34 +31649,24 @@ useEffect(() => {
                           feat.properties.__roomType = feat.properties.type;
                           feat.properties.__roomCategory = getRoomCategoryLabelFromProps(feat.properties);
                           if (editHasOfficeType) {
-                            feat.properties.Occupant = displayPropsForTarget.occupant ?? feat.properties.Occupant;
+                            feat.properties.Occupant = propsForTarget.occupant ?? feat.properties.Occupant;
                             feat.properties.occupant = feat.properties.Occupant;
                             feat.properties.occupancyStatus =
-                              displayPropsForTarget.occupancyStatus ?? feat.properties.occupancyStatus;
+                              propsForTarget.occupancyStatus ?? feat.properties.occupancyStatus;
                             feat.properties.OccupancyStatus =
-                              displayPropsForTarget.OccupancyStatus ?? feat.properties.OccupancyStatus;
+                              propsForTarget.OccupancyStatus ?? feat.properties.OccupancyStatus;
                             feat.properties['Occupancy Status'] =
-                              displayPropsForTarget['Occupancy Status'] ?? feat.properties['Occupancy Status'];
+                              propsForTarget['Occupancy Status'] ?? feat.properties['Occupancy Status'];
                           }
                           if (editHasSeatCountType) {
-                            feat.properties.SeatCount = displayPropsForTarget.seatCount ?? feat.properties.SeatCount;
-                            feat.properties['Seat Count'] = displayPropsForTarget.seatCount ?? feat.properties['Seat Count'];
-                            feat.properties.seatCount = displayPropsForTarget.seatCount ?? feat.properties.seatCount;
+                            feat.properties.SeatCount = propsForTarget.seatCount ?? feat.properties.SeatCount;
+                            feat.properties['Seat Count'] = propsForTarget.seatCount ?? feat.properties['Seat Count'];
+                            feat.properties.seatCount = propsForTarget.seatCount ?? feat.properties.seatCount;
                           }
                         }
                       }
                     }
-                  } else {
-                    failedSaveCount += 1;
                   }
-                }
-                if (attemptedSaveCount === 0) {
-                  alert('No changes detected for the selected rooms.');
-                  return;
-                }
-                if (savedCount === 0 && failedSaveCount > 0) {
-                  alert('Failed to save the selected room changes. Please try again.');
-                  return;
                 }
                 if (savedCount > 0) {
                   try {
@@ -33222,19 +31676,12 @@ useEffect(() => {
                       src.setData(updatedFc);
                     }
                   } catch {}
+                  if (popupRefreshPayload) {
+                    roomEditData.onApply?.(popupRefreshPayload);
+                  }
+                  roomEditData.refreshPopup?.();
                   clearRoomEditSelection();
                   closeRoomEdit();
-                  try {
-                    if (popupRefreshPayload) {
-                      roomEditOnApply?.(popupRefreshPayload);
-                    }
-                    roomEditRefreshPopup?.();
-                  } catch (popupErr) {
-                    console.warn('Room edit popup refresh failed', popupErr);
-                  }
-                  if (failedSaveCount > 0) {
-                    alert(`Saved ${savedCount} ${savedCount === 1 ? 'room' : 'rooms'}, but ${failedSaveCount} ${failedSaveCount === 1 ? 'room failed' : 'rooms failed'}. Reopen the rooms to verify and retry.`);
-                  }
                 }
             }}
           >
@@ -33736,7 +32183,7 @@ useEffect(() => {
                 checked={aiCreateScenarioStrict}
                 onChange={(e) => setAiCreateScenarioStrict(e.target.checked)}
               />
-              Strict fit (ï¿½5% target)
+              Strict fit (±5% target)
             </label>
             <button
               className="btn"
@@ -33982,7 +32429,7 @@ useEffect(() => {
                             const occupant = String(c.occupant || '').trim();
                             const dept = String(c.occupantDept || c.department || '').trim();
                             if (occupant) {
-                              return `?? Occupied ï¿½ requires relocation${dept ? ` of ${dept}` : ''}`;
+                              return `⚠️ Occupied — requires relocation${dept ? ` of ${dept}` : ''}`;
                             }
                             return '';
                           })()}
@@ -34134,8 +32581,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
 
 
 
