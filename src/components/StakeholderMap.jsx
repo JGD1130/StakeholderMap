@@ -8326,7 +8326,16 @@ const BUILDINGS_LIST = [
   { name: 'Taylor Hall', folder: 'Taylor Hall' },
   { name: 'Wilson Center', folder: 'WilsonCenter' },
   { name: '1102 Building', folder: '1102 Building', campus: 'SarpyCounty' },
+  { name: '180th Shop', folder: '180th Shop', campus: 'SarpyCounty' },
   { name: 'Administration/Courthouse', folder: 'AdministrationCourthouse', campus: 'SarpyCounty' },
+  { name: 'Bellevue Shop', folder: 'Bellevue Shop', campus: 'SarpyCounty' },
+  { name: 'Gretna Shop', folder: 'Gretna Shop', campus: 'SarpyCounty' },
+  { name: 'Juvenile Justice Center', folder: 'Juvenile Justice Center', campus: 'SarpyCounty' },
+  { name: 'Springfield Shop', folder: 'Springfield Shop', campus: 'SarpyCounty' },
+  { name: 'Public Works Fleet', folder: 'Public Works Fleet', campus: 'SarpyCounty' },
+  { name: "Sheriff's Garage", folder: "Sheriff's Garage", campus: 'SarpyCounty' },
+  { name: "Sheriff's Office", folder: "Sheriff's Office", campus: 'SarpyCounty' },
+  { name: '1246 Building', folder: '1246 Building', campus: 'SarpyCounty' },
 
   // add more as you add folders...
 ];
@@ -18121,21 +18130,6 @@ const StakeholderMap = ({
     [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite]
   );
 
-  // Sarpy keeps a guided default building/floor for demos; other campuses stay unselected on load.
-  useEffect(() => {
-    if (!isSarpyCountyInstance) return;
-    if (!floorplansEnabled) return;
-    if (selectedBuilding) return;
-    if (!floorplanBuildingOptions.length) return;
-
-    const first = floorplanBuildingOptions[0].name;
-    setSelectedBuilding(first);
-    const feature = matchBuildingFeature(config?.buildings?.features || [], first);
-    const nextId = String(feature?.properties?.id || '').trim();
-    setSelectedBuildingId(nextId || null);
-    selectedBuildingIdRef.current = nextId || null;
-    setSelectedFloor('LEVEL_1');
-  }, [isSarpyCountyInstance, selectedBuilding, floorplansEnabled, floorplanBuildingOptions, config]);
 
   const computePanelAnchorFromFeature = useCallback((feature) => {
     const map = mapRef.current;
