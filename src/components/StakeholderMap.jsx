@@ -4897,6 +4897,14 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '');
+  const buildFloorRoomsUrl = (floorId) => {
+    const normalizedFloorId = normalizeFloorIdValue(floorId);
+    if (!normalizedFloorId) return null;
+    const campusSeg = encodeURIComponent(String(campus || DEFAULT_FLOORPLAN_CAMPUS).trim());
+    const buildingSeg = encodeURIComponent(String(buildingKey || '').trim());
+    const floorSeg = encodeURIComponent(normalizedFloorId);
+    return assetUrl('floorplans/' + campusSeg + '/' + buildingSeg + '/Rooms/' + floorSeg + '_Dept_Rooms.geojson');
+  };
   const normalizeFloorEntries = (floors = []) => {
     const entries = Array.isArray(floors) ? floors : (floors ? [floors] : []);
     if (!entries.length) return [];
@@ -4923,7 +4931,10 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
     );
     globalFloors = matchKey ? floorsByBuilding[matchKey] : null;
   }
-  const normalizedGlobal = normalizeFloorEntries(globalFloors || []).filter((entry) => {
+  const normalizedGlobal = normalizeFloorEntries(globalFloors || []).map((entry) => ({
+    ...entry,
+    url: entry?.url || buildFloorRoomsUrl(entry?.id)
+  })).filter((entry) => {
     if (!entry?.url) return true;
     const normalizedUrl = String(entry.url || '').replace(/^\/+/, '').toLowerCase();
     const expectedPrefix = `floorplans/${String(campus || DEFAULT_FLOORPLAN_CAMPUS).toLowerCase()}/`;
@@ -4941,7 +4952,10 @@ async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS)
   const url = assetUrl(`floorplans/${campusSeg}/${buildingSeg}/manifest.json`);
   const manifest = await fetchJSON(url);
 
-  const manifestEntries = normalizeFloorEntries(manifest?.floors);
+  const manifestEntries = normalizeFloorEntries(manifest?.floors).map((entry) => ({
+    ...entry,
+    url: entry?.url || buildFloorRoomsUrl(entry?.id)
+  }));
   if (!manifestEntries.length) return normalizedGlobal;
   if (normalizedGlobal.length && manifestEntries.some((e) => !e.url)) {
     const globalMap = new Map(
@@ -18810,6 +18824,8 @@ const StakeholderMap = ({
   }, [floorplansEnabled, universityId]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
+    const aiRoomsUrl = resolveAiUrl('/ai/api/rooms');
+    let failureDetail = 'Airtable sync failed before scope validation.';
     try {
       const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 20000 });
       let data = null;
@@ -18826,15 +18842,28 @@ const StakeholderMap = ({
         return true;
       }
       if (!res.ok) {
-        console.error(`[refreshCampusRooms] Server error: HTTP ${res.status}`, data);
+        console.error('[refreshCampusRooms] Server error: HTTP ' + res.status, data);
+        const serverMessage = String(data?.error || data?.message || '').trim();
+        failureDetail = serverMessage
+          ? 'AI server error (' + res.status + '): ' + serverMessage
+          : 'AI server error (' + res.status + ') while refreshing Airtable rooms.';
+      } else {
+        failureDetail = 'AI server returned an unexpected Airtable response.';
       }
     } catch (fetchErr) {
       console.error('[refreshCampusRooms] Network/fetch error:', fetchErr);
+      if (fetchErr?.name === 'AbortError') {
+        failureDetail = 'AI server timeout after 20s: ' + aiRoomsUrl;
+      } else if (fetchErr?.message) {
+        failureDetail = 'AI server request failed: ' + fetchErr.message;
+      } else {
+        failureDetail = 'AI server request failed: ' + aiRoomsUrl;
+      }
     }
     setAirtableScopeCheck({
       level: 'warn',
       label: 'Refresh failed',
-      detail: 'Airtable sync failed before scope validation.'
+      detail: failureDetail
     });
     return false;
   }, [filterRoomsToConfiguredCampus, recordAirtableScopeCheck]);
