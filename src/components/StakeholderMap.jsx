@@ -11456,7 +11456,7 @@ const StakeholderMap = ({
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
-  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase);
+  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
   const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
@@ -17626,8 +17626,8 @@ const StakeholderMap = ({
     if (aiStatus !== 'ok') {
       setAirtableScopeCheck({
         level: 'warn',
-        label: 'Waking AI server',
-        detail: 'Waiting for the AI server to wake up before refreshing Airtable data.'
+        label: 'Refreshing Airtable',
+        detail: 'Refreshing Airtable data now.'
       });
     }
     try {
@@ -17660,7 +17660,7 @@ const StakeholderMap = ({
   const handleRefreshAirtable = useCallback(async () => {
     if (airtableRefreshPending) return;
     setAirtableRefreshPending(true);
-    setAirtableRefreshMessage(aiStatus !== 'ok' ? 'Waking AI server...' : '');
+    setAirtableRefreshMessage('');
     const ok = await refreshCampusRoomsFromApi();
     const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setAirtableRefreshMessage(ok ? `Refreshed ${timeLabel}` : 'Refresh failed');
@@ -23502,9 +23502,9 @@ useEffect(() => {
             setCampusRoomsLoaded(true);
             setAirtableScopeCheck({
               level: 'warn',
-              label: 'Waking AI server',
+              label: 'Refreshing Airtable',
               detail: isAbortLikeError(err)
-                ? 'Map loaded from floorplans while the AI server wakes up. Airtable data should appear automatically when it is ready.'
+                ? 'Map loaded from floorplans while Airtable data finishes loading.'
                 : 'Map loaded from floorplans while Airtable data is temporarily unavailable.'
             });
           }
@@ -31095,7 +31095,7 @@ useEffect(() => {
                       disabled={airtableRefreshPending}
                     >
                       {airtableRefreshPending
-                        ? (aiStatus !== 'ok' ? 'Waking AI Server...' : 'Refreshing Airtable...')
+                        ? 'Refreshing Airtable...'
                         : 'Refresh Airtable Data'}
                     </button>
                   )}
