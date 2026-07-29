@@ -27172,20 +27172,20 @@ useEffect(() => {
         const weeklyScheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
           ? getRoomWeeklyScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
           : null;
+        const useWideWeeklyScheduleLayout = Boolean(isClassroomType && isHastingsCollegeInstance);
         const hasWeeklyScheduleEntries = Boolean(weeklyScheduleSnapshot?.sessionEntries?.length);
         const weeklyScheduleLines = hasWeeklyScheduleEntries
           ? weeklyScheduleSnapshot.weeklyDays.map((day) => {
             const dayEntries = Array.isArray(day?.entries) ? day.entries : [];
-            const lineItems = dayEntries.slice(0, 4).map((entry) => (
-              `<div>${formatScheduleEntryTime(entry)}: ${formatScheduleEntryCourseLabel(entry)}</div>`
+            const lineItems = dayEntries.map((entry) => (
+              `<div style="margin-top:2px;">${formatScheduleEntryTime(entry)}: ${formatScheduleEntryCourseLabel(entry)}</div>`
             ));
-            const overflowCount = Math.max(0, dayEntries.length - lineItems.length);
             return `
-              <div style="margin-top:6px;">
+              <div style="min-width:0;">
                 <div><b>${day?.label || ''}:</b></div>
-                <div style="margin-top:2px;padding-left:10px;">
+                <div style="margin-top:2px;padding-left:10px;line-height:1.35;">
                   ${dayEntries.length
-                    ? `${lineItems.join('')}${overflowCount ? `<div style="color:#667085;">+${overflowCount} more</div>` : ''}`
+                    ? lineItems.join('')
                     : '<div style="color:#555;">No scheduled classes</div>'}
                 </div>
               </div>
@@ -27200,7 +27200,7 @@ useEffect(() => {
                 ? `<div style="margin-top:2px;color:#555;font-size:11px;">Showing ${weeklyScheduleSnapshot.preferredSession.label}</div>`
                 : ''}
               ${weeklyScheduleLines.length
-                ? weeklyScheduleLines.join('')
+                ? `<div style="margin-top:6px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;row-gap:8px;align-items:start;">${weeklyScheduleLines.join('')}</div>`
                 : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No weekly schedule data is available for this room in the selected block.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
             </div>
           `
@@ -27211,7 +27211,7 @@ useEffect(() => {
           : '';
 
         return `
-          <div class="mf-popup" style="min-width:340px;max-width:460px;background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:2px;">
+          <div class="mf-popup" style="min-width:${useWideWeeklyScheduleLayout ? '520px' : '340px'};max-width:${useWideWeeklyScheduleLayout ? '640px' : '460px'};background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:2px;">
             <div class="mf-popup-body" style="padding:8px 12px 16px 12px;">
               <div class="mf-title">Room ${roomNum2 || '-'}</div>
               <div><b>Room Type:</b></div>
