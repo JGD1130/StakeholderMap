@@ -752,9 +752,9 @@ const adjustHexColor = (hex, delta = 0) => {
 };
 
 const colorForDept = (name) => {
-  if (!name) return '#AAAAAA';
+  if (!name) return getDeptColor('') || '#e6e6e6';
   try {
-    return getDeptColor(name) || '#AAAAAA';
+    return getDeptColor(name) || '#e6e6e6';
   } catch {
     // fall back to hash palette
   }
@@ -1153,15 +1153,19 @@ const resolveFirstBuildingInput = (values = [], getBuildingFolderKeyFn) => {
 };
 
 function getDeptFromProps(props = {}) {
-  return (
-    props.department ||
-    props.Department ||
-    props.Dept ||
-    props.NCES_Department ||
-    props["NCES_Department"] ||
-    props["Department Owner Text"] ||
-    ""
-  );
+  const keys = [
+    'department',
+    'Department',
+    'Dept',
+    'NCES_Department',
+    'Department Owner Text'
+  ];
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(props, key)) {
+      return String(props[key] ?? '').trim();
+    }
+  }
+  return "";
 }
 
 function getTypeFromProps(props = {}) {
@@ -1249,7 +1253,7 @@ function resolveLegendEntryForProps(props = {}, mode = 'department') {
       color: status === 'Vacant' ? '#ff7043' : '#cfd8dc'
     };
   }
-  const dept = getDeptFromProps(props) || 'Unspecified';
+  const dept = getDeptFromProps(props) || ROOM_EDIT_NO_DEPARTMENT_OPTION.label;
   return { name: dept, color: getDeptColor(dept) || '#e6e6e6' };
 }
 
@@ -9153,8 +9157,26 @@ const normalizeDeptMatch = (value) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
+const getRoomBuildingId = (room) =>
+  String(
+    room?.buildingId ??
+    room?.BuildingId ??
+    room?.building_id ??
+    room?.['Building Id'] ??
+    room?.BuildingID ??
+    ''
+  ).trim();
+
 const getRoomBuildingLabel = (room) =>
-  room?.building ?? room?.buildingName ?? room?.buildingLabel ?? '';
+  String(
+    room?.building ??
+    room?.buildingName ??
+    room?.buildingLabel ??
+    room?.Building ??
+    room?.BuildingName ??
+    room?.['Building Name'] ??
+    getRoomBuildingId(room)
+  ).trim();
 
 const getDeptCandidates = (rooms = []) => {
   const seen = new Map();
@@ -11342,14 +11364,7 @@ const StakeholderMap = ({
         .map((value) => canon(value || ''))
         .filter((value) => value && value !== 'na');
 
-      const roomBuildingKey = normalizeDashboardKey(
-        room.building ??
-          room.buildingName ??
-          room.Building ??
-          room.BuildingName ??
-          room['Building Name'] ??
-          ''
-      );
+      const roomBuildingKey = normalizeDashboardKey(getRoomBuildingId(room) || getRoomBuildingLabel(room));
       const hasConfiguredBuildings = configuredDashboardBuildingKeys.size > 0;
       const buildingInScope = (roomBuildingKey && hasConfiguredBuildings)
         ? configuredDashboardBuildingKeys.has(roomBuildingKey)
@@ -11391,6 +11406,7 @@ const StakeholderMap = ({
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
   const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const demoEditingEnabled = publicAirtableControlsAllowed;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
@@ -11682,6 +11698,28 @@ const StakeholderMap = ({
   const [airtableRooms, setAirtableRooms] = useState([]);
   const [campusRooms, setCampusRooms] = useState([]);
   const [campusRoomsLoaded, setCampusRoomsLoaded] = useState(false);
+  const exportBuildingOptions = useMemo(() => {
+    const byKey = new Map();
+    floorplanBuildingOptions.forEach((option) => {
+      const label = String(option?.name || '').trim();
+      const key = normalizeDashboardKey(label);
+      if (key && !byKey.has(key)) byKey.set(key, { value: label, label });
+    });
+    if (campusRoomsLoaded && Array.isArray(campusRooms)) {
+      campusRooms.forEach((room) => {
+        const label = getRoomBuildingLabel(room);
+        const id = getRoomBuildingId(room);
+        const value = label || id;
+        const key = normalizeDashboardKey(id || label);
+        if (!key || !value) return;
+        const existing = byKey.get(key);
+        if (!existing || (!existing.label && value)) {
+          byKey.set(key, { value, label: value });
+        }
+      });
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [campusRooms, campusRoomsLoaded, floorplanBuildingOptions]);
   const [airtableRefreshPending, setAirtableRefreshPending] = useState(false);
   const [airtableRefreshMessage, setAirtableRefreshMessage] = useState('');
   const [airtableLastSyncedAt, setAirtableLastSyncedAt] = useState(null);
@@ -11950,7 +11988,7 @@ const StakeholderMap = ({
       };
       fc.features.forEach((f) => {
         const p = f.properties || {};
-        const deptVal = getDeptFromProps(p) || 'Unspecified';
+        const deptVal = getDeptFromProps(p) || ROOM_EDIT_NO_DEPARTMENT_OPTION.label;
         const color = getDeptColor(deptVal) || '#e6e6e6';
         deptColorMap.set(deptVal, color);
         const areaVal = resolvePatchedArea(p);
@@ -19146,8 +19184,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
   if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
     for (const row of campusRooms) {
-      const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-      const buildingKey = normalizeDashboardKey(buildingName);
+      const buildingName = getRoomBuildingLabel(row);
+      const buildingKey = normalizeDashboardKey(getRoomBuildingId(row) || buildingName);
       if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) continue;
 
       const floorName = String(row?.floor ?? row?.floorName ?? row?.floorId ?? '').trim();
@@ -19276,8 +19314,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
     if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
       const rowsInScope = (campusRooms || []).filter((row) => {
-        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-        const buildingKey = normalizeDashboardKey(buildingName);
+        const buildingName = getRoomBuildingLabel(row);
+        const buildingKey = normalizeDashboardKey(getRoomBuildingId(row) || buildingName);
         if (targetBuildingKeys && (!buildingKey || !targetBuildingKeys.has(buildingKey))) return false;
         const deptVal = String(getDeptFromProps(row) || '').trim();
         if (deptFilter && !deptVal.toLowerCase().includes(deptFilter)) return false;
@@ -19286,16 +19324,30 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
 
       const rowsByBuilding = new Map();
       rowsInScope.forEach((row) => {
-        const buildingName = String(row?.building ?? row?.buildingName ?? row?.buildingLabel ?? '').trim();
-        if (!buildingName) return;
-        const list = rowsByBuilding.get(buildingName) || [];
-        list.push(row);
-        rowsByBuilding.set(buildingName, list);
+        const buildingName = getRoomBuildingLabel(row);
+        const buildingIdValue = getRoomBuildingId(row);
+        const buildingKey = normalizeDashboardKey(buildingIdValue || buildingName);
+        if (!buildingKey || !(buildingName || buildingIdValue)) return;
+        const entry = rowsByBuilding.get(buildingKey) || {
+          buildingName: buildingName || buildingIdValue,
+          buildingId: buildingIdValue || '',
+          rows: []
+        };
+        if (!entry.buildingName && (buildingName || buildingIdValue)) {
+          entry.buildingName = buildingName || buildingIdValue;
+        }
+        if (!entry.buildingId && buildingIdValue) {
+          entry.buildingId = buildingIdValue;
+        }
+        entry.rows.push(row);
+        rowsByBuilding.set(buildingKey, entry);
       });
 
-      Array.from(rowsByBuilding.entries()).forEach(([buildingName, rowsForBuilding]) => {
-        const summary = summarizeRoomRowsForPanels(rowsForBuilding);
-        const row = summary ? toSummaryRow(summary, buildingName) : null;
+      Array.from(rowsByBuilding.values()).forEach((entry) => {
+        const summary = summarizeRoomRowsForPanels(entry.rows);
+        const row = summary
+          ? toSummaryRow(summary, entry.buildingName, bId(entry.buildingId || entry.buildingName || ''))
+          : null;
         if (row && (row.rooms || row.totalSf)) {
           buildingRows.push(row);
         }
@@ -30869,8 +30921,8 @@ useEffect(() => {
                     onChange={(e) => setExportBuildingFilter(e.target.value)}
                   >
                     <option value="__all__">All buildings</option>
-                    {floorplanBuildingOptions.map((b) => (
-                      <option key={b.name} value={b.name}>{b.name}</option>
+                    {exportBuildingOptions.map((b) => (
+                      <option key={b.value} value={b.value}>{b.label}</option>
                     ))}
                   </select>
                   <input
