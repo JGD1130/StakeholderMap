@@ -577,9 +577,35 @@ function computeProgramTestFitQuality(summary, target = {}) {
   };
 }
 
+let _runtimeAiBaseUrl = null;
+let _runtimeAiConfigured = false;
+let _runtimeAiEnabled = true;
+function setRuntimeAiBaseUrl(url, { configured = true, enabled = true } = {}) {
+  const nextBase = url ? String(url).trim() : null;
+  const nextConfigured = configured !== false;
+  const nextEnabled = enabled !== false;
+  const changed =
+    _runtimeAiBaseUrl !== nextBase ||
+    _runtimeAiConfigured !== nextConfigured ||
+    _runtimeAiEnabled !== nextEnabled;
+  _runtimeAiBaseUrl = nextBase;
+  _runtimeAiConfigured = nextConfigured;
+  _runtimeAiEnabled = nextEnabled;
+  if (changed) {
+    aiLockUntil = 0;
+  }
+}
+
 function getAiBaseUrl() {
+  if (_runtimeAiConfigured) {
+    if (!_runtimeAiEnabled) return '';
+    if (_runtimeAiBaseUrl) return _runtimeAiBaseUrl;
+  } else if (_runtimeAiBaseUrl) {
+    return _runtimeAiBaseUrl;
+  }
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
   if (envBase) return envBase;
+  if (_runtimeAiConfigured) return '';
   if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
     return DEFAULT_PUBLIC_AI_BASE_URL;
   }
@@ -11426,7 +11452,9 @@ const StakeholderMap = ({
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
-  const aiEnabledForCurrentView = !(isSarpyCountyInstance && !isAdminMode);
+  const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
+  const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
+  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || String(import.meta.env.VITE_AI_BASE_URL || '').trim());
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
     const amount = Number(value);
@@ -11437,6 +11465,12 @@ const StakeholderMap = ({
       maximumFractionDigits: 0
     }).format(amount);
   }, []);
+  useEffect(() => {
+    setRuntimeAiBaseUrl(config?.aiServerUrl || null, {
+      configured: true,
+      enabled: aiEnabledForCurrentView
+    });
+  }, [config?.aiServerUrl, aiEnabledForCurrentView]);
   useEffect(() => {
     let cancelled = false;
     if (!isHastingsCollegeInstance) {
@@ -17496,6 +17530,9 @@ const StakeholderMap = ({
   }, []);
 
   const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
+    if (!getAiBaseUrl()) {
+      throw new Error('AI backend unavailable for this campus');
+    }
     const timeoutMs = preferWarmup || aiStatus !== 'ok' ? AI_ROOMS_TIMEOUT_MS : AI_ROOMS_READY_TIMEOUT_MS;
     const attempts = preferWarmup || aiStatus !== 'ok' ? 2 : 1;
     let lastError = null;
@@ -17530,6 +17567,14 @@ const StakeholderMap = ({
   }, [aiStatus, filterRoomsToConfiguredCampus]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
+    if (!getAiBaseUrl()) {
+      setAirtableScopeCheck({
+        level: 'warn',
+        label: 'AI sync unavailable',
+        detail: 'This campus is not configured for Airtable sync from an AI server.'
+      });
+      return false;
+    }
     if (aiStatus !== 'ok') {
       setAirtableScopeCheck({
         level: 'warn',
@@ -19098,10 +19143,11 @@ const StakeholderMap = ({
         setAiStatus(isAbortLikeError(err) ? 'unknown' : 'down');
       }
     };
+    setAiStatus('unknown');
     ping();
     const t = setInterval(ping, 30000);
     return () => clearInterval(t);
-  }, []);
+  }, [config?.aiServerUrl, aiEnabledForCurrentView]);
 
   const handleExportFloor = useCallback(() => {
     const ctx = currentFloorContextRef?.current;
@@ -30993,7 +31039,7 @@ useEffect(() => {
                         ? 'Export Summary CSV'
                         : 'Export Space CSV'}
                   </button>
-                  {(mode === 'admin' || publicAirtableControlsAllowed) && (
+                  {hasConfiguredAiBackend && (mode === 'admin' || publicAirtableControlsAllowed) && (
                     <button
                       className="btn"
                       style={{ width: '100%' }}
@@ -31016,14 +31062,14 @@ useEffect(() => {
                     {airtableRefreshMessage}
                   </div>
                 )}
-                {(mode === 'admin' || publicAirtableControlsAllowed) && (
+                {hasConfiguredAiBackend && (mode === 'admin' || publicAirtableControlsAllowed) && (
                   <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
                     Last synced: {airtableLastSyncedAt
                       ? airtableLastSyncedAt.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
                       : 'Not yet'}
                   </div>
                 )}
-                {(mode === 'admin' || publicAirtableControlsAllowed) && (
+                {hasConfiguredAiBackend && (mode === 'admin' || publicAirtableControlsAllowed) && (
                   <div style={{ fontSize: 11, color: (airtableScopeCheck?.level === 'ok' ? '#1f6d38' : (airtableScopeCheck?.level === 'warn' ? '#8a5a00' : '#555')), marginTop: 2 }}>
                     Instance check: {airtableScopeCheck?.label || 'Not checked'}{airtableScopeCheck?.detail ? ` | ${airtableScopeCheck.detail}` : ''}
                   </div>
@@ -32534,4 +32580,5 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
