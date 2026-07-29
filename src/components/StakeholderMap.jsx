@@ -4853,6 +4853,10 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   }
 }
 let aiLockUntil = 0;
+const AI_STATUS_PING_TIMEOUT_MS = 8000;
+const AI_WARMUP_TIMEOUT_MS = 45000;
+const AI_ROOMS_FETCH_TIMEOUT_MS = 45000;
+let aiWarmupPromise = null;
 function resolveAiUrl(url) {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return url;
@@ -4888,6 +4892,51 @@ async function guardedAiFetch(url, opts = {}) {
     throw new Error('Rate limited (429). AI paused for 60 seconds.');
   }
   return res;
+}
+async function ensureAiBackendReady({ force = false, timeoutMs = AI_WARMUP_TIMEOUT_MS } = {}) {
+  const aiBase = getAiBaseUrl();
+  if (!aiBase) return false;
+  if (!force && aiWarmupPromise) return aiWarmupPromise;
+  let currentPromise = null;
+  currentPromise = (async () => {
+    try {
+      const res = await guardedAiFetch('/ai/health', { cache: 'no-store', timeoutMs });
+      if (!res.ok) return false;
+      const raw = await res.text();
+      let data = null;
+      try { data = JSON.parse(raw); } catch {}
+      return data?.aiReady !== false;
+    } catch {
+      return false;
+    } finally {
+      if (aiWarmupPromise === currentPromise) aiWarmupPromise = null;
+    }
+  })();
+  aiWarmupPromise = currentPromise;
+  return currentPromise;
+}
+async function guardedAiAirtableFetch(url, opts = {}) {
+  const warmupTimeoutMsRaw = Number(opts.warmupTimeoutMs);
+  const warmupTimeoutMs = Number.isFinite(warmupTimeoutMsRaw) && warmupTimeoutMsRaw > 0
+    ? warmupTimeoutMsRaw
+    : AI_WARMUP_TIMEOUT_MS;
+  const retriesRaw = Number(opts.retries);
+  const retries = Number.isFinite(retriesRaw) && retriesRaw >= 0 ? Math.floor(retriesRaw) : 1;
+  const fetchOpts = { ...opts };
+  delete fetchOpts.warmupTimeoutMs;
+  delete fetchOpts.retries;
+  await ensureAiBackendReady({ timeoutMs: warmupTimeoutMs });
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await guardedAiFetch(url, fetchOpts);
+    } catch (err) {
+      lastErr = err;
+      if (err?.name !== 'AbortError' || attempt >= retries) throw err;
+      await ensureAiBackendReady({ force: true, timeoutMs: warmupTimeoutMs });
+    }
+  }
+  throw lastErr || new Error('AI Airtable request failed.');
 }
 
 async function loadFloorManifest(buildingKey, campus = DEFAULT_FLOORPLAN_CAMPUS) {
@@ -18827,7 +18876,7 @@ const StakeholderMap = ({
     const aiRoomsUrl = resolveAiUrl('/ai/api/rooms');
     let failureDetail = 'Airtable sync failed before scope validation.';
     try {
-      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 20000 });
+      const res = await guardedAiAirtableFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS, warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS, retries: 1 });
       let data = null;
       try {
         data = await res.json();
@@ -18853,7 +18902,7 @@ const StakeholderMap = ({
     } catch (fetchErr) {
       console.error('[refreshCampusRooms] Network/fetch error:', fetchErr);
       if (fetchErr?.name === 'AbortError') {
-        failureDetail = 'AI server timeout after 20s: ' + aiRoomsUrl;
+        failureDetail = 'AI server timeout after ' + Math.round(AI_ROOMS_FETCH_TIMEOUT_MS / 1000) + 's: ' + aiRoomsUrl;
       } else if (fetchErr?.message) {
         failureDetail = 'AI server request failed: ' + fetchErr.message;
       } else {
@@ -19066,10 +19115,13 @@ const StakeholderMap = ({
         let didUpdateAirtable = false;
         if (airtableId && Object.keys(airtablePayload).length) {
           try {
-            const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
+            const resp = await guardedAiAirtableFetch(`/ai/api/rooms/${airtableId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(airtablePayload)
+              body: JSON.stringify(airtablePayload),
+              timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS,
+              warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS,
+              retries: 1
             });
             if (!resp.ok) {
               const text = await resp.text().catch(() => '');
@@ -19083,7 +19135,7 @@ const StakeholderMap = ({
         }
         if (!didUpdateAirtable && (roomGuidValue || roomNumberValue) && Object.keys(airtablePayload).length) {
           try {
-            const resp = await guardedAiFetch('/ai/api/rooms', {
+            const resp = await guardedAiAirtableFetch('/ai/api/rooms', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -19095,7 +19147,10 @@ const StakeholderMap = ({
                 buildingName: buildingName || '',
                 floor: floorName,
                 ...airtablePayload
-              })
+              }),
+              timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS,
+              warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS,
+              retries: 1
             });
             if (!resp.ok) {
               const text = await resp.text().catch(() => '');
@@ -20527,7 +20582,7 @@ const StakeholderMap = ({
     const healthUrl = resolveAiUrl('/ai/health');
     const ping = async () => {
       try {
-        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: 3000 });
+        const r = await guardedAiFetch(healthUrl, { cache: 'no-store', timeoutMs: AI_STATUS_PING_TIMEOUT_MS });
         const raw = await r.text();
         let data = null;
         try { data = JSON.parse(raw); } catch {}
@@ -24866,7 +24921,7 @@ useEffect(() => {
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
       try {
-        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 20000 });
+        const res = await guardedAiAirtableFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: AI_ROOMS_FETCH_TIMEOUT_MS, warmupTimeoutMs: AI_WARMUP_TIMEOUT_MS, retries: 1 });
         let data = null;
         try {
           data = await res.json();
