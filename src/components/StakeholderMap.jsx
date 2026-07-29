@@ -8616,6 +8616,34 @@ const normalizeClassScheduleRoomKey = (buildingName, roomLabel) => {
   return `${buildingKey}||${roomKey}`;
 };
 
+const buildScheduleSessionKey = (value = '') => canon(String(value || '').trim());
+const SCHEDULE_DAY_QUERY_OPTIONS = [
+  { label: 'Monday', tokens: ['M'], regex: /\bmon(day)?\b/i },
+  { label: 'Tuesday', tokens: ['T', 'TU'], regex: /\btue?s(day)?\b/i },
+  { label: 'Wednesday', tokens: ['W'], regex: /\bwed(nesday)?\b/i },
+  { label: 'Thursday', tokens: ['R', 'TH'], regex: /\bthu(r|rs|rsday|rsdays|rsd)?\b|\bthursday\b/i },
+  { label: 'Friday', tokens: ['F'], regex: /\bfri(day)?\b/i },
+  { label: 'Saturday', tokens: ['SA'], regex: /\bsat(urday)?\b/i },
+  { label: 'Sunday', tokens: ['SU'], regex: /\bsun(day)?\b/i }
+];
+
+const getScheduleEntriesForDayTokens = (entries = [], dayTokens = []) => {
+  const targetTokens = Array.isArray(dayTokens) ? dayTokens.filter(Boolean) : [];
+  return (entries || []).filter((entry) => {
+    const entryTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
+    if (!entryTokens.length || !targetTokens.length) return true;
+    return targetTokens.some((token) => entryTokens.includes(token));
+  });
+};
+
+const getScheduleEntriesForSession = (entries = [], sessionKey = '') => {
+  const targetKey = buildScheduleSessionKey(sessionKey);
+  if (!targetKey) return entries || [];
+  return (entries || []).filter((entry) => {
+    const entryKey = buildScheduleSessionKey(entry?.sessionKey || entry?.sessionLabel || entry?.sessionRaw || entry?.sheet || '');
+    return entryKey === targetKey;
+  });
+};
 const getScheduleDayTokensForDate = (date = new Date()) => {
   switch (date.getDay()) {
     case 0: return ['SU'];
@@ -8691,6 +8719,12 @@ const formatScheduleEntryTime = (entry) => {
   return startText || endText || 'Time TBD';
 };
 
+const formatScheduleEntryCourseLabel = (entry, options = {}) => {
+  const baseLabel = String(entry?.courseCode || entry?.title || 'Scheduled class').trim();
+  const sessionLabel = String(entry?.sessionLabel || entry?.sessionRaw || '').trim();
+  if (options?.includeSession && sessionLabel) return `${sessionLabel}: ${baseLabel}`;
+  return baseLabel;
+};
 const BUILDING_SNAP_CORNERS = {
   [normalizeSnapKey('Babcock Hall')]: 'nw',
   [normalizeSnapKey('Babcock Hall Residence')]: 'nw',
@@ -11874,6 +11908,16 @@ const StakeholderMap = ({
     });
     return grouped;
   }, [classScheduleRows]);
+  const classScheduleSessionOptions = useMemo(() => {
+    const seen = new Map();
+    (classScheduleRows || []).forEach((entry) => {
+      const label = String(entry?.sessionLabel || entry?.sessionRaw || entry?.sheet || '').trim();
+      const key = buildScheduleSessionKey(entry?.sessionKey || label);
+      if (!key || seen.has(key)) return;
+      seen.set(key, { key, label });
+    });
+    return Array.from(seen.values());
+  }, [classScheduleRows]);
   const getScheduleEntriesForRoom = useCallback((buildingName, roomLabel) => {
     const key = normalizeClassScheduleRoomKey(buildingName, roomLabel);
     return key ? (classScheduleByRoom.get(key) || []) : [];
@@ -11894,6 +11938,49 @@ const StakeholderMap = ({
       upcomingEntries
     };
   }, [getScheduleEntriesForRoom]);
+  const getPreferredRoomScheduleSession = useCallback((entries = [], date = new Date()) => {
+    const roomSessionMap = new Map();
+    (entries || []).forEach((entry) => {
+      const label = String(entry?.sessionLabel || entry?.sessionRaw || entry?.sheet || '').trim();
+      const key = buildScheduleSessionKey(entry?.sessionKey || label);
+      if (!key || roomSessionMap.has(key)) return;
+      roomSessionMap.set(key, { key, label });
+    });
+    const sessionOptions = roomSessionMap.size
+      ? Array.from(roomSessionMap.values())
+      : classScheduleSessionOptions;
+    if (!sessionOptions.length) return { key: '', label: '' };
+    if (sessionOptions.length === 1) return sessionOptions[0];
+    const block1 = sessionOptions.find((option) => /\bblock\s*1\b/i.test(String(option?.label || '')));
+    const block2 = sessionOptions.find((option) => /\bblock\s*2\b/i.test(String(option?.label || '')));
+    if (block1 && block2) {
+      return date.getMonth() >= 9 ? block2 : block1;
+    }
+    return sessionOptions[0];
+  }, [classScheduleSessionOptions]);
+
+  const getRoomWeeklyScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
+    const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
+    const preferredSession = getPreferredRoomScheduleSession(entries, date);
+    const sessionEntries = getScheduleEntriesForSession(entries, preferredSession?.key || '');
+    const weeklyDays = SCHEDULE_DAY_QUERY_OPTIONS.slice(0, 5).map((option) => ({
+      label: option.label.slice(0, 3),
+      entries: getScheduleEntriesForDayTokens(sessionEntries, option.tokens)
+    }));
+    const sessionLabels = Array.from(new Set(
+      entries
+        .map((entry) => String(entry?.sessionLabel || entry?.sessionRaw || '').trim())
+        .filter(Boolean)
+    ));
+    return {
+      entries,
+      sessionEntries,
+      weeklyDays,
+      preferredSession,
+      sessionLabels,
+      hasMultipleSessions: sessionLabels.length > 1
+    };
+  }, [getPreferredRoomScheduleSession, getScheduleEntriesForRoom]);
   const buildCurrentlyAvailableClassroomRows = useCallback((rooms = [], options = {}) => {
     const now = options?.now instanceof Date ? options.now : new Date();
     const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
@@ -27082,25 +27169,39 @@ useEffect(() => {
             </div>
           `
           : '';
-        const scheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
-          ? getRoomScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
+        const weeklyScheduleSnapshot = (isClassroomType && isHastingsCollegeInstance)
+          ? getRoomWeeklyScheduleSnapshot(buildingName, roomNum2 || roomLabel || '')
           : null;
-        const scheduleLines = scheduleSnapshot?.activeEntries?.length
-          ? scheduleSnapshot.activeEntries.slice(0, 2).map((entry) => (
-            `<div style="margin-top:4px;"><b>Now:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
-          ))
-          : scheduleSnapshot?.upcomingEntries?.length
-            ? scheduleSnapshot.upcomingEntries.slice(0, 2).map((entry, idx) => (
-              `<div style="margin-top:4px;"><b>${idx === 0 ? 'Next' : 'Later'}:</b> ${String(entry?.courseCode || entry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(entry)})</div>`
-            ))
-            : [];
+        const hasWeeklyScheduleEntries = Boolean(weeklyScheduleSnapshot?.sessionEntries?.length);
+        const weeklyScheduleLines = hasWeeklyScheduleEntries
+          ? weeklyScheduleSnapshot.weeklyDays.map((day) => {
+            const dayEntries = Array.isArray(day?.entries) ? day.entries : [];
+            const lineItems = dayEntries.slice(0, 4).map((entry) => (
+              `<div>${formatScheduleEntryTime(entry)}: ${formatScheduleEntryCourseLabel(entry)}</div>`
+            ));
+            const overflowCount = Math.max(0, dayEntries.length - lineItems.length);
+            return `
+              <div style="margin-top:6px;">
+                <div><b>${day?.label || ''}:</b></div>
+                <div style="margin-top:2px;padding-left:10px;">
+                  ${dayEntries.length
+                    ? `${lineItems.join('')}${overflowCount ? `<div style="color:#667085;">+${overflowCount} more</div>` : ''}`
+                    : '<div style="color:#555;">No scheduled classes</div>'}
+                </div>
+              </div>
+            `;
+          })
+          : [];
         const scheduleHtml = isClassroomType && isHastingsCollegeInstance
           ? `
             <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e4e7ec;">
-              <div style="font-weight:700;font-size:12px;">Today's Class Schedule</div>
-              ${scheduleLines.length
-                ? scheduleLines.join('')
-                : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No more classes are scheduled for this room today.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
+              <div style="font-weight:700;font-size:12px;">Weekly Class Schedule</div>
+              ${weeklyScheduleSnapshot?.preferredSession?.label
+                ? `<div style="margin-top:2px;color:#555;font-size:11px;">Showing ${weeklyScheduleSnapshot.preferredSession.label}</div>`
+                : ''}
+              ${weeklyScheduleLines.length
+                ? weeklyScheduleLines.join('')
+                : `<div style="margin-top:4px;color:#555;">${classScheduleRows.length ? 'No weekly schedule data is available for this room in the selected block.' : (classScheduleMeta.missing ? 'Schedule workbook is not loaded on the AI server.' : 'No schedule data is available for this room.')}</div>`}
             </div>
           `
           : '';
@@ -27336,7 +27437,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, getRoomWeeklyScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;
