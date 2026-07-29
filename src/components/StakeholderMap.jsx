@@ -11371,6 +11371,10 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
+    // Dedicated floorplan campuses already fetch tenant-specific Airtable rows.
+    // Trust the backend payload and avoid over-filtering valid room rows.
+    if (floorplansEnabled) return rooms;
+
     const allowedCampusKeys = new Set(
       [
         universityId,
@@ -11451,11 +11455,8 @@ const StakeholderMap = ({
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
-  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || String(import.meta.env.VITE_AI_BASE_URL || '').trim());
-  setRuntimeAiBaseUrl(config?.aiServerUrl || null, {
-    configured: true,
-    enabled: aiEnabledForCurrentView
-  });
+  const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
+  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase);
   const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
@@ -11468,11 +11469,11 @@ const StakeholderMap = ({
     }).format(amount);
   }, []);
   useEffect(() => {
-    setRuntimeAiBaseUrl(config?.aiServerUrl || null, {
-      configured: true,
+    setRuntimeAiBaseUrl(configuredAiServerUrl || null, {
+      configured: !aiEnabledForCurrentView || Boolean(configuredAiServerUrl) || hasFallbackAiBase,
       enabled: aiEnabledForCurrentView
     });
-  }, [config?.aiServerUrl, aiEnabledForCurrentView]);
+  }, [configuredAiServerUrl, hasFallbackAiBase, aiEnabledForCurrentView]);
   useEffect(() => {
     let cancelled = false;
     if (!isHastingsCollegeInstance) {
@@ -11780,6 +11781,12 @@ const StakeholderMap = ({
     detail: 'Run Refresh Airtable Data to validate scope.'
   }));
   useEffect(() => {
+    dashboardManifestRef.current = null;
+    manifestHydrationRoomsRef.current = null;
+    if (campusRoomsRefreshTimerRef.current) {
+      clearTimeout(campusRoomsRefreshTimerRef.current);
+      campusRoomsRefreshTimerRef.current = null;
+    }
     setAirtableRooms([]);
     setCampusRooms([]);
     setCampusRoomsLoaded(false);
@@ -32621,7 +32628,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
 
 
 
