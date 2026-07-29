@@ -10613,8 +10613,12 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
 const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
   const floorsByBuilding = manifest?.floorsByBuilding || {};
   const jobs = [];
+  const queuedUrls = new Set();
+  const allowedBuildingKeyList = (options?.allowedBuildingKeys || [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
   const allowedBuildingKeys = new Set(
-    (options?.allowedBuildingKeys || [])
+    allowedBuildingKeyList
       .map((value) => normalizeDashboardKey(value))
       .filter(Boolean)
   );
@@ -10637,6 +10641,37 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
     });
   }
 
+  const resolveBuildingLabel = (value = '') => {
+    const raw = String(value || '').trim();
+    const normalized = normalizeDashboardKey(raw);
+    if (!normalized) return raw;
+    const matchedFeature = buildingFeatures.find((feature) => {
+      const props = feature?.properties || {};
+      return [props.id, props.name, props.Name, props.buildingId, props.buildingName]
+        .some((candidate) => normalizeDashboardKey(candidate) === normalized);
+    });
+    if (matchedFeature?.properties) {
+      return String(
+        matchedFeature.properties.name ||
+        matchedFeature.properties.Name ||
+        matchedFeature.properties.id ||
+        raw
+      ).trim();
+    }
+    return raw;
+  };
+
+  const pushJob = (url, buildingLabel) => {
+    const rawUrl = String(url || '').trim();
+    if (!rawUrl) return;
+    const normalizedUrl = rawUrl.replace(/^\/+/, '').toLowerCase();
+    if (allowedCampusPrefix && !normalizedUrl.startsWith(allowedCampusPrefix)) return;
+    if (isCherokeeLegacyStandaloneRoomsUrl(rawUrl)) return;
+    if (queuedUrls.has(normalizedUrl)) return;
+    queuedUrls.add(normalizedUrl);
+    jobs.push({ url: rawUrl, buildingLabel: resolveBuildingLabel(buildingLabel) || buildingLabel || '' });
+  };
+
   Object.entries(floorsByBuilding).forEach(([buildingKey, floors]) => {
     const buildingLabel = buildingNameById.get(String(buildingKey)) || buildingKey;
     if (allowedBuildingKeys.size) {
@@ -10645,13 +10680,21 @@ const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
     }
     (floors || []).forEach((floor) => {
       const url = typeof floor === 'string' ? floor : floor?.url;
-      if (!url) return;
-      const normalizedUrl = String(url).replace(/^\/+/, '').toLowerCase();
-      if (allowedCampusPrefix && !normalizedUrl.startsWith(allowedCampusPrefix)) return;
-      if (isCherokeeLegacyStandaloneRoomsUrl(url)) return;
-      jobs.push({ url, buildingLabel });
+      pushJob(url, buildingLabel);
     });
   });
+
+  if (!jobs.length && allowedBuildingKeyList.length && allowedCampusPrefix) {
+    const campusParts = allowedCampusPrefix.split('/').filter(Boolean);
+    const campusName = campusParts.length >= 2 ? campusParts[1] : DEFAULT_FLOORPLAN_CAMPUS;
+    await runWithLimit(Array.from(new Set(allowedBuildingKeyList)), 4, async (buildingKey) => {
+      const manifestFloors = await loadFloorManifest(buildingKey, campusName);
+      (manifestFloors || []).forEach((floor) => {
+        pushJob(floor?.url, buildingKey);
+      });
+      return null;
+    });
+  }
 
   if (!jobs.length) return [];
 
@@ -18768,7 +18811,7 @@ const StakeholderMap = ({
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     try {
-      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
+      const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 20000 });
       let data = null;
       try {
         data = await res.json();
@@ -24794,7 +24837,7 @@ useEffect(() => {
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
       try {
-        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 8000 });
+        const res = await guardedAiFetch('/ai/api/rooms', { cache: 'no-store', timeoutMs: 20000 });
         let data = null;
         try {
           data = await res.json();
@@ -25349,7 +25392,7 @@ useEffect(() => {
         const query = universityId ? `?campus=${encodeURIComponent(universityId)}` : '';
         const res = await guardedAiFetch(`/ai/enrollment-projections${query}`, {
           cache: 'no-store',
-          timeoutMs: 8000
+          timeoutMs: 20000
         });
         let data = null;
         try {
@@ -33908,6 +33951,7 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
 
