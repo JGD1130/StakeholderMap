@@ -11371,10 +11371,6 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
-    // For floorplan-enabled campuses (Hastings), the rooms API is already campus-scoped.
-    // Avoid additional client-side filtering that can undercount valid Airtable rows.
-    if (floorplansEnabled) return rooms;
-
     const allowedCampusKeys = new Set(
       [
         universityId,
@@ -11421,7 +11417,7 @@ const StakeholderMap = ({
 
       if (buildingInScope !== null) return buildingInScope;
 
-      return floorplansEnabled;
+      return false;
     });
   }, [
     universityId,
@@ -11456,6 +11452,10 @@ const StakeholderMap = ({
   const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || String(import.meta.env.VITE_AI_BASE_URL || '').trim());
+  setRuntimeAiBaseUrl(config?.aiServerUrl || null, {
+    configured: true,
+    enabled: aiEnabledForCurrentView
+  });
   const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
@@ -11779,6 +11779,23 @@ const StakeholderMap = ({
     label: 'Not checked',
     detail: 'Run Refresh Airtable Data to validate scope.'
   }));
+  useEffect(() => {
+    setAirtableRooms([]);
+    setCampusRooms([]);
+    setCampusRoomsLoaded(false);
+    setDashboardMetrics(null);
+    setDashboardTitle(defaultDashboardTitle);
+    setDashboardError(null);
+    setAirtableLastSyncedAt(null);
+    setAirtableRefreshMessage('');
+    setAirtableScopeCheck({
+      level: 'info',
+      label: 'Not checked',
+      detail: hasConfiguredAiBackend
+        ? 'Run Refresh Airtable Data to validate scope.'
+        : 'Airtable sync disabled for this campus.'
+    });
+  }, [universityId, defaultDashboardTitle, hasConfiguredAiBackend]);
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
   const [classScheduleRows, setClassScheduleRows] = useState([]);
   const [classScheduleMeta, setClassScheduleMeta] = useState({
@@ -17531,6 +17548,28 @@ const StakeholderMap = ({
     }
   }, []);
 
+  const buildRoomsApiPath = useCallback(() => {
+    const params = new URLSearchParams();
+    const scopeHints = Array.from(new Set(
+      [
+        universityId,
+        config?.universityId,
+        floorplanCampus,
+        activeUniversityName
+      ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    ));
+    scopeHints.forEach((value) => {
+      params.append('scope', value);
+    });
+    if (scopeHints.length) {
+      params.set('campus', scopeHints[0]);
+    }
+    const query = params.toString();
+    return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
+  }, [universityId, config?.universityId, floorplanCampus, activeUniversityName]);
+
   const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
     if (!getAiBaseUrl()) {
       throw new Error('AI backend unavailable for this campus');
@@ -17566,7 +17605,7 @@ const StakeholderMap = ({
       }
     }
     throw lastError || new Error('Rooms payload missing or invalid');
-  }, [aiStatus, filterRoomsToConfiguredCampus]);
+  }, [aiStatus, buildRoomsApiPath, filterRoomsToConfiguredCampus]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     if (!getAiBaseUrl()) {
