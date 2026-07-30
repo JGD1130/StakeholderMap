@@ -3444,15 +3444,24 @@ function ensureFeatureCollection(raw) {
   return null;
 }
 
+function markGeoreferencedIfLonLat(fc) {
+  if (!fc || typeof fc !== "object") return fc;
+  if (fc.__mfGeoreferenced) return fc;
+  if (isLikelyLonLat(fc)) {
+    fc.__mfGeoreferenced = true;
+  }
+  return fc;
+}
+
 function applyAffineIfPresent(fc, affine) {
-  if (!fc || !affine || fc.__mfAffineApplied) return fc;
-  if (isLikelyLonLat(fc)) return fc;
+  if (!fc || !affine || fc.__mfAffineApplied) return markGeoreferencedIfLonLat(fc);
+  if (isLikelyLonLat(fc)) return markGeoreferencedIfLonLat(fc);
   const out = applyAffineTransform(fc, affine);
   if (out && typeof out === "object") {
     out.__mfAffineApplied = true;
     out.__mfAffineSignature = getAffineSignature(affine);
   }
-  return out;
+  return markGeoreferencedIfLonLat(out);
 }
 
 function applyRotationOverride(fc, rotationDeg, pivot) {
@@ -3969,6 +3978,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   const raw = await fetchGeoJSON(candidates);
   let fc = ensureFeatureCollection(raw);
   if (!fc?.features?.length) return;
+  fc = markGeoreferencedIfLonLat(fc);
 
   console.log("[walls] loaded features", fc.features.length);
 
@@ -4006,7 +4016,11 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log("[walls] skipped affine (already lon/lat)");
   }
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
-  if (alignToRooms && roomsFC?.features?.length) {
+  const shouldAlignToRooms =
+    alignToRooms &&
+    roomsFC?.features?.length &&
+    !(roomsFC?.__mfGeoreferenced && fc?.__mfGeoreferenced);
+  if (shouldAlignToRooms) {
     fc = alignOverlayToReferenceRooms(fc, roomsFC);
   }
 
@@ -5369,6 +5383,10 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   if (!fc) {
     fc = ensureFeatureCollection(data) || toFeatureCollection(data);
     if (!fc?.features?.length) return;
+    fc = markGeoreferencedIfLonLat(fc);
+    if (data && typeof data === "object") {
+      data.__mfGeoreferenced = Boolean(fc?.__mfGeoreferenced);
+    }
     if (!skipAffine && !affine && floorId) {
       if (floorBasePath) {
         affine = await loadAffineForFloor(floorBasePath, floorId);
@@ -5385,6 +5403,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     }
     fc = applyAffineIfPresent(fc, affine);
   }
+  fc = markGeoreferencedIfLonLat(fc);
 
   if (drawingAlign) {
     fc = applyDrawingAlignment(fc, drawingAlign);
@@ -6616,8 +6635,8 @@ function fillScenarioCandidatesToBaseline(candidates, inventory, baselineTotals,
 function sanitizeVacancyLanguage(text) {
   if (!text) return text;
   return String(text)
-    .replace(/^\s*vacant\s*[:\-–]\s*/i, '')
-    .replace(/^\s*vacant\?\s*[:\-–]\s*/i, '')
+    .replace(/^\s*vacant\s*[:\-â€“]\s*/i, '')
+    .replace(/^\s*vacant\?\s*[:\-â€“]\s*/i, '')
     .replace(/\bvacancy status\b/ig, 'availability')
     .replace(/\bvacant\b/ig, 'available');
 }
@@ -17743,7 +17762,7 @@ const StakeholderMap = ({
       } catch {}
       if (res.ok && data?.ok && Array.isArray(data.departments) && data.departments.length) {
         setDeptOptions((prev) => mergeStringOptions(prev, data.departments));
-      } else if (!res.ok) {
+      } else if (!res.ok && res.status !== 404) {
         console.warn('[airtableDeptOptions] Department list request failed', res.status, data);
       }
     } catch (err) {
@@ -20057,7 +20076,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       if (isCopilotPlanner && effectiveStrict) {
         scenarioConstraints.practicalFloorFirstOnStrictMiss = true;
         scenarioConstraints.practicalNearRangeTolerance = 0.12;
-        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict ±5% fails, near-range floor options up to ±12% are preferred before emergency fallback.');
+        scenarioPolicyNotes.push('Practical floor-first recovery is enabled: if strict Â±5% fails, near-range floor options up to Â±12% are preferred before emergency fallback.');
       }
       const maxBuildingsParsed = effectiveMaxBuildings === 'auto'
         ? null
@@ -20961,9 +20980,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             const roomText = uniqueLabels.length
               ? `Rooms: ${uniqueLabels.slice(0, 12).join(', ')}`
               : uniqueOcc.length
-                ? `Rooms: (not labeled) — ${uniqueOcc.slice(0, 3).join(', ')}`
+                ? `Rooms: (not labeled) â€” ${uniqueOcc.slice(0, 3).join(', ')}`
                 : 'Rooms: (not labeled)';
-            return `${building} — ${roomText}`;
+            return `${building} â€” ${roomText}`;
           });
         setAskResult({
           answer: `Here are the rooms matching that request across campus.`,
@@ -21496,7 +21515,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         setExportingCherokeePhotos(false);
         return;
       }
-      // Build file list with download URLs — SDK call, no CORS issue
+      // Build file list with download URLs â€” SDK call, no CORS issue
       const files = [];
       await Promise.all(
         Object.entries(byBuilding).map(async ([building, items]) => {
@@ -21532,7 +21551,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setCherokeePhotoExportMessage(`Downloaded ${files.length} photo${files.length !== 1 ? 's' : ''}.`);
     } catch (err) {
       console.error('Cherokee photo export failed:', err);
-      setCherokeePhotoExportMessage('Export failed — see console for details.');
+      setCherokeePhotoExportMessage('Export failed â€” see console for details.');
     } finally {
       setExportingCherokeePhotos(false);
     }
@@ -26189,7 +26208,7 @@ useEffect(() => {
       if (maintenanceWorkflowActive) {
         const popupText = [
           `${String(m.issueType || 'Issue')}`,
-          `${maintenancePriorityLabel(m.priority)} • ${maintenanceStatusLabel(m.status)}`,
+          `${maintenancePriorityLabel(m.priority)} â€¢ ${maintenanceStatusLabel(m.status)}`,
           String(m.description || '').trim()
         ].filter(Boolean).join('\n');
         mk.setPopup(new mapboxgl.Popup({ offset: 25 }).setText(popupText));
@@ -29584,7 +29603,7 @@ useEffect(() => {
                         {opLabel}
                       </div>
                       <div style={{ fontSize: 10, color: '#667085' }}>
-                        {roomCount} rooms • {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
+                        {roomCount} rooms â€¢ {op.timestamp ? new Date(op.timestamp).toLocaleTimeString() : ''}
                       </div>
                     </div>
                     <button
@@ -30312,13 +30331,13 @@ useEffect(() => {
                         <div style={{ marginTop: 3, fontSize: 11, color: '#334155' }}>{issue.description || '(No description)'}</div>
                         <div style={{ marginTop: 3, fontSize: 10.5, color: '#667085' }}>{locationBits.join(' / ')}</div>
                         <div style={{ marginTop: 2, fontSize: 10.5, color: '#667085' }}>
-                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` • Assigned: ${issue.assignedTo}` : ''}
+                          Status: {maintenanceStatusLabel(issue.status)}{issue.assignedTo ? ` â€¢ Assigned: ${issue.assignedTo}` : ''}
                         </div>
                       </button>
                       {!!issuePhotoUrls.length && (
                         <div style={{ marginBottom: 6, fontSize: 10.5, color: '#667085' }}>
                           Photos: {issuePhotoUrls.length}
-                          {issuePhotoUrls.length > 0 ? ' • ' : ''}
+                          {issuePhotoUrls.length > 0 ? ' â€¢ ' : ''}
                           {issuePhotoUrls.slice(0, 2).map((url, idx) => (
                             <React.Fragment key={`issue-photo-link-${issue.id}-${idx}`}>
                               <a
@@ -30329,7 +30348,7 @@ useEffect(() => {
                               >
                                 Open {idx + 1}
                               </a>
-                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' • ' : ''}
+                              {idx < Math.min(1, issuePhotoUrls.length - 1) ? ' â€¢ ' : ''}
                             </React.Fragment>
                           ))}
                         </div>
@@ -31452,7 +31471,7 @@ useEffect(() => {
                       }}
                       title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                     >
-                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
+                      {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checkingâ€¦' : 'Unavailable')}
                     </span>
                     <button
                       onClick={() => setAiInfoOpen(true)}
@@ -31488,7 +31507,7 @@ useEffect(() => {
                   }}
                   title={aiIsOk ? 'AI server available' : (aiIsUnknown ? 'Checking AI status' : 'AI server not reachable')}
                 >
-                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checking…' : 'Unavailable')}
+                  {aiIsOk ? 'Online' : (aiIsUnknown ? 'Checkingâ€¦' : 'Unavailable')}
                 </span>
                 <button
                   onClick={() => setAiInfoOpen(true)}
@@ -31605,7 +31624,7 @@ useEffect(() => {
           aria-label="Close help"
           onClick={closeEngagementHelp}
         >
-          ×
+          Ã—
         </button>
         <h4>How to Use This Map</h4>
         <ul>
@@ -32494,7 +32513,7 @@ useEffect(() => {
                 checked={aiCreateScenarioStrict}
                 onChange={(e) => setAiCreateScenarioStrict(e.target.checked)}
               />
-              Strict fit (±5% target)
+              Strict fit (Â±5% target)
             </label>
             <button
               className="btn"
@@ -32740,7 +32759,7 @@ useEffect(() => {
                             const occupant = String(c.occupant || '').trim();
                             const dept = String(c.occupantDept || c.department || '').trim();
                             if (occupant) {
-                              return `⚠️ Occupied — requires relocation${dept ? ` of ${dept}` : ''}`;
+                              return `âš ï¸ Occupied â€” requires relocation${dept ? ` of ${dept}` : ''}`;
                             }
                             return '';
                           })()}
@@ -32892,5 +32911,3 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
