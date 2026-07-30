@@ -7,7 +7,12 @@ const TENANT_DEFS = [
     features: {
       // Hook: can be enabled per tenant later without touching shared logic.
       enableEngagementTechnicalAssessment: false,
-      enablePublicAiCreatePlanningScenario: false
+      enablePublicAiCreatePlanningScenario: false,
+      enableMaintenanceWorkflow: false,
+      enableRoomEdit: true,
+      requireClientAuth: true,
+      clientWorkspaceRoute: 'client',
+      enableRoleManagement: true
     }
   },
   {
@@ -47,8 +52,17 @@ export function getTenantConfigId(universityId) {
   return tenant?.configId || universityId;
 }
 
+export function getTenantId(universityId) {
+  const tenant = resolveTenant(universityId);
+  return tenant?.id || universityId;
+}
+
 export function getTenantFeatures(universityId) {
   return resolveTenant(universityId)?.features || {};
 }
 
 export const TENANTS = TENANT_DEFS;
+
+
+
+
