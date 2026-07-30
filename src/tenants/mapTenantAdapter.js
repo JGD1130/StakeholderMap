@@ -76,6 +76,7 @@ const DEFAULT_TENANT_ADAPTER = Object.freeze({
   id: 'default',
   isSarpyCountyInstance: false,
   isHastingsCollegeInstance: false,
+  isCherokeeMentalHealthInstance: false,
   defaultDashboardTitle: 'Campus Summary',
   dashboardSpaceContextTitle: 'Campus Space Context',
   showClassroomUtilizationDashboard: true,
@@ -161,6 +162,7 @@ const SARPY_TENANT_ADAPTER = Object.freeze({
 const CHEROKEE_TENANT_ADAPTER = Object.freeze({
   ...DEFAULT_TENANT_ADAPTER,
   id: 'cherokee-mental-health',
+  isCherokeeMentalHealthInstance: true,
   matches: ({ resolvedTenantId, normalizedUniversityId, activeUniversityName }) =>
     resolvedTenantId === 'cherokee_mental_health' ||
     resolvedTenantId === 'cherokee-mental-health' ||

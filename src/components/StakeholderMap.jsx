@@ -22,6 +22,12 @@ import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import { resolveMapTenantAdapter } from '../tenants/mapTenantAdapter';
 import {
+  buildMapTenantRuntime,
+  buildTenantAllowedCampusKeys,
+  SARPY_FACILITY_TYPE_COLORS,
+  getSarpyFacilityTypeColor
+} from '../tenants/mapTenantRuntime';
+import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
   computeStrategicSeatGapByYear
@@ -4660,25 +4666,6 @@ const LOW_ZOOM_BUILDING_MARKER_SOURCE_ID = 'buildings-lowzoom-markers';
 const LOW_ZOOM_BUILDING_MARKER_LAYER_ID = 'buildings-lowzoom-markers';
 const LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID = 'buildings-lowzoom-markers-ring';
 const DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM = 13.2;
-const SARPY_FACILITY_TYPE_COLORS = Object.freeze({
-  'Administrative': '#2563eb',
-  'Law Enforcement': '#dc2626',
-  'Public Works': '#facc15',
-  'Recreation': '#16a34a',
-  'Infrastructure': '#6b7280'
-});
-const getSarpyFacilityTypeColor = (facilityType) => (
-  SARPY_FACILITY_TYPE_COLORS[String(facilityType || '').trim()] || '#9ca3af'
-);
-const buildSarpyFacilityTypeColorExpression = () => {
-  const expr = ['match', ['to-string', ['coalesce', ['get', 'facilityType'], ['get', 'FacilityType'], '']]];
-  Object.entries(SARPY_FACILITY_TYPE_COLORS).forEach(([label, color]) => {
-    expr.push(label, color);
-  });
-  expr.push('#9ca3af');
-  return expr;
-};
-
 // Cache to avoid double-loading sources
 const floorCache = new Map();
 const floorTransformCache = new Map();
@@ -11358,17 +11345,33 @@ const StakeholderMap = ({
     () => resolveMapTenantAdapter({ universityId, config, tenant, activeUniversityName }),
     [universityId, config, tenant, activeUniversityName]
   );
-  const isSarpyCountyInstance = tenantAdapter.isSarpyCountyInstance;
-  const sarpyBuildingOutlineBaseColor = isSarpyCountyInstance ? '#f97316' : '#000000';
-  const sarpyBuildingOutlineSelectedColor = isSarpyCountyInstance ? '#fb923c' : '#1d4ed8';
-  const floorplansEnabled = tenantAdapter.getFloorplansEnabled({
+  const tenantRuntime = useMemo(() => buildMapTenantRuntime({
+    tenantAdapter,
     config,
-    defaultEnabled: !isSarpyCountyInstance
-  });
-  const lowZoomBuildingMarkersEnabled = tenantAdapter.getLowZoomBuildingMarkersEnabled({
-    config,
-    defaultEnabled: isSarpyCountyInstance
-  });
+    mode,
+    universityName,
+    universityId,
+    activeUniversityName
+  }), [tenantAdapter, config, mode, universityName, universityId, activeUniversityName]);
+  const {
+    isSarpyCountyInstance,
+    isHastingsCollegeInstance,
+    sarpyBuildingOutlineBaseColor,
+    sarpyBuildingOutlineSelectedColor,
+    floorplansEnabled,
+    lowZoomBuildingMarkersEnabled,
+    floorplanOverlaysEnabled,
+    sarpyFacilityTypeBuildingColorsEnabled,
+    sarpyFacilityTypeColorExpr,
+    sarpyFacilityTypeLegend,
+    defaultDashboardTitle,
+    dashboardSpaceContextTitle,
+    showClassroomUtilizationDashboard,
+    showStrategicDashboard,
+    universityLogoFile,
+    universityLogoAlt,
+    aiEnabledForCurrentView
+  } = tenantRuntime;
   const lowZoomBuildingMarkerMaxZoom = Number.isFinite(Number(config?.lowZoomBuildingMarkerMaxZoom))
     ? Number(config.lowZoomBuildingMarkerMaxZoom)
     : DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM;
@@ -11377,39 +11380,6 @@ const StakeholderMap = ({
       ? buildLowZoomBuildingMarkerFC(config?.buildings)
       : { type: 'FeatureCollection', features: [] }),
     [lowZoomBuildingMarkersEnabled, config?.buildings]
-  );
-  const sarpyFacilityTypeLegend = useMemo(() => {
-    if (!isSarpyCountyInstance) return [];
-    const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
-    const counts = new Map();
-    features.forEach((feature) => {
-      const props = feature?.properties || {};
-      const label = String(props.facilityType ?? props.FacilityType ?? '').trim();
-      if (!label) return;
-      counts.set(label, (counts.get(label) || 0) + 1);
-    });
-    const knownOrder = Object.keys(SARPY_FACILITY_TYPE_COLORS);
-    const ordered = [
-      ...knownOrder.filter((label) => counts.has(label)),
-      ...Array.from(counts.keys()).filter((label) => !knownOrder.includes(label)).sort((a, b) => a.localeCompare(b))
-    ];
-    return ordered.map((label) => ({
-      label: label + ' (' + counts.get(label) + ')',
-      color: getSarpyFacilityTypeColor(label)
-    }));
-  }, [config?.buildings?.features, isSarpyCountyInstance]);
-  const floorplanOverlaysEnabled = tenantAdapter.getFloorplanOverlaysEnabled({
-    config,
-    mode,
-    isAdminMode: mode === 'admin'
-  });
-  const sarpyFacilityTypeBuildingColorsEnabled = tenantAdapter.getUseFacilityTypeBuildingColorsInSpaceData({
-    config,
-    mode
-  });
-  const sarpyFacilityTypeColorExpr = useMemo(
-    () => (sarpyFacilityTypeBuildingColorsEnabled ? buildSarpyFacilityTypeColorExpression() : null),
-    [sarpyFacilityTypeBuildingColorsEnabled]
   );
   const applySarpyFacilityTypeBuildingColors = useCallback((mapInstance) => {
     if (!mapInstance || !sarpyFacilityTypeBuildingColorsEnabled || !sarpyFacilityTypeColorExpr) return false;
@@ -11426,19 +11396,6 @@ const StakeholderMap = ({
       return false;
     }
   }, [sarpyFacilityTypeBuildingColorsEnabled, sarpyFacilityTypeColorExpr]);
-  const defaultDashboardTitle = tenantAdapter.defaultDashboardTitle;
-  const dashboardSpaceContextTitle = tenantAdapter.dashboardSpaceContextTitle;
-  const showClassroomUtilizationDashboard = tenantAdapter.showClassroomUtilizationDashboard;
-  const showStrategicDashboard = tenantAdapter.showStrategicDashboard;
-  const hasConfiguredUniversityLogo = Boolean(
-    config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
-  );
-  const universityLogoFile = String(
-    hasConfiguredUniversityLogo
-      ? (config?.logos?.university || '')
-      : tenantAdapter.getDefaultUniversityLogoFile({ config, universityName, universityId })
-  ).trim();
-  const universityLogoAlt = tenantAdapter.getUniversityLogoAlt({ universityName, universityId, config });
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
@@ -11475,17 +11432,13 @@ const StakeholderMap = ({
     return out;
   }, [config]);
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
-    const allowedCampusKeys = new Set(
-      [
-        universityId,
-        config?.universityId,
-        floorplanCampus,
-        universityName,
-        activeUniversityName
-      ]
-        .map((value) => canon(value || ''))
-        .filter((value) => value && value !== 'na')
-    );
+    const allowedCampusKeys = buildTenantAllowedCampusKeys({
+      universityId,
+      config,
+      floorplanCampus,
+      universityName,
+      activeUniversityName
+    });
 
     return tenantAdapter.filterRoomsToConfiguredCampus({
       rooms,
@@ -11531,8 +11484,6 @@ const StakeholderMap = ({
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const planningScenarioControlsEnabled = showFullMapfluenceControls || publicPlanningScenarioAllowed;
-  const isHastingsCollegeInstance = tenantAdapter.isHastingsCollegeInstance;
-  const aiEnabledForCurrentView = tenantAdapter.getAiEnabledForCurrentView({ config, isAdminMode });
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
   const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
