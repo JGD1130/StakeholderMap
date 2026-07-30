@@ -437,6 +437,7 @@ export default function SpaceDashboardPanel({
   onToggleHeatmap,
   strategic,
   spaceContextTitle = 'Campus Space Context',
+  facilityTypeLegend = [],
   showUtilizationSection = true,
   showStrategicSection = true
 }) {
@@ -489,6 +490,7 @@ export default function SpaceDashboardPanel({
                   <DeptList entries={metrics.byDept || []} />
                 </PanelCard>
               </div>
+              <FacilityTypeLegend items={facilityTypeLegend} />
             </PanelCard>
           ) : null}
 

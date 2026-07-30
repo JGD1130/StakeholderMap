@@ -4659,6 +4659,16 @@ const LOW_ZOOM_BUILDING_MARKER_SOURCE_ID = 'buildings-lowzoom-markers';
 const LOW_ZOOM_BUILDING_MARKER_LAYER_ID = 'buildings-lowzoom-markers';
 const LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID = 'buildings-lowzoom-markers-ring';
 const DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM = 13.2;
+const SARPY_FACILITY_TYPE_COLORS = Object.freeze({
+  'Administrative': '#2563eb',
+  'Law Enforcement': '#dc2626',
+  'Public Works': '#f97316',
+  'Recreation': '#16a34a',
+  'Infrastructure': '#6b7280'
+});
+const getSarpyFacilityTypeColor = (facilityType) => (
+  SARPY_FACILITY_TYPE_COLORS[String(facilityType || '').trim()] || '#9ca3af'
+);
 
 // Cache to avoid double-loading sources
 const floorCache = new Map();
@@ -5894,11 +5904,13 @@ function buildLowZoomBuildingMarkerFC(buildingsGeoJson) {
     const props = feature?.properties || {};
     const id = String(props.id ?? props.ID ?? props.name ?? props.Name ?? `building_${idx + 1}`);
     const name = String(props.name ?? props.Name ?? props.id ?? props.ID ?? `Building ${idx + 1}`).trim() || `Building ${idx + 1}`;
+    const facilityType = String(props.facilityType ?? props.FacilityType ?? '').trim();
+    const markerColor = getSarpyFacilityTypeColor(facilityType);
 
     markerFeatures.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
-      properties: { id, name }
+      properties: { id, name, facilityType, markerColor }
     });
   });
 
@@ -11351,6 +11363,26 @@ const StakeholderMap = ({
       : { type: 'FeatureCollection', features: [] }),
     [lowZoomBuildingMarkersEnabled, config?.buildings]
   );
+  const sarpyFacilityTypeLegend = useMemo(() => {
+    if (!isSarpyCountyInstance) return [];
+    const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+    const counts = new Map();
+    features.forEach((feature) => {
+      const props = feature?.properties || {};
+      const label = String(props.facilityType ?? props.FacilityType ?? '').trim();
+      if (!label) return;
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    const knownOrder = Object.keys(SARPY_FACILITY_TYPE_COLORS);
+    const ordered = [
+      ...knownOrder.filter((label) => counts.has(label)),
+      ...Array.from(counts.keys()).filter((label) => !knownOrder.includes(label)).sort((a, b) => a.localeCompare(b))
+    ];
+    return ordered.map((label) => ({
+      label: label + ' (' + counts.get(label) + ')',
+      color: getSarpyFacilityTypeColor(label)
+    }));
+  }, [config?.buildings?.features, isSarpyCountyInstance]);
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
@@ -19533,6 +19565,48 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       };
     };
 
+    const toPlaceholderSummaryRow = (buildingName, buildingIdOverride) => ({
+      buildingId: buildingIdOverride || bId(buildingName || ''),
+      buildingName: buildingName || '',
+      totalSf: '',
+      rooms: '',
+      classroomSf: '',
+      classrooms: '',
+      labSf: '',
+      labs: '',
+      officeSf: '',
+      offices: '',
+      keyDepts: ''
+    });
+
+    const appendMissingSummaryRows = (rows) => {
+      const existingKeys = new Set(
+        rows
+          .map((entry) => normalizeDashboardKey(entry.buildingId || entry.buildingName))
+          .filter(Boolean)
+      );
+      const configFeatures = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+      targetBuildings.forEach((buildingName) => {
+        const buildingKey = normalizeDashboardKey(buildingName);
+        if (!buildingKey || existingKeys.has(buildingKey)) return;
+        const feature = configFeatures.find((candidate) => {
+          const props = candidate?.properties || {};
+          return [
+            props.id,
+            props.name,
+            props.Name,
+            props.BUILDING,
+            props.Building,
+            props.building
+          ].some((raw) => normalizeDashboardKey(raw) === buildingKey);
+        });
+        const props = feature?.properties || {};
+        const buildingIdValue = props.id || props.ID || props.name || props.Name || buildingName;
+        rows.push(toPlaceholderSummaryRow(buildingName, bId(buildingIdValue || buildingName)));
+        existingKeys.add(buildingKey);
+      });
+    };
+
     if (campusRoomsLoaded && Array.isArray(campusRooms) && campusRooms.length) {
       const rowsInScope = (campusRooms || []).filter((row) => {
         const buildingName = getRoomBuildingLabel(row);
@@ -19574,6 +19648,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         }
       });
 
+      appendMissingSummaryRows(buildingRows);
       buildingRows.sort((a, b) => (Number(b.totalSf) || 0) - (Number(a.totalSf) || 0));
       const campusSummary = summarizeRoomRowsForPanels(rowsInScope);
       const campusRow = includeAllBuildings && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
@@ -19622,13 +19697,14 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       }
     }
 
+    appendMissingSummaryRows(buildingRows);
     const campusSummary = finalizeCombinedSummary(campusAcc);
     const campusRow = includeAllBuildings && campusSummary && (campusSummary.rooms || campusSummary.totalSf)
       ? toSummaryRow(campusSummary, 'Campus Total', 'campus')
       : null;
 
     return { campusRow, buildingRows };
-  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
+  }, [buildFloorUrl, campusRooms, campusRoomsLoaded, config?.buildings?.features, ensureFloorsForBuilding, roomPatches, floorplanBuildingNames]);
 
   const onCreateMoveScenario = useCallback(async (opts = {}) => {
     const forceRelaxed = Boolean(opts?.forceRelaxed);
@@ -21405,7 +21481,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           setExportingSpaceData(false);
           return;
         }
-        const headers = ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'ClassroomSF', 'Classrooms', 'LabSF', 'Labs', 'OfficeSF', 'Offices', 'KeyDepts'];
+        const headers = ['BuildingId', 'BuildingName', 'TotalSF', 'Rooms', 'OfficeSF', 'Offices', 'KeyDepts'];
         const csvLines = [headers.join(',')];
         summaryRows.forEach((r) => {
           csvLines.push([
@@ -21413,10 +21489,6 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             esc(r.buildingName),
             esc(r.totalSf),
             esc(r.rooms),
-            esc(r.classroomSf),
-            esc(r.classrooms),
-            esc(r.labSf),
-            esc(r.labs),
             esc(r.officeSf),
             esc(r.offices),
             esc(r.keyDepts)
@@ -25432,8 +25504,10 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 10, 12, 12, 15],
-          'circle-color': 'rgba(220,38,38,0.20)',
-          'circle-stroke-color': 'rgba(185,28,28,0.75)',
+          'circle-color': ['coalesce', ['get', 'markerColor'], '#dc2626'],
+          'circle-opacity': 0.18,
+          'circle-stroke-color': ['coalesce', ['get', 'markerColor'], '#b91c1c'],
+          'circle-stroke-opacity': 0.75,
           'circle-stroke-width': 1.2
         }
       }, 'buildings-labels');
@@ -25447,7 +25521,7 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4.8, 10, 6.3, 12, 8.1],
-          'circle-color': '#dc2626',
+          'circle-color': ['coalesce', ['get', 'markerColor'], '#dc2626'],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.2
         }
@@ -28781,6 +28855,7 @@ useEffect(() => {
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
               spaceContextTitle={dashboardSpaceContextTitle}
+              facilityTypeLegend={sarpyFacilityTypeLegend}
               showUtilizationSection={showClassroomUtilizationDashboard}
               showStrategicSection={showStrategicDashboard}
               strategic={isAdminMode && showStrategicDashboard ? {
@@ -32730,8 +32805,4 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
-
-
-
 
