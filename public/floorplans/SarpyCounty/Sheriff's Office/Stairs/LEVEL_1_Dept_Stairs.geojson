@@ -1,0 +1,48 @@
+{
+  "name": "633004_SarpyMP Sheriff's Office_R26 - LEVEL 1 Stairs", 
+  "features": [
+    {
+      "properties": {
+        "Type": "Stair", 
+        "kind": "stair", 
+        "Name": "Stair", 
+        "RevitId": 5472062, 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00537f3e", 
+        "interactive": false, 
+        "Family": "Assembled Stair", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041004655596694, 
+          41.089957694420555
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Type": "Stair", 
+        "kind": "stair", 
+        "Name": "Stair", 
+        "RevitId": 5472093, 
+        "Level": "LEVEL 1", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00537f5d", 
+        "interactive": false, 
+        "Family": "Non-Monolithic Run", 
+        "Element": "Stair"
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041004655596694, 
+          41.089957669166701
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection"
+}

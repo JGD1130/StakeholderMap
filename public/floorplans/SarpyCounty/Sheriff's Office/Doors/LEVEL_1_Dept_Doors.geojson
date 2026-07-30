@@ -1,0 +1,3020 @@
+{
+  "name": "633004_SarpyMP Sheriff's Office_R26 - LEVEL 1 Doors", 
+  "features": [
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0051f7fe", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5371902, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041917230461081, 
+          41.090233296630117
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005207a0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5375904, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041064475529154, 
+          41.089985681815875
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005208c6", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5376198, 
+        "bearing_deg": 29.344999999999999
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041114063945741, 
+          41.090028945219522
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00520b21", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5376801, 
+        "bearing_deg": 202.90400000000000
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041105047228328, 
+          41.089997142559348
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00520b2b", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5376811, 
+        "bearing_deg": 119.34500000000000
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041115712271036, 
+          41.090007582309823
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00521966", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5380454, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041243471435237, 
+          41.090010870019327
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00521994", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5380500, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041243775195511, 
+          41.089990093920427
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005219d7", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5380567, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041263215852453, 
+          41.089996046301380
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00521a1d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5380637, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041195699963552, 
+          41.090013295558123
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00521a63", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5380707, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041159248731773, 
+          41.090019019001346
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005222fd", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5382909, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040941161140353, 
+          41.090349351572847
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00522fe3", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5386211, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041657881599605, 
+          41.090159307517538
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005233b3", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5387187, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041673552466747, 
+          41.090138850606159
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005235c8", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5387720, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041904077255779, 
+          41.090227573186894
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523630", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5387824, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041832408760172, 
+          41.090196387589451
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005236a4", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5387940, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041789792374999, 
+          41.090177843633406
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005236f0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5388016, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041755446035907, 
+          41.090162898278471
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052373e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5388094, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041742029766496, 
+          41.090157060366380
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052378c", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5388172, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041696861210724, 
+          41.090143221666487
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523865", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5388389, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041681989243969, 
+          41.090162635685076
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523ba2", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5389218, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041570163598422, 
+          41.090153519917095
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523c0e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5389326, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041522776997112, 
+          41.090153519917095
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523c88", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5389448, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041569859838162, 
+          41.090107475678472
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523cf0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5389552, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041524599558713, 
+          41.090107475678472
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523dae", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5389742, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041619676521591, 
+          41.090107475678472
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00523dd8", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5389784, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041651930310195, 
+          41.090117854780303
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005249a0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5392800, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041720102021145, 
+          41.090060089078939
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00527ff8", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5406712, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040995380809520, 
+          41.090272993968064
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00528e6a", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410410, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040941464900612, 
+          41.090328060364051
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00528e8e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410446, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040974421351251, 
+          41.090288219664103
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00528f62", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410658, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040905393369172, 
+          41.090288105195242
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00528fa2", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410722, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041020289151234, 
+          41.090278488473558
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00529004", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410820, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040959333118565, 
+          41.090272993968064
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-00529052", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410898, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040944752625862, 
+          41.090272993968064
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-005290a2", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5410978, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041045197492949, 
+          41.090349351572847
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052acb7", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418167, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040984978305787, 
+          41.089958348899387
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ace9", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418217, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040903267047312, 
+          41.089958348899387
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ad35", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418293, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040992876072664, 
+          41.089984665889993
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ada9", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418409, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040956121333394, 
+          41.089996112776440
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052addd", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418461, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040964019100286, 
+          41.090026571249417
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ae19", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418521, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041008214322119, 
+          41.090038008380837
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ae79", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418617, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040930301710887, 
+          41.090038008380837
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052aecf", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418703, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040915113697650, 
+          41.090038008380837
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052af09", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418761, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090046021201353
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052af49", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418825, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090057239150070
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052af87", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418887, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090082232942493
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052afcb", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5418955, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090111765909526
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b04b", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419083, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090141012704400
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b091", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419153, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090170334388162
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b0c3", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419203, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895673040694, 
+          41.090208486784491
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b127", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419303, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040895976800968, 
+          41.090246896404032
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b1e0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419488, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040915775836098, 
+          41.090193945660239
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b212", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419538, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040915775836098, 
+          41.090182498773792
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b270", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419632, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040915775836098, 
+          41.090155224498055
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b33e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419838, 
+        "bearing_deg": 190.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041058431408800, 
+          41.089907640617440
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b38b", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5419915, 
+        "bearing_deg": 190.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041063321258861, 
+          41.089886903258339
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b62b", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5420587, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040992876072664, 
+          41.089911416664954
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b6b7", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5420727, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041175955546336, 
+          41.089970069828951
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b6fe", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5420798, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041213612466734, 
+          41.089970069828951
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b760", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5420896, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041243684732947, 
+          41.089970069828951
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b786", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5420934, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041274060759434, 
+          41.089970069828951
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b7c0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5420992, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041306406016318, 
+          41.089970069828951
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b818", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421080, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041334812812394, 
+          41.089964575323457
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b864", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421156, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041392451322636, 
+          41.089964346385727
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b894", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421204, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041420625087198, 
+          41.089970069828951
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b8c8", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421256, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041435509340175, 
+          41.089970298766680
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b8ec", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421292, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041489753922264, 
+          41.089917030719967
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b943", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421379, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041502380999347, 
+          41.089922525225461
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b98d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421453, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041507530712394, 
+          41.089967855841515
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052b9c0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421504, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041545177315172, 
+          41.089941147475940
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ba1c", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421596, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041574903559152, 
+          41.089954082457631
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ba4e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421646, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041625495000957, 
+          41.089976096654027
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ba7e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421694, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041655484309032, 
+          41.089989146104578
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bac0", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421760, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041706628073257, 
+          41.090011400636769
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bb1e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421854, 
+        "bearing_deg": 120.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041747749266037, 
+          41.090035902842608
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bb6e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5421934, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041631253975666, 
+          41.090021692382237
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bbcc", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422028, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041783848635987, 
+          41.090029601348576
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bc44", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422148, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041825893331719, 
+          41.090030118700135
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bc5c", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422172, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041857197960326, 
+          41.090043740495005
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bca4", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422244, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041888239524837, 
+          41.090057247821015
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bcf6", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422326, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041901918858343, 
+          41.090063200201968
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bd28", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422376, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041944798307611, 
+          41.090081858626874
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bd52", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422418, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041957951512913, 
+          41.090087582070097
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bdba", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422522, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041971987811564, 
+          41.090104858758124
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bdf8", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422584, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041997082298678, 
+          41.090104609313691
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052be24", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422628, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.042001977044563, 
+          41.090116715186227
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052be4a", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422666, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041994534918075, 
+          41.090126430214795
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052be7c", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422716, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041905536133086, 
+          41.090082287698074
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bf20", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422880, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041925903253215, 
+          41.090091414535394
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bf48", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422920, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041973226800579, 
+          41.090118351259221
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bf6e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5422958, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041975815691757, 
+          41.090150866485637
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052bfd8", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423064, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041957020525373, 
+          41.090175401889418
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c036", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423158, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041938491149224, 
+          41.090199590327892
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c080", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423232, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041860366004443, 
+          41.090183835666814
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c0d4", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423316, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041820299404591, 
+          41.090170926441949
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c15d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423453, 
+        "bearing_deg": 210.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041783546582693, 
+          41.090154669583349
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c199", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423513, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041709249003304, 
+          41.090115995466441
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c20d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423629, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041678632153690, 
+          41.090105451155793
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c22d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423661, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041744245547562, 
+          41.090059321606127
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c26f", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423727, 
+        "bearing_deg": 300.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041734553019964, 
+          41.090082963342461
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c354", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5423956, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041862689936153, 
+          41.090115589405443
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c414", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424148, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041484579348818, 
+          41.090006119561458
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c454", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424212, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041484579348818, 
+          41.090036110403943
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c4aa", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424298, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041484275588559, 
+          41.090088158195485
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c4e2", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424354, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041352148630253, 
+          41.090087929257756
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c508", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424392, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041362657161400, 
+          41.089990093920427
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c58d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424525, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041343216504458, 
+          41.089996275239109
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c5cd", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424589, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041357920075285, 
+          41.090010924892958
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c641", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424705, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041431003220993, 
+          41.089989864982698
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052c6c6", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5424838, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041243521418295, 
+          41.090098460393286
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ce3d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5426749, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041116418534429, 
+          41.090092283156842
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ce67", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5426791, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041116418534429, 
+          41.090103501105560
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052ceb7", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5426871, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041116418534429, 
+          41.090135080368178
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052cefb", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5426939, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041116418534429, 
+          41.090166444837045
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052cf63", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427043, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041116722294703, 
+          41.090197819367646
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052cfbb", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427131, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041116418534429, 
+          41.090238989158408
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d013", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427219, 
+        "bearing_deg": 315.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041111928746446, 
+          41.090278723571444
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d01e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427230, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041108824527811, 
+          41.090260852711523
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d03e", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427262, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041096816953925, 
+          41.090239218096137
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d07c", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427324, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041096816953925, 
+          41.090218499231668
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d0a9", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427369, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041096816953925, 
+          41.090199669103463
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d0e3", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427427, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041096816953925, 
+          41.090188680092474
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d15d", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427549, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041089071067177, 
+          41.090140667960739
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d1b5", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427637, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041042064166191, 
+          41.090140667960739
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d1ef", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427695, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041026572392681, 
+          41.090140667960739
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d235", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427765, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041061884523472, 
+          41.090272993968064
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d276", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427830, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041046696510222, 
+          41.090272993968064
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d29f", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427871, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041046412534016, 
+          41.090293943107326
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d2f4", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5427956, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041098735239629, 
+          41.090318439444324
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d381", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5428097, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041054006540634, 
+          41.090323933949819
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d3f5", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5428213, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041137009032994, 
+          41.090338357026745
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d441", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5428289, 
+        "bearing_deg": 90.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041137009032994, 
+          41.090361015029316
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d495", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5428373, 
+        "bearing_deg": 270.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041053095259841, 
+          41.090363304406601
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052d586", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Double(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5428614, 
+        "bearing_deg": 0.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040894836161868, 
+          41.090348888162275
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052e782", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5433218, 
+        "bearing_deg": 180.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.040914809937377, 
+          41.089832193362525
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052fc35", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5438517, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041867280228004, 
+          41.090065641147241
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }, 
+    {
+      "properties": {
+        "Name": "Door", 
+        "Revit_UniqueId": "162ae29c-8511-41cf-979f-a659d04cfabf-0052fc75", 
+        "Level": "LEVEL 1", 
+        "Type": "Door", 
+        "Family": "Door-Single(CE)", 
+        "kind": "door", 
+        "interactive": false, 
+        "Element": "Door", 
+        "RevitId": 5438581, 
+        "bearing_deg": 30.0
+      }, 
+      "geometry": {
+        "coordinates": [
+          -96.041835429548840, 
+          41.090051781745693
+        ], 
+        "type": "Point"
+      }, 
+      "type": "Feature"
+    }
+  ], 
+  "type": "FeatureCollection"
+}

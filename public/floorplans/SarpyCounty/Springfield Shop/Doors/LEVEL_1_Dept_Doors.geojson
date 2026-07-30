@@ -1,0 +1,94 @@
+{
+  "type": "FeatureCollection", 
+  "name": "633004_SarpyMP Springfield Public Works_R26 - LEVEL 1 Doors", 
+  "features": [
+    {
+      "properties": {
+        "Element": "Door", 
+        "Family": "Door-Single(CE)", 
+        "Level": "LEVEL 1", 
+        "RevitId": 5386583, 
+        "Name": "Door", 
+        "Revit_UniqueId": "eba5fac2-7c04-4f97-a7aa-d9e0b35b53a9-00523157", 
+        "bearing_deg": 180.0, 
+        "kind": "door", 
+        "interactive": false, 
+        "Type": "Door"
+      }, 
+      "type": "Feature", 
+      "geometry": {
+        "type": "Point", 
+        "coordinates": [
+          -96.134342326249069, 
+          41.081255939145549
+        ]
+      }
+    }, 
+    {
+      "properties": {
+        "Element": "Door", 
+        "Family": "Door-Single(CE)", 
+        "Level": "LEVEL 1", 
+        "RevitId": 5386913, 
+        "Name": "Door", 
+        "Revit_UniqueId": "eba5fac2-7c04-4f97-a7aa-d9e0b35b53a9-005232a1", 
+        "bearing_deg": 0.0, 
+        "kind": "door", 
+        "interactive": false, 
+        "Type": "Door"
+      }, 
+      "type": "Feature", 
+      "geometry": {
+        "type": "Point", 
+        "coordinates": [
+          -96.134343844845404, 
+          41.081174208376318
+        ]
+      }
+    }, 
+    {
+      "properties": {
+        "Element": "Door", 
+        "Family": "Overhead-Sectional", 
+        "Level": "LEVEL 1", 
+        "RevitId": 5387227, 
+        "Name": "Door", 
+        "Revit_UniqueId": "35014e13-c918-425c-883e-afb898b60fae-005233db", 
+        "bearing_deg": 180.0, 
+        "kind": "door", 
+        "interactive": false, 
+        "Type": "Door"
+      }, 
+      "type": "Feature", 
+      "geometry": {
+        "type": "Point", 
+        "coordinates": [
+          -96.134437997818978, 
+          41.081174208376318
+        ]
+      }
+    }, 
+    {
+      "properties": {
+        "Element": "Door", 
+        "Family": "Overhead-Sectional", 
+        "Level": "LEVEL 1", 
+        "RevitId": 5387399, 
+        "Name": "Door", 
+        "Revit_UniqueId": "35014e13-c918-425c-883e-afb898b60fae-00523487", 
+        "bearing_deg": 180.0, 
+        "kind": "door", 
+        "interactive": false, 
+        "Type": "Door"
+      }, 
+      "type": "Feature", 
+      "geometry": {
+        "type": "Point", 
+        "coordinates": [
+          -96.134380898596291, 
+          41.081174208376318
+        ]
+      }
+    }
+  ]
+}
