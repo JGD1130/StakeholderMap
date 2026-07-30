@@ -4033,7 +4033,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   if (!map.getLayer(WALLS_LAYER)) {
-    const beforeId = map.getLayer(FLOOR_FILL_ID) ? FLOOR_FILL_ID : undefined;
+    const beforeId = map.getLayer(FLOOR_LINE_ID) ? FLOOR_LINE_ID : (map.getLayer(FLOOR_ROOM_LABEL_LAYER) ? FLOOR_ROOM_LABEL_LAYER : undefined);
     map.addLayer({
       id: WALLS_LAYER,
       type: "line",
@@ -5119,9 +5119,9 @@ async function loadIcon(map, name, url) {
 function ensureLayerOrder(map) {
   if (!map) return;
   try {
-    // Make sure walls sit under room fills.
+    // Keep walls above fills but under room outlines/labels.
     if (map.getLayer(WALLS_LAYER) && map.getLayer(FLOOR_FILL_ID)) {
-      map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID);
+      map.moveLayer(WALLS_LAYER, map.getLayer(FLOOR_LINE_ID) ? FLOOR_LINE_ID : (map.getLayer(FLOOR_ROOM_LABEL_LAYER) ? FLOOR_ROOM_LABEL_LAYER : undefined));
     }
 
     // Keep room outlines above fills.
