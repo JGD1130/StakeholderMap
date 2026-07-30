@@ -10,6 +10,7 @@ import { collection, getDocs, addDoc, serverTimestamp, GeoPoint, writeBatch, set
 import './StakeholderMap.css';
 import AssessmentPanel from './AssessmentPanel.jsx';
 import BuildingInteractionPanel from './BuildingInteractionPanel.jsx';
+import ClientRoleManagerPanel from './ClientRoleManagerPanel.jsx';
 import { surveyConfigs } from '../surveyConfigs';
 import * as turf from '@turf/turf';
 import { bId, fId, rId, canon } from '../utils/idUtils';
@@ -30051,6 +30052,15 @@ useEffect(() => {
             </div>
           )}
 
+          <ClientRoleManagerPanel
+            universityId={universityId}
+            enabled={Boolean(
+              isAdminMode &&
+              isAdminUser &&
+              (tenant?.features?.enableRoleManagement || config?.enableRoleManagement)
+            )}
+            title="Client Access"
+          />
           {/* Map View */}
           {showMapViewSelector && (
             <div className="control-section theme-selector" style={{ marginTop: 6 }}>
@@ -32892,5 +32902,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
