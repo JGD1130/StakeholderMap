@@ -4,7 +4,7 @@ name: Deploy Vite Site to Pages
 on:
   # Runs on pushes targeting the specified branches
   push:
-    branches: ["main", "feature/multi-university-refactor"]
+    branches: ["main"]
     paths:
       - "src/**"
       - "public/**"
@@ -72,4 +72,5 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
         
+
 
