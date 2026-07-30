@@ -3918,29 +3918,19 @@ function alignOverlayToReferenceRooms(overlayFC, referenceRoomsFC) {
   try {
     const [ominX, ominY, omaxX, omaxY] = turf.bbox(overlayFC);
     const [rminX, rminY, rmaxX, rmaxY] = turf.bbox(referenceRoomsFC);
-    const overlayWidth = omaxX - ominX;
-    const overlayHeight = omaxY - ominY;
-    const roomsWidth = rmaxX - rminX;
-    const roomsHeight = rmaxY - rminY;
-    if (!(overlayWidth > 0) || !(overlayHeight > 0) || !(roomsWidth > 0) || !(roomsHeight > 0)) {
-      return overlayFC;
-    }
-
-    const scaleX = roomsWidth / overlayWidth;
-    const scaleY = roomsHeight / overlayHeight;
     const overlayCenterX = (ominX + omaxX) / 2;
     const overlayCenterY = (ominY + omaxY) / 2;
     const roomsCenterX = (rminX + rmaxX) / 2;
     const roomsCenterY = (rminY + rmaxY) / 2;
+    const dx = roomsCenterX - overlayCenterX;
+    const dy = roomsCenterY - overlayCenterY;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return overlayFC;
+    if (Math.abs(dx) < 1e-12 && Math.abs(dy) < 1e-12) return overlayFC;
 
     const remapCoords = (coords) => {
       if (!Array.isArray(coords)) return coords;
       if (typeof coords[0] === "number" && typeof coords[1] === "number") {
-        return [
-          ((coords[0] - overlayCenterX) * scaleX) + roomsCenterX,
-          ((coords[1] - overlayCenterY) * scaleY) + roomsCenterY,
-          ...coords.slice(2)
-        ];
+        return [coords[0] + dx, coords[1] + dy, ...coords.slice(2)];
       }
       return coords.map((entry) => remapCoords(entry));
     };
