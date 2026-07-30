@@ -4016,11 +4016,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log("[walls] skipped affine (already lon/lat)");
   }
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
-  const shouldAlignToRooms =
-    alignToRooms &&
-    roomsFC?.features?.length &&
-    !(roomsFC?.__mfGeoreferenced && fc?.__mfGeoreferenced);
-  if (shouldAlignToRooms) {
+  if (alignToRooms && roomsFC?.features?.length) {
     fc = alignOverlayToReferenceRooms(fc, roomsFC);
   }
 
