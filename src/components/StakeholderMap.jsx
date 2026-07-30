@@ -11446,6 +11446,10 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
+    // Keep Hastings and other dedicated floorplan campuses isolated from Sarpy-specific
+    // scope heuristics. Their AI backend already returns tenant-scoped Airtable rows.
+    if (floorplansEnabled && !isSarpyCountyInstance) return rooms;
+
     const allowedCampusKeys = new Set(
       [
         universityId,
@@ -32823,5 +32827,6 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
 
