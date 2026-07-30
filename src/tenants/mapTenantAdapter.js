@@ -82,7 +82,9 @@ const DEFAULT_TENANT_ADAPTER = Object.freeze({
   showStrategicDashboard: true,
   matches: () => false,
   getFloorplansEnabled: ({ config }) => Boolean(config?.enableFloorplans ?? true),
+  getFloorplanOverlaysEnabled: ({ mode }) => mode === 'admin',
   getLowZoomBuildingMarkersEnabled: ({ config }) => Boolean(config?.enableLowZoomBuildingMarkers ?? false),
+  getUseFacilityTypeBuildingColorsInSpaceData: () => false,
   getDefaultUniversityLogoFile: () => 'HC_image.png',
   getUniversityLogoAlt: ({ universityName }) => universityName || 'University',
   getAiEnabledForCurrentView: ({ config }) => config?.enableMapfluenceAI !== false,
@@ -128,7 +130,9 @@ const SARPY_TENANT_ADAPTER = Object.freeze({
     normalizedUniversityId === 'sarpy_ne' ||
     /sarpy/i.test(String(activeUniversityName || '')),
   getFloorplansEnabled: ({ config }) => Boolean(config?.enableFloorplans ?? false),
+  getFloorplanOverlaysEnabled: () => false,
   getLowZoomBuildingMarkersEnabled: ({ config }) => Boolean(config?.enableLowZoomBuildingMarkers ?? true),
+  getUseFacilityTypeBuildingColorsInSpaceData: () => true,
   getDefaultUniversityLogoFile: () => 'SarpyCounty_logo.png',
   getUniversityLogoAlt: () => 'Sarpy County',
   getAiEnabledForCurrentView: ({ config, isAdminMode }) =>

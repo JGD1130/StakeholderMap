@@ -4663,13 +4663,21 @@ const DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM = 13.2;
 const SARPY_FACILITY_TYPE_COLORS = Object.freeze({
   'Administrative': '#2563eb',
   'Law Enforcement': '#dc2626',
-  'Public Works': '#f97316',
+  'Public Works': '#facc15',
   'Recreation': '#16a34a',
   'Infrastructure': '#6b7280'
 });
 const getSarpyFacilityTypeColor = (facilityType) => (
   SARPY_FACILITY_TYPE_COLORS[String(facilityType || '').trim()] || '#9ca3af'
 );
+const buildSarpyFacilityTypeColorExpression = () => {
+  const expr = ['match', ['to-string', ['coalesce', ['get', 'facilityType'], ['get', 'FacilityType'], '']]];
+  Object.entries(SARPY_FACILITY_TYPE_COLORS).forEach(([label, color]) => {
+    expr.push(label, color);
+  });
+  expr.push('#9ca3af');
+  return expr;
+};
 
 // Cache to avoid double-loading sources
 const floorCache = new Map();
@@ -5773,7 +5781,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affineParams?.fitBuilding?.properties?.id ||
       affineParams?.fitBuilding?.properties?.name ||
       null;
-    if (overlayBasePath) {
+    if (overlayBasePath && options?.enableDoorStairOverlays !== false) {
       const overlayFloorId =
         options?.roomsFloorId ||
         options?.wallsFloorId ||
@@ -11390,6 +11398,35 @@ const StakeholderMap = ({
       color: getSarpyFacilityTypeColor(label)
     }));
   }, [config?.buildings?.features, isSarpyCountyInstance]);
+  const floorplanOverlaysEnabled = tenantAdapter.getFloorplanOverlaysEnabled({
+    config,
+    mode,
+    isAdminMode: mode === 'admin'
+  });
+  const sarpyFacilityTypeBuildingColorsEnabled = tenantAdapter.getUseFacilityTypeBuildingColorsInSpaceData({
+    config,
+    mode,
+    mapView
+  });
+  const sarpyFacilityTypeColorExpr = useMemo(
+    () => (sarpyFacilityTypeBuildingColorsEnabled ? buildSarpyFacilityTypeColorExpression() : null),
+    [sarpyFacilityTypeBuildingColorsEnabled]
+  );
+  const applySarpyFacilityTypeBuildingColors = useCallback((mapInstance) => {
+    if (!mapInstance || !sarpyFacilityTypeBuildingColorsEnabled || !sarpyFacilityTypeColorExpr) return false;
+    try {
+      mapInstance.setPaintProperty('buildings-layer', 'fill-extrusion-color', sarpyFacilityTypeColorExpr);
+      mapInstance.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.55);
+      if (mapInstance.getLayer('buildings-fill')) {
+        mapInstance.setPaintProperty('buildings-fill', 'fill-color', sarpyFacilityTypeColorExpr);
+        mapInstance.setPaintProperty('buildings-fill', 'fill-opacity', 0.38);
+        mapInstance.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(15,23,42,0.16)');
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [sarpyFacilityTypeBuildingColorsEnabled, sarpyFacilityTypeColorExpr]);
   const defaultDashboardTitle = tenantAdapter.defaultDashboardTitle;
   const dashboardSpaceContextTitle = tenantAdapter.dashboardSpaceContextTitle;
   const showClassroomUtilizationDashboard = tenantAdapter.showClassroomUtilizationDashboard;
@@ -18680,7 +18717,13 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
-      const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
+      const allowOptionalOverlays =
+        ENABLE_WALLS_OVERLAY &&
+        tenantAdapter.getFloorplanOverlaysEnabled({
+          config,
+          mode,
+          isAdminMode: mode === 'admin'
+        });
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
@@ -25778,14 +25821,17 @@ useEffect(() => {
   const buildingsFill = map.getLayer('buildings-fill');
 
   if (mapView === MAP_VIEWS.SPACE_DATA) {
-    if (buildingsLayer) {
+    const appliedSarpyFacilityColors = applySarpyFacilityTypeBuildingColors(map);
+    if (buildingsLayer && !appliedSarpyFacilityColors) {
       if (buildingsLayer.type === 'fill-extrusion') {
         applyExtrusion(withNoFloorplanOverride('#ffffff'), 1.0);
       } else {
         applyFill('buildings-layer', withNoFloorplanOverride('#ffffff'), 1.0);
       }
     }
-    applyBuildingStyleForSpace(map);
+    if (!appliedSarpyFacilityColors) {
+      applyBuildingStyleForSpace(map);
+    }
   } else {
     if (buildingsLayer) {
       if (buildingsLayer.type === 'fill-extrusion') {
@@ -25803,7 +25849,7 @@ useEffect(() => {
   }
 }
 
-}, [mapLoaded, mapView]);
+}, [mapLoaded, mapView, applySarpyFacilityTypeBuildingColors]);
 
 
   
@@ -26108,8 +26154,7 @@ useEffect(() => {
           map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0)');
         }
       } catch {}
-    } else {
-      // in Space Data we keep buildings pure white; do not recolor
+    } else if (!applySarpyFacilityTypeBuildingColors(map)) {
       try {
         map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride('#ffffff'));
         map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.7);
@@ -26209,7 +26254,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, applySarpyFacilityTypeBuildingColors]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
