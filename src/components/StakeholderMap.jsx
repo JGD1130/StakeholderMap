@@ -3351,8 +3351,8 @@ const BUILDING_RESOURCES_URL = assetUrl('Data/building-resources.json');
 const DEFAULT_FLOORPLAN_CAMPUS = 'Hastings';
 const DEMO_EDITING_ENABLED = String(import.meta.env.VITE_DEMO_EDITING_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_OVERLAY_LOGS = false;
-const ENABLE_DOOR_STAIR_OVERLAY = false;
-const ENABLE_WALLS_OVERLAY = false;
+const ENABLE_DOOR_STAIR_OVERLAY = true;
+const ENABLE_WALLS_OVERLAY = true;
 const ROOMS_ONLY_FILTER = ['==', ['get', 'Element'], 'Room'];
 const SYNTHETIC_UNASSIGNED_BUILDING_KEYS = new Set([
   normalizeSnapKey('Administration/Courthouse'),
@@ -11446,10 +11446,6 @@ const StakeholderMap = ({
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
     if (!Array.isArray(rooms) || !rooms.length) return [];
 
-    // Dedicated floorplan campuses already fetch tenant-specific Airtable rows.
-    // Trust the backend payload and avoid over-filtering valid room rows.
-    if (floorplansEnabled) return rooms;
-
     const allowedCampusKeys = new Set(
       [
         universityId,
@@ -11462,8 +11458,8 @@ const StakeholderMap = ({
         .filter((value) => value && value !== 'na')
     );
 
-    return rooms.filter((room) => {
-      if (!room || typeof room !== 'object') return false;
+    const classifyRoom = (room) => {
+      if (!room || typeof room !== 'object') return { explicitCampusKeys: [], buildingInScope: null };
 
       const explicitCampusKeys = [
         room.campus,
@@ -11486,18 +11482,40 @@ const StakeholderMap = ({
         ? configuredDashboardBuildingKeys.has(roomBuildingKey)
         : null;
 
-      if (explicitCampusKeys.length) {
-        const campusMatch = explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
-        if (campusMatch) return true;
-        // If campus tags are noisy/inconsistent, trust known in-scope building labels.
+      return { explicitCampusKeys, buildingInScope };
+    };
+
+    const enriched = rooms.map((room) => ({ room, ...classifyRoom(room) }));
+    const directCampusMatches = enriched.filter(({ explicitCampusKeys }) =>
+      explicitCampusKeys.some((value) => allowedCampusKeys.has(value))
+    );
+    if (directCampusMatches.length) {
+      return directCampusMatches.map(({ room }) => room);
+    }
+
+    const buildingMatches = enriched.filter(({ buildingInScope }) => buildingInScope === true);
+    if (buildingMatches.length) {
+      return buildingMatches.map(({ room }) => room);
+    }
+
+    if (floorplansEnabled) {
+      return rooms;
+    }
+
+    return enriched
+      .filter(({ explicitCampusKeys, buildingInScope }) => {
+        if (explicitCampusKeys.length) {
+          const campusMatch = explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
+          if (campusMatch) return true;
+          if (buildingInScope !== null) return buildingInScope;
+          return false;
+        }
+
         if (buildingInScope !== null) return buildingInScope;
+
         return false;
-      }
-
-      if (buildingInScope !== null) return buildingInScope;
-
-      return false;
-    });
+      })
+      .map(({ room }) => room);
   }, [
     universityId,
     config,
@@ -32805,4 +32823,5 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
+
 
