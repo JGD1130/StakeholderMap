@@ -2796,8 +2796,22 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
     out.__mfUserAdjustSignature = sig;
   }
 
+  const hasTranslateLngLat =
+    Array.isArray(translateLngLat) &&
+    (Math.abs(Number(translateLngLat[0]) || 0) > 1e-12 || Math.abs(Number(translateLngLat[1]) || 0) > 1e-12);
+  const hasAnchorLngLat =
+    Array.isArray(anchorLngLat) &&
+    Number.isFinite(anchorLngLat[0]) &&
+    Number.isFinite(anchorLngLat[1]);
+
   let nextTransform = fitTransform;
-  if (Number.isFinite(scale) || Number.isFinite(rotationDeg) || Array.isArray(translateMeters)) {
+  if (
+    Number.isFinite(scale) ||
+    Number.isFinite(rotationDeg) ||
+    Array.isArray(translateMeters) ||
+    hasTranslateLngLat ||
+    hasAnchorLngLat
+  ) {
     nextTransform = nextTransform || {
       rotationDeg: 0,
       rotationPivot: pivot,
@@ -2806,6 +2820,8 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
       translateKm: 0,
       translateBearing: 0,
       nudgeMeters: [0, 0],
+      translateLngLat: [0, 0],
+      anchorLngLat: null,
       refineRotationDeg: 0,
       refineRotationPivot: pivot
     };
@@ -2826,6 +2842,16 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform) {
         (Number(base[0]) || 0) + (Number(translateMeters[0]) || 0),
         (Number(base[1]) || 0) + (Number(translateMeters[1]) || 0)
       ];
+    }
+    if (hasTranslateLngLat) {
+      const base = Array.isArray(nextTransform.translateLngLat) ? nextTransform.translateLngLat : [0, 0];
+      nextTransform.translateLngLat = [
+        (Number(base[0]) || 0) + (Number(translateLngLat[0]) || 0),
+        (Number(base[1]) || 0) + (Number(translateLngLat[1]) || 0)
+      ];
+    }
+    if (hasAnchorLngLat) {
+      nextTransform.anchorLngLat = [Number(anchorLngLat[0]), Number(anchorLngLat[1])];
     }
   }
   return { fc: out, fitTransform: nextTransform };
@@ -3536,6 +3562,8 @@ function applyFloorplanFitTransform(fc, transform) {
       translateKm,
       translateBearing,
       nudgeMeters,
+      translateLngLat,
+      anchorLngLat,
       refineRotationDeg,
       refineRotationPivot
     } = transform;
@@ -3551,6 +3579,18 @@ function applyFloorplanFitTransform(fc, transform) {
     }
     if (Array.isArray(nudgeMeters)) {
       out = applyNudgeMeters(out, nudgeMeters);
+    }
+    if (Array.isArray(translateLngLat)) {
+      out = applyNudgeLngLat(out, translateLngLat);
+    }
+    if (Array.isArray(anchorLngLat) && Number.isFinite(anchorLngLat[0]) && Number.isFinite(anchorLngLat[1])) {
+      const currentAnchor = getFloorAdjustAnchorLngLat(out);
+      if (currentAnchor) {
+        out = applyNudgeLngLat(out, [
+          anchorLngLat[0] - currentAnchor[0],
+          anchorLngLat[1] - currentAnchor[1]
+        ]);
+      }
     }
     if (Number.isFinite(refineRotationDeg) && Math.abs(refineRotationDeg) > 1e-6 && Array.isArray(refineRotationPivot)) {
       out = turf.transformRotate(out, refineRotationDeg, { pivot: refineRotationPivot });
