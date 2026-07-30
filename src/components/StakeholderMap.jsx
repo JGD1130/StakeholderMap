@@ -11405,8 +11405,7 @@ const StakeholderMap = ({
   });
   const sarpyFacilityTypeBuildingColorsEnabled = tenantAdapter.getUseFacilityTypeBuildingColorsInSpaceData({
     config,
-    mode,
-    mapView
+    mode
   });
   const sarpyFacilityTypeColorExpr = useMemo(
     () => (sarpyFacilityTypeBuildingColorsEnabled ? buildSarpyFacilityTypeColorExpression() : null),
