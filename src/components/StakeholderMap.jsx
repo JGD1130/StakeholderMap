@@ -3913,7 +3913,59 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
+function alignOverlayToReferenceRooms(overlayFC, referenceRoomsFC) {
+  if (!overlayFC?.features?.length || !referenceRoomsFC?.features?.length) return overlayFC;
+  try {
+    const [ominX, ominY, omaxX, omaxY] = turf.bbox(overlayFC);
+    const [rminX, rminY, rmaxX, rmaxY] = turf.bbox(referenceRoomsFC);
+    const overlayWidth = omaxX - ominX;
+    const overlayHeight = omaxY - ominY;
+    const roomsWidth = rmaxX - rminX;
+    const roomsHeight = rmaxY - rminY;
+    if (!(overlayWidth > 0) || !(overlayHeight > 0) || !(roomsWidth > 0) || !(roomsHeight > 0)) {
+      return overlayFC;
+    }
+
+    const scaleX = roomsWidth / overlayWidth;
+    const scaleY = roomsHeight / overlayHeight;
+    const overlayCenterX = (ominX + omaxX) / 2;
+    const overlayCenterY = (ominY + omaxY) / 2;
+    const roomsCenterX = (rminX + rmaxX) / 2;
+    const roomsCenterY = (rminY + rmaxY) / 2;
+
+    const remapCoords = (coords) => {
+      if (!Array.isArray(coords)) return coords;
+      if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+        return [
+          ((coords[0] - overlayCenterX) * scaleX) + roomsCenterX,
+          ((coords[1] - overlayCenterY) * scaleY) + roomsCenterY,
+          ...coords.slice(2)
+        ];
+      }
+      return coords.map((entry) => remapCoords(entry));
+    };
+
+    return {
+      ...overlayFC,
+      features: overlayFC.features.map((feature) => (
+        feature?.geometry
+          ? {
+              ...feature,
+              geometry: {
+                ...feature.geometry,
+                coordinates: remapCoords(feature.geometry.coordinates)
+              }
+            }
+          : feature
+      ))
+    };
+  } catch (err) {
+    console.warn("[walls] overlay alignment skipped", err);
+    return overlayFC;
+  }
+}
+
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, alignToRooms = false }) {
   if (!basePath || !floorId || !map) return;
 
   const cleanFloor = String(floorId).trim();
@@ -3964,6 +4016,9 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log("[walls] skipped affine (already lon/lat)");
   }
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
+  if (alignToRooms && roomsFC?.features?.length) {
+    fc = alignOverlayToReferenceRooms(fc, roomsFC);
+  }
 
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
@@ -5163,6 +5218,7 @@ function isLikelyLonLat(gj) {
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
   const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
+  const preferAirtableRoomData = options?.preferAirtableRoomData === true;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5611,21 +5667,19 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   if (canUseRoomPatches || canUseAirtable) {
     const patchedFeatures = (fc.features || []).map((feature) => {
       const baseProps = feature.properties || {};
-      let mergedProps = baseProps;
-      if (canUseAirtable && detectFeatureKind(baseProps) === 'room') {
-        const airtablePatch = getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor);
-        if (airtablePatch) {
-          mergedProps = mergePatch(mergedProps, airtablePatch);
-        }
-      }
-      if (canUseRoomPatches) {
-        const revitId = feature.id ?? baseProps.RevitId ?? baseProps.id;
-        const rid = rId(buildingId, floor, revitId);
-        const patch = roomPatches.get(rid);
-        if (patch) {
-          mergedProps = mergeRoomDbPatch(mergedProps, patch);
-        }
-      }
+      const revitId = feature.id ?? baseProps.RevitId ?? baseProps.id;
+      const rid = canUseRoomPatches ? rId(buildingId, floor, revitId) : null;
+      const roomPatch = rid ? roomPatches.get(rid) || null : null;
+      const airtablePatch =
+        canUseAirtable && detectFeatureKind(baseProps) === 'room'
+          ? getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor)
+          : null;
+      let mergedProps = mergeDisplayRoomProps({
+        baseProps,
+        roomPatch,
+        airtablePatch,
+        preferAirtable: preferAirtableRoomData
+      });
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
       const categoryLabel = getRoomCategoryLabelFromProps({
         ...mergedProps,
@@ -5795,7 +5849,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       roomsFC: patchedFC,
       affine,
       rotationOverride,
-      fitTransform
+      fitTransform,
+      alignToRooms: options?.alignWallsOverlayToRooms === true
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
@@ -9022,7 +9077,22 @@ const mergeRoomDbPatch = (props = {}, patch = {}) => {
   });
   return next;
 };
-
+const mergeDisplayRoomProps = ({
+  baseProps = {},
+  roomPatch = null,
+  airtablePatch = null,
+  preferAirtable = false
+} = {}) => {
+  let merged = { ...(baseProps || {}) };
+  if (preferAirtable) {
+    if (roomPatch) merged = mergeRoomDbPatch(merged, roomPatch);
+    if (airtablePatch) merged = mergePatch(merged, airtablePatch);
+    return merged;
+  }
+  if (airtablePatch) merged = mergePatch(merged, airtablePatch);
+  if (roomPatch) merged = mergeRoomDbPatch(merged, roomPatch);
+  return merged;
+};
 const normalizeDashboardKey = (value) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -9871,21 +9941,33 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
   }
   if (!room) return null;
 
-  const occupancyStatus = String(room.occupancyStatus ?? '').trim();
-  const occupant = String(room.occupant ?? '').trim();
+  const hasOccupancyStatusField =
+    Object.prototype.hasOwnProperty.call(room, 'occupancyStatus') ||
+    Object.prototype.hasOwnProperty.call(room, 'OccupancyStatus') ||
+    Object.prototype.hasOwnProperty.call(room, 'Occupancy Status');
+  const hasOccupantField =
+    Object.prototype.hasOwnProperty.call(room, 'occupant') ||
+    Object.prototype.hasOwnProperty.call(room, 'Occupant');
+  const hasDepartmentField =
+    Object.prototype.hasOwnProperty.call(room, 'department') ||
+    Object.prototype.hasOwnProperty.call(room, 'Department');
+  const occupancyStatus = String(room.occupancyStatus ?? room.OccupancyStatus ?? room['Occupancy Status'] ?? '').trim();
+  const occupant = String(room.occupant ?? room.Occupant ?? '').trim();
   const type = String(room.type ?? '').trim();
-  const department = String(room.department ?? '').trim();
+  const department = String(room.department ?? room.Department ?? '').trim();
   const exportTypeLabel = String(getRoomTypeLabelFromProps(props) ?? '').trim();
   const shouldPatchType = !hasMeaningfulRoomTypeLabel(exportTypeLabel);
-  if (!occupancyStatus && !occupant && !type && !department) return null;
+  const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
+  const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
+  if (!hasOccupancyStatusField && !hasOccupantField && !type && !hasDepartmentField && !hasSeatCount) return null;
 
   const patch = {};
-  if (occupancyStatus) {
+  if (hasOccupancyStatusField) {
     patch.occupancyStatus = occupancyStatus;
     patch.OccupancyStatus = occupancyStatus;
     patch['Occupancy Status'] = occupancyStatus;
   }
-  if (occupant) {
+  if (hasOccupantField) {
     patch.occupant = occupant;
     patch.Occupant = occupant;
   }
@@ -9895,12 +9977,11 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
     patch['Room Type'] = type;
     patch['Room Type Description'] = type;
   }
-  if (department) {
+  if (hasDepartmentField) {
     patch.department = department;
     patch.Department = department;
   }
-  const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
-  if (Number.isFinite(seatCount) && seatCount > 0) {
+  if (hasSeatCount) {
     patch.seatCount = seatCount;
     patch.SeatCount = seatCount;
     patch['Seat Count'] = seatCount;
@@ -18722,6 +18803,8 @@ const StakeholderMap = ({
         floor: floorId,
         roomPatches,
         airtableLookup: airtableRoomLookup,
+        preferAirtableRoomData: isSarpyCountyInstance,
+        alignWallsOverlayToRooms: isSarpyCountyInstance,
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
@@ -24396,23 +24479,23 @@ useEffect(() => {
       if (!feature) return feature;
       const props = feature.properties || {};
       if (detectFeatureKind(props) !== 'room') return feature;
-      let mergedProps = props;
       let didPatch = false;
-      if (hasAirtableLookup) {
-        const airtablePatch = getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey);
-        if (airtablePatch) {
-          mergedProps = mergePatch(mergedProps, airtablePatch);
-          didPatch = true;
-        }
-      }
-      if (hasRoomPatches && buildingKey && floorKey) {
-        const revitId = feature.id ?? props.RevitId ?? props.id;
-        const rid = revitId != null ? rId(buildingKey, floorKey, revitId) : null;
-        const patch = rid ? roomPatches.get(rid) || null : null;
-        if (patch) {
-          mergedProps = mergeRoomDbPatch(mergedProps, patch);
-          didPatch = true;
-        }
+      const airtablePatch = hasAirtableLookup
+        ? getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey)
+        : null;
+      const revitId = feature.id ?? props.RevitId ?? props.id;
+      const rid = hasRoomPatches && buildingKey && floorKey && revitId != null
+        ? rId(buildingKey, floorKey, revitId)
+        : null;
+      const roomPatch = rid ? roomPatches.get(rid) || null : null;
+      const mergedProps = mergeDisplayRoomProps({
+        baseProps: props,
+        roomPatch,
+        airtablePatch,
+        preferAirtable: isSarpyCountyInstance
+      });
+      if (airtablePatch || roomPatch) {
+        didPatch = true;
       }
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
       const nextRoomType = typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '');
@@ -27017,7 +27100,15 @@ useEffect(() => {
         return;
       }
       const overridePatch = roomMergeKey ? roomPatches.get(roomMergeKey) : null;
-      const pp = overridePatch ? { ...rawProps, ...overridePatch } : rawProps;
+      const airtablePatch = airtableRoomLookup
+        ? getAirtableRoomPatch(rawProps, airtableRoomLookup, buildingId, derivedFloorDefault)
+        : null;
+      const pp = mergeDisplayRoomProps({
+        baseProps: rawProps,
+        roomPatch: overridePatch,
+        airtablePatch,
+        preferAirtable: isSarpyCountyInstance
+      });
       const roomNum2 = pp.Number ?? pp.RoomNumber ?? pp.number ?? pp.Room ?? '';
       const initialRoomType = norm(getRoomTypeLabelFromProps(pp) || pp.__roomType || '');
       const initialDept = norm(getDeptFromProps(pp) || pp.__dept || '');
