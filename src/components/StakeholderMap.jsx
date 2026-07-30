@@ -11361,6 +11361,8 @@ const StakeholderMap = ({
     floorplansEnabled,
     lowZoomBuildingMarkersEnabled,
     floorplanOverlaysEnabled,
+    wallsOverlayEnabled,
+    doorStairOverlaysEnabled,
     sarpyFacilityTypeBuildingColorsEnabled,
     sarpyFacilityTypeColorExpr,
     sarpyFacilityTypeLegend,
@@ -17768,7 +17770,13 @@ const StakeholderMap = ({
         return null;
       }
 
-      const roomKey = rId(buildingId, floorName, revitId);
+      const canonicalBuildingId = bId(buildingId || buildingName || '');
+      const canonicalFloorId = fId(floorName || '');
+      if (!canonicalBuildingId || !canonicalFloorId) {
+        console.warn('Unable to canonicalize room edit path', edit);
+        return null;
+      }
+      const roomKey = rId(canonicalBuildingId, canonicalFloorId, revitId);
 
       try {
         const roomRef = doc(
@@ -17776,9 +17784,9 @@ const StakeholderMap = ({
           'universities',
           universityId,
           'buildings',
-          buildingId,
+          canonicalBuildingId,
           'floors',
-          floorName,
+          canonicalFloorId,
           'rooms',
           roomKey
         );
@@ -18667,13 +18675,8 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
-      const allowOptionalOverlays =
-        ENABLE_WALLS_OVERLAY &&
-        tenantAdapter.getFloorplanOverlaysEnabled({
-          config,
-          mode,
-          isAdminMode: mode === 'admin'
-        });
+      const allowWallsOverlay = ENABLE_WALLS_OVERLAY && wallsOverlayEnabled;
+      const allowDoorStairOverlays = doorStairOverlaysEnabled;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
@@ -18682,7 +18685,8 @@ const StakeholderMap = ({
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
-        enableWalls: allowOptionalOverlays,
+        enableWalls: allowWallsOverlay,
+        enableDoorStairOverlays: allowDoorStairOverlays,
         wallsBasePath: basePath,
         wallsFloorId: floorId,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
@@ -24152,7 +24156,7 @@ useEffect(() => {
       }
       return;
     }
-    if (isSarpyPublicReadonlyMode || isSarpyCountyInstance) {
+    if (isSarpyPublicReadonlyMode) {
       setCampusRooms(airtableRooms);
       setCampusRoomsLoaded(true);
       setDashboardError(null);
@@ -32767,6 +32771,5 @@ useEffect(() => {
 }
 
 export default StakeholderMap;
-
 
 

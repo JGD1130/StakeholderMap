@@ -84,6 +84,16 @@ export const buildMapTenantRuntime = ({
     mode,
     isAdminMode: mode === 'admin'
   });
+  const wallsOverlayEnabled = tenantAdapter.getWallsOverlayEnabled({
+    config,
+    mode,
+    isAdminMode: mode === 'admin'
+  });
+  const doorStairOverlaysEnabled = tenantAdapter.getDoorStairOverlaysEnabled({
+    config,
+    mode,
+    isAdminMode: mode === 'admin'
+  });
   const sarpyFacilityTypeBuildingColorsEnabled = tenantAdapter.getUseFacilityTypeBuildingColorsInSpaceData({
     config,
     mode
@@ -106,6 +116,8 @@ export const buildMapTenantRuntime = ({
     floorplansEnabled,
     lowZoomBuildingMarkersEnabled,
     floorplanOverlaysEnabled,
+    wallsOverlayEnabled,
+    doorStairOverlaysEnabled,
     sarpyFacilityTypeBuildingColorsEnabled,
     sarpyFacilityTypeColorExpr: sarpyFacilityTypeBuildingColorsEnabled
       ? buildSarpyFacilityTypeColorExpression()
