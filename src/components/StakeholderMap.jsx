@@ -20,6 +20,7 @@ import FloorPanel from './panels/FloorPanel';
 import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
+import { resolveMapTenantAdapter } from '../tenants/mapTenantAdapter';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -3972,7 +3973,7 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
 
   const raw = await fetchGeoJSON(candidates);
   if (!raw) {
-    console.warn("Doors overlay not found. Tried:", candidates);
+    console.debug("Doors overlay not found. Tried:", candidates);
     return;
   }
   let fc = ensureFeatureCollection(raw);
@@ -4403,7 +4404,7 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
 
   const raw = await fetchGeoJSON(candidates);
   if (!raw) {
-    console.warn("Stairs overlay not found. Tried:", candidates);
+    console.debug("Stairs overlay not found. Tried:", candidates);
     return;
   }
   let fc = ensureFeatureCollection(raw);
@@ -11345,15 +11346,21 @@ const StakeholderMap = ({
   const universityName = config?.universityName || config?.name || '';
   const activeUniversityName = universityName || universityId || 'Campus';
   const normalizedUniversityId = String(canon(universityId || config?.universityId || '') || '').trim().toLowerCase();
-  const isSarpyCountyInstance =
-    normalizedUniversityId === 'sarpy_county' ||
-    normalizedUniversityId === 'sarpy' ||
-    normalizedUniversityId === 'sarpy_ne' ||
-    normalizedUniversityId === 'sarpycounty';
+  const tenantAdapter = useMemo(
+    () => resolveMapTenantAdapter({ universityId, config, tenant, activeUniversityName }),
+    [universityId, config, tenant, activeUniversityName]
+  );
+  const isSarpyCountyInstance = tenantAdapter.isSarpyCountyInstance;
   const sarpyBuildingOutlineBaseColor = isSarpyCountyInstance ? '#f97316' : '#000000';
   const sarpyBuildingOutlineSelectedColor = isSarpyCountyInstance ? '#fb923c' : '#1d4ed8';
-  const floorplansEnabled = Boolean(config?.enableFloorplans ?? !isSarpyCountyInstance);
-  const lowZoomBuildingMarkersEnabled = Boolean(config?.enableLowZoomBuildingMarkers ?? isSarpyCountyInstance);
+  const floorplansEnabled = tenantAdapter.getFloorplansEnabled({
+    config,
+    defaultEnabled: !isSarpyCountyInstance
+  });
+  const lowZoomBuildingMarkersEnabled = tenantAdapter.getLowZoomBuildingMarkersEnabled({
+    config,
+    defaultEnabled: isSarpyCountyInstance
+  });
   const lowZoomBuildingMarkerMaxZoom = Number.isFinite(Number(config?.lowZoomBuildingMarkerMaxZoom))
     ? Number(config.lowZoomBuildingMarkerMaxZoom)
     : DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM;
@@ -11383,43 +11390,31 @@ const StakeholderMap = ({
       color: getSarpyFacilityTypeColor(label)
     }));
   }, [config?.buildings?.features, isSarpyCountyInstance]);
-  const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
-  const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
-  const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
-  const showStrategicDashboard = !isSarpyCountyInstance;
+  const defaultDashboardTitle = tenantAdapter.defaultDashboardTitle;
+  const dashboardSpaceContextTitle = tenantAdapter.dashboardSpaceContextTitle;
+  const showClassroomUtilizationDashboard = tenantAdapter.showClassroomUtilizationDashboard;
+  const showStrategicDashboard = tenantAdapter.showStrategicDashboard;
   const hasConfiguredUniversityLogo = Boolean(
     config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
   );
   const universityLogoFile = String(
     hasConfiguredUniversityLogo
       ? (config?.logos?.university || '')
-      : (isSarpyCountyInstance ? 'SarpyCounty_logo.png' : 'HC_image.png')
+      : tenantAdapter.getDefaultUniversityLogoFile({ config, universityName, universityId })
   ).trim();
-  const universityLogoAlt = isSarpyCountyInstance ? 'Sarpy County' : (universityName || 'University');
+  const universityLogoAlt = tenantAdapter.getUniversityLogoAlt({ universityName, universityId, config });
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
   const floorplanBuildingOptions = useMemo(
-    () => {
-      if (!floorplansEnabled) return [];
-      if (!isSarpyCountyInstance) {
-        return BUILDINGS_LIST.filter((b) => !b?.campus || b.campus === 'Hastings');
-      }
-      const seen = new Set();
-      return (config?.buildings?.features || [])
-        .map((feature) => {
-          const props = feature?.properties || {};
-          return String(props.name || props.Name || props.id || '').trim();
-        })
-        .filter((name) => {
-          if (!name || seen.has(name)) return false;
-          if (!BUILDING_FOLDER_MAP[name]) return false;
-          seen.add(name);
-          return true;
-        })
-        .map((name) => ({ name, folder: BUILDING_FOLDER_MAP[name] }));
-    },
-    [floorplansEnabled, isSarpyCountyInstance, config?.buildings?.features]
+    () => tenantAdapter.buildFloorplanBuildingOptions({
+      floorplansEnabled,
+      config,
+      buildingsList: BUILDINGS_LIST,
+      buildingFolderMap: BUILDING_FOLDER_MAP,
+      floorplanCampus
+    }),
+    [tenantAdapter, floorplansEnabled, config, floorplanCampus]
   );
   const floorplanBuildingNames = useMemo(
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
@@ -11444,12 +11439,6 @@ const StakeholderMap = ({
     return out;
   }, [config]);
   const filterRoomsToConfiguredCampus = useCallback((rooms = []) => {
-    if (!Array.isArray(rooms) || !rooms.length) return [];
-
-    // Keep Hastings and other dedicated floorplan campuses isolated from Sarpy-specific
-    // scope heuristics. Their AI backend already returns tenant-scoped Airtable rows.
-    if (floorplansEnabled && !isSarpyCountyInstance) return rooms;
-
     const allowedCampusKeys = new Set(
       [
         universityId,
@@ -11462,65 +11451,17 @@ const StakeholderMap = ({
         .filter((value) => value && value !== 'na')
     );
 
-    const classifyRoom = (room) => {
-      if (!room || typeof room !== 'object') return { explicitCampusKeys: [], buildingInScope: null };
-
-      const explicitCampusKeys = [
-        room.campus,
-        room.campusId,
-        room.campus_id,
-        room.universityId,
-        room.university_id,
-        room.university,
-        room.tenant,
-        room.tenantId,
-        room.organization,
-        room.org
-      ]
-        .map((value) => canon(value || ''))
-        .filter((value) => value && value !== 'na');
-
-      const roomBuildingKey = normalizeDashboardKey(getRoomBuildingId(room) || getRoomBuildingLabel(room));
-      const hasConfiguredBuildings = configuredDashboardBuildingKeys.size > 0;
-      const buildingInScope = (roomBuildingKey && hasConfiguredBuildings)
-        ? configuredDashboardBuildingKeys.has(roomBuildingKey)
-        : null;
-
-      return { explicitCampusKeys, buildingInScope };
-    };
-
-    const enriched = rooms.map((room) => ({ room, ...classifyRoom(room) }));
-    const directCampusMatches = enriched.filter(({ explicitCampusKeys }) =>
-      explicitCampusKeys.some((value) => allowedCampusKeys.has(value))
-    );
-    if (directCampusMatches.length) {
-      return directCampusMatches.map(({ room }) => room);
-    }
-
-    const buildingMatches = enriched.filter(({ buildingInScope }) => buildingInScope === true);
-    if (buildingMatches.length) {
-      return buildingMatches.map(({ room }) => room);
-    }
-
-    if (floorplansEnabled) {
-      return rooms;
-    }
-
-    return enriched
-      .filter(({ explicitCampusKeys, buildingInScope }) => {
-        if (explicitCampusKeys.length) {
-          const campusMatch = explicitCampusKeys.some((value) => allowedCampusKeys.has(value));
-          if (campusMatch) return true;
-          if (buildingInScope !== null) return buildingInScope;
-          return false;
-        }
-
-        if (buildingInScope !== null) return buildingInScope;
-
-        return false;
-      })
-      .map(({ room }) => room);
+    return tenantAdapter.filterRoomsToConfiguredCampus({
+      rooms,
+      floorplansEnabled,
+      allowedCampusKeys,
+      configuredDashboardBuildingKeys,
+      getRoomBuildingId,
+      getRoomBuildingLabel,
+      normalizeDashboardKey
+    });
   }, [
+    tenantAdapter,
     universityId,
     config,
     floorplanCampus,
@@ -11544,14 +11485,18 @@ const StakeholderMap = ({
   const isSarpyPublicReadonlyMode = isSarpyCountyInstance && isDemoPublicMode;
   const publicPlanningScenarioAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
   const publicAiCreatePlanningScenarioAllowed = publicPlanningScenarioAllowed && tenant?.features?.enablePublicAiCreatePlanningScenario !== false;
-  const publicAirtableControlsAllowed = isDemoPublicMode && !isSarpyPublicReadonlyMode;
+  const publicAirtableControlsAllowed = tenantAdapter.getPublicAirtableControlsAllowed({
+    isDemoPublicMode,
+    isSarpyPublicReadonlyMode,
+    config
+  });
   const demoEditingEnabled = publicAirtableControlsAllowed;
   const isSharedPublicPlanningMode = isSarpyCountyInstance && publicPlanningScenarioAllowed;
   const isStakeholderTechnicalMode = isAdminCombinedMode || isTechnicalOnlyMode;
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const planningScenarioControlsEnabled = showFullMapfluenceControls || publicPlanningScenarioAllowed;
-  const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
-  const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
+  const isHastingsCollegeInstance = tenantAdapter.isHastingsCollegeInstance;
+  const aiEnabledForCurrentView = tenantAdapter.getAiEnabledForCurrentView({ config, isAdminMode });
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
   const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
