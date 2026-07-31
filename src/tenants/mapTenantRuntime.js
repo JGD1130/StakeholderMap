@@ -129,6 +129,9 @@ export const buildMapTenantRuntime = ({
     showStrategicDashboard: tenantAdapter.showStrategicDashboard,
     universityLogoFile,
     universityLogoAlt: tenantAdapter.getUniversityLogoAlt({ universityName, universityId, config, activeUniversityName }),
-    aiEnabledForCurrentView: tenantAdapter.getAiEnabledForCurrentView({ config, isAdminMode: mode === 'admin' })
+    aiEnabledForCurrentView: tenantAdapter.getAiEnabledForCurrentView({ config, isAdminMode: mode === 'admin' }),
+    airtableSyncEnabled: tenantAdapter.getAirtableSyncEnabled({ config, mode }),
+    departmentOptionsEndpointEnabled: tenantAdapter.getDepartmentOptionsEndpointEnabled({ config, mode }),
+    roomDataPolicy: tenantAdapter.getRoomDataPolicy({ config, mode })
   };
 };

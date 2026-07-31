@@ -11468,6 +11468,7 @@ const StakeholderMap = ({
   const {
     isSarpyCountyInstance,
     isHastingsCollegeInstance,
+    isCherokeeMentalHealthInstance,
     sarpyBuildingOutlineBaseColor,
     sarpyBuildingOutlineSelectedColor,
     floorplansEnabled,
@@ -11484,7 +11485,10 @@ const StakeholderMap = ({
     showStrategicDashboard,
     universityLogoFile,
     universityLogoAlt,
-    aiEnabledForCurrentView
+    aiEnabledForCurrentView,
+    airtableSyncEnabled,
+    departmentOptionsEndpointEnabled,
+    roomDataPolicy
   } = tenantRuntime;
   const lowZoomBuildingMarkerMaxZoom = Number.isFinite(Number(config?.lowZoomBuildingMarkerMaxZoom))
     ? Number(config.lowZoomBuildingMarkerMaxZoom)
@@ -11600,7 +11604,7 @@ const StakeholderMap = ({
   const planningScenarioControlsEnabled = showFullMapfluenceControls || publicPlanningScenarioAllowed;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
-  const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
+  const hasConfiguredAiBackend = airtableSyncEnabled && aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
   const airtableControlsAllowed = hasConfiguredAiBackend && (isAdminMode || isClientMode || publicAirtableControlsAllowed);
   const aiCreatePlanningScenarioAllowed = isAdminMode || publicAiCreatePlanningScenarioAllowed;
   const formatMaintenanceCurrency = useCallback((value) => {
@@ -12818,9 +12822,10 @@ const StakeholderMap = ({
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
-    const preferSarpyPublicFloorAsset =
-      isSarpyPublicReadonlyMode &&
-      floorplanCampus === 'SarpyCounty';
+    const preferSarpyPublicFloorAsset = tenantAdapter.getPreferPublicFloorAsset({
+      isSarpyPublicReadonlyMode,
+      floorplanCampus
+    });
     const toPreferredAssetUrl = (candidateUrl) => {
       if (!candidateUrl) return candidateUrl;
       const resolved = /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
@@ -12838,7 +12843,7 @@ const StakeholderMap = ({
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(normalizedFloorId);
     return toPreferredAssetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
-  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled, isSarpyPublicReadonlyMode]);
+  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled, isSarpyPublicReadonlyMode, tenantAdapter]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
     if (!floorplansEnabled) return [];
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
@@ -17730,12 +17735,14 @@ const StakeholderMap = ({
   }, [floorplansEnabled, universityId]);
 
   const syncAirtableRoomEditOptions = useCallback(async (rooms = []) => {
+    if (!airtableSyncEnabled) return;
     const roomDeptOptions = (rooms || [])
       .map((room) => norm(room?.department ?? room?.Department ?? room?.Dept ?? room?.NCES_Department ?? room?.['NCES_Department']))
       .filter(Boolean);
     if (roomDeptOptions.length) {
       setDeptOptions((prev) => mergeStringOptions(prev, roomDeptOptions));
     }
+    if (!departmentOptionsEndpointEnabled) return;
     try {
       const res = await guardedAiFetch('/ai/api/departments', { cache: 'no-store', timeoutMs: 15000 });
       let data = null;
@@ -17750,17 +17757,17 @@ const StakeholderMap = ({
     } catch (err) {
       console.warn('[airtableDeptOptions] Failed to refresh department options', err);
     }
-  }, []);
+  }, [airtableSyncEnabled, departmentOptionsEndpointEnabled]);
 
   const buildRoomsApiPath = useCallback(() => {
     const params = new URLSearchParams();
     const scopeHints = Array.from(new Set(
-      [
+      tenantAdapter.getAirtableScopeHints({
         universityId,
-        config?.universityId,
+        config,
         floorplanCampus,
         activeUniversityName
-      ]
+      })
         .map((value) => String(value || '').trim())
         .filter(Boolean)
     ));
@@ -17772,9 +17779,11 @@ const StakeholderMap = ({
     }
     const query = params.toString();
     return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
-  }, [universityId, config?.universityId, floorplanCampus, activeUniversityName]);
-
+  }, [tenantAdapter, universityId, config, floorplanCampus, activeUniversityName]);
   const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
+    if (!airtableSyncEnabled) {
+      throw new Error('Airtable sync disabled for this campus');
+    }
     if (!getAiBaseUrl()) {
       throw new Error('AI backend unavailable for this campus');
     }
@@ -17809,9 +17818,17 @@ const StakeholderMap = ({
       }
     }
     throw lastError || new Error('Rooms payload missing or invalid');
-  }, [aiStatus, buildRoomsApiPath, filterRoomsToConfiguredCampus]);
+  }, [aiStatus, airtableSyncEnabled, buildRoomsApiPath, filterRoomsToConfiguredCampus]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
+    if (!airtableSyncEnabled) {
+      setAirtableScopeCheck({
+        level: 'info',
+        label: 'Airtable sync disabled',
+        detail: 'This campus is intentionally not connected to Airtable.'
+      });
+      return false;
+    }
     if (!getAiBaseUrl()) {
       setAirtableScopeCheck({
         level: 'warn',
@@ -17845,7 +17862,7 @@ const StakeholderMap = ({
       });
       return false;
     }
-  }, [aiStatus, fetchCampusRoomsPayload, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
+  }, [aiStatus, airtableSyncEnabled, fetchCampusRoomsPayload, recordAirtableScopeCheck, syncAirtableRoomEditOptions]);
   const scheduleCampusRoomsRefresh = useCallback(() => {
     if (campusRoomsRefreshTimerRef.current) return;
     campusRoomsRefreshTimerRef.current = setTimeout(() => {
@@ -18794,8 +18811,8 @@ const StakeholderMap = ({
         floor: floorId,
         roomPatches,
         airtableLookup: airtableRoomLookup,
-        preferAirtableRoomData: isSarpyCountyInstance,
-        alignWallsOverlayToRooms: isSarpyCountyInstance,
+        preferAirtableRoomData: roomDataPolicy.preferAirtableRoomData,
+        alignWallsOverlayToRooms: roomDataPolicy.alignWallsOverlayToRooms,
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
@@ -23680,6 +23697,18 @@ useEffect(() => {
       setDashboardLoading(true);
       setDashboardError(null);
       setDashboardTitle(defaultDashboardTitle);
+      if (!airtableSyncEnabled) {
+        setAirtableRooms([]);
+        setCampusRooms([]);
+        setCampusRoomsLoaded(true);
+        setAirtableScopeCheck({
+          level: 'info',
+          label: 'Airtable sync disabled',
+          detail: 'This campus is intentionally not connected to Airtable.'
+        });
+        setDashboardLoading(false);
+        return undefined;
+      }
       try {
         const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: true });
         if (!cancelled) {
@@ -23756,7 +23785,7 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
+  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions, airtableSyncEnabled]);
 
   useEffect(() => {
     if (isSarpyPublicReadonlyMode) return undefined;
@@ -24483,7 +24512,7 @@ useEffect(() => {
         baseProps: props,
         roomPatch,
         airtablePatch,
-        preferAirtable: isSarpyCountyInstance
+        preferAirtable: roomDataPolicy.preferAirtableRoomData
       });
       if (airtablePatch || roomPatch) {
         didPatch = true;
@@ -27098,7 +27127,7 @@ useEffect(() => {
         baseProps: rawProps,
         roomPatch: overridePatch,
         airtablePatch,
-        preferAirtable: isSarpyCountyInstance
+        preferAirtable: roomDataPolicy.preferAirtableRoomData
       });
       const roomNum2 = pp.Number ?? pp.RoomNumber ?? pp.number ?? pp.Room ?? '';
       const initialRoomType = norm(getRoomTypeLabelFromProps(pp) || pp.__roomType || '');
@@ -29014,7 +29043,7 @@ useEffect(() => {
             draftOwnerKey={technicalAssessmentSaveMode === 'per-assessor' ? (technicalAssessorDeviceId || technicalAssessorKey) : ''}
             onAssessorNameChange={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode ? setTechnicalAssessorName : undefined}
             allowAssessorEdit={technicalAssessmentSaveMode === 'per-assessor' && !isAdminMode}
-            enablePhotoUpload={universityId === 'cherokee-mental-health'}
+            enablePhotoUpload={isCherokeeMentalHealthInstance}
             panelRef={technicalPanelRef}
             dragHandleProps={technicalPanelDragHandleProps}
             onClose={() => {
