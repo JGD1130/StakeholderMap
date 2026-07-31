@@ -1822,28 +1822,31 @@ async function listAirtableDepartments() {
   }
 
   if (AIRTABLE_DEPT_TABLE) {
-    const records = await fetchAirtableTableRecords(AIRTABLE_DEPT_TABLE, {
-      pageSize: 100,
-      maxRecords: 500
-    });
-    return uniqueStrings(records.map((record) => {
-      const fields = record?.fields || {};
-      const rawValue = pickFieldValue(fields, [
-        AIRTABLE_DEPT_PRIMARY_FIELD,
-        AIRTABLE_DEPT_FIELD,
-        "Department Name",
-        "Department",
-        "Name",
-        "Title",
-        "Label"
-      ]);
-      if (Array.isArray(rawValue)) {
-        return rawValue.map((value) => String(value ?? "").trim()).find(Boolean) || "";
-      }
-      return String(rawValue ?? "").trim();
-    }));
+    try {
+      const records = await fetchAirtableTableRecords(AIRTABLE_DEPT_TABLE, {
+        pageSize: 100,
+        maxRecords: 500
+      });
+      return uniqueStrings(records.map((record) => {
+        const fields = record?.fields || {};
+        const rawValue = pickFieldValue(fields, [
+          AIRTABLE_DEPT_PRIMARY_FIELD,
+          AIRTABLE_DEPT_FIELD,
+          "Department Name",
+          "Department",
+          "Name",
+          "Title",
+          "Label"
+        ]);
+        if (Array.isArray(rawValue)) {
+          return rawValue.map((value) => String(value ?? "").trim()).find(Boolean) || "";
+        }
+        return String(rawValue ?? "").trim();
+      }));
+    } catch (err) {
+      console.warn("[airtable] department table lookup failed; falling back to room rows", err?.message || err);
+    }
   }
-
   const records = await fetchAirtableAllRecords({
     table: AIRTABLE_TABLE || "Rooms",
     view: AIRTABLE_VIEW || "Mapfluence_Rooms",
@@ -2444,7 +2447,15 @@ app.patch("/api/rooms/:airtableId", async (req, res) => {
       return res.status(500).json({ ok: false, error: patchResult.errorText });
     }
 
-    return res.json({ ok: true, id: patchResult.data?.id || airtableId, retried: patchResult.retried });
+    return res.json({
+      ok: true,
+      id: patchResult.data?.id || airtableId,
+      retried: patchResult.retried,
+      droppedFields: patchResult.droppedFields || [],
+      warnings: patchResult.droppedFields?.length
+        ? ["Airtable did not accept one or more select values; the remaining fields were saved."]
+        : []
+    });
   } catch (err) {
     console.error("PATCH /api/rooms failed", err);
     res.status(500).json({ ok: false, error: "Failed to update room" });
@@ -2675,7 +2686,15 @@ app.patch("/api/rooms", async (req, res) => {
       return res.status(500).json({ ok: false, error: patchResult.errorText });
     }
 
-    return res.json({ ok: true, id: patchResult.data?.id || target.id, retried: patchResult.retried });
+    return res.json({
+      ok: true,
+      id: patchResult.data?.id || target.id,
+      retried: patchResult.retried,
+      droppedFields: patchResult.droppedFields || [],
+      warnings: patchResult.droppedFields?.length
+        ? ["Airtable did not accept one or more select values; the remaining fields were saved."]
+        : []
+    });
   } catch (err) {
     console.error("PATCH /api/rooms (by roomId) failed", err);
     res.status(500).json({ ok: false, error: err?.message || "Failed to update room" });
@@ -7264,6 +7283,7 @@ app.get("/demo/sample", async (req, res) => {
 });
 
 app.get("/api/departments", async (req, res) => {
+  res.set("Cache-Control", "no-store");
   try {
     const departments = await listAirtableDepartments();
     return res.json({
