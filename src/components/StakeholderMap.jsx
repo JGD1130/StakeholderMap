@@ -17788,7 +17788,11 @@ const StakeholderMap = ({
         return null;
       }
 
-      const roomKey = rId(buildingId, floorName, revitId);
+      // Sarpy building labels can contain slashes, which are invalid inside a
+      // Firestore document path. Keep the display/Airtable label unchanged.
+      const firestoreBuildingId = isSarpyCountyInstance ? bId(buildingId) : buildingId;
+      const firestoreFloorId = isSarpyCountyInstance ? fId(floorName) : floorName;
+      const roomKey = rId(firestoreBuildingId, firestoreFloorId, revitId);
 
       try {
         const roomRef = doc(
@@ -17796,9 +17800,9 @@ const StakeholderMap = ({
           'universities',
           universityId,
           'buildings',
-          buildingId,
+          firestoreBuildingId,
           'floors',
-          floorName,
+          firestoreFloorId,
           'rooms',
           roomKey
         );
@@ -18133,7 +18137,7 @@ const StakeholderMap = ({
         return null;
       }
     },
-    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite]
+    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite, isSarpyCountyInstance]
   );
 
 
