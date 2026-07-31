@@ -17652,6 +17652,12 @@ const StakeholderMap = ({
     }
   }, []);
 
+  useEffect(() => {
+    if (!isSarpyCountyInstance || !roomEditOpen) return undefined;
+    void syncAirtableRoomEditOptions(airtableRooms);
+    return undefined;
+  }, [airtableRooms, isSarpyCountyInstance, roomEditOpen, syncAirtableRoomEditOptions]);
+
   const buildRoomsApiPath = useCallback(() => {
     const params = new URLSearchParams();
     const scopeHints = Array.from(new Set(
