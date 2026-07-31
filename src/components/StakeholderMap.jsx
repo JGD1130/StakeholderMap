@@ -5566,19 +5566,25 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     const patchedFeatures = (fc.features || []).map((feature) => {
       const baseProps = feature.properties || {};
       let mergedProps = baseProps;
-      if (canUseAirtable && detectFeatureKind(baseProps) === 'room') {
+      const applyAirtablePatch = () => {
+        if (!canUseAirtable || detectFeatureKind(baseProps) !== 'room') return;
         const airtablePatch = getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor);
-        if (airtablePatch) {
-          mergedProps = mergePatch(mergedProps, airtablePatch);
-        }
-      }
-      if (canUseRoomPatches) {
+        if (airtablePatch) mergedProps = mergePatch(mergedProps, airtablePatch);
+      };
+      const applyRoomPatch = () => {
+        if (!canUseRoomPatches) return;
         const revitId = feature.id ?? baseProps.RevitId ?? baseProps.id;
         const rid = rId(buildingId, floor, revitId);
         const patch = roomPatches.get(rid);
-        if (patch) {
-          mergedProps = mergeRoomDbPatch(mergedProps, patch);
-        }
+        if (patch) mergedProps = mergeRoomDbPatch(mergedProps, patch);
+      };
+      // Sarpy refreshes from Airtable, so existing Firebase patches cannot mask it.
+      if (options.airtableWins) {
+        applyRoomPatch();
+        applyAirtablePatch();
+      } else {
+        applyAirtablePatch();
+        applyRoomPatch();
       }
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
       const categoryLabel = getRoomCategoryLabelFromProps({
@@ -17861,14 +17867,28 @@ const StakeholderMap = ({
           payload.seatCount = seatCountValue;
         }
 
-        await setDoc(roomRef, payload, { merge: true });
-
+        const matchedAirtableRoom = (() => {
+          for (const key of getRoomLookupKeyVariants(roomGuidValue || revitId)) {
+            const match = airtableRoomLookup?.byGuid?.get(key);
+            if (match) return match;
+          }
+          const buildingKey = normalizeDashboardKey(buildingId);
+          const floorKey = normalizeDashboardKey(floorName);
+          const roomKey = normalizeRoomLookupKey(roomNumberValue || roomLabel || '');
+          if (buildingKey && floorKey && roomKey) {
+            return airtableRoomLookup?.byComposite?.get(`${buildingKey}|${floorKey}|${roomKey}`) || null;
+          }
+          return null;
+        })();
         const airtableId =
           properties.airtableId ||
           properties.AirtableId ||
           properties.airtableID ||
           properties['Airtable ID'] ||
           properties['Airtable Id'] ||
+          matchedAirtableRoom?.airtableId ||
+          matchedAirtableRoom?.AirtableId ||
+          matchedAirtableRoom?.['Airtable ID'] ||
           null;
         const airtablePayload = {};
         if (allowOfficeFields && occupancyStatusProvided) airtablePayload.occupancyStatus = occStatus;
@@ -17920,7 +17940,15 @@ const StakeholderMap = ({
             }
           }
 
-          const patchTypeValue = properties.type || '';
+        // Sarpy's Airtable base is authoritative. Do not retain a local map
+        // override if Airtable rejected or could not locate this room.
+        if (isSarpyCountyInstance && Object.keys(airtablePayload).length && !didUpdateAirtable) {
+          throw new Error('Airtable did not confirm this room update; the map was not changed.');
+        }
+
+        await setDoc(roomRef, payload, { merge: true });
+
+        const patchTypeValue = properties.type || '';
           const patchDeptValue = properties.department || '';
           const patchPayload = {
             type: patchTypeValue,
@@ -18137,7 +18165,7 @@ const StakeholderMap = ({
         return null;
       }
     },
-    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite, isSarpyCountyInstance]
+    [db, universityId, scheduleCampusRoomsRefresh, roomEditCanWrite, isSarpyCountyInstance, airtableRoomLookup]
   );
 
 
@@ -18697,6 +18725,7 @@ const StakeholderMap = ({
         floor: floorId,
         roomPatches,
         airtableLookup: airtableRoomLookup,
+        airtableWins: isSarpyCountyInstance,
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
@@ -24334,14 +24363,16 @@ useEffect(() => {
       if (detectFeatureKind(props) !== 'room') return feature;
       let mergedProps = props;
       let didPatch = false;
-      if (hasAirtableLookup) {
+      const applyAirtablePatch = () => {
+        if (!hasAirtableLookup) return;
         const airtablePatch = getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey);
         if (airtablePatch) {
           mergedProps = mergePatch(mergedProps, airtablePatch);
           didPatch = true;
         }
-      }
-      if (hasRoomPatches && buildingKey && floorKey) {
+      };
+      const applyRoomPatch = () => {
+        if (!hasRoomPatches || !buildingKey || !floorKey) return;
         const revitId = feature.id ?? props.RevitId ?? props.id;
         const rid = revitId != null ? rId(buildingKey, floorKey, revitId) : null;
         const patch = rid ? roomPatches.get(rid) || null : null;
@@ -24349,6 +24380,13 @@ useEffect(() => {
           mergedProps = mergeRoomDbPatch(mergedProps, patch);
           didPatch = true;
         }
+      };
+      if (isSarpyCountyInstance) {
+        applyRoomPatch();
+        applyAirtablePatch();
+      } else {
+        applyAirtablePatch();
+        applyRoomPatch();
       }
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
       const nextRoomType = typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '');
@@ -24381,6 +24419,7 @@ useEffect(() => {
     selectedBuildingId,
     selectedBuilding,
     selectedFloor,
+    isSarpyCountyInstance,
     applyFloorColorMode
   ]);
 
