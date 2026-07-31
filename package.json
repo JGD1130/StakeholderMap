@@ -31,6 +31,7 @@
     "dev:ai": "cd ai-server && node server.js",
     "build": "vite build",
     "smoke": "node scripts/smoke-check.mjs",
+    "smoke:tenants": "node scripts/tenant-isolation-check.mjs",
     "preview": "vite preview",
     "gen:floorplans": "node scripts/generateFloorplansManifest.mjs",
     "backfill:rooms": "node scripts/backfillRooms.mjs"

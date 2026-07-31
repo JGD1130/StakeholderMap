@@ -91,6 +91,19 @@ const DEFAULT_TENANT_ADAPTER = Object.freeze({
   getDefaultUniversityLogoFile: () => 'HC_image.png',
   getUniversityLogoAlt: ({ universityName }) => universityName || 'University',
   getAiEnabledForCurrentView: ({ config }) => config?.enableMapfluenceAI !== false,
+  getAirtableSyncEnabled: ({ config }) => Boolean(config?.enableMapfluenceAI !== false),
+  getDepartmentOptionsEndpointEnabled: () => true,
+  getAirtableScopeHints: ({ universityId, config, floorplanCampus, activeUniversityName }) => [
+    universityId,
+    config?.universityId,
+    floorplanCampus,
+    activeUniversityName
+  ],
+  getRoomDataPolicy: () => ({
+    preferAirtableRoomData: false,
+    alignWallsOverlayToRooms: false
+  }),
+  getPreferPublicFloorAsset: () => false,
   getPublicAirtableControlsAllowed: ({ isDemoPublicMode }) => Boolean(isDemoPublicMode),
   buildFloorplanBuildingOptions: ({ floorplansEnabled, config, buildingFolderMap }) =>
     floorplansEnabled ? collectConfiguredFloorplanBuildings({ config, buildingFolderMap }) : [],
@@ -142,6 +155,15 @@ const SARPY_TENANT_ADAPTER = Object.freeze({
   getUniversityLogoAlt: () => 'Sarpy County',
   getAiEnabledForCurrentView: ({ config, isAdminMode }) =>
     (config?.enableMapfluenceAI ?? Boolean(isAdminMode)) !== false,
+  getAirtableSyncEnabled: ({ config }) => config?.enableMapfluenceAI !== false,
+  getDepartmentOptionsEndpointEnabled: () => false,
+  getAirtableScopeHints: () => ['sarpy-county', 'SarpyCounty', 'Sarpy County'],
+  getRoomDataPolicy: () => ({
+    preferAirtableRoomData: true,
+    alignWallsOverlayToRooms: true
+  }),
+  getPreferPublicFloorAsset: ({ isSarpyPublicReadonlyMode, floorplanCampus }) =>
+    Boolean(isSarpyPublicReadonlyMode && floorplanCampus === 'SarpyCounty'),
   getPublicAirtableControlsAllowed: () => false,
   buildFloorplanBuildingOptions: ({ floorplansEnabled, config, buildingFolderMap }) =>
     floorplansEnabled ? collectConfiguredFloorplanBuildings({ config, buildingFolderMap }) : [],
@@ -167,6 +189,13 @@ const CHEROKEE_TENANT_ADAPTER = Object.freeze({
   ...DEFAULT_TENANT_ADAPTER,
   id: 'cherokee-mental-health',
   isCherokeeMentalHealthInstance: true,
+  getAirtableSyncEnabled: () => false,
+  getDepartmentOptionsEndpointEnabled: () => false,
+  getAirtableScopeHints: () => [],
+  getRoomDataPolicy: () => ({
+    preferAirtableRoomData: false,
+    alignWallsOverlayToRooms: false
+  }),
   matches: ({ resolvedTenantId, normalizedUniversityId, activeUniversityName }) =>
     resolvedTenantId === 'cherokee_mental_health' ||
     resolvedTenantId === 'cherokee-mental-health' ||
