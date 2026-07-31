@@ -5663,7 +5663,9 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       const roomPatch = rid ? roomPatches.get(rid) || null : null;
       const airtablePatch =
         canUseAirtable && detectFeatureKind(baseProps) === 'room'
-          ? getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor)
+          ? getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor, {
+              preferAirtable: preferAirtableRoomData
+            })
           : null;
       let mergedProps = mergeDisplayRoomProps({
         baseProps,
@@ -9863,7 +9865,7 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
   });
 }
 
-function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
+function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, options = {}) {
   if (!lookup) return null;
   let room = null;
   const guidRaw = (
@@ -9947,7 +9949,7 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
   const type = String(room.type ?? '').trim();
   const department = String(room.department ?? room.Department ?? '').trim();
   const exportTypeLabel = String(getRoomTypeLabelFromProps(props) ?? '').trim();
-  const shouldPatchType = !hasMeaningfulRoomTypeLabel(exportTypeLabel);
+  const shouldPatchType = options.preferAirtable === true || !hasMeaningfulRoomTypeLabel(exportTypeLabel);
   const seatCount = Number(room.seatCount ?? room.SeatCount ?? room['Seat Count'] ?? 0);
   const hasSeatCount = Number.isFinite(seatCount) && seatCount > 0;
   if (!hasOccupancyStatusField && !hasOccupantField && !type && !hasDepartmentField && !hasSeatCount) return null;
@@ -24501,7 +24503,9 @@ useEffect(() => {
       if (detectFeatureKind(props) !== 'room') return feature;
       let didPatch = false;
       const airtablePatch = hasAirtableLookup
-        ? getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey)
+        ? getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey, {
+            preferAirtable: roomDataPolicy.preferAirtableRoomData
+          })
         : null;
       const revitId = feature.id ?? props.RevitId ?? props.id;
       const rid = hasRoomPatches && buildingKey && floorKey && revitId != null
@@ -27121,7 +27125,9 @@ useEffect(() => {
       }
       const overridePatch = roomMergeKey ? roomPatches.get(roomMergeKey) : null;
       const airtablePatch = airtableRoomLookup
-        ? getAirtableRoomPatch(rawProps, airtableRoomLookup, buildingId, derivedFloorDefault)
+        ? getAirtableRoomPatch(rawProps, airtableRoomLookup, buildingId, derivedFloorDefault, {
+            preferAirtable: roomDataPolicy.preferAirtableRoomData
+          })
         : null;
       const pp = mergeDisplayRoomProps({
         baseProps: rawProps,
