@@ -1873,14 +1873,19 @@ async function listAirtableDepartments() {
   }));
 }
 
-function isAirtableInvalidValueForField(errorText = "", fieldName = "") {
+function isAirtableInvalidValueForField(errorText = "", fieldName = "", fieldValue = "") {
   const text = String(errorText || "");
   if (!text) return false;
   const normalizedField = String(fieldName || "").trim();
-  if (!/INVALID_VALUE_FOR_COLUMN/i.test(text)) return false;
+  const isInvalidColumn = /INVALID_VALUE_FOR_COLUMN/i.test(text);
+  const isInvalidChoice = /INVALID_MULTIPLE_CHOICE_OPTIONS/i.test(text) ||
+    /Insufficient permissions to create new select option/i.test(text);
+  if (!isInvalidColumn && !isInvalidChoice) return false;
   if (!normalizedField) return true;
   const lowerText = text.toLowerCase();
   const lowerField = normalizedField.toLowerCase();
+  if (isInvalidChoice && String(fieldValue || "").trim() &&
+    lowerText.includes(String(fieldValue).trim().toLowerCase())) return true;
   return lowerText.includes(`field \\\"${lowerField}\\\"`) ||
     lowerText.includes(`field \"${lowerField}\"`) ||
     lowerText.includes(`field "${lowerField}"`) ||
@@ -1922,7 +1927,7 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
     deptFieldName &&
     Object.prototype.hasOwnProperty.call(normalizedFields, deptFieldName) &&
     !Array.isArray(normalizedFields[deptFieldName]) &&
-    isAirtableInvalidValueForField(firstErrorText, deptFieldName)
+    isAirtableInvalidValueForField(firstErrorText, deptFieldName, normalizedFields[deptFieldName])
   ) {
     fallbackFields[deptFieldName] = normalizedFields[deptFieldName];
     shouldRetry = true;
@@ -1932,7 +1937,7 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
     typeFieldName &&
     Object.prototype.hasOwnProperty.call(normalizedFields, typeFieldName) &&
     !Array.isArray(normalizedFields[typeFieldName]) &&
-    isAirtableInvalidValueForField(firstErrorText, typeFieldName)
+    isAirtableInvalidValueForField(firstErrorText, typeFieldName, normalizedFields[typeFieldName])
   ) {
     fallbackFields[typeFieldName] = normalizedFields[typeFieldName];
     shouldRetry = true;
@@ -1941,7 +1946,7 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
   if (!shouldRetry) {
     if (
       typeFieldName &&
-      isAirtableInvalidValueForField(firstErrorText, typeFieldName) &&
+      isAirtableInvalidValueForField(firstErrorText, typeFieldName, resolvedFields[typeFieldName]) &&
       Object.prototype.hasOwnProperty.call(resolvedFields, typeFieldName) &&
       hasOtherFields(resolvedFields, typeFieldName)
     ) {
@@ -1978,7 +1983,7 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
   const retryErrorText = await resp.text();
   if (
     typeFieldName &&
-    isAirtableInvalidValueForField(retryErrorText, typeFieldName) &&
+    isAirtableInvalidValueForField(retryErrorText, typeFieldName, fallbackFields[typeFieldName]) &&
     Object.prototype.hasOwnProperty.call(fallbackFields, typeFieldName) &&
     hasOtherFields(fallbackFields, typeFieldName)
   ) {
