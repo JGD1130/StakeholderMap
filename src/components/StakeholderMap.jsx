@@ -4660,6 +4660,29 @@ const LOW_ZOOM_BUILDING_MARKER_LAYER_ID = 'buildings-lowzoom-markers';
 const LOW_ZOOM_BUILDING_MARKER_RING_LAYER_ID = 'buildings-lowzoom-markers-ring';
 const DEFAULT_LOW_ZOOM_BUILDING_MARKER_MAX_ZOOM = 13.2;
 
+const SARPY_FACILITY_TYPE_COLORS = Object.freeze({
+  Administrative: '#2563eb',
+  'Law Enforcement': '#dc2626',
+  'Public Works': '#eab308',
+  Recreation: '#16a34a',
+  Infrastructure: '#6b7280'
+});
+
+const getSarpyFacilityTypeColor = (facilityType) => (
+  SARPY_FACILITY_TYPE_COLORS[String(facilityType || '').trim()] || '#9ca3af'
+);
+
+const SARPY_FACILITY_TYPE_COLOR_EXPR = [
+  'match',
+  ['coalesce', ['get', 'facilityType'], ['get', 'FacilityType']],
+  'Administrative', SARPY_FACILITY_TYPE_COLORS.Administrative,
+  'Law Enforcement', SARPY_FACILITY_TYPE_COLORS['Law Enforcement'],
+  'Public Works', SARPY_FACILITY_TYPE_COLORS['Public Works'],
+  'Recreation', SARPY_FACILITY_TYPE_COLORS.Recreation,
+  'Infrastructure', SARPY_FACILITY_TYPE_COLORS.Infrastructure,
+  '#9ca3af'
+];
+
 // Cache to avoid double-loading sources
 const floorCache = new Map();
 const floorTransformCache = new Map();
@@ -5568,7 +5591,13 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       let mergedProps = baseProps;
       const applyAirtablePatch = () => {
         if (!canUseAirtable || detectFeatureKind(baseProps) !== 'room') return;
-        const airtablePatch = getAirtableRoomPatch(baseProps, airtableLookup, buildingId, floor);
+        const airtablePatch = getAirtableRoomPatch(
+          baseProps,
+          airtableLookup,
+          buildingId,
+          floor,
+          Boolean(options.airtableWins)
+        );
         if (airtablePatch) mergedProps = mergePatch(mergedProps, airtablePatch);
       };
       const applyRoomPatch = () => {
@@ -5900,11 +5929,13 @@ function buildLowZoomBuildingMarkerFC(buildingsGeoJson) {
     const props = feature?.properties || {};
     const id = String(props.id ?? props.ID ?? props.name ?? props.Name ?? `building_${idx + 1}`);
     const name = String(props.name ?? props.Name ?? props.id ?? props.ID ?? `Building ${idx + 1}`).trim() || `Building ${idx + 1}`;
+    const facilityType = String(props.facilityType ?? props.FacilityType ?? '').trim();
+    const markerColor = getSarpyFacilityTypeColor(facilityType);
 
     markerFeatures.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
-      properties: { id, name }
+      properties: { id, name, facilityType, markerColor }
     });
   });
 
@@ -9760,7 +9791,7 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
   });
 }
 
-function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
+function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankDepartment = false) {
   if (!lookup) return null;
   let room = null;
   const guidRaw = (
@@ -9835,7 +9866,7 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
   const department = String(room.department ?? '').trim();
   const exportTypeLabel = String(getRoomTypeLabelFromProps(props) ?? '').trim();
   const shouldPatchType = !hasMeaningfulRoomTypeLabel(exportTypeLabel);
-  if (!occupancyStatus && !occupant && !type && !department) return null;
+  if (!occupancyStatus && !occupant && !type && !department && !allowBlankDepartment) return null;
 
   const patch = {};
   if (occupancyStatus) {
@@ -9853,7 +9884,7 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor) {
     patch['Room Type'] = type;
     patch['Room Type Description'] = type;
   }
-  if (department) {
+  if (department || allowBlankDepartment) {
     patch.department = department;
     patch.Department = department;
   }
@@ -11357,6 +11388,28 @@ const StakeholderMap = ({
       : { type: 'FeatureCollection', features: [] }),
     [lowZoomBuildingMarkersEnabled, config?.buildings]
   );
+  const sarpyFacilityTypeLegend = useMemo(() => {
+    if (!isSarpyCountyInstance) return [];
+    const features = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+    const counts = new Map();
+    features.forEach((feature) => {
+      const props = feature?.properties || {};
+      const label = String(props.facilityType ?? props.FacilityType ?? '').trim();
+      if (!label) return;
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    const knownOrder = Object.keys(SARPY_FACILITY_TYPE_COLORS);
+    const ordered = [
+      ...knownOrder.filter((label) => counts.has(label)),
+      ...Array.from(counts.keys())
+        .filter((label) => !knownOrder.includes(label))
+        .sort((a, b) => a.localeCompare(b))
+    ];
+    return ordered.map((label) => ({
+      label: `${label} (${counts.get(label)})`,
+      color: getSarpyFacilityTypeColor(label)
+    }));
+  }, [config?.buildings?.features, isSarpyCountyInstance]);
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
   const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
@@ -24365,7 +24418,13 @@ useEffect(() => {
       let didPatch = false;
       const applyAirtablePatch = () => {
         if (!hasAirtableLookup) return;
-        const airtablePatch = getAirtableRoomPatch(props, airtableRoomLookup, buildingKey, floorKey);
+        const airtablePatch = getAirtableRoomPatch(
+          props,
+          airtableRoomLookup,
+          buildingKey,
+          floorKey,
+          isSarpyCountyInstance
+        );
         if (airtablePatch) {
           mergedProps = mergePatch(mergedProps, airtablePatch);
           didPatch = true;
@@ -25483,8 +25542,10 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 10, 12, 12, 15],
-          'circle-color': 'rgba(220,38,38,0.20)',
-          'circle-stroke-color': 'rgba(185,28,28,0.75)',
+          'circle-color': ['coalesce', ['get', 'markerColor'], '#dc2626'],
+          'circle-opacity': 0.18,
+          'circle-stroke-color': ['coalesce', ['get', 'markerColor'], '#b91c1c'],
+          'circle-stroke-opacity': 0.75,
           'circle-stroke-width': 1.2
         }
       }, 'buildings-labels');
@@ -25498,7 +25559,7 @@ useEffect(() => {
         maxzoom: lowZoomBuildingMarkerMaxZoom,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4.8, 10, 6.3, 12, 8.1],
-          'circle-color': '#dc2626',
+          'circle-color': ['coalesce', ['get', 'markerColor'], '#dc2626'],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.2
         }
@@ -26118,8 +26179,19 @@ useEffect(() => {
           map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0)');
         }
       } catch {}
+    } else if (isSarpyCountyInstance) {
+      const facilityColorExpr = withNoFloorplanOverride(SARPY_FACILITY_TYPE_COLOR_EXPR);
+      try {
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-color', facilityColorExpr);
+        map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.52);
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', facilityColorExpr);
+          map.setPaintProperty('buildings-fill', 'fill-opacity', 0.28);
+          map.setPaintProperty('buildings-fill', 'fill-outline-color', 'rgba(0,0,0,0.10)');
+        }
+      } catch {}
     } else {
-      // in Space Data we keep buildings pure white; do not recolor
+      // Other tenant Space Data views retain their existing neutral building treatment.
       try {
         map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride('#ffffff'));
         map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.7);
@@ -26219,7 +26291,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, isSarpyCountyInstance]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -28832,6 +28904,7 @@ useEffect(() => {
               heatmapOn={utilizationHeatmapOn}
               onToggleHeatmap={setUtilizationHeatmapOn}
               spaceContextTitle={dashboardSpaceContextTitle}
+              facilityTypeLegend={sarpyFacilityTypeLegend}
               showUtilizationSection={showClassroomUtilizationDashboard}
               showStrategicSection={showStrategicDashboard}
               strategic={isAdminMode && showStrategicDashboard ? {
