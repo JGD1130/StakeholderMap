@@ -3954,7 +3954,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false, useVectorOverlay = false }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -3992,7 +3992,25 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
-  if (!map.getLayer(DOORS_LAYER)) {
+  if (!map.getLayer(DOORS_LAYER) && useVectorOverlay) {
+    map.addLayer({
+      id: DOORS_LAYER,
+      type: "circle",
+      source: DOORS_SOURCE,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 1.5,
+          18, 2.5,
+          20, 3.75
+        ],
+        "circle-color": "#f8fafc",
+        "circle-stroke-color": "#334155",
+        "circle-stroke-width": 1.25,
+        "circle-opacity": 0.98
+      }
+    });
+  } else if (!map.getLayer(DOORS_LAYER)) {
     try {
       if (!map.hasImage('mf-door-swing')) {
         await loadIcon(map, 'mf-door-swing', assetUrl('icons/door-swing.png'));
@@ -4385,7 +4403,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, enabled = false }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, enabled = false, useVectorOverlay = false }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4422,7 +4440,25 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   if (map.getSource(STAIRS_SOURCE)) map.getSource(STAIRS_SOURCE).setData(fc);
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
-  if (!map.getLayer(STAIRS_LAYER)) {
+  if (!map.getLayer(STAIRS_LAYER) && useVectorOverlay) {
+    map.addLayer({
+      id: STAIRS_LAYER,
+      type: "circle",
+      source: STAIRS_SOURCE,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 2,
+          18, 3.25,
+          20, 4.75
+        ],
+        "circle-color": "#f4c542",
+        "circle-stroke-color": "#5c4b11",
+        "circle-stroke-width": 1.25,
+        "circle-opacity": 0.98
+      }
+    });
+  } else if (!map.getLayer(STAIRS_LAYER)) {
     try {
       if (!map.hasImage('mf-stairs-run')) {
         await loadIcon(map, 'mf-stairs-run', assetUrl('icons/stairs-run.png'));
@@ -5824,7 +5860,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           fitTransform: skipBuildingFit ? null : (fitTransform || cachedTransform.fitTransform || null),
           roomsFC: patchedFC,
           buildingLabel: overlayBuildingLabel,
-          enabled: enableDoorStairOverlay
+          enabled: enableDoorStairOverlay,
+          useVectorOverlay: Boolean(options?.useVectorDoorStairOverlay)
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -5833,7 +5870,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         affine,
         rotationOverride,
         fitTransform: skipBuildingFit ? null : (fitTransform || cachedTransform.fitTransform || null),
-        enabled: enableDoorStairOverlay
+        enabled: enableDoorStairOverlay,
+        useVectorOverlay: Boolean(options?.useVectorDoorStairOverlay)
       });
     }
   }
@@ -18918,6 +18956,7 @@ const StakeholderMap = ({
         skipBuildingFit: skipCherokeeSharedPlanFit,
         skipFloorAdjust: skipCherokeeSharedPlanFit,
         enableDoorStairOverlay: Boolean(config?.enableDoorStairOverlay),
+        useVectorDoorStairOverlay: isCherokeeMentalHealthInstance,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
