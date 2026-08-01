@@ -11426,9 +11426,20 @@ const StakeholderMap = ({
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
+  const configuredFloorplanBuildings = useMemo(
+    () => (Array.isArray(config?.floorplanBuildings) ? config.floorplanBuildings : [])
+      .map((building) => ({
+        name: String(building?.name || '').trim(),
+        folder: String(building?.folder || '').trim()
+      }))
+      .filter((building) => building.name && building.folder),
+    [config?.floorplanBuildings]
+  );
   const floorplanBuildingOptions = useMemo(
     () => {
       if (!floorplansEnabled) return [];
+      // Tenant-configured folders take precedence so Cherokee never falls back to Hastings.
+      if (configuredFloorplanBuildings.length) return configuredFloorplanBuildings;
       if (!isSarpyCountyInstance) {
         return BUILDINGS_LIST.filter((b) => !b?.campus || b.campus === 'Hastings');
       }
@@ -11446,7 +11457,7 @@ const StakeholderMap = ({
         })
         .map((name) => ({ name, folder: BUILDING_FOLDER_MAP[name] }));
     },
-    [floorplansEnabled, isSarpyCountyInstance, config?.buildings?.features]
+    [floorplansEnabled, configuredFloorplanBuildings, isSarpyCountyInstance, config?.buildings?.features]
   );
   const floorplanBuildingNames = useMemo(
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
@@ -12764,13 +12775,22 @@ const StakeholderMap = ({
   }, []);
   const getBuildingFolderKey = useCallback((idOrName) => {
     if (!idOrName) return null;
+    const normalizedInput = normalizeBuildingKey(idOrName);
+    const configuredBuilding = configuredFloorplanBuildings.find(
+      (building) =>
+        building.name === idOrName ||
+        building.folder === idOrName ||
+        normalizeBuildingKey(building.name) === normalizedInput ||
+        normalizeBuildingKey(building.folder) === normalizedInput
+    );
+    if (configuredBuilding) return configuredBuilding.folder;
     const resolvedName = resolveBuildingNameFromInput(idOrName);
     if (resolvedName && BUILDING_FOLDER_MAP[resolvedName]) {
       return BUILDING_FOLDER_MAP[resolvedName];
     }
     if (BUILDING_FOLDER_SET.has(idOrName)) return idOrName;
     return null;
-  }, []);
+  }, [configuredFloorplanBuildings]);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
     if (!floorplansEnabled) return null;
     const normalizedFloorId = normalizeFloorIdValue(floorId);
@@ -31239,7 +31259,7 @@ useEffect(() => {
                   </button>
                   {!floorplanBuildingOptions.length && (
                     <div style={{ fontSize: 11, color: '#555', textAlign: 'center' }}>
-                      Floorplans will appear here after Sarpy floor data is added.
+                      No floorplans are configured for this map.
                     </div>
                   )}
                 </div>
