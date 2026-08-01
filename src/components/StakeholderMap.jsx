@@ -5139,7 +5139,15 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
+  const {
+    buildingId,
+    floor,
+    roomPatches,
+    onOptionsCollected,
+    currentFloorContextRef,
+    airtableLookup,
+    skipBuildingFit = false
+  } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5218,6 +5226,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   if (data && snapCorner && (data.__mfTransformed || data.__mfFitted || data.__mfFitTransform)) {
     floorCache.delete(url);
+    data = null;
+  }
+  if (data && skipBuildingFit && (data.__mfFitted || data.__mfFitTransform || data.__mfFittedBuilding)) {
+    floorCache.delete(url);
+    floorTransformCache.delete(url);
     data = null;
   }
   if (data && Number.isFinite(postRotateDeg) && data.__mfPostRotation !== postRotateDeg) {
@@ -5459,7 +5472,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           floorCache.set(url, fc);
         }
       }
-    } else {
+    } else if (!skipBuildingFit) {
       const fitCandidate = buildFitCandidate(fc);
       const fitSource = fitCandidate && fitCandidate !== fc ? fitCandidate : fc;
       if (fitBuilding && shouldFitFloorplanToBuilding(fitSource, fitBuilding)) {
@@ -11463,6 +11476,20 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const isCherokeeMentalHealthInstance = String(config?.universityId || '').trim().toLowerCase() === 'cherokee-mental-health';
+  const sharedFloorplanFolderSet = useMemo(() => {
+    const counts = new Map();
+    floorplanBuildingOptions.forEach((entry) => {
+      const folder = String(entry?.folder || '').trim();
+      if (!folder) return;
+      counts.set(folder, (counts.get(folder) || 0) + 1);
+    });
+    return new Set(
+      Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([folder]) => folder)
+    );
+  }, [floorplanBuildingOptions]);
   const configuredDashboardBuildingKeys = useMemo(() => {
     const out = new Set();
     (config?.buildings?.features || []).forEach((feature) => {
@@ -18792,6 +18819,14 @@ const StakeholderMap = ({
         selectedBuilding,
         floorId
       );
+      const selectedFolderKey =
+        getBuildingFolderKey(selectedBuildingId) ||
+        getBuildingFolderKey(selectedBuilding) ||
+        getBuildingFolderKey(fitBuilding?.properties?.id) ||
+        getBuildingFolderKey(fitBuilding?.properties?.name);
+      const skipBuildingFit = isCherokeeMentalHealthInstance && Boolean(
+        selectedFolderKey && sharedFloorplanFolderSet.has(selectedFolderKey)
+      );
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
@@ -18800,6 +18835,7 @@ const StakeholderMap = ({
         airtableLookup: airtableRoomLookup,
         airtableWins: isSarpyCountyInstance,
         currentFloorContextRef,
+        skipBuildingFit,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
         enableWalls: allowOptionalOverlays,
