@@ -3954,8 +3954,8 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel }) {
-  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false }) {
+  if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
   const affineRotationDeg = getAffineRotationDeg(affine);
@@ -4385,8 +4385,8 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform }) {
-  if (!ENABLE_DOOR_STAIR_OVERLAY) return;
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, enabled = false }) {
+  if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
   const affineRotationDeg = getAffineRotationDeg(affine);
@@ -5139,7 +5139,7 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup } = options;
+  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup, skipBuildingFit = false, skipFloorAdjust = false, enableDoorStairOverlay = false } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5203,13 +5203,18 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     url: floorAdjustFromUrl,
     label: floorAdjustFromLabel
   });
-  const floorAdjust = floorAdjustPick.adjust;
-  const postRotateDeg = basePostRotateDeg;
+  const floorAdjust = skipFloorAdjust ? null : floorAdjustPick.adjust;
+  const postRotateDeg = skipBuildingFit ? 0 : basePostRotateDeg;
 
   let affine = null;
   let fc = null;
   let data = floorCache.get(url);
-  const drawingAlign = loadDrawingAlign(drawingAlignLabel, floorId || floor);
+  if (skipBuildingFit || skipFloorAdjust) {
+    floorCache.delete(url);
+    floorTransformCache.delete(url);
+    data = null;
+  }
+  const drawingAlign = skipFloorAdjust ? null : loadDrawingAlign(drawingAlignLabel, floorId || floor);
   const drawingAlignSig = getDrawingAlignSignature(drawingAlign);
   if (data && shouldBypassFloorCache(affineBuildingLabel || buildingId || '', floorId || floor || '')) {
     floorCache.delete(url);
@@ -5368,6 +5373,11 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     }
   }
 
+  if (skipBuildingFit) {
+    fitBuilding = null;
+    snapCorner = null;
+  }
+
   const rotationOverrideDeg = Number.isFinite(affineParams?.rotationOverrideDeg)
     ? affineParams.rotationOverrideDeg
     : null;
@@ -5447,8 +5457,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   let summary = computeFloorSummary(fc);
   cacheFloorSummary(summary, fc);
 
-  let fitTransform = fc?.__mfFitTransform || cachedTransform.fitTransform || null;
-  try {
+  let fitTransform = skipBuildingFit ? null : (fc?.__mfFitTransform || cachedTransform.fitTransform || null);
+  if (!skipBuildingFit) try {
     if (fitBuilding && !isLikelyLonLat(fc)) {
       const locallyFitted = fitLocalFloorplanToBuilding(fc, fitBuilding);
       if (locallyFitted?.features?.length) {
@@ -5489,7 +5499,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     }
   } catch {}
 
-  const scaleOverride = getFloorplanScaleOverride(affineBuildingLabel || buildingId || '', floorId || floor || '');
+  const scaleOverride = skipBuildingFit ? 1 : getFloorplanScaleOverride(affineBuildingLabel || buildingId || '', floorId || floor || '');
   if (Number.isFinite(scaleOverride) && Math.abs(scaleOverride - 1) > 1e-3) {
     const scaleOrigin = fitTransform?.scaleOrigin || turf.centroid(fc)?.geometry?.coordinates || null;
     if (scaleOrigin) {
@@ -5811,9 +5821,10 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           map,
           affine,
           rotationOverride,
-          fitTransform: fitTransform || cachedTransform.fitTransform || null,
+          fitTransform: skipBuildingFit ? null : (fitTransform || cachedTransform.fitTransform || null),
           roomsFC: patchedFC,
-          buildingLabel: overlayBuildingLabel
+          buildingLabel: overlayBuildingLabel,
+          enabled: enableDoorStairOverlay
         });
       await tryLoadStairsOverlay({
         basePath: overlayBasePath,
@@ -5821,7 +5832,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         map,
         affine,
         rotationOverride,
-        fitTransform: fitTransform || cachedTransform.fitTransform || null
+        fitTransform: skipBuildingFit ? null : (fitTransform || cachedTransform.fitTransform || null),
+        enabled: enableDoorStairOverlay
       });
     }
   }
@@ -9018,6 +9030,60 @@ const normalizeDashboardKey = (value) => {
   const resolved = resolveBuildingNameFromInput(raw) || raw;
   return canon(resolved);
 };
+
+const CHEROKEE_SHARED_BUILDING_KEYS = new Set(
+  [
+    'Main/Administration',
+    'North A',
+    'North B',
+    'North C',
+    'South A',
+    'South B',
+    'South C',
+    'Rear Center',
+  ].map(normalizeDashboardKey).filter(Boolean),
+);
+
+const isCherokeeOverallRoomsUrl = (url) =>
+  /\/floorplans\/cherokeementalhealth\/overall\/rooms\//i.test(String(url || '').replace(/\\/g, '/'));
+
+const getBuildingFeatureLabel = (feature) =>
+  String(
+    feature?.properties?.name ||
+      feature?.properties?.Name ||
+      feature?.properties?.buildingName ||
+      feature?.properties?.BuildingName ||
+      '',
+  ).trim();
+
+const resolveCherokeeSharedRoomBuilding = (roomFeature, buildingFeatures, fallback) => {
+  try {
+    const roomPoint = turf.pointOnFeature(roomFeature);
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    (buildingFeatures || []).forEach((candidate) => {
+      const label = getBuildingFeatureLabel(candidate);
+      if (!CHEROKEE_SHARED_BUILDING_KEYS.has(normalizeDashboardKey(label))) return;
+
+      if (turf.booleanPointInPolygon(roomPoint, candidate)) {
+        nearest = { label };
+        nearestDistance = 0;
+        return;
+      }
+
+      const distance = turf.distance(roomPoint, turf.centroid(candidate));
+      if (distance < nearestDistance) {
+        nearest = { label };
+        nearestDistance = distance;
+      }
+    });
+
+    return nearest?.label || fallback;
+  } catch {
+    return fallback;
+  }
+};
 const normalizeBuildingResourceUrl = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -9979,9 +10045,17 @@ const toDashboardRoomRow = (feature, buildingLabel) => {
   };
 };
 
-const buildCampusRoomsFromManifest = async (manifest) => {
+const buildCampusRoomsFromManifest = async (manifest, options = {}) => {
   const floorsByBuilding = manifest?.floorsByBuilding || {};
   const jobs = [];
+  const campusPathPrefix = String(options?.campusPathPrefix || '')
+    .replace(/^\/+/, '')
+    .toLowerCase();
+  const allowedFloorplanFolders = new Set(
+    (Array.isArray(options?.allowedFloorplanFolders) ? options.allowedFloorplanFolders : [])
+      .map((folder) => String(folder || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
 
   const buildingNameById = new Map();
   if (Array.isArray(manifest?.buildings)) {
@@ -10000,7 +10074,19 @@ const buildCampusRoomsFromManifest = async (manifest) => {
     const buildingLabel = buildingNameById.get(String(buildingKey)) || buildingKey;
     (floors || []).forEach((floor) => {
       const url = typeof floor === 'string' ? floor : floor?.url;
-      if (url) jobs.push({ url, buildingLabel });
+      const normalizedUrl = String(url || '').replace(/\\/g, '/').toLowerCase();
+      const isCampusFile =
+        !campusPathPrefix ||
+        normalizedUrl.startsWith(campusPathPrefix) ||
+        normalizedUrl.includes(`/${campusPathPrefix}`);
+      const folderMatch = normalizedUrl.match(/floorplans\/[^/]+\/([^/]+)\//i);
+      const folderName = folderMatch
+        ? decodeURIComponent(folderMatch[1]).trim().toLowerCase()
+        : '';
+      const isConfiguredFolder =
+        !allowedFloorplanFolders.size ||
+        allowedFloorplanFolders.has(folderName);
+      if (url && isCampusFile && isConfiguredFolder) jobs.push({ url, buildingLabel });
     });
   });
 
@@ -10010,7 +10096,11 @@ const buildCampusRoomsFromManifest = async (manifest) => {
     const feats = await fetchRoomsForFloorUrl(job.url);
     const rows = [];
     (feats || []).forEach((feature) => {
-      const row = toDashboardRoomRow(feature, job.buildingLabel);
+      const resolvedBuildingLabel =
+        typeof options?.resolveBuildingLabel === 'function'
+          ? options.resolveBuildingLabel(feature, job.buildingLabel, job.url)
+          : job.buildingLabel;
+      const row = toDashboardRoomRow(feature, resolvedBuildingLabel);
       if (row) rows.push(row);
     });
     return rows;
@@ -11426,6 +11516,7 @@ const StakeholderMap = ({
   const partnerLogoFile = String(config?.logos?.clarkEnersen || 'Clark_Enersen_Logo.png').trim() || 'Clark_Enersen_Logo.png';
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
+  const isCherokeeMentalHealthInstance = String(config?.universityId || universityId || '').trim().toLowerCase() === 'cherokee-mental-health';
   const configuredFloorplanBuildings = useMemo(
     () => (Array.isArray(config?.floorplanBuildings) ? config.floorplanBuildings : [])
       .map((building) => ({
@@ -11463,6 +11554,21 @@ const StakeholderMap = ({
     () => floorplanBuildingOptions.map((b) => b?.name).filter(Boolean),
     [floorplanBuildingOptions]
   );
+  const cherokeeStaticManifestOptions = useMemo(() => {
+    if (!isCherokeeMentalHealthInstance) return null;
+    const buildingFeatures = Array.isArray(config?.buildings?.features) ? config.buildings.features : [];
+    return {
+      campusPathPrefix: `floorplans/${floorplanCampus}/`,
+      allowedFloorplanFolders: [...new Set(
+        configuredFloorplanBuildings.map((building) => building?.folder).filter(Boolean),
+      )],
+      resolveBuildingLabel: (feature, buildingLabel, url) => (
+        isCherokeeOverallRoomsUrl(url)
+          ? resolveCherokeeSharedRoomBuilding(feature, buildingFeatures, buildingLabel)
+          : buildingLabel
+      )
+    };
+  }, [config?.buildings?.features, configuredFloorplanBuildings, floorplanCampus, isCherokeeMentalHealthInstance]);
   const configuredDashboardBuildingKeys = useMemo(() => {
     const out = new Set();
     (config?.buildings?.features || []).forEach((feature) => {
@@ -18676,6 +18782,8 @@ const StakeholderMap = ({
       const basePath = buildingFolder
         ? assetUrl(`floorplans/${encodeURIComponent(floorplanCampus)}/${buildingFolder}`)
         : null;
+      const skipCherokeeSharedPlanFit =
+        isCherokeeMentalHealthInstance && String(buildingFolder || '').trim().toLowerCase() === 'overall';
       const urlFolder = url ? getBuildingFolderFromBasePath(url) : null;
       const adjustLabel =
         buildingKey ||
@@ -18785,13 +18893,15 @@ const StakeholderMap = ({
           selectedBuildingFeatureRef.current = fitBuilding;
         }
       }
-      const rotationOverrideDeg = getFloorplanRotationOverride(
-        fitBuilding?.properties?.id ||
-        fitBuilding?.properties?.name ||
-        selectedBuildingId ||
-        selectedBuilding,
-        floorId
-      );
+      const rotationOverrideDeg = skipCherokeeSharedPlanFit
+        ? 0
+        : getFloorplanRotationOverride(
+          fitBuilding?.properties?.id ||
+          fitBuilding?.properties?.name ||
+          selectedBuildingId ||
+          selectedBuilding,
+          floorId
+        );
       const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
@@ -18805,6 +18915,9 @@ const StakeholderMap = ({
         enableWalls: allowOptionalOverlays,
         wallsBasePath: basePath,
         wallsFloorId: floorId,
+        skipBuildingFit: skipCherokeeSharedPlanFit,
+        skipFloorAdjust: skipCherokeeSharedPlanFit,
+        enableDoorStairOverlay: Boolean(config?.enableDoorStairOverlay),
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -23640,6 +23753,45 @@ useEffect(() => {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (isCherokeeMentalHealthInstance) {
+      (async () => {
+        setDashboardLoading(true);
+        setDashboardError(null);
+        setDashboardTitle(defaultDashboardTitle);
+        setAirtableRooms([]);
+        setAirtableLastSyncedAt(null);
+        try {
+          let manifest = dashboardManifestRef.current;
+          if (!manifest) {
+            manifest = await fetchJSON(FLOORPLAN_MANIFEST_URL);
+            dashboardManifestRef.current = manifest;
+          }
+          const rooms = await buildCampusRoomsFromManifest(manifest, cherokeeStaticManifestOptions || {});
+          if (!rooms.length) throw new Error('No bundled Cherokee rooms found for dashboard');
+          if (cancelled) return;
+          manifestHydrationRoomsRef.current = rooms;
+          setCampusRooms(rooms);
+          setCampusRoomsLoaded(true);
+          setDashboardError(null);
+          setAirtableScopeCheck({
+            level: 'info',
+            label: 'Static Cherokee data',
+            detail: 'Cherokee uses bundled floorplan data; Airtable sync is disabled.'
+          });
+        } catch (err) {
+          if (!cancelled) {
+            setCampusRooms([]);
+            setCampusRoomsLoaded(true);
+            setDashboardError(err);
+          }
+        } finally {
+          if (!cancelled) setDashboardLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+
     (async () => {
       setDashboardLoading(true);
       setDashboardError(null);
@@ -23720,16 +23872,16 @@ useEffect(() => {
       }
     })();
     return () => { cancelled = true; };
-  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions]);
+  }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions, isCherokeeMentalHealthInstance, cherokeeStaticManifestOptions]);
 
   useEffect(() => {
-    if (isSarpyPublicReadonlyMode) return undefined;
+    if (isSarpyPublicReadonlyMode || isCherokeeMentalHealthInstance) return undefined;
     const intervalMs = 30 * 60 * 1000;
     const id = setInterval(() => {
       refreshCampusRoomsFromApi();
     }, intervalMs);
     return () => clearInterval(id);
-  }, [refreshCampusRoomsFromApi, isSarpyPublicReadonlyMode]);
+  }, [refreshCampusRoomsFromApi, isSarpyPublicReadonlyMode, isCherokeeMentalHealthInstance]);
 
   useEffect(() => {
     if (!isHastingsCollegeInstance) {
@@ -24226,6 +24378,7 @@ useEffect(() => {
   }, [universityId, strategicEnrollmentTouched]);
 
   useEffect(() => {
+    if (isCherokeeMentalHealthInstance) return undefined;
     if (!airtableRooms.length) {
       if (!floorplansEnabled) {
         setCampusRooms([]);
@@ -24336,7 +24489,7 @@ useEffect(() => {
     })();
 
     return () => { cancelled = true; };
-  }, [airtableRooms, floorplansEnabled, isSarpyCountyInstance, isSarpyPublicReadonlyMode]);
+  }, [airtableRooms, floorplansEnabled, isSarpyCountyInstance, isSarpyPublicReadonlyMode, isCherokeeMentalHealthInstance]);
 
   useEffect(() => {
     if (!campusRoomsLoaded) return;
