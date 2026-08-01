@@ -7,7 +7,7 @@
     "enableMapfluenceAI":  false,
     "enableFloorAdjustments":  true,
     "enableFloorAdjustRecovery":  false,
-    "enableDoorStairOverlay":  false,
+    "enableDoorStairOverlay":  true,
     "enableClassroomMetrics":  false,
     "defaultMapView":  "space-data",
     "floorAdjustStorageScope":  "CherokeeMentalHealth-v2",
