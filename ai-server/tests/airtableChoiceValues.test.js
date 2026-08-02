@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   cleanAirtableChoiceLabel,
-  normalizeAirtableChoiceValue
+  normalizeAirtableChoiceValue,
+  normalizeAirtableMultipleChoiceValue,
+  airtableMultipleChoiceErrorMatchesValue
 } from '../airtableChoiceValues.js';
 
 const ROOM_TYPE_FIELD = {
@@ -50,4 +52,27 @@ test('normalizes every value for multiple-select fields', () => {
     normalizeAirtableChoiceValue(['"Meeting Room"', 'storage room - general'], multipleField),
     ['Meeting Room', 'Storage Room - General']
   );
+  assert.deepEqual(
+    normalizeAirtableChoiceValue('"Meeting Room"', multipleField),
+    ['Meeting Room']
+  );
+});
+
+test('coerces a failed multiple-choice scalar retry into an Airtable array', () => {
+  assert.deepEqual(
+    normalizeAirtableMultipleChoiceValue('""Meeting Room""'),
+    ['Meeting Room']
+  );
+  assert.deepEqual(normalizeAirtableMultipleChoiceValue(''), []);
+});
+
+test('matches a multiple-choice error only to the rejected field value', () => {
+  const error = JSON.stringify({
+    error: {
+      type: 'INVALID_MULTIPLE_CHOICE_OPTIONS',
+      message: 'Insufficient permissions to create new select option \\"Meeting Room\\"'
+    }
+  });
+  assert.equal(airtableMultipleChoiceErrorMatchesValue(error, 'Meeting Room'), true);
+  assert.equal(airtableMultipleChoiceErrorMatchesValue(error, 'Courthouse'), false);
 });

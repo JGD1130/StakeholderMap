@@ -38,6 +38,12 @@ function canonicalizeChoiceLabel(value, fieldMeta) {
 }
 
 export function normalizeAirtableChoiceValue(value, fieldMeta) {
+  if (fieldMeta?.type === 'multipleSelects') {
+    const values = Array.isArray(value) ? value : [value];
+    return values
+      .map((item) => canonicalizeChoiceLabel(item, fieldMeta))
+      .filter(Boolean);
+  }
   if (Array.isArray(value)) {
     return value.map((item) => canonicalizeChoiceLabel(item, fieldMeta));
   }
@@ -45,4 +51,21 @@ export function normalizeAirtableChoiceValue(value, fieldMeta) {
     return canonicalizeChoiceLabel(value, fieldMeta);
   }
   return value;
+}
+
+export function normalizeAirtableMultipleChoiceValue(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .map((item) => cleanAirtableChoiceLabel(item))
+    .filter(Boolean);
+}
+
+export function airtableMultipleChoiceErrorMatchesValue(errorText, value) {
+  const error = String(errorText ?? '');
+  if (!/INVALID_MULTIPLE_CHOICE_OPTIONS/i.test(error)) return false;
+
+  const normalizedError = error.toLocaleLowerCase();
+  return normalizeAirtableMultipleChoiceValue(value).some(
+    (label) => normalizedError.includes(label.toLocaleLowerCase())
+  );
 }
