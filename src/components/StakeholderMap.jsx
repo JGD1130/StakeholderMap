@@ -3993,21 +3993,37 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(DOORS_LAYER) && useVectorOverlay) {
+    try {
+      await loadInlineSvgIcon(map, CHEROKEE_DOOR_ICON, CHEROKEE_DOOR_ICON_SVG);
+    } catch (err) {
+      console.warn('Cherokee door symbol could not be created:', err);
+      return;
+    }
     map.addLayer({
       id: DOORS_LAYER,
-      type: "circle",
+      type: "symbol",
       source: DOORS_SOURCE,
-      paint: {
-        "circle-radius": [
+      layout: {
+        "icon-image": CHEROKEE_DOOR_ICON,
+        "icon-size": [
           "interpolate", ["linear"], ["zoom"],
-          16, 1.5,
-          18, 2.5,
-          20, 3.75
+          16, 0.13,
+          18, 0.20,
+          20, 0.30
         ],
-        "circle-color": "#f8fafc",
-        "circle-stroke-color": "#334155",
-        "circle-stroke-width": 1.25,
-        "circle-opacity": 0.98
+        "icon-rotate": [
+          "coalesce",
+          ["to-number", ["get", "bearing_deg"]],
+          0
+        ],
+        "icon-rotation-alignment": "map",
+        "icon-keep-upright": false,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true
+      },
+      paint: {
+        "icon-color": "#334155",
+        "icon-opacity": 0.98
       }
     });
   } else if (!map.getLayer(DOORS_LAYER)) {
@@ -4441,21 +4457,30 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(STAIRS_LAYER) && useVectorOverlay) {
+    try {
+      await loadInlineSvgIcon(map, CHEROKEE_STAIRS_ICON, CHEROKEE_STAIRS_ICON_SVG);
+    } catch (err) {
+      console.warn('Cherokee stair symbol could not be created:', err);
+      return;
+    }
     map.addLayer({
       id: STAIRS_LAYER,
-      type: "circle",
+      type: "symbol",
       source: STAIRS_SOURCE,
-      paint: {
-        "circle-radius": [
+      layout: {
+        "icon-image": CHEROKEE_STAIRS_ICON,
+        "icon-size": [
           "interpolate", ["linear"], ["zoom"],
-          16, 2,
-          18, 3.25,
-          20, 4.75
+          16, 0.13,
+          18, 0.20,
+          20, 0.30
         ],
-        "circle-color": "#f4c542",
-        "circle-stroke-color": "#5c4b11",
-        "circle-stroke-width": 1.25,
-        "circle-opacity": 0.98
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true
+      },
+      paint: {
+        "icon-color": "#8a5a00",
+        "icon-opacity": 0.98
       }
     });
   } else if (!map.getLayer(STAIRS_LAYER)) {
@@ -5074,6 +5099,24 @@ async function loadIcon(map, name, url) {
   }
 }
 
+const CHEROKEE_DOOR_ICON = 'mf-cherokee-door-swing';
+const CHEROKEE_STAIRS_ICON = 'mf-cherokee-stairs-run';
+
+// Cherokee's source exports contain door and stair points, but not icon images.
+// Generate compact SDF symbols locally so they remain visible without a network asset.
+async function loadInlineSvgIcon(map, name, svg) {
+  if (!map || !name || !svg || map.hasImage(name)) return;
+  const image = await new Promise((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = reject;
+    element.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
+  map.addImage(name, image, { sdf: true, pixelRatio: 2 });
+}
+
+const CHEROKEE_DOOR_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><path d="M18 14V78H82M18 14A64 64 0 0 1 82 78" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHEROKEE_STAIRS_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><path d="M18 78H80M28 64H80M38 50H80M48 36H80M58 22H80" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round"/></svg>';
 function ensureLayerOrder(map) {
   if (!map) return;
   try {
@@ -24763,15 +24806,17 @@ useEffect(() => {
     // 4) Load/resize safely
     mapInstance.once('load', () => {
       (async () => {
-        try {
-          await loadIcon(mapInstance, 'mf-door-swing', '/StakeholderMap/icons/door-swing.png');
-        } catch (err) {
-          console.warn('Door icon load failed:', err);
-        }
-        try {
-          await loadIcon(mapInstance, 'mf-stairs-run', '/StakeholderMap/icons/stairs-run.png');
-        } catch (err) {
-          console.warn('Stairs icon load failed:', err);
+        if (!isCherokeeMentalHealthInstance) {
+          try {
+            await loadIcon(mapInstance, 'mf-door-swing', '/StakeholderMap/icons/door-swing.png');
+          } catch (err) {
+            console.warn('Door icon load failed:', err);
+          }
+          try {
+            await loadIcon(mapInstance, 'mf-stairs-run', '/StakeholderMap/icons/stairs-run.png');
+          } catch (err) {
+            console.warn('Stairs icon load failed:', err);
+          }
         }
 
         setMapLoaded(true);
