@@ -11,6 +11,7 @@ import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
 import { fileURLToPath } from "url";
 import { validateAiQuery } from "./validateAiQuery.js";
+import { normalizeAirtableChoiceValue } from "./airtableChoiceValues.js";
 import archiver from "archiver";
 
 const app = express();
@@ -1663,6 +1664,16 @@ async function normalizeRoomUpdateFields(tableName, updateFields = {}) {
   let next = { ...updateFields };
   next = remapFieldAlias(next, AIRTABLE_TYPE_FIELD_CANDIDATES, typeFieldName);
   next = remapFieldAlias(next, AIRTABLE_DEPT_FIELD_CANDIDATES, deptFieldName);
+  const [typeFieldMeta, deptFieldMeta] = await Promise.all([
+    getTableFieldMeta(tableName, typeFieldName),
+    getTableFieldMeta(tableName, deptFieldName)
+  ]);
+  if (typeFieldName && Object.prototype.hasOwnProperty.call(next, typeFieldName)) {
+    next[typeFieldName] = normalizeAirtableChoiceValue(next[typeFieldName], typeFieldMeta);
+  }
+  if (deptFieldName && Object.prototype.hasOwnProperty.call(next, deptFieldName)) {
+    next[deptFieldName] = normalizeAirtableChoiceValue(next[deptFieldName], deptFieldMeta);
+  }
   return { fields: next, typeFieldName, deptFieldName };
 }
 
