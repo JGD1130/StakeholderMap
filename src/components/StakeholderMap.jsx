@@ -14,6 +14,10 @@ import { surveyConfigs } from '../surveyConfigs';
 import * as turf from '@turf/turf';
 import { bId, fId, rId, canon } from '../utils/idUtils';
 import { computeFloorSummary } from '../utils/floorSummary';
+import {
+  buildCherokeeDoorLinework,
+  buildCherokeeStairLinework
+} from '../utils/cherokeeArchitecturalOverlays';
 import { DEPT_COLORS, getDeptColor } from '../style/roomColors';
 import BuildingPanel from './panels/BuildingPanel';
 import FloorPanel from './panels/FloorPanel';
@@ -4021,41 +4025,31 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
 
+  if (useVectorOverlay) {
+    fc = buildCherokeeDoorLinework(fc, roomsFC);
+  }
+
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(DOORS_LAYER) && useVectorOverlay) {
-    try {
-      await loadInlineSvgIcon(map, CHEROKEE_DOOR_ICON, CHEROKEE_DOOR_ICON_SVG);
-    } catch (err) {
-      console.warn('Cherokee door symbol could not be created:', err);
-      return;
-    }
     map.addLayer({
       id: DOORS_LAYER,
-      type: "symbol",
+      type: "line",
       source: DOORS_SOURCE,
       layout: {
-        "icon-image": CHEROKEE_DOOR_ICON,
-        "icon-size": [
-          "interpolate", ["linear"], ["zoom"],
-          16, 0.13,
-          18, 0.20,
-          20, 0.30
-        ],
-        "icon-rotate": [
-          "coalesce",
-          ["to-number", ["get", "bearing_deg"]],
-          0
-        ],
-        "icon-rotation-alignment": "map",
-        "icon-keep-upright": false,
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true
+        "line-join": "round",
+        "line-cap": "round"
       },
       paint: {
-        "icon-color": "#334155",
-        "icon-opacity": 0.98
+        "line-color": "#334155",
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.55,
+          18, 1.0,
+          20, 1.5
+        ],
+        "line-opacity": 0.96
       }
     });
   } else if (!map.getLayer(DOORS_LAYER)) {
@@ -4451,7 +4445,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4492,36 +4486,33 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     }
   }
 
+  if (useVectorOverlay) {
+    fc = buildCherokeeStairLinework(fc, roomsFC);
+  }
+
   console.log("[stairs] loaded features", fc.features.length);
 
   if (map.getSource(STAIRS_SOURCE)) map.getSource(STAIRS_SOURCE).setData(fc);
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
   if (!map.getLayer(STAIRS_LAYER) && useVectorOverlay) {
-    try {
-      await loadInlineSvgIcon(map, CHEROKEE_STAIRS_ICON, CHEROKEE_STAIRS_ICON_SVG);
-    } catch (err) {
-      console.warn('Cherokee stair symbol could not be created:', err);
-      return;
-    }
     map.addLayer({
       id: STAIRS_LAYER,
-      type: "symbol",
+      type: "line",
       source: STAIRS_SOURCE,
       layout: {
-        "icon-image": CHEROKEE_STAIRS_ICON,
-        "icon-size": [
-          "interpolate", ["linear"], ["zoom"],
-          16, 0.13,
-          18, 0.20,
-          20, 0.30
-        ],
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true
+        "line-join": "round",
+        "line-cap": "round"
       },
       paint: {
-        "icon-color": "#8a5a00",
-        "icon-opacity": 0.98
+        "line-color": "#8a5a00",
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          16, 0.55,
+          18, 1.0,
+          20, 1.5
+        ],
+        "line-opacity": 0.96
       }
     });
   } else if (!map.getLayer(STAIRS_LAYER)) {
@@ -5960,6 +5951,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         affine,
         rotationOverride,
         fitTransform: skipBuildingFit ? null : (fitTransform || cachedTransform.fitTransform || null),
+        roomsFC: patchedFC,
         enabled: enableDoorStairOverlay,
         useVectorOverlay: Boolean(options?.useVectorDoorStairOverlay),
         overlayFloorAdjust
