@@ -73,7 +73,7 @@ export function buildCherokeeDoorLinework(doorsFC, roomsFC, options = {}) {
   if (!boundaries.length) return featureCollection([]);
 
   const features = [];
-  for (const door of doorsFC?.features || []) {
+  for (const [index, door] of (doorsFC?.features || []).entries()) {
     if (!finitePoint(door)) continue;
     const bearing = Number(door?.properties?.bearing_deg);
     if (!Number.isFinite(bearing)) continue;
@@ -100,7 +100,13 @@ export function buildCherokeeDoorLinework(doorsFC, roomsFC, options = {}) {
       },
       properties: {
         ...(door.properties || {}),
+        RevitId: 'cherokee-door-' + index,
+        Element: 'Drawing',
+        Layer: 'A-DOOR',
+        type: 'drawing',
+        interactive: false,
         __mfOverlayKind: 'cherokee-door-linework',
+        __mfSourceRevitId: door?.properties?.RevitId ?? door?.properties?.id ?? null,
         __mfSnapDistanceMeters: nearest.distanceMeters
       }
     });
@@ -199,7 +205,7 @@ export function buildCherokeeStairLinework(stairsFC, roomsFC, options = {}) {
   const stairRooms = stairRoomFeatures(roomsFC);
 
   if (stairRooms.length) {
-    return featureCollection(stairRooms.map((room) => {
+    return featureCollection(stairRooms.map((room, index) => {
       const center = turf.pointOnFeature(room).geometry.coordinates;
       const [minX, minY, maxX, maxY] = turf.bbox(room);
       const horizontalMeters = turf.distance([minX, center[1]], [maxX, center[1]], { units: 'meters' });
@@ -216,6 +222,11 @@ export function buildCherokeeStairLinework(stairsFC, roomsFC, options = {}) {
         },
         properties: {
           ...(room.properties || {}),
+          RevitId: 'cherokee-stair-room-' + index,
+          Element: 'Drawing',
+          Layer: 'S-STRS',
+          type: 'drawing',
+          interactive: false,
           __mfOverlayKind: 'cherokee-stair-room-linework'
         }
       };
@@ -223,7 +234,7 @@ export function buildCherokeeStairLinework(stairsFC, roomsFC, options = {}) {
   }
 
   const clusters = clusterPointFeatures(stairsFC?.features || [], clusterDistanceMeters);
-  return featureCollection(clusters.map((cluster) => {
+  return featureCollection(clusters.map((cluster, index) => {
     const bearing = clusterBearing(cluster);
     return {
       type: 'Feature',
@@ -233,6 +244,11 @@ export function buildCherokeeStairLinework(stairsFC, roomsFC, options = {}) {
       },
       properties: {
         ...(cluster.feature?.properties || {}),
+        RevitId: 'cherokee-stair-' + index,
+        Element: 'Drawing',
+        Layer: 'S-STRS',
+        type: 'drawing',
+        interactive: false,
         bearing_deg: bearing,
         __mfOverlayKind: 'cherokee-stair-linework',
         __mfSourcePointCount: cluster.coordinates.length

@@ -3981,7 +3981,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null, returnData = false }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4028,6 +4028,7 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
   if (useVectorOverlay) {
     fc = buildCherokeeDoorLinework(fc, roomsFC);
   }
+  if (returnData) return fc;
 
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
@@ -4445,7 +4446,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null, returnData = false }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4489,6 +4490,7 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
   if (useVectorOverlay) {
     fc = buildCherokeeStairLinework(fc, roomsFC);
   }
+  if (returnData) return fc;
 
   console.log("[stairs] loaded features", fc.features.length);
 
@@ -5799,6 +5801,73 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   cacheFloorSummary(summary, patchedFC);
 
+  const useSharedCherokeeLinework = Boolean(options?.useVectorDoorStairOverlay);
+  if (useSharedCherokeeLinework) {
+    const sharedOverlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
+    const sharedOverlayFloorId =
+      options?.roomsFloorId ||
+      options?.wallsFloorId ||
+      floor ||
+      (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) ||
+      null;
+    const sharedOverlayBuildingLabel =
+      buildingId ||
+      affineParams?.fitBuilding?.properties?.id ||
+      affineParams?.fitBuilding?.properties?.name ||
+      null;
+
+    if (sharedOverlayBasePath && sharedOverlayFloorId) {
+      const sharedFitTransform = skipBuildingFit
+        ? null
+        : (fitTransform || cachedTransform.fitTransform || null);
+      const [doorsFC, stairsFC] = await Promise.all([
+        tryLoadDoorsOverlay({
+          basePath: sharedOverlayBasePath,
+          floorId: sharedOverlayFloorId,
+          map,
+          affine,
+          rotationOverride,
+          fitTransform: sharedFitTransform,
+          roomsFC: patchedFC,
+          buildingLabel: sharedOverlayBuildingLabel,
+          enabled: enableDoorStairOverlay,
+          useVectorOverlay: true,
+          overlayFloorAdjust,
+          returnData: true
+        }),
+        tryLoadStairsOverlay({
+          basePath: sharedOverlayBasePath,
+          floorId: sharedOverlayFloorId,
+          map,
+          affine,
+          rotationOverride,
+          fitTransform: sharedFitTransform,
+          roomsFC: patchedFC,
+          enabled: enableDoorStairOverlay,
+          useVectorOverlay: true,
+          overlayFloorAdjust,
+          returnData: true
+        })
+      ]);
+      const architecturalFeatures = [
+        ...(doorsFC?.features || []),
+        ...(stairsFC?.features || [])
+      ];
+      if (architecturalFeatures.length) {
+        patchedFC = {
+          ...patchedFC,
+          features: [...(patchedFC.features || []), ...architecturalFeatures]
+        };
+        if (currentFloorContextRef && typeof currentFloorContextRef === 'object') {
+          currentFloorContextRef.current = {
+            ...(currentFloorContextRef.current || {}),
+            fc: patchedFC
+          };
+        }
+      }
+    }
+  }
+
   // add / update source
   unloadFloorplan(map);
   const floorSrc = getGeojsonSource(map, FLOOR_SOURCE);
@@ -5861,14 +5930,34 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           'line-cap': 'round'
         },
         paint: {
-          'line-color': '#2f2f2f',
-          'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            16, 0.15,
-            18, 0.25,
-            20, 0.45
+          'line-color': [
+            'case',
+            ['has', '__mfOverlayKind'],
+            '#374151',
+            '#2f2f2f'
           ],
-          'line-opacity': 0.6
+          'line-width': [
+            'case',
+            ['has', '__mfOverlayKind'],
+            [
+              'interpolate', ['linear'], ['zoom'],
+              16, 0.55,
+              18, 1.0,
+              20, 1.5
+            ],
+            [
+              'interpolate', ['linear'], ['zoom'],
+              16, 0.15,
+              18, 0.25,
+              20, 0.45
+            ]
+          ],
+          'line-opacity': [
+            'case',
+            ['has', '__mfOverlayKind'],
+            0.96,
+            0.6
+          ]
         },
         filter: drawingFilter
       });
@@ -5923,7 +6012,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affineParams?.fitBuilding?.properties?.id ||
       affineParams?.fitBuilding?.properties?.name ||
       null;
-    if (overlayBasePath) {
+    if (!useSharedCherokeeLinework && overlayBasePath) {
       const overlayFloorId =
         options?.roomsFloorId ||
         options?.wallsFloorId ||
