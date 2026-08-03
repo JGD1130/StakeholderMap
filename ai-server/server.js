@@ -11,7 +11,11 @@ import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
 import { fileURLToPath } from "url";
 import { validateAiQuery } from "./validateAiQuery.js";
-import { normalizeAirtableChoiceValue } from "./airtableChoiceValues.js";
+import {
+  normalizeAirtableChoiceValue,
+  normalizeAirtableMultipleChoiceValue,
+  airtableMultipleChoiceErrorMatchesValue
+} from "./airtableChoiceValues.js";
 import archiver from "archiver";
 
 const app = express();
@@ -1888,10 +1892,14 @@ async function listAirtableDepartments() {
   }));
 }
 
-function isAirtableInvalidValueForField(errorText = "", fieldName = "") {
+function isAirtableInvalidValueForField(errorText = "", fieldName = "", fieldValue) {
   const text = String(errorText || "");
   if (!text) return false;
   const normalizedField = String(fieldName || "").trim();
+  if (/INVALID_MULTIPLE_CHOICE_OPTIONS/i.test(text)) {
+    if (arguments.length < 3) return true;
+    return airtableMultipleChoiceErrorMatchesValue(text, fieldValue);
+  }
   if (!/INVALID_VALUE_FOR_COLUMN/i.test(text)) return false;
   if (!normalizedField) return true;
   const lowerText = text.toLowerCase();
@@ -1937,9 +1945,15 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
     deptFieldName &&
     Object.prototype.hasOwnProperty.call(normalizedFields, deptFieldName) &&
     !Array.isArray(normalizedFields[deptFieldName]) &&
-    isAirtableInvalidValueForField(firstErrorText, deptFieldName)
+    isAirtableInvalidValueForField(
+      firstErrorText,
+      deptFieldName,
+      normalizedFields[deptFieldName]
+    )
   ) {
-    fallbackFields[deptFieldName] = normalizedFields[deptFieldName];
+    fallbackFields[deptFieldName] = /INVALID_MULTIPLE_CHOICE_OPTIONS/i.test(firstErrorText)
+      ? normalizeAirtableMultipleChoiceValue(normalizedFields[deptFieldName])
+      : normalizedFields[deptFieldName];
     shouldRetry = true;
   }
 
@@ -1947,9 +1961,15 @@ async function patchAirtableRecord(table, recordId, updateFields = {}) {
     typeFieldName &&
     Object.prototype.hasOwnProperty.call(normalizedFields, typeFieldName) &&
     !Array.isArray(normalizedFields[typeFieldName]) &&
-    isAirtableInvalidValueForField(firstErrorText, typeFieldName)
+    isAirtableInvalidValueForField(
+      firstErrorText,
+      typeFieldName,
+      normalizedFields[typeFieldName]
+    )
   ) {
-    fallbackFields[typeFieldName] = normalizedFields[typeFieldName];
+    fallbackFields[typeFieldName] = /INVALID_MULTIPLE_CHOICE_OPTIONS/i.test(firstErrorText)
+      ? normalizeAirtableMultipleChoiceValue(normalizedFields[typeFieldName])
+      : normalizedFields[typeFieldName];
     shouldRetry = true;
   }
 
