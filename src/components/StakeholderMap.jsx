@@ -5937,20 +5937,10 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
             '#2f2f2f'
           ],
           'line-width': [
-            'case',
-            ['has', '__mfOverlayKind'],
-            [
-              'interpolate', ['linear'], ['zoom'],
-              16, 0.55,
-              18, 1.0,
-              20, 1.5
-            ],
-            [
-              'interpolate', ['linear'], ['zoom'],
-              16, 0.15,
-              18, 0.25,
-              20, 0.45
-            ]
+            'interpolate', ['linear'], ['zoom'],
+            16, ['case', ['has', '__mfOverlayKind'], 0.55, 0.15],
+            18, ['case', ['has', '__mfOverlayKind'], 1.0, 0.25],
+            20, ['case', ['has', '__mfOverlayKind'], 1.5, 0.45]
           ],
           'line-opacity': [
             'case',
