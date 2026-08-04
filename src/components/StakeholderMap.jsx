@@ -11727,6 +11727,7 @@ const StakeholderMap = ({
   const [selectedBuilding, setSelectedBuilding] = useState('');
   const floorplanCampus = String(config?.floorplanCampus || DEFAULT_FLOORPLAN_CAMPUS).trim() || DEFAULT_FLOORPLAN_CAMPUS;
   const isCherokeeMentalHealthInstance = String(config?.universityId || universityId || '').trim().toLowerCase() === 'cherokee-mental-health';
+  const floorAdjustPersistenceFeedbackEnabled = isSarpyCountyInstance || isCherokeeMentalHealthInstance;
   const configuredFloorplanBuildings = useMemo(
     () => (Array.isArray(config?.floorplanBuildings) ? config.floorplanBuildings : [])
       .map((building) => ({
@@ -18619,6 +18620,42 @@ const StakeholderMap = ({
     return { buildingLabel, floorId: resolvedFloorId, url: currentUrl, basePath: currentBasePath };
   }, [activeBuildingName, selectedBuildingId, selectedBuilding, panelSelectedFloor, selectedFloor, getBuildingFolderKey]);
 
+  const getFloorAdjustSaveLabels = useCallback((primaryLabel, url, basePath) => {
+    const baseLabels = Array.from(new Set([primaryLabel].filter(Boolean)));
+    if (!floorAdjustPersistenceFeedbackEnabled) return baseLabels;
+    const urlFolder = url ? getBuildingFolderFromBasePath(url) : null;
+    const baseFolder = basePath ? getBuildingFolderFromBasePath(basePath) : null;
+    const selectedResolved = resolveBuildingNameFromInput(selectedBuildingId || selectedBuilding || '');
+    return Array.from(new Set([
+      primaryLabel,
+      currentFloorContextRef.current?.floorAdjustLabel,
+      selectedBuildingId,
+      selectedBuilding,
+      selectedResolved,
+      urlFolder,
+      baseFolder,
+      BUILDING_FOLDER_TO_NAME?.[urlFolder] || '',
+      BUILDING_FOLDER_TO_NAME?.[baseFolder] || ''
+    ].filter(Boolean)));
+  }, [floorAdjustPersistenceFeedbackEnabled, selectedBuildingId, selectedBuilding]);
+
+  const saveFloorAdjustAliases = useCallback(({ buildingLabel, floorId, url, basePath, adjust }) => {
+    if (!buildingLabel || !floorId || !adjust) return adjust;
+    const labels = getFloorAdjustSaveLabels(buildingLabel, url, basePath);
+    const persistedAdjust = {
+      rotationDeg: Number.isFinite(adjust.rotationDeg) ? adjust.rotationDeg : 0,
+      scale: Number.isFinite(adjust.scale) && adjust.scale > 0 ? adjust.scale : 1,
+      translateMeters: Array.isArray(adjust.translateMeters) ? adjust.translateMeters : [0, 0],
+      translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
+      anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
+      pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
+      savedAt: Number.isFinite(Number(adjust.savedAt)) ? Number(adjust.savedAt) : Date.now()
+    };
+    labels.forEach((label) => saveFloorAdjust(label, floorId, persistedAdjust));
+    if (url) saveFloorAdjustByUrl(url, persistedAdjust);
+    if (basePath) saveFloorAdjustByBasePath(basePath, floorId, persistedAdjust);
+    return persistedAdjust;
+  }, [getFloorAdjustSaveLabels]);
   const buildFloorAdjustDocId = useCallback((buildingLabel, floorId) => {
     const key = canon(buildingLabel || '');
     const floorKey = fId(floorId || '');
@@ -18645,9 +18682,9 @@ const StakeholderMap = ({
 
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
-      if (!universityId || !buildingLabel || !floorId || !adjust) return;
+      if (!universityId || !buildingLabel || !floorId || !adjust) return false;
       const docId = buildFloorAdjustDocId(buildingLabel, floorId);
-      if (!docId) return;
+      if (!docId) return false;
       try {
         const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
         await setDoc(
@@ -18661,14 +18698,21 @@ const StakeholderMap = ({
             translateLngLat: Array.isArray(adjust.translateLngLat) ? adjust.translateLngLat : null,
             anchorLngLat: Array.isArray(adjust.anchorLngLat) ? adjust.anchorLngLat : null,
             pivot: Array.isArray(adjust.pivot) ? adjust.pivot : null,
+            savedAt: Number.isFinite(Number(adjust.savedAt)) ? Number(adjust.savedAt) : Date.now(),
             updatedAt: serverTimestamp(),
             updatedBy: authUser?.uid || authUser?.email || null
           },
           { merge: true }
         );
-      } catch {}
+        return true;
+      } catch (err) {
+        if (floorAdjustPersistenceFeedbackEnabled) {
+          console.warn('[floorAdjust] cloud save failed', err);
+        }
+        return false;
+      }
     },
-    [db, universityId, buildFloorAdjustDocId, authUser]
+    [db, universityId, buildFloorAdjustDocId, authUser, floorAdjustPersistenceFeedbackEnabled]
   );
 
   const computeDrawingAlign = useCallback((roomPts, drawingPts) => {
@@ -19044,23 +19088,26 @@ const StakeholderMap = ({
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
       void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
         if (!dbAdjust) return;
-        const dbCandidate = {
-          rotationDeg: Number(dbAdjust.rotationDeg) || 0,
-          scale: Number(dbAdjust.scale) || 1,
-          translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
-          translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
-          anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
-          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null
-        };
-        const dbHasAdjust = hasFloorAdjust(dbCandidate);
         const dbUpdatedAtMs = (() => {
           const ts = dbAdjust.updatedAt;
           if (ts?.toMillis) return ts.toMillis();
           if (Number.isFinite(ts?.seconds)) return ts.seconds * 1000;
           return 0;
         })();
-        const shouldPreferDb = dbUpdatedAtMs
-          ? dbUpdatedAtMs >= localSavedAt
+        const dbSavedAtMs = Number(dbAdjust.savedAt) || 0;
+        const dbCandidate = {
+          rotationDeg: Number(dbAdjust.rotationDeg) || 0,
+          scale: Number(dbAdjust.scale) || 1,
+          translateMeters: Array.isArray(dbAdjust.translateMeters) ? dbAdjust.translateMeters : [0, 0],
+          translateLngLat: Array.isArray(dbAdjust.translateLngLat) ? dbAdjust.translateLngLat : null,
+          anchorLngLat: Array.isArray(dbAdjust.anchorLngLat) ? dbAdjust.anchorLngLat : null,
+          pivot: Array.isArray(dbAdjust.pivot) ? dbAdjust.pivot : null,
+          savedAt: dbUpdatedAtMs || dbSavedAtMs || 0
+        };
+        const dbHasAdjust = hasFloorAdjust(dbCandidate);
+        const dbTimestampMs = dbUpdatedAtMs || dbSavedAtMs;
+        const shouldPreferDb = dbTimestampMs
+          ? dbTimestampMs >= localSavedAt
           : (!localHasAdjust && dbHasAdjust);
         if (!shouldPreferDb) return;
         adjustLabels.forEach((label) => {
@@ -27179,11 +27226,19 @@ useEffect(() => {
         nextAdjust = { ...nextAdjust, anchorLngLat };
       }
       const saveLabel = drag.adjustLabel || drag.buildingLabel;
-      saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
-      if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
-      if (drag.adjustBasePath) saveFloorAdjustByBasePath(drag.adjustBasePath, drag.floorId, nextAdjust);
-      try { saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust); } catch {}
-      const sig = getFloorAdjustSignature(nextAdjust);
+      const persistedAdjust = saveFloorAdjustAliases({
+        buildingLabel: saveLabel,
+        floorId: drag.floorId,
+        url: drag.adjustUrl,
+        basePath: drag.adjustBasePath,
+        adjust: nextAdjust
+      });
+      void saveFloorAdjustToDb(saveLabel, drag.floorId, persistedAdjust).then((savedToDb) => {
+        if (floorAdjustPersistenceFeedbackEnabled && savedToDb === false) {
+          setFloorAdjustNotice('Adjustment saved in this browser only. Cloud sync did not confirm.');
+        }
+      });
+      const sig = getFloorAdjustSignature(persistedAdjust);
       if (sig && currentData) {
         const cached = { ...currentData, __mfUserAdjustSignature: sig };
         if (drag.adjustUrl) {
@@ -27196,7 +27251,7 @@ useEffect(() => {
       }
       floorAdjustDragRef.current = null;
       setFloorAdjustMode(null);
-      setFloorAdjustNotice('');
+      setFloorAdjustNotice(floorAdjustPersistenceFeedbackEnabled ? 'Adjustment updated. Click Save Adjust to confirm.' : '');
       const url = drag.adjustUrl || buildFloorUrl(selectedBuilding, drag.floorId);
       if (url && !drag.adjustUrl) {
         floorCache.delete(url);
@@ -27214,7 +27269,7 @@ useEffect(() => {
       try { map.off('mousemove', onMouseMove); } catch {}
       try { map.off('mouseup', onMouseUp); } catch {}
     };
-  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus]);
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustAliases, saveFloorAdjustToDb, floorAdjustPersistenceFeedbackEnabled, buildLegendForMode, floorColorMode, floorplanCampus]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -29574,10 +29629,19 @@ useEffect(() => {
                   pivot: Array.isArray(adjust.pivot) ? adjust.pivot : (Array.isArray(pivot) ? pivot : null),
                   anchorLngLat: anchorLngLat || adjust.anchorLngLat || null
                 };
-                saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
-                if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
-                if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, adjustWithPivot);
-                try { await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot); } catch {}
+                const persistedAdjust = saveFloorAdjustAliases({
+                  buildingLabel: adjustLabel,
+                  floorId: ctx.floorId,
+                  url: adjustUrl,
+                  basePath: adjustBasePath,
+                  adjust: adjustWithPivot
+                });
+                const savedToDb = await saveFloorAdjustToDb(adjustLabel, ctx.floorId, persistedAdjust);
+                if (floorAdjustPersistenceFeedbackEnabled) {
+                  setFloorAdjustNotice(savedToDb
+                    ? 'Floor adjustment saved.'
+                    : 'Floor adjustment saved in this browser only. Cloud sync did not confirm.');
+                }
                 if (adjustUrl) {
                   floorCache.delete(adjustUrl);
                   floorTransformCache.delete(adjustUrl);
@@ -29620,11 +29684,22 @@ useEffect(() => {
                   pivot: Array.isArray(adjustPivot) ? adjustPivot : nextAdjust.pivot,
                   anchorLngLat: getFloorAdjustAnchorLngLat(scaled || src?._data || baseData) || nextAdjust.anchorLngLat || null
                 };
-                saveFloorAdjust(adjustLabel, ctx.floorId, nextAdjustWithPivot);
-                if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, nextAdjustWithPivot);
-                if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, nextAdjustWithPivot);
-                try { saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot); } catch {}
-                const sig = getFloorAdjustSignature(nextAdjustWithPivot);
+                const persistedAdjust = saveFloorAdjustAliases({
+                  buildingLabel: adjustLabel,
+                  floorId: ctx.floorId,
+                  url: adjustUrl,
+                  basePath: adjustBasePath,
+                  adjust: nextAdjustWithPivot
+                });
+                void saveFloorAdjustToDb(adjustLabel, ctx.floorId, persistedAdjust).then((savedToDb) => {
+                  if (floorAdjustPersistenceFeedbackEnabled && savedToDb === false) {
+                    setFloorAdjustNotice('Adjustment saved in this browser only. Cloud sync did not confirm.');
+                  }
+                });
+                if (floorAdjustPersistenceFeedbackEnabled) {
+                  setFloorAdjustNotice('Adjustment updated. Click Save Adjust to confirm.');
+                }
+                const sig = getFloorAdjustSignature(persistedAdjust);
                 const currentData = baseData || currentFloorContextRef.current?.fc || null;
                 if (sig && currentData) {
                   const cached = { ...currentData, __mfUserAdjustSignature: sig };
