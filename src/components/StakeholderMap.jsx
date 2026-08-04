@@ -19105,7 +19105,7 @@ const StakeholderMap = ({
           selectedBuilding,
           floorId
         );
-      const allowOptionalOverlays = (mode === 'admin' && ENABLE_WALLS_OVERLAY) || isSarpyCountyInstance;
+      const allowOptionalOverlays = mode === 'admin' && ENABLE_WALLS_OVERLAY;
       const loadResult = await loadFloorGeojson(mapRef.current, url, lastSel, { fitBuilding, rotationOverrideDeg }, {
         buildingId: selectedBuildingId || selectedBuilding,
         floor: floorId,
