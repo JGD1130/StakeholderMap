@@ -240,6 +240,90 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-04) — FLOOR_DRAWING_LAYER root cause found and fixed; Hastings schedule feature and Sarpy walls left as open items
+
+### Summary
+
+Long investigation session, mostly triggered by "walls/doors/stairs missing" reports on the live Hastings site. The eventual root cause was a genuinely subtle Mapbox GL style-spec violation that had been silently breaking wall/door/stair rendering for **every tenant** since 2026-08-03 — not a Hastings-specific bug, and not caused by anything from this session's own work. Two other threads (a Hastings AI-query feature restore, and a Sarpy walls re-enable) were also touched today but both ended the day reverted — see "Open items" below before assuming either is live.
+
+### The FLOOR_DRAWING_LAYER bug — the big find
+
+**Symptom:** No walls/doors/stairs rendering on any building, any tenant, confirmed via live browser inspection (not a caching issue — verified the live-served GeoJSON and live JS bundle both matched source exactly).
+
+**Root cause:** `d3286f5` ("Keep Cherokee overlays aligned with floor adjustments", 2026-08-03) added a Cherokee-specific `line-width` variant to `FLOOR_DRAWING_LAYER`'s paint properties via a `case`/`__mfOverlayKind` check, but wrapped **two full `interpolate(['zoom'], ...)` expressions** as sibling `case` branches instead of branching only the numeric values:
+
+```js
+// BROKEN (introduced 2026-08-03, live until 2026-08-04):
+'line-width': [
+  'case', ['has', '__mfOverlayKind'],
+  ['interpolate', ['linear'], ['zoom'], 16, 0.55, 18, 1.0, 20, 1.5],
+  ['interpolate', ['linear'], ['zoom'], 16, 0.15, 18, 0.25, 20, 0.45]
+],
+```
+
+Mapbox's style spec only allows **one** zoom-based `step`/`interpolate` subexpression per property — it precompiles a single interpolation table per property for performance, and having two (even as mutually-exclusive `case` branches) violates this. Critically, **Mapbox validates this at style-apply time and fires a silent `error` event on the map instance** rather than throwing a catchable JS exception — so the app's own code, and even our own `window.onerror`/`unhandledrejection` instrumentation, never saw it. `addLayer` appeared to succeed with no visible error; the layer simply never existed in the style afterward.
+
+**How this was actually found:** static code reading and git archaeology (checking `unloadFloorplan`, layer z-order via `ensureLayerOrder`, the "layer already exists" theory, etc.) all produced plausible-sounding theories that didn't survive contact with live evidence. What actually worked was iterative live-browser instrumentation: finding the Mapbox `Map` instance via a React-fiber walk from the DOM (`window.__debugMap`), then wrapping `addLayer`/`removeLayer`/`addSource`/`setStyle` to trace the real call sequence, and finally attaching `map.on('error', ...)` — which is what surfaced the actual Mapbox validation error message verbatim: `"layers.floor-drawing.paint.line-width: Only one zoom-based 'step' or 'interpolate' subexpression may be used in an expression."` **Lesson for next time:** Mapbox style errors are invisible to standard JS error handling; if a layer "adds successfully" but never renders, check `map.on('error', ...)` before anything else.
+
+**Fix (`c1b883c`):** restructure to a single outer `interpolate`, with `case` only branching the numeric value at each zoom stop:
+```js
+'line-width': [
+  'interpolate', ['linear'], ['zoom'],
+  16, ['case', ['has', '__mfOverlayKind'], 0.55, 0.15],
+  18, ['case', ['has', '__mfOverlayKind'], 1.0, 0.25],
+  20, ['case', ['has', '__mfOverlayKind'], 1.5, 0.45]
+],
+```
+`line-color` and `line-opacity` on the same layer used the identical `case`/`__mfOverlayKind` pattern but were **not** affected — neither branch of either property contains a zoom expression, so only `line-width` was ever invalid.
+
+**Confirmed fixed for Hastings** (live-tested by user, hard refresh). **Cherokee's doors/stairs remain unresolved** as of end of session — see open items.
+
+### Hastings AI schedule-query feature — restored, then reverted (currently NOT live)
+
+Separately, discovered that `6e6dd3e` ("Hotfix feature branch StakeholderMap routing", 2026-07-29 — the same mass-rewrite commit responsible for most of today's other findings, see below) had deleted the entire `scheduledAvailabilityRequest` AI query handler (the "what classrooms are free Tuesday at 2pm" feature, including Block 1/Block 2 session filtering) as collateral damage, along with its full helper cluster (`extractScheduledClassroomAvailabilityRequest`, `parseScheduleQueryTimeToMinutes`, `buildScheduledAvailabilityRows`, `buildScheduleSnapshotForMoment`, `isScheduleEntryActiveForMoment`). This had been silently missing from every deploy since Jul 29.
+
+Restored cleanly in `d5e7693` (202 lines, pure additions, verified byte-identical to the pre-`6e6dd3e` implementation, build-tested). **Then reverted in `0555df3`** after a live report that Hastings walls/doors/stairs were broken — which seemed plausible at the time given the timing, but was later conclusively proven unrelated (the real cause was the `FLOOR_DRAWING_LAYER` bug above, confirmed still broken on `ab0ea01`, a commit that predates `d5e7693` entirely). The revert was reasonable given the information available in the moment (a live regression report during active client concern), but the feature was never re-restored afterward.
+
+**Open item:** `scheduledAvailabilityRequest` and its helper cluster are currently **absent from production** (confirmed 0 occurrences as of `a003114`). Restoring it again should be safe and low-risk — re-apply the change from `d5e7693` (or `git revert 0555df3`) once there's no active demo/deploy sensitivity. No further investigation needed, just re-application.
+
+### Sarpy walls — enabled, then reverted for a client demo (currently rooms-only, matches pre-session state)
+
+Separately from the `FLOOR_DRAWING_LAYER` bug: Sarpy walls render through a completely different, older mechanism (`tryLoadWallsOverlay` / `WALLS_LAYER`, not `FLOOR_DRAWING_LAYER`), which turned out to have its own, unrelated structural problem — also introduced by `6e6dd3e`:
+
+- `ENABLE_WALLS_OVERLAY` has been hardcoded `false` since `9f15090` (2026-02-06).
+- A workaround auto-detect call site (added `2fd0a39`, 2026-06-22) used to bypass that flag for tenants with a companion `Walls.geojson` file — this is what actually made Sarpy walls work historically.
+- `6e6dd3e` (2026-07-29) deleted that auto-detect call site, leaving `tryLoadWallsOverlay` completely unreachable for Sarpy from that date forward, despite valid wall data existing on disk and `WALLS_LAYER`'s own paint block being clean (no interpolate bug — checked directly, confirmed fine).
+
+Applied a scoped fix in `ce23993` (`isSarpyCountyInstance` gate, Hastings/Cherokee unaffected) that made `tryLoadWallsOverlay` reachable again for Sarpy. However, further investigation found that the **floor-adjust replay mechanism for walls is also gone**, entirely separate from the reachability issue:
+
+1. **Live drag doesn't sync walls.** The rotate/move drag handler (`onMouseMove` in the Adjust Floorplan tool) only calls `.setData()` on `FLOOR_SOURCE` (rooms) — `WALLS_SOURCE` is never touched during a drag. Confirmed via direct code read: `WALLS_SOURCE` has exactly 4 references in the whole file (declaration + its own load/cleanup), none in any drag handler.
+2. **The `georeferenced` flag mechanism no longer exists anywhere.** `grep -c "georeferenced"` across the entire file returns 0. This was the flag (see the 2026-07-02/07-06/07-07 sections above) that gated whether a saved floor adjustment was safe to replay on top of an already-correctly-positioned Sarpy floor — `6e6dd3e` deleted all 13 occurrences that existed in its parent commit.
+3. **`tryLoadWallsOverlay` itself can no longer accept a floor adjustment even in principle.** Its signature dropped the `floorAdjust`/`overlayFloorAdjust` parameters entirely: pre-`6e6dd3e` it was `async function tryLoadWallsOverlay({ ..., wallsRawFCRef, floorAdjust, overlayFloorAdjust = null })`; today it's `async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform })` — no adjustment-related parameters, no references to either in the body.
+
+Net effect: enabling Sarpy walls today would have looked fine for buildings nobody adjusts, but any live use of the Adjust Floorplan tool on a Sarpy building would visibly desync walls from rooms during the drag, and the correction would not persist for walls on reload (rooms would show the fix, walls would silently revert every time). Given a client demo the next day, **reverted `ce23993` via `a003114`** — Sarpy is back to rooms-only, matching what was reliably working before this session. `FLOOR_DRAWING_LAYER`'s fix (Hastings/Cherokee) was not touched by this revert.
+
+**Open item for next session:** re-enabling Sarpy walls properly needs three things rebuilt, all removed by `6e6dd3e`:
+- Wire the rotate/move drag handler to also update `WALLS_SOURCE` in real time (mirror whatever transform is applied to `FLOOR_SOURCE`).
+- Restore a `georeferenced`-equivalent flag (or design a replacement) so a saved adjustment can be told apart from an already-correct georeferenced floor.
+- Re-add `floorAdjust`/`overlayFloorAdjust` parameters to `tryLoadWallsOverlay` and apply them on load, mirroring the pattern `tryLoadDoorsOverlay`/`tryLoadStairsOverlay` already have via `overlayFloorAdjust`.
+
+This is a real feature-restoration task, not a one-line fix — budget accordingly.
+
+### The common thread: `6e6dd3e` did far more collateral damage than its commit message suggests
+
+Every open/closed item in this session traces back to `6e6dd3e` ("Hotfix feature branch StakeholderMap routing", 2026-07-29, 2,914 deletions / 1,359 insertions in one commit): the deleted Hastings `scheduledAvailabilityRequest` feature, the deleted Sarpy walls auto-detect call site, the deleted `georeferenced` flag mechanism, and the deleted `floorAdjust` plumbing in `tryLoadWallsOverlay` were all removed in that single commit, apparently as unintentional side effects of a broader rewrite rather than deliberate changes. If something else "used to work" and mysteriously doesn't, checking whether `6e6dd3e` touched it is a good first move — `git log -S"<symbol name>" origin/feature/multi-university-refactor -- src/components/StakeholderMap.jsx` is the fastest way to check.
+
+### Current status (end of session, `a003114`)
+
+| Item | Status |
+|---|---|
+| `FLOOR_DRAWING_LAYER` double-interpolate bug | ✅ Fixed (`c1b883c`), confirmed live for Hastings |
+| Cherokee doors/stairs via shared linework | ⚠️ Still not rendering post-fix; data/filter/render-level checks all passed, cause not yet found — see live-instrumentation scripts used this session if picking this back up |
+| Hastings `scheduledAvailabilityRequest` AI feature | ❌ Currently absent from production (reverted, not re-applied) — safe to restore, no investigation needed |
+| Sarpy walls overlay | ❌ Currently disabled (reverted for demo safety) — needs the 3-part floor-adjust-replay rebuild described above before re-enabling |
+
+---
+
 ## Recent Changes (2026-07-15) - Hastings client role QA flow hardened
 
 ### Summary
@@ -1041,6 +1125,6 @@ Removed the `out.__mfGeoreferenced = true;` line (and its justifying comment) fr
 GitHub Pages returned "Deployment failed, try again later." again after pushing `8770e08` — the same transient deploy-step failure documented in the 2026-07-02 section above (build succeeds, the separate Pages-upload step fails independently). Still no `gh` CLI or `GITHUB_TOKEN` available in the assistant's shell environment to retry programmatically; use the Actions tab → the failed run → "Re-run failed jobs."
 
 ---
-*Last updated: 2026-07-15 - update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-08-04 - update this file whenever the architecture, client list, or critical behavior changes.*
 
 
