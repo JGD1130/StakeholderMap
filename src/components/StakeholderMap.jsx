@@ -8955,6 +8955,69 @@ const extractMinimumSeatCountFromQuestion = (question = '') => {
   return 0;
 };
 
+const parseScheduleQueryTimeToMinutes = (question = '') => {
+  const raw = String(question || '');
+  const patterns = [
+    /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i,
+    /\b(\d{1,2})(?::(\d{2}))\s*(am|pm)?\b/i
+  ];
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
+    let hours = Number(match[1]);
+    const minutes = Number(match[2] || 0);
+    const meridiem = String(match[3] || '').toUpperCase();
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 12 || minutes < 0 || minutes > 59) continue;
+    if (meridiem === 'PM' && hours < 12) hours += 12;
+    if (meridiem === 'AM' && hours === 12) hours = 0;
+    if (!meridiem && hours < 8) hours += 12;
+    if (hours > 23) continue;
+    const displayMeridiem = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return {
+      minutes: (hours * 60) + minutes,
+      label: `${displayHours}:${String(minutes).padStart(2, '0')} ${displayMeridiem}`
+    };
+  }
+  return null;
+};
+
+const extractScheduledClassroomAvailabilityRequest = (question = '') => {
+  const raw = String(question || '');
+  const text = raw.toLowerCase();
+  const asksAvailability =
+    /\b(empty|available|open|vacant)\b/.test(text) &&
+    /\bclassroom(s)?\b|\bteaching room(s)?\b|\broom(s)?\b/.test(text);
+  if (!asksAvailability) return null;
+  const dayOption = SCHEDULE_DAY_QUERY_OPTIONS.find((option) => option.regex.test(raw));
+  const timeInfo = parseScheduleQueryTimeToMinutes(raw);
+  if (!dayOption || !timeInfo) return null;
+  const blockMatch = text.match(/\b(?:block|session)\s*(1|2)\b/);
+  const sessionLabel = blockMatch ? `Fall 2026 Block ${blockMatch[1]}` : '';
+  return {
+    dayLabel: dayOption.label,
+    dayTokens: dayOption.tokens,
+    targetMinutes: timeInfo.minutes,
+    timeLabel: timeInfo.label,
+    sessionLabel,
+    sessionKey: sessionLabel ? buildScheduleSessionKey(sessionLabel) : ''
+  };
+};
+
+const isScheduleEntryActiveForMoment = (entry, options = {}) => {
+  if (!entry) return false;
+  const targetDayTokens = Array.isArray(options?.dayTokens) ? options.dayTokens : [];
+  const entryDayTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
+  if (targetDayTokens.length && entryDayTokens.length && !targetDayTokens.some((token) => entryDayTokens.includes(token))) {
+    return false;
+  }
+  const startMinutes = Number(entry?.startMinutes);
+  const endMinutes = Number(entry?.endMinutes);
+  const targetMinutes = Number(options?.minutes);
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || !Number.isFinite(targetMinutes)) return false;
+  return targetMinutes >= startMinutes && targetMinutes < endMinutes;
+};
+
 const isScheduleEntryActiveAt = (entry, date = new Date()) => {
   if (!entry) return false;
   const dayTokens = Array.isArray(entry.dayTokens) ? entry.dayTokens : [];
@@ -8976,6 +9039,23 @@ const getScheduleEntriesForToday = (entries = [], date = new Date()) => {
     if (!dayTokens.length) return true;
     return todaysTokens.some((token) => dayTokens.includes(token));
   });
+};
+
+const buildScheduleSnapshotForMoment = (entries = [], options = {}) => {
+  const sessionEntries = getScheduleEntriesForSession(entries, options?.sessionKey || '');
+  const dayEntries = getScheduleEntriesForDayTokens(sessionEntries, options?.dayTokens || []);
+  const activeEntries = dayEntries.filter((entry) => isScheduleEntryActiveForMoment(entry, options));
+  const targetMinutes = Number(options?.minutes);
+  const upcomingEntries = dayEntries.filter((entry) => {
+    const startMinutes = Number(entry?.startMinutes);
+    return Number.isFinite(startMinutes) && Number.isFinite(targetMinutes) && startMinutes >= targetMinutes;
+  });
+  return {
+    entries: sessionEntries,
+    dayEntries,
+    activeEntries,
+    upcomingEntries
+  };
 };
 
 const formatScheduleEntryTime = (entry) => {
@@ -12415,6 +12495,69 @@ const StakeholderMap = ({
       return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
     });
   }, [getRoomScheduleSnapshot]);
+  const buildScheduledAvailabilityRows = useCallback((rooms = [], options = {}) => {
+    const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
+    const targetDayTokens = Array.isArray(options?.dayTokens) ? options.dayTokens.filter(Boolean) : [];
+    const targetMinutes = Number(options?.targetMinutes);
+    if (!targetDayTokens.length || !Number.isFinite(targetMinutes)) return [];
+    const requestedSessionKey = buildScheduleSessionKey(options?.sessionKey || options?.sessionLabel || '');
+    const baseSessionOptions = classScheduleSessionOptions.length
+      ? classScheduleSessionOptions
+      : [{ key: '', label: '' }];
+    const matchedRequestedSessions = requestedSessionKey
+      ? baseSessionOptions.filter((session) => session.key === requestedSessionKey)
+      : [];
+    const effectiveSessionOptions = requestedSessionKey
+      ? (matchedRequestedSessions.length ? matchedRequestedSessions : [{ key: requestedSessionKey, label: String(options?.sessionLabel || '').trim() }])
+      : baseSessionOptions;
+    const includeSessionColumn = !requestedSessionKey && effectiveSessionOptions.filter((session) => String(session?.label || '').trim()).length > 1;
+    const rows = [];
+    const seen = new Set();
+    (rooms || []).forEach((room) => {
+      if (!isScheduledTeachingTypeLabel(room?.type ?? room?.roomType ?? '')) return;
+      const seatCount = Number(room?.seatCount ?? room?.SeatCount ?? room?.['Seat Count'] ?? 0);
+      if (minimumSeats && (!Number.isFinite(seatCount) || seatCount < minimumSeats)) return;
+      const building = String(getRoomBuildingLabel(room) || '').trim();
+      const roomNumber = getDisplayRoomNumber(room);
+      if (!building || !roomNumber) return;
+      const entries = getScheduleEntriesForRoom(building, roomNumber);
+      effectiveSessionOptions.forEach((session) => {
+        const dedupeKey = `${normalizeDashboardKey(building)}|${normalizeUtilizationRoomKey(roomNumber)}|${session?.key || '__all__'}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        const snapshot = buildScheduleSnapshotForMoment(entries, {
+          dayTokens: targetDayTokens,
+          minutes: targetMinutes,
+          sessionKey: session?.key || ''
+        });
+        if (snapshot.activeEntries.length) return;
+        const nextEntry = snapshot.upcomingEntries[0] || null;
+        const row = {
+          Building: building,
+          'Room Number': roomNumber,
+          Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
+          'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
+          Status: nextEntry
+            ? `Available ${String(options?.dayLabel || 'selected day').trim()} at ${String(options?.timeLabel || '').trim()} | Next: ${formatScheduleEntryTime(nextEntry)}`.trim()
+            : `Available ${String(options?.dayLabel || 'selected day').trim()} at ${String(options?.timeLabel || '').trim()}`.trim(),
+          'Next Class': nextEntry
+            ? `${formatScheduleEntryCourseLabel(nextEntry)} (${formatScheduleEntryTime(nextEntry)})`
+            : 'No more classes scheduled'
+        };
+        if (includeSessionColumn) row.Session = String(session?.label || '').trim() || 'Loaded schedule';
+        rows.push(row);
+      });
+    });
+    return rows.sort((a, b) => {
+      const sessionCompare = String(a?.Session || '').localeCompare(String(b?.Session || ''));
+      if (sessionCompare !== 0) return sessionCompare;
+      const seatDiff = Number(b?.Seats || 0) - Number(a?.Seats || 0);
+      if (seatDiff !== 0) return seatDiff;
+      const buildingCompare = String(a?.Building || '').localeCompare(String(b?.Building || ''));
+      if (buildingCompare !== 0) return buildingCompare;
+      return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
+    });
+  }, [classScheduleSessionOptions, getScheduleEntriesForRoom]);
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
@@ -21010,6 +21153,65 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           columns: [],
           rows: [],
           dataUsed: ['roomRows'],
+          missingData: []
+        });
+        return;
+      }
+      const scheduledAvailabilityRequest = isHastingsCollegeInstance
+        ? extractScheduledClassroomAvailabilityRequest(q)
+        : null;
+      if (isHastingsCollegeInstance && scheduledAvailabilityRequest) {
+        if (!classScheduleRows.length) {
+          setAskResult({
+            answer: 'Class schedule data is not loaded for Hastings College yet.',
+            bullets: [
+              classScheduleMeta.missing
+                ? 'No class schedule workbook was found on the AI server.'
+                : (classScheduleMeta.error || 'Schedule data needs to be loaded before this query can run.')
+            ],
+            resultType: 'none',
+            columns: [],
+            rows: [],
+            dataUsed: [],
+            missingData: ['Class schedule workbook']
+          });
+          return;
+        }
+        const minimumSeats = extractMinimumSeatCountFromQuestion(q);
+        const rows = buildScheduledAvailabilityRows(scopeRooms, {
+          minimumSeats,
+          dayTokens: scheduledAvailabilityRequest.dayTokens,
+          dayLabel: scheduledAvailabilityRequest.dayLabel,
+          timeLabel: scheduledAvailabilityRequest.timeLabel,
+          targetMinutes: scheduledAvailabilityRequest.targetMinutes,
+          sessionKey: scheduledAvailabilityRequest.sessionKey,
+          sessionLabel: scheduledAvailabilityRequest.sessionLabel
+        });
+        const scopeLabel = forceCampusScope
+          ? 'campus'
+          : (inferredBuilding ? inferredBuilding : 'selected scope');
+        const sessionSuffix = scheduledAvailabilityRequest.sessionLabel
+          ? ` for ${scheduledAvailabilityRequest.sessionLabel}`
+          : (classScheduleSessionOptions.length > 1 ? ' across the loaded block schedules' : '');
+        const answer = rows.length
+          ? `Found ${rows.length.toLocaleString()} classrooms available ${scheduledAvailabilityRequest.dayLabel} at ${scheduledAvailabilityRequest.timeLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''}${sessionSuffix} in ${scopeLabel}.`
+          : `No classrooms were available ${scheduledAvailabilityRequest.dayLabel} at ${scheduledAvailabilityRequest.timeLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''}${sessionSuffix} in ${scopeLabel}.`;
+        const hasSessionColumn = rows.some((row) => String(row?.Session || '').trim());
+        setAskResult({
+          answer,
+          bullets: [
+            scheduledAvailabilityRequest.sessionLabel
+              ? 'Availability is filtered to the requested Hastings block schedule, the loaded class timetable, and classroom seat counts from the room inventory.'
+              : (hasSessionColumn
+                  ? 'Results include a Session column because the loaded Hastings workbook contains both Block 1 and Block 2 schedules.'
+                  : 'Availability is based on the loaded class timetable and classroom seat counts from the room inventory.')
+          ],
+          resultType: rows.length ? 'table' : 'none',
+          columns: rows.length ? (hasSessionColumn
+            ? ['Session', 'Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class']
+            : ['Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class']) : [],
+          rows: rows.slice(0, 100),
+          dataUsed: ['roomRows', 'classScheduleRows'],
           missingData: []
         });
         return;
