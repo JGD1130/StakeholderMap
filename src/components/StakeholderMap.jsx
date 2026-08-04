@@ -18071,9 +18071,12 @@ const StakeholderMap = ({
     if (scopeHints.length) {
       params.set('campus', scopeHints[0]);
     }
+    if (isSarpyCountyInstance) {
+      params.set('view', 'Grid view');
+    }
     const query = params.toString();
     return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
-  }, [universityId, config?.universityId, floorplanCampus, activeUniversityName]);
+  }, [universityId, config?.universityId, floorplanCampus, activeUniversityName, isSarpyCountyInstance]);
 
   const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
     if (!getAiBaseUrl()) {
