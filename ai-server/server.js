@@ -1237,6 +1237,12 @@ const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const AIRTABLE_TABLE = process.env.AIRTABLE_TABLE;
 const AIRTABLE_VIEW = process.env.AIRTABLE_VIEW;
+const SARPY_AIRTABLE_BASE_ID = "appmIFbql4ktdsPxc";
+// Sarpy's Mapfluence_Rooms view can be filtered in Airtable; Grid view is the full room source of truth.
+const AIRTABLE_ROOMS_READ_VIEW =
+  process.env.AIRTABLE_ROOMS_READ_VIEW ||
+  process.env.AIRTABLE_FULL_READ_VIEW ||
+  (AIRTABLE_BASE_ID === SARPY_AIRTABLE_BASE_ID ? "Grid view" : AIRTABLE_VIEW);
 const AIRTABLE_BUILDING_FIELD = process.env.AIRTABLE_BUILDING_FIELD || "Building";
 const AIRTABLE_BUILDING_NAME_FIELD = process.env.AIRTABLE_BUILDING_NAME_FIELD || "";
 const AIRTABLE_FLOOR_FIELD = process.env.AIRTABLE_FLOOR_FIELD || "Floor";
@@ -1322,7 +1328,7 @@ async function fetchAirtableRows(filterFormula, viewOverride) {
     return data.records || [];
   };
 
-  const view = viewOverride || AIRTABLE_VIEW || "Mapfluence_Rooms";
+  const view = viewOverride || AIRTABLE_ROOMS_READ_VIEW || AIRTABLE_VIEW || "Mapfluence_Rooms";
   try {
     return await tryFetch(view);
   } catch (err) {
@@ -1367,7 +1373,10 @@ async function fetchAirtableAllRecords({ table, view, fields }) {
     } while (offset);
   };
 
-  const viewValue = view === undefined ? (AIRTABLE_VIEW || "Mapfluence_Rooms") : view;
+  const viewValue =
+    view === undefined
+      ? (AIRTABLE_ROOMS_READ_VIEW || AIRTABLE_VIEW || "Mapfluence_Rooms")
+      : view;
   try {
     await tryFetch(viewValue);
   } catch (err) {
@@ -1865,7 +1874,7 @@ async function listAirtableDepartments() {
   }
   const records = await fetchAirtableAllRecords({
     table: AIRTABLE_TABLE || "Rooms",
-    view: AIRTABLE_VIEW || "Mapfluence_Rooms",
+    view: AIRTABLE_ROOMS_READ_VIEW || AIRTABLE_VIEW || "Mapfluence_Rooms",
     fields: uniqueStrings([
       ...parseEnvFieldList(process.env.AIRTABLE_DEPT_FIELD),
       "Department",
@@ -2177,7 +2186,7 @@ function expandFloorValues(values = []) {
 app.get("/api/rooms", async (req, res) => {
   try {
     const table = AIRTABLE_TABLE || "Rooms";
-    const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
+    const view = req.query.view || AIRTABLE_ROOMS_READ_VIEW || AIRTABLE_VIEW || "Mapfluence_Rooms";
 
     if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !table) {
       return res.status(500).json({ ok: false, error: "Missing Airtable config." });
@@ -2602,7 +2611,7 @@ app.patch("/api/rooms", async (req, res) => {
       { fields: roomGuidFields, values: roomGuidLookupValues }
     ].filter((rule) => rule.fields.length && rule.values.length);
 
-    const view = req.query.view || AIRTABLE_VIEW || "Mapfluence_Rooms";
+    const view = req.query.view || AIRTABLE_ROOMS_READ_VIEW || AIRTABLE_VIEW || "Mapfluence_Rooms";
     let lookupFallbackPromise = null;
     const getLookupFallbackRecords = async () => {
       if (!lookupFallbackPromise) {
@@ -7187,7 +7196,7 @@ if (query.intent === "count" || query.intent === "list" || query.intent === "loo
 
 
     const formula = filtersToAirtableFormula(query.filters);
-const rows = await fetchAirtableRows(formula, AIRTABLE_VIEW || "Mapfluence_Rooms");
+const rows = await fetchAirtableRows(formula, AIRTABLE_ROOMS_READ_VIEW || AIRTABLE_VIEW || "Mapfluence_Rooms");
 
 if (query.intent === "count") {
   return res.json({
