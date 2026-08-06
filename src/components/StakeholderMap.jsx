@@ -3984,7 +3984,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 
   if (!map.getLayer(WALLS_LAYER)) {
-    const beforeId = map.getLayer(FLOOR_FILL_ID) ? FLOOR_FILL_ID : undefined;
+    const beforeId = map.getLayer(FLOOR_ROOM_LABEL_LAYER) ? FLOOR_ROOM_LABEL_LAYER : undefined;
     map.addLayer({
       id: WALLS_LAYER,
       type: "line",
@@ -5180,9 +5180,13 @@ const CHEROKEE_STAIRS_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width=
 function ensureLayerOrder(map) {
   if (!map) return;
   try {
-    // Make sure walls sit under room fills.
-    if (map.getLayer(WALLS_LAYER) && map.getLayer(FLOOR_FILL_ID)) {
-      map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID);
+    // Walls above fills but under room labels (same pattern as FLOOR_DRAWING_LAYER).
+    if (map.getLayer(WALLS_LAYER)) {
+      if (map.getLayer(FLOOR_ROOM_LABEL_LAYER)) {
+        map.moveLayer(WALLS_LAYER, FLOOR_ROOM_LABEL_LAYER);
+      } else {
+        map.moveLayer(WALLS_LAYER);
+      }
     }
 
     // Keep room outlines above fills.
