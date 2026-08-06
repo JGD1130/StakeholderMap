@@ -240,6 +240,80 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-06) — Sarpy walls floor-adjust replay rebuilt end-to-end, enabled, and z-order fixed; root cause of "persistent offset" was stale saved data, not the replay code
+
+### Summary
+
+Picked up the three-part Sarpy walls rebuild left open by the 2026-08-04 session (drag-sync, georeferenced flag, floorAdjust replay), built it as four small isolated commits on top of `13b578d`, then found and fixed a fifth issue (z-order) after live testing. **The most important finding of this session isn't a commit — it's diagnostic: an offset that looked exactly like a broken replay mechanism was actually stale Firestore/localStorage data from the 2026-07-02 `georeferenced`-flag saga, still being faithfully replayed by mechanism that was working correctly.** Getting this wrong would have meant chasing a phantom code bug. See "The critical finding" below before touching Sarpy walls again.
+
+Commits, in order, all on `feature/multi-university-refactor`:
+
+| Commit | What it did |
+|---|---|
+| `f32224d` | Sync `WALLS_SOURCE` to floor-adjust drag transforms, gated `isSarpyCountyInstance` |
+| `0a76171` | Restore `isFloorAlreadyGeoreferenced` (pulled verbatim from `6e6dd3e^`), stamps `fc.__mfGeoreferenced`, Sarpy-scoped |
+| `f690a83` | Restore `overlayFloorAdjust` replay for walls, mirroring `tryLoadDoorsOverlay`/`tryLoadStairsOverlay`; extended the shared `shouldDirectReplayFloorAdjust` gate to include Sarpy alongside Cherokee's `useVectorDoorStairOverlay` |
+| `36d4029` | Flip `allowOptionalOverlays` to include `isSarpyCountyInstance` — the actual walls-on switch, applied last, on top of 1–3 |
+| `74d83a1` | Fix `WALLS_LAYER` z-order: was pinned under `FLOOR_FILL_ID` in two places, now sits above fill / below room labels, mirroring `FLOOR_DRAWING_LAYER`'s existing pattern |
+
+Hastings and Cherokee were not touched by any of these — every change is gated on `isSarpyCountyInstance`, or (for the z-order fix) a `map.getLayer(WALLS_LAYER)` guard that's a structural no-op for tenants that never create that layer.
+
+### Part 1 — drag-sync (`f32224d`)
+
+The rotate/move drag handler (`onMouseDown`/`onMouseMove` in the Adjust Floorplan tool) only ever called `.setData()` on `FLOOR_SOURCE` (rooms). Added a parallel `wallsBaseData` snapshot captured in `onMouseDown` (Sarpy-only), and mirrored the same `turf.transformRotate`/`applyNudgeLngLat` onto `WALLS_SOURCE` in `onMouseMove`. For non-Sarpy tenants `wallsBaseData` stays `null`, making every new branch a no-op.
+
+### Part 2 — georeferenced flag (`0a76171`)
+
+Pulled `isFloorAlreadyGeoreferenced` **verbatim from `6e6dd3e^`** (the commit immediately before it was deleted) rather than reconstructing it from memory — comment included. Two deliberate deviations from the original, both intentional:
+- Scoped with `isSarpyCountyInstance &&` — the original ran for every tenant; restoring that globally would have changed fit behavior for Hastings/Cherokee floors, out of bounds here.
+- Did **not** restore the original's `if (fc.__mfGeoreferenced || fc.__mfNoFit) {...} else if (fitBuilding && !isLikelyLonLat(fc))` guard around the local-planar-fit branch — not needed for this fix (the function only ever sets the flag when `isLikelyLonLat(fc)` is already true, so that branch's own condition is already false in that case), and restoring it for real would touch the shared `FLOORPLAN_NO_FIT` path used by Hastings' French Chapel basement / Kiewit level 2 special cases.
+
+### Part 3 — floorAdjust replay for walls (`f690a83`)
+
+Added `overlayFloorAdjust` to `tryLoadWallsOverlay`, applied via the identical `applyFloorAdjustWithTransform(..., { updateFitTransform: false })` + `applyBearingRotation` pattern doors/stairs already use. The value comes from **extending the existing shared gate** (`shouldDirectReplayFloorAdjust` in `loadFloorGeojson`), not from passing `overlayFloorAdjust` to walls unconditionally — that distinction matters:
+
+`applyFloorAdjustWithTransform`'s fitTransform-folding only carries `rotationDeg`/`scale`/`translateMeters` — never `translateLngLat`/`anchorLngLat`, which every save point (drag `onMouseUp`, `onSaveAdjust`, `onScaleChange`) stamps. That's the actual gap `shouldReplayFloorAdjustDirectly`/`hasGeoFloorAdjustDelta` exists to catch. Since `updateFitTransform` was already unconditionally `true` for Sarpy (the old gate was Cherokee-only, so `shouldDirectReplayFloorAdjust` was always `false` for Sarpy), rotation/scale/translateMeters were **already** reaching walls via `fitTransform` before this commit. Passing `overlayFloorAdjust` to walls unconditionally on top of that would have double-applied those three components — e.g. a 5° saved rotation would have rendered at 10°. Extending the shared gate instead preserves the existing fitTransform-XOR-overlayFloorAdjust invariant. Side effect: Sarpy doors/stairs also now correctly direct-replay geo-delta adjustments in cases where they silently didn't before — same latent gap, not a new behavior change.
+
+### Part 4 — enable the gate (`36d4029`)
+
+The literal one-line fix from the reverted `ce23993`/`a003114` pair: `allowOptionalOverlays = (mode === 'admin' && ENABLE_WALLS_OVERLAY) || isSarpyCountyInstance`. Applied last, deliberately, so it never shipped without 1–3 underneath it.
+
+### Part 5 — z-order (`74d83a1`, found via live testing after 1–4)
+
+Live-tested after 1–4 landed: walls tracked rooms correctly through drag/save/reload, but rendered underneath the room fill, visible only at building edges. Root cause was in two places:
+- `tryLoadWallsOverlay`'s own `addLayer` call used `beforeId: FLOOR_FILL_ID` (walls placed directly under fill at creation).
+- `ensureLayerOrder` (sole call site `loadFloorGeojson:6074`, runs on every load right after the awaited `tryLoadWallsOverlay`) had an **explicit re-enforcement** — `// Make sure walls sit under room fills.` / `map.moveLayer(WALLS_LAYER, FLOOR_FILL_ID)` — that would have undone a fix to the `addLayer` call alone, every single load.
+
+Fixed both to mirror `FLOOR_DRAWING_LAYER`'s existing convention exactly (no `beforeId` at creation; positioned via `ensureLayerOrder` just below `FLOOR_ROOM_LABEL_LAYER`, or top of stack if labels don't exist yet).
+
+### The critical finding: stale saved data, not a code bug
+
+After 1–4 landed, live testing on **Administration/Courthouse LEVEL_1** showed walls syncing correctly during drag/save/reload, but visibly offset from rooms **even with no adjustment actively being made**. Before concluding the replay mechanism itself was broken, checked:
+
+1. **`affine.json`** — none exists anywhere under Sarpy County (every Hastings building has one; Sarpy has zero). Not building-specific, systemic.
+2. **Raw bounding boxes** of rooms vs. walls GeoJSON, native coordinate space — both already in matching real-world lon/lat, bbox-center offset only ~1–1.5m over a 130–160m building, matching aspect ratios. **Ruled out a raw-geometry/export mismatch** — nowhere near large enough to explain a visible offset.
+3. **History for this exact building** — `78e9cfc` (2026-06-22) disabled walls for *all* of Sarpy specifically because of visual issues on this building. More importantly: the 2026-07-02→07-06 `georeferenced`-flag saga (see below) manually stamped `georeferenced: true` **directly onto this building's Firestore floorAdjust doc**, alongside "real, large saved corrections (rotations up to 216°, scales up to 2.5x)."
+
+Rooms have always applied whatever floorAdjust is saved, unconditionally, on every load — that never changed. Walls, before this session, applied nothing. Once Part 2's flag and Part 3's replay landed, this building's **pre-existing stale Firestore adjustment** (216° rotation / 2.5x scale class of correction, saved for a since-superseded calibration) started reaching walls for the first time — producing an offset that looked exactly like a broken mechanism but was actually the mechanism working correctly on bad input.
+
+**Verification:** cleared all `floorAdjustments` docs and matching `mfFloorAdjust*` localStorage keys for Administration/Courthouse LEVEL_1 (no Firestore CLI/service account available in the assistant's environment for this session — done via Firebase Console by the user, not scripted). With storage clean, walls loaded correctly in raw position, no offset.
+
+**Open item — do this before touching the other 3 buildings:** HANDOFF's 07-02 section lists **1246 Building, Juvenile Justice Center, and Sheriff's Office** as also having had `georeferenced: true` force-stamped with large legacy corrections. Now that the replay mechanism is live for all of Sarpy, those three will very likely show the same class of offset the first time their floors load, until their stale `floorAdjustments` docs are checked and cleared the same way. This is expected, not a regression — check before assuming the mechanism broke again. Administration/Courthouse's BASEMENT floor was not checked this session either (only LEVEL_1 was cleared/verified).
+
+**Process lesson:** mid-session, a `git revert --no-commit` was staged (to test rolling back) then interrupted before being committed or aborted. Because staging a revert already rewrites the working-tree file, Vite's dev server hot-reloaded the reverted code — and a subsequent "walls don't load at all" observation was actually testing *that* reverted code, not the real mechanism with clean storage. Resolved by checking `git status`/`git diff --cached` directly against what the running dev server would actually be serving, rather than assuming the conversation's last intended git state matched the working tree. **If a live-test result seems to contradict what the code should do, check actual working-tree state before trusting the test** — an interrupted git operation can silently change what's running.
+
+### Current status (end of session, `74d83a1`, pushed and deployed)
+
+| Item | Status |
+|---|---|
+| Sarpy walls drag-sync, georeferenced flag, floorAdjust replay, gate, z-order | ✅ All 5 commits live on `feature/multi-university-refactor` |
+| Administration/Courthouse LEVEL_1 | ✅ Verified: walls track rooms through drag/save/reload, correct z-order, no offset with clean storage |
+| Administration/Courthouse BASEMENT | ⚠️ Not checked — may have the same stale-adjustment issue |
+| 1246 Building, Juvenile Justice Center, Sheriff's Office | ⚠️ Not checked — all three had legacy `georeferenced: true` + large forced corrections per the 07-02 section; expect the same offset pattern on first load until verified/cleared |
+| Hastings / Cherokee | ✅ Unaffected — every change gated on `isSarpyCountyInstance` or a no-op layer guard |
+
+---
+
 ## Recent Changes (2026-08-04) — FLOOR_DRAWING_LAYER root cause found and fixed; Hastings schedule feature and Sarpy walls left as open items
 
 ### Summary
@@ -1125,6 +1199,6 @@ Removed the `out.__mfGeoreferenced = true;` line (and its justifying comment) fr
 GitHub Pages returned "Deployment failed, try again later." again after pushing `8770e08` — the same transient deploy-step failure documented in the 2026-07-02 section above (build succeeds, the separate Pages-upload step fails independently). Still no `gh` CLI or `GITHUB_TOKEN` available in the assistant's shell environment to retry programmatically; use the Actions tab → the failed run → "Re-run failed jobs."
 
 ---
-*Last updated: 2026-08-04 - update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-08-06 - update this file whenever the architecture, client list, or critical behavior changes.*
 
 
