@@ -3909,7 +3909,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, overlayFloorAdjust = null }) {
   if (!basePath || !floorId || !map) return;
 
   const cleanFloor = String(floorId).trim();
@@ -3960,6 +3960,16 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     console.log("[walls] skipped affine (already lon/lat)");
   }
   fc = applyFloorplanOverlayTransform(fc, rotationOverride, fitTransform, { adjustBearings: false });
+
+  if (overlayFloorAdjust && hasFloorAdjust(overlayFloorAdjust)) {
+    const adjustedWalls = applyFloorAdjustWithTransform(fc, overlayFloorAdjust, fitTransform, {
+      updateFitTransform: false
+    });
+    if (adjustedWalls?.fc) fc = adjustedWalls.fc;
+    if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
+      fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
+    }
+  }
 
   const WALLS_SOURCE = "walls-source";
   const WALLS_LAYER = "walls-layer";
@@ -5694,7 +5704,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  const shouldDirectReplayFloorAdjust = Boolean(options?.useVectorDoorStairOverlay) &&
+  const shouldDirectReplayFloorAdjust = (Boolean(options?.useVectorDoorStairOverlay) || isSarpyCountyInstance) &&
     shouldReplayFloorAdjustDirectly(fc, floorAdjust);
   const overlayFloorAdjust = shouldDirectReplayFloorAdjust ? buildOverlayFloorAdjust(floorAdjust) : null;
   if (floorAdjust) {
@@ -6011,7 +6021,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       roomsFC: patchedFC,
       affine,
       rotationOverride,
-      fitTransform
+      fitTransform,
+      overlayFloorAdjust
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
