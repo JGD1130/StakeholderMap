@@ -2163,6 +2163,60 @@ const floorAdjustCache = new Map();
 const floorAdjustUrlCache = new Map();
 const floorAdjustFloorCache = new Map();
 
+// One-time cache invalidation for stale Sarpy floor-adjust localStorage entries left over
+// from the 2026-07-02 georeferenced-flag saga (large legacy corrections, some rotations up
+// to 216deg / scale up to 2.5x, force-stamped on 4 buildings' Firestore docs). Firestore has
+// since been cleaned for Administration/Courthouse, but loadFloorAdjustFromDb's hydration
+// only ever pushes Firestore -> localStorage when Firestore has something newer to offer; it
+// has no path for "Firestore is now empty, clear your local cache" -- so a visitor whose
+// browser already cached the old value keeps it indefinitely. Bump SARPY_ADJUST_CACHE_VERSION
+// to force another sweep if more stale data turns up (see HANDOFF.md 2026-08-06 session).
+//
+// Only buildings under public/floorplans/SarpyCounty/ (verified against that directory and
+// SarpyCounty_Buildings.json) are included -- folder name and display name can canon() to
+// different strings (e.g. "AdministrationCourthouse" -> "administrationcourthouse" vs the
+// display name "Administration/Courthouse" -> "administration_courthouse"), so both forms
+// are included per building to catch every localStorage key variant this app writes.
+const SARPY_ADJUST_CACHE_VERSION = '1';
+const SARPY_ADJUST_CACHE_VERSION_KEY = 'mfSarpyCacheVersion';
+const SARPY_FLOORPLAN_BUILDINGS = [
+  { folder: '1102 Building', label: '1102 Building' },
+  { folder: '1246 Building', label: '1246 Building' },
+  { folder: '180th Shop', label: '180th Shop' },
+  { folder: 'AdministrationCourthouse', label: 'Administration/Courthouse' },
+  { folder: 'Bellevue Shop', label: 'Bellevue Shop' },
+  { folder: 'Gretna Shop', label: 'Gretna Shop' },
+  { folder: 'Juvenile Justice Center', label: 'Juvenile Justice Center' },
+  { folder: 'Public Works Fleet', label: 'Public Works Fleet' },
+  { folder: "Sheriff's Garage", label: "Sheriff's Garage" },
+  { folder: "Sheriff's Office", label: "Sheriff's Office" },
+  { folder: 'Springfield Shop', label: 'Springfield Shop' }
+];
+const SARPY_FLOOR_ADJUST_KEY_FRAGMENTS = Array.from(new Set(
+  SARPY_FLOORPLAN_BUILDINGS.flatMap(({ folder, label }) => [canon(folder), canon(label)])
+));
+
+function invalidateStaleSarpyFloorAdjustCache() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    if (localStorage.getItem(SARPY_ADJUST_CACHE_VERSION_KEY) === SARPY_ADJUST_CACHE_VERSION) return;
+    const adjustPrefixes = [FLOORPLAN_ADJUST_STORAGE_PREFIX, FLOORPLAN_ADJUST_URL_PREFIX, FLOORPLAN_ADJUST_FLOOR_PREFIX];
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !adjustPrefixes.some((prefix) => key.startsWith(prefix))) continue;
+      if (SARPY_FLOOR_ADJUST_KEY_FRAGMENTS.some((fragment) => key.includes(fragment))) {
+        toRemove.push(key);
+      }
+    }
+    toRemove.forEach((key) => localStorage.removeItem(key));
+    localStorage.setItem(SARPY_ADJUST_CACHE_VERSION_KEY, SARPY_ADJUST_CACHE_VERSION);
+    if (toRemove.length) {
+      console.info(`[sarpy-cache] Cleared ${toRemove.length} stale floor-adjust cache entr${toRemove.length === 1 ? 'y' : 'ies'} (one-time invalidation v${SARPY_ADJUST_CACHE_VERSION}).`);
+    }
+  } catch {}
+}
+
 function buildDrawingAlignKey(buildingLabel, floorId) {
   const key = canon(buildingLabel || '');
   const floorKey = fId(floorId || '');
@@ -11702,6 +11756,11 @@ const StakeholderMap = ({
     normalizedUniversityId === 'sarpy' ||
     normalizedUniversityId === 'sarpy_ne' ||
     normalizedUniversityId === 'sarpycounty';
+  useEffect(() => {
+    if (isSarpyCountyInstance) {
+      invalidateStaleSarpyFloorAdjustCache();
+    }
+  }, [isSarpyCountyInstance]);
   const sarpyBuildingOutlineBaseColor = isSarpyCountyInstance ? '#f97316' : '#000000';
   const sarpyBuildingOutlineSelectedColor = isSarpyCountyInstance ? '#fb923c' : '#1d4ed8';
   const floorplansEnabled = Boolean(config?.enableFloorplans ?? !isSarpyCountyInstance);
