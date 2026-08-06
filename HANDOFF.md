@@ -257,6 +257,7 @@ Commits, in order, all on `feature/multi-university-refactor`:
 | `74d83a1` | Fix `WALLS_LAYER` z-order: was pinned under `FLOOR_FILL_ID` in two places, now sits above fill / below room labels, mirroring `FLOOR_DRAWING_LAYER`'s existing pattern |
 | `838a30b` | One-time, version-gated cache invalidation for stale Sarpy `mfFloorAdjust*` localStorage entries — see Finding 1 |
 | `1f21dc4` | Apply rooms' anchor-snap correction to walls during floorAdjust replay — the actual mechanism gap behind Finding 2 |
+| `e9ceb24` | This HANDOFF.md entry — restructured to separate the two findings after the first version incorrectly concluded stale data was the whole story |
 
 Hastings and Cherokee were not touched by any of these — every change is gated on `isSarpyCountyInstance`, or (for the z-order and anchor-snap fixes) a guard/new parameter that's a structural no-op for tenants that never create a `WALLS_LAYER` or never call `tryLoadWallsOverlay`.
 
@@ -296,7 +297,7 @@ Root cause: `applyFloorAdjustWithTransform` gives rooms a residual **anchor-snap
 
 Fix: rooms and walls share the identical pivot/rotation/scale/translate during replay (same `adjust.pivot`, same `floorAdjust` values) — a rigid/affine transform applied identically to two different shapes doesn't introduce relative drift between them, so whatever drift the anchor-snap corrects is common-mode, not rooms-specific. `applyFloorAdjustWithTransform` now returns the exact delta it applied (`anchorNudgeLngLat`, purely additive to its return shape — doors/stairs/Cherokee unaffected, they never read the new field). `loadFloorGeojson` captures that delta from rooms' own replay call and threads it to `tryLoadWallsOverlay` as a new, separate parameter, applied as a final unconditional nudge — `buildOverlayFloorAdjust`/`overlayFloorAdjust` itself is untouched, so doors/stairs keep their existing (also-gapped, not addressed this session) behavior.
 
-**Live-verify after this deploys:** a fresh drag/save/reload on Administration/Courthouse LEVEL_1 should now keep walls synced with rooms with no residual offset.
+**Deployed, not yet live-verified:** pushed and confirmed deployed (GitHub Pages build+deploy succeeded). A fresh drag/save/reload on Administration/Courthouse LEVEL_1 should now keep walls synced with rooms with no residual offset — that specific test had not been performed as of this entry.
 
 ### Finding 1: stale legacy Firestore/localStorage data (confirmed for the first offset observed)
 
@@ -326,17 +327,20 @@ Live-tested again after Finding 1's cleanup, this time performing a **fresh** ad
 
 Mid-session, a `git revert --no-commit` was staged (to test rolling back) then interrupted before being committed or aborted. Because staging a revert already rewrites the working-tree file, Vite's dev server hot-reloaded the reverted code — and a subsequent "walls don't load at all" observation was actually testing *that* reverted code, not the real mechanism with clean storage. Resolved by checking `git status`/`git diff --cached` directly against what the running dev server would actually be serving, rather than assuming the conversation's last intended git state matched the working tree. **If a live-test result seems to contradict what the code should do, check actual working-tree state before trusting the test** — an interrupted git operation can silently change what's running.
 
-### Current status (end of session, `1f21dc4`)
+### Current status (end of session, `e9ceb24`)
+
+All 7 commits below are pushed to `origin/feature/multi-university-refactor` and confirmed deployed (GitHub Pages build+deploy run succeeded).
 
 | Item | Status |
 |---|---|
-| Sarpy walls drag-sync, georeferenced flag, floorAdjust replay, gate, z-order | ✅ 5 commits (`f32224d`–`74d83a1`) live and deployed |
-| Sarpy floor-adjust cache invalidation (`838a30b`) | ✅ Committed and deployed |
-| Anchor-snap correction for walls (`1f21dc4`) | ✅ Committed; **pending push/deploy and live re-verification** with a fresh drag/save/reload on Administration/Courthouse LEVEL_1 |
-| Administration/Courthouse LEVEL_1 | ⚠️ Verified against Finding 1 (stale data) only — needs re-verification against the Finding 2 fix once deployed |
-| Administration/Courthouse BASEMENT | ⚠️ Not checked at all |
-| 1246 Building, Juvenile Justice Center, Sheriff's Office | ⚠️ Not checked — all three had legacy `georeferenced: true` + large forced corrections per the 07-02 section; check/clear stale data (Finding 1) AND verify the anchor-snap fix (Finding 2) once deployed |
-| Hastings / Cherokee | ✅ Unaffected — every change gated on `isSarpyCountyInstance`, a no-op layer guard, or an unread new parameter |
+| Sarpy walls drag-sync, georeferenced flag, floorAdjust replay, gate, z-order (`f32224d`–`74d83a1`) | ✅ Live and deployed |
+| Sarpy floor-adjust cache invalidation (`838a30b`) | ✅ Live and deployed |
+| Anchor-snap correction for walls (`1f21dc4`) | ✅ **Pushed and deployed** — not yet live-re-verified. Next step for whoever picks this up: fresh drag/save/reload on Administration/Courthouse LEVEL_1 and confirm walls stay synced with rooms. |
+| HANDOFF.md correction (`e9ceb24`) | ✅ This entry — restructured into Finding 1 / Finding 2, added Part 6, corrected the status table |
+| Administration/Courthouse LEVEL_1 | ⚠️ Verified against Finding 1 (stale data) only, before the Finding 2 fix existed. **Needs a fresh live test now that `1f21dc4` is deployed** — see above. |
+| Administration/Courthouse BASEMENT | ⚠️ Not checked at all this session |
+| 1246 Building, Juvenile Justice Center, Sheriff's Office | ⚠️ Not checked — all three had legacy `georeferenced: true` + large forced corrections per the 07-02 section. Before assuming a fresh offset on any of them is a regression: (1) check/clear their `floorAdjustments` docs per Finding 1, (2) test a fresh adjustment against the now-deployed Finding 2 fix |
+| Hastings / Cherokee | ✅ Unaffected all session — every change gated on `isSarpyCountyInstance`, a no-op layer guard, or an unread new parameter; verified no overlap in the cache-invalidation building-name fragments |
 
 ---
 
