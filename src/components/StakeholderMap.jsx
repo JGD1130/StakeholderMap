@@ -18263,10 +18263,23 @@ const StakeholderMap = ({
     setAirtableRefreshPending(true);
     setAirtableRefreshMessage('');
     const ok = await refreshCampusRoomsFromApi();
+    if (ok && isSarpyCountyInstance && currentFloorUrlRef.current) {
+      // airtableRooms/airtableRoomLookup just updated, but the currently-displayed
+      // floor's room properties were baked in by getAirtableRoomPatch at load time
+      // and don't re-patch on their own -- without this, the map/popup keep showing
+      // stale data even though the refresh itself succeeded. Force a reload so this
+      // floor re-bakes with the fresh Airtable data, and clear the cache entry too
+      // so navigating away and back doesn't hit the same stale cached result.
+      floorCache.delete(currentFloorUrlRef.current);
+      floorTransformCache.delete(currentFloorUrlRef.current);
+      try {
+        await handleLoadFloorplan(selectedFloor);
+      } catch {}
+    }
     const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setAirtableRefreshMessage(ok ? `Refreshed ${timeLabel}` : 'Refresh failed');
     setAirtableRefreshPending(false);
-  }, [aiStatus, airtableRefreshPending, refreshCampusRoomsFromApi]);
+  }, [aiStatus, airtableRefreshPending, refreshCampusRoomsFromApi, isSarpyCountyInstance, selectedFloor, handleLoadFloorplan]);
 
   useEffect(() => () => {
     if (campusRoomsRefreshTimerRef.current) {
