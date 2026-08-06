@@ -240,11 +240,11 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
-## Recent Changes (2026-08-06) — Sarpy walls floor-adjust replay rebuilt end-to-end, enabled, and z-order fixed; root cause of "persistent offset" was stale saved data, not the replay code
+## Recent Changes (2026-08-06) — Sarpy walls floor-adjust replay rebuilt end-to-end; two distinct root causes found and fixed for the persistent offset
 
 ### Summary
 
-Picked up the three-part Sarpy walls rebuild left open by the 2026-08-04 session (drag-sync, georeferenced flag, floorAdjust replay), built it as four small isolated commits on top of `13b578d`, then found and fixed a fifth issue (z-order) after live testing. **The most important finding of this session isn't a commit — it's diagnostic: an offset that looked exactly like a broken replay mechanism was actually stale Firestore/localStorage data from the 2026-07-02 `georeferenced`-flag saga, still being faithfully replayed by mechanism that was working correctly.** Getting this wrong would have meant chasing a phantom code bug. See "The critical finding" below before touching Sarpy walls again.
+Picked up the three-part Sarpy walls rebuild left open by the 2026-08-04 session (drag-sync, georeferenced flag, floorAdjust replay), built it as four small isolated commits on top of `13b578d`, then found and fixed two further issues after live testing: a z-order bug, and — more importantly — a genuine gap in the replay mechanism itself. **This session's diagnostic history is a cautionary tale in both directions: the first offset observed really was stale legacy data and not a code bug, but a second, later offset on a brand-new save with verified-clean storage really was a code bug, not more stale data. Don't assume either explanation without checking — see both findings below before touching Sarpy walls again.**
 
 Commits, in order, all on `feature/multi-university-refactor`:
 
@@ -255,8 +255,10 @@ Commits, in order, all on `feature/multi-university-refactor`:
 | `f690a83` | Restore `overlayFloorAdjust` replay for walls, mirroring `tryLoadDoorsOverlay`/`tryLoadStairsOverlay`; extended the shared `shouldDirectReplayFloorAdjust` gate to include Sarpy alongside Cherokee's `useVectorDoorStairOverlay` |
 | `36d4029` | Flip `allowOptionalOverlays` to include `isSarpyCountyInstance` — the actual walls-on switch, applied last, on top of 1–3 |
 | `74d83a1` | Fix `WALLS_LAYER` z-order: was pinned under `FLOOR_FILL_ID` in two places, now sits above fill / below room labels, mirroring `FLOOR_DRAWING_LAYER`'s existing pattern |
+| `838a30b` | One-time, version-gated cache invalidation for stale Sarpy `mfFloorAdjust*` localStorage entries — see Finding 1 |
+| `1f21dc4` | Apply rooms' anchor-snap correction to walls during floorAdjust replay — the actual mechanism gap behind Finding 2 |
 
-Hastings and Cherokee were not touched by any of these — every change is gated on `isSarpyCountyInstance`, or (for the z-order fix) a `map.getLayer(WALLS_LAYER)` guard that's a structural no-op for tenants that never create that layer.
+Hastings and Cherokee were not touched by any of these — every change is gated on `isSarpyCountyInstance`, or (for the z-order and anchor-snap fixes) a guard/new parameter that's a structural no-op for tenants that never create a `WALLS_LAYER` or never call `tryLoadWallsOverlay`.
 
 ### Part 1 — drag-sync (`f32224d`)
 
@@ -286,7 +288,17 @@ Live-tested after 1–4 landed: walls tracked rooms correctly through drag/save/
 
 Fixed both to mirror `FLOOR_DRAWING_LAYER`'s existing convention exactly (no `beforeId` at creation; positioned via `ensureLayerOrder` just below `FLOOR_ROOM_LABEL_LAYER`, or top of stack if labels don't exist yet).
 
-### The critical finding: stale saved data, not a code bug
+### Part 6 — anchor-snap correction for walls (`1f21dc4`, found via a second round of live testing)
+
+After Finding 1's stale-data cleanup (below) and a fresh live test — adjust from scratch, save, hard-reload — walls **still** desynced from rooms, even though the newly-saved Firestore doc contained no `georeferenced` field and a small, clearly-fresh correction (`rotationDeg: 3.8`, `scale: 1`). This ruled out stale data definitively for this case and pointed at the replay mechanism itself.
+
+Root cause: `applyFloorAdjustWithTransform` gives rooms a residual **anchor-snap correction** after rotate/scale/translate — it nudges rooms so their own centroid lands exactly on the recorded `anchorLngLat` (saved as rooms' centroid at drag-end), compensating for pivot-precision drift between the saved adjustment and a freshly recomputed pivot at load time. `buildOverlayFloorAdjust` (used by doors, stairs, and now walls) deliberately strips `anchorLngLat` before handing the adjustment to any overlay — correctly, since it's rooms' own centroid and blindly reapplying it to a different collection's geometry would snap to the wrong point. But this meant overlays never got *any* equivalent correction, not even a correct one — a real, structural gap, not a mistake introduced this session (doors/stairs have had this same gap all along; it just never surfaced because Sarpy doors/stairs direct-replay was itself gated off until Part 3 above).
+
+Fix: rooms and walls share the identical pivot/rotation/scale/translate during replay (same `adjust.pivot`, same `floorAdjust` values) — a rigid/affine transform applied identically to two different shapes doesn't introduce relative drift between them, so whatever drift the anchor-snap corrects is common-mode, not rooms-specific. `applyFloorAdjustWithTransform` now returns the exact delta it applied (`anchorNudgeLngLat`, purely additive to its return shape — doors/stairs/Cherokee unaffected, they never read the new field). `loadFloorGeojson` captures that delta from rooms' own replay call and threads it to `tryLoadWallsOverlay` as a new, separate parameter, applied as a final unconditional nudge — `buildOverlayFloorAdjust`/`overlayFloorAdjust` itself is untouched, so doors/stairs keep their existing (also-gapped, not addressed this session) behavior.
+
+**Live-verify after this deploys:** a fresh drag/save/reload on Administration/Courthouse LEVEL_1 should now keep walls synced with rooms with no residual offset.
+
+### Finding 1: stale legacy Firestore/localStorage data (confirmed for the first offset observed)
 
 After 1–4 landed, live testing on **Administration/Courthouse LEVEL_1** showed walls syncing correctly during drag/save/reload, but visibly offset from rooms **even with no adjustment actively being made**. Before concluding the replay mechanism itself was broken, checked:
 
@@ -296,21 +308,35 @@ After 1–4 landed, live testing on **Administration/Courthouse LEVEL_1** showed
 
 Rooms have always applied whatever floorAdjust is saved, unconditionally, on every load — that never changed. Walls, before this session, applied nothing. Once Part 2's flag and Part 3's replay landed, this building's **pre-existing stale Firestore adjustment** (216° rotation / 2.5x scale class of correction, saved for a since-superseded calibration) started reaching walls for the first time — producing an offset that looked exactly like a broken mechanism but was actually the mechanism working correctly on bad input.
 
-**Verification:** cleared all `floorAdjustments` docs and matching `mfFloorAdjust*` localStorage keys for Administration/Courthouse LEVEL_1 (no Firestore CLI/service account available in the assistant's environment for this session — done via Firebase Console by the user, not scripted). With storage clean, walls loaded correctly in raw position, no offset.
+**Verification:** cleared all `floorAdjustments` docs and matching `mfFloorAdjust*` localStorage keys for Administration/Courthouse LEVEL_1 via Firebase Console (no Firestore CLI/service account available in the assistant's environment for this session). With storage clean, walls initially loaded correctly in raw position, no offset — **this made the diagnosis look complete at the time, but it hadn't yet been tested against a fresh save. That's what surfaced Finding 2 next — don't stop at "cleared storage fixed it" without also testing a brand-new adjustment.**
 
-**Open item — do this before touching the other 3 buildings:** HANDOFF's 07-02 section lists **1246 Building, Juvenile Justice Center, and Sheriff's Office** as also having had `georeferenced: true` force-stamped with large legacy corrections. Now that the replay mechanism is live for all of Sarpy, those three will very likely show the same class of offset the first time their floors load, until their stale `floorAdjustments` docs are checked and cleared the same way. This is expected, not a regression — check before assuming the mechanism broke again. Administration/Courthouse's BASEMENT floor was not checked this session either (only LEVEL_1 was cleared/verified).
+Also added `838a30b`: a one-time, version-gated cache invalidation so real Sarpy site visitors don't need to manually clear DevTools localStorage themselves — `loadFloorAdjustFromDb`'s Firestore→localStorage hydration only ever pushes a value down when Firestore has something *newer*, never signals "Firestore is now empty, clear your cache," so any browser that had already cached a legacy correction would keep it indefinitely even after Firestore cleanup.
 
-**Process lesson:** mid-session, a `git revert --no-commit` was staged (to test rolling back) then interrupted before being committed or aborted. Because staging a revert already rewrites the working-tree file, Vite's dev server hot-reloaded the reverted code — and a subsequent "walls don't load at all" observation was actually testing *that* reverted code, not the real mechanism with clean storage. Resolved by checking `git status`/`git diff --cached` directly against what the running dev server would actually be serving, rather than assuming the conversation's last intended git state matched the working tree. **If a live-test result seems to contradict what the code should do, check actual working-tree state before trusting the test** — an interrupted git operation can silently change what's running.
+**Open item — do this before touching the other 3 buildings:** HANDOFF's 07-02 section lists **1246 Building, Juvenile Justice Center, and Sheriff's Office** as also having had `georeferenced: true` force-stamped with large legacy corrections. Check and clear their `floorAdjustments` docs the same way before assuming a fresh offset on those buildings is a regression. Administration/Courthouse's BASEMENT floor was not checked this session either.
 
-### Current status (end of session, `74d83a1`, pushed and deployed)
+### Finding 2: a real mechanism gap — missing anchor-snap correction for walls (see Part 6, `1f21dc4`)
+
+Live-tested again after Finding 1's cleanup, this time performing a **fresh** adjustment from scratch (drag — correctly synced live — save, hard-reload) rather than just checking a stale pre-existing state. Walls desynced again. Checked the just-saved Firestore doc directly: no `georeferenced` field, small fresh values (`rotationDeg: 3.8`, `scale: 1`) — definitively not stale data. Root cause and fix are in Part 6 above.
+
+**Lesson for next time, in both directions:**
+- An offset that appears with *no new adjustment made* and traces to a building with 07-02-saga history is very likely stale data — check Firestore/localStorage before assuming a code bug.
+- An offset that appears immediately after a **fresh** save with verified-clean, verified-small saved values is **not** stale data — it means the replay mechanism itself has a gap. A "walls stopped desyncing after clearing storage" result on the *first* test doesn't prove the mechanism is complete, only that *that specific* offset was explained. Test with a genuinely new adjustment before declaring the mechanism verified.
+
+### Process lesson
+
+Mid-session, a `git revert --no-commit` was staged (to test rolling back) then interrupted before being committed or aborted. Because staging a revert already rewrites the working-tree file, Vite's dev server hot-reloaded the reverted code — and a subsequent "walls don't load at all" observation was actually testing *that* reverted code, not the real mechanism with clean storage. Resolved by checking `git status`/`git diff --cached` directly against what the running dev server would actually be serving, rather than assuming the conversation's last intended git state matched the working tree. **If a live-test result seems to contradict what the code should do, check actual working-tree state before trusting the test** — an interrupted git operation can silently change what's running.
+
+### Current status (end of session, `1f21dc4`)
 
 | Item | Status |
 |---|---|
-| Sarpy walls drag-sync, georeferenced flag, floorAdjust replay, gate, z-order | ✅ All 5 commits live on `feature/multi-university-refactor` |
-| Administration/Courthouse LEVEL_1 | ✅ Verified: walls track rooms through drag/save/reload, correct z-order, no offset with clean storage |
-| Administration/Courthouse BASEMENT | ⚠️ Not checked — may have the same stale-adjustment issue |
-| 1246 Building, Juvenile Justice Center, Sheriff's Office | ⚠️ Not checked — all three had legacy `georeferenced: true` + large forced corrections per the 07-02 section; expect the same offset pattern on first load until verified/cleared |
-| Hastings / Cherokee | ✅ Unaffected — every change gated on `isSarpyCountyInstance` or a no-op layer guard |
+| Sarpy walls drag-sync, georeferenced flag, floorAdjust replay, gate, z-order | ✅ 5 commits (`f32224d`–`74d83a1`) live and deployed |
+| Sarpy floor-adjust cache invalidation (`838a30b`) | ✅ Committed and deployed |
+| Anchor-snap correction for walls (`1f21dc4`) | ✅ Committed; **pending push/deploy and live re-verification** with a fresh drag/save/reload on Administration/Courthouse LEVEL_1 |
+| Administration/Courthouse LEVEL_1 | ⚠️ Verified against Finding 1 (stale data) only — needs re-verification against the Finding 2 fix once deployed |
+| Administration/Courthouse BASEMENT | ⚠️ Not checked at all |
+| 1246 Building, Juvenile Justice Center, Sheriff's Office | ⚠️ Not checked — all three had legacy `georeferenced: true` + large forced corrections per the 07-02 section; check/clear stale data (Finding 1) AND verify the anchor-snap fix (Finding 2) once deployed |
+| Hastings / Cherokee | ✅ Unaffected — every change gated on `isSarpyCountyInstance`, a no-op layer guard, or an unread new parameter |
 
 ---
 
