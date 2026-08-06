@@ -27084,9 +27084,12 @@ useEffect(() => {
       }
       const pivotScreen = map.project({ lng: pivot[0], lat: pivot[1] });
       const startAngle = Math.atan2(e.point.y - pivotScreen.y, e.point.x - pivotScreen.x);
+      const wallsSrc = isSarpyCountyInstance ? getGeojsonSource(map, WALLS_SOURCE) : null;
+      const wallsBaseData = wallsSrc?._data ? JSON.parse(JSON.stringify(wallsSrc._data)) : null;
       floorAdjustDragRef.current = {
         mode,
         baseData: JSON.parse(JSON.stringify(baseData)),
+        wallsBaseData,
         pivot,
         pivotScreen,
         startAngle,
@@ -27116,6 +27119,13 @@ useEffect(() => {
         const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
         const rotated = turf.transformRotate(drag.baseData, deltaDeg, { pivot: drag.pivot });
         src.setData(rotated);
+        if (drag.wallsBaseData) {
+          const wallsSrc = getGeojsonSource(map, WALLS_SOURCE);
+          if (wallsSrc) {
+            const rotatedWalls = turf.transformRotate(drag.wallsBaseData, deltaDeg, { pivot: drag.pivot });
+            wallsSrc.setData(rotatedWalls);
+          }
+        }
         return;
       }
       if (drag.mode === 'move') {
@@ -27124,6 +27134,13 @@ useEffect(() => {
         const deltaLat = e.lngLat.lat - drag.startLngLat.lat;
         const moved = applyNudgeLngLat(drag.baseData, [deltaLng, deltaLat]);
         src.setData(moved);
+        if (drag.wallsBaseData) {
+          const wallsSrc = getGeojsonSource(map, WALLS_SOURCE);
+          if (wallsSrc) {
+            const movedWalls = applyNudgeLngLat(drag.wallsBaseData, [deltaLng, deltaLat]);
+            wallsSrc.setData(movedWalls);
+          }
+        }
       }
     };
 
@@ -27204,7 +27221,7 @@ useEffect(() => {
       try { map.off('mousemove', onMouseMove); } catch {}
       try { map.off('mouseup', onMouseUp); } catch {}
     };
-  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus]);
+  }, [mapLoaded, selectedBuilding, buildFloorUrl, getFloorAdjustContext, saveFloorAdjustToDb, buildLegendForMode, floorColorMode, floorplanCampus, isSarpyCountyInstance]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
