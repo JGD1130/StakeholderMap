@@ -240,6 +240,47 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-06, session 2) — Sarpy Airtable refresh left already-displayed floors stale (`7e87a17`)
+
+### Summary
+
+Bug report: 1102 Building Room 108 (blank Department in Airtable, confirmed source of truth) still showed an assigned department on the map after clicking **Refresh Airtable Data** and having it report success. Diagnosed before making any changes, per the lesson from the walls session earlier today — read this section fully before touching Sarpy Airtable sync again.
+
+### What it wasn't
+
+The blank-department merge logic itself is **correct, not regressed**. `getAirtableRoomPatch` (`StakeholderMap.jsx:10165`) takes an `allowBlankDepartment` param, passed as `Boolean(options.airtableWins)` (`airtableWins: isSarpyCountyInstance`, true for Sarpy). Two places this matters:
+- The early-return guard (`:10240`) is written so a Sarpy blank-everything room still produces a patch instead of bailing out.
+- `:10258`: `if (department || allowBlankDepartment) { patch.department = department; ... }` — explicitly writes `department: ''` into the patch even when Airtable's value is blank.
+
+In `loadFloorGeojson` (`:5841-5848`), for Sarpy the old Firestore room-patch is applied **first**, then the Airtable patch **second**, overwriting it via a plain spread (`mergePatch`, `:9304`) — exactly the "blank is an explicit clear" behavior `docs/SARPY_STABLE_BASELINE_2026-07-31.md` documents, correctly implemented. The compound Room GUID format in the bug report (`b81b59ea-47c2-40b2-add7-26eeac47c53e-00532bb5`) was also ruled out — `getRoomLookupKeyVariants` (`:9617`) already generates both the full compound key and a UUID-only variant via regex extraction, specifically for this kind of suffix.
+
+*(Separately noted, not the cause of this bug: `mergeAirtableRoomsWithManifest` at `:10123-10125` does **not** have this same blank-aware guard — a stale manifest value could win over a genuinely blank Airtable value there. Not implicated here because its one call site explicitly skips it for Sarpy (`isSarpyCountyInstance` branch uses `airtableRooms` directly). Worth a look if a similar bug ever surfaces on the Sarpy dashboard/campus-rooms view specifically.)*
+
+### Actual root cause: refresh never touches the already-loaded floor
+
+`handleRefreshAirtable` (`:18261`) only calls `refreshCampusRoomsFromApi()`, which updates the `airtableRooms` state (and `airtableRoomLookup`, a `useMemo` derived from it, `:12360`). **That's all it does.** The patch logic above only runs inside `loadFloorGeojson` — i.e. only when a floor loads. A floor already open when Airtable changes has its room properties permanently baked into the Mapbox source from that load; the room popup reads `feature.properties` directly (`onFloorClick`, `:27526`), not a live Airtable lookup. So the refresh genuinely succeeds and the UI correctly says "Refreshed," but the visible map/popup for an already-open floor keeps showing whatever was baked in at last load.
+
+**Not a single-room or department-only edge case** — this is a general staleness bug in the refresh button. It would affect any field, on any room, on any floor that was already displayed before an admin clicked refresh.
+
+### Fix (`7e87a17`)
+
+After a successful refresh, if Sarpy and a floor is currently displayed (`currentFloorUrlRef.current` — reliably null only via `handleUnloadFloorplan`, `:19873`):
+1. Delete that floor's `floorCache`/`floorTransformCache` entries.
+2. Re-call `handleLoadFloorplan(selectedFloor)` — the same function the app already uses to load a floor — forcing a fresh `loadFloorGeojson` pass with the just-refreshed `airtableRoomLookup`.
+
+**Scoped with `isSarpyCountyInstance`** — confirmed `handleRefreshAirtable` and the "Refresh Airtable Data" button are shared code with Hastings: `airtableControlsAllowed` (`:11990`) has no tenant gating, and Hastings' own baseline doc confirms it has this same control. For Hastings/Cherokee the new condition is false and behavior is unchanged.
+
+### Current status
+
+| Item | Status |
+|---|---|
+| `7e87a17` | ✅ Committed. **Not yet pushed/deployed or live-verified** as of this entry — next step is push, confirm deploy, then reload Room 108 (or any room) after a refresh with no floor navigation and confirm it now shows current data |
+| Blank-department merge logic | ✅ Confirmed correct, not touched |
+| `mergeAirtableRoomsWithManifest`'s missing blank-guard | ⚠️ Noted, not fixed — not reachable for Sarpy today, low priority unless it resurfaces |
+| Hastings / Cherokee | ✅ Unaffected — fix gated on `isSarpyCountyInstance`, confirmed the refresh button/handler is otherwise shared code |
+
+---
+
 ## Recent Changes (2026-08-06) — Sarpy walls floor-adjust replay rebuilt end-to-end; two distinct root causes found and fixed for the persistent offset
 
 ### Summary
