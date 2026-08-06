@@ -3811,6 +3811,22 @@ async function loadWallsFC({ basePath, floorId, affine }) {
   return applyAffineIfPresent(rawFC, affine);
 }
 
+// Rooms with no affine.json can still already be real-world lon/lat (e.g. the
+// script.py WGS84 export from commit 732b643), in which case shouldFitFloorplanToBuilding
+// must not rescale them onto the building bbox. When a companion walls file exists we use
+// it as corroboration, but some exports embed walls in the room GeoJSON and do not ship a
+// separate walls asset at all.
+async function isFloorAlreadyGeoreferenced(roomsFC, basePath, floorId) {
+  if (!isLikelyLonLat(roomsFC)) return false;
+  try {
+    const wallsFC = await loadWallsFC({ basePath, floorId, affine: null });
+    if (!wallsFC?.features?.length) return true;
+    return isLikelyLonLat(wallsFC);
+  } catch {
+    return true;
+  }
+}
+
 function applyAffine(fc, M) {
   function mapCoords(coords) {
     if (!coords) return coords;
@@ -5252,7 +5268,7 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup, skipBuildingFit = false, skipFloorAdjust = false, enableDoorStairOverlay = false } = options;
+  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup, skipBuildingFit = false, skipFloorAdjust = false, enableDoorStairOverlay = false, isSarpyCountyInstance = false } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5566,6 +5582,12 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       }
     } catch {}
   };
+
+  if (isSarpyCountyInstance && !fc.__mfGeoreferenced && !fc.__mfNoFit && !affine && floorBasePath && floorId) {
+    if (await isFloorAlreadyGeoreferenced(fc, floorBasePath, floorId)) {
+      fc.__mfGeoreferenced = true;
+    }
+  }
 
   let summary = computeFloorSummary(fc);
   cacheFloorSummary(summary, fc);
@@ -19112,6 +19134,7 @@ const StakeholderMap = ({
         roomPatches,
         airtableLookup: airtableRoomLookup,
         airtableWins: isSarpyCountyInstance,
+        isSarpyCountyInstance,
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
