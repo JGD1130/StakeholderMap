@@ -2855,6 +2855,7 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
   } else if (translateMeters && (Math.abs(translateMeters[0] || 0) > 1e-6 || Math.abs(translateMeters[1] || 0) > 1e-6)) {
     out = applyNudgeMeters(out, translateMeters);
   }
+  let anchorNudgeLngLat = null;
   if (anchorLngLat && Number.isFinite(anchorLngLat[0]) && Number.isFinite(anchorLngLat[1])) {
     const currentAnchor = getFloorAdjustAnchorLngLat(out);
     if (currentAnchor) {
@@ -2862,6 +2863,7 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
       const deltaLat = anchorLngLat[1] - currentAnchor[1];
       if (Math.abs(deltaLng) > 1e-12 || Math.abs(deltaLat) > 1e-12) {
         out = applyNudgeLngLat(out, [deltaLng, deltaLat]);
+        anchorNudgeLngLat = [deltaLng, deltaLat];
       }
     }
   }
@@ -2902,7 +2904,7 @@ function applyFloorAdjustWithTransform(fc, adjust, fitTransform, options = {}) {
       ];
     }
   }
-  return { fc: out, fitTransform: nextTransform };
+  return { fc: out, fitTransform: nextTransform, anchorNudgeLngLat };
 }
 
 function isDrawingFeature(props = {}) {
@@ -3963,7 +3965,7 @@ async function fetchFirstOk(urls) {
   return { ok: false, url: urls?.[0] || "", error: "No valid JSON response from any candidate URL." };
 }
 
-async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, overlayFloorAdjust = null }) {
+async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, rotationOverride, fitTransform, overlayFloorAdjust = null, anchorNudgeLngLat = null }) {
   if (!basePath || !floorId || !map) return;
 
   const cleanFloor = String(floorId).trim();
@@ -4022,6 +4024,15 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
     if (adjustedWalls?.fc) fc = adjustedWalls.fc;
     if (Number.isFinite(overlayFloorAdjust.rotationDeg) && Math.abs(overlayFloorAdjust.rotationDeg) > 1e-6) {
       fc = applyBearingRotation(fc, overlayFloorAdjust.rotationDeg);
+    }
+    // overlayFloorAdjust strips anchorLngLat (it's rooms' own centroid, not walls' --
+    // reapplying it here would snap walls to the wrong point). Rooms get a residual
+    // anchor-snap correction after their own rotate/scale/translate replay to correct for
+    // pivot drift between the saved adjustment and a fresh load; walls share the identical
+    // pivot/rotation/scale/translate, so the same drift affects them equally. Reuse the
+    // exact delta rooms' snap computed instead of an independently-derived one.
+    if (Array.isArray(anchorNudgeLngLat) && (Math.abs(anchorNudgeLngLat[0] || 0) > 1e-12 || Math.abs(anchorNudgeLngLat[1] || 0) > 1e-12)) {
+      fc = applyNudgeLngLat(fc, anchorNudgeLngLat);
     }
   }
 
@@ -5765,12 +5776,14 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   const shouldDirectReplayFloorAdjust = (Boolean(options?.useVectorDoorStairOverlay) || isSarpyCountyInstance) &&
     shouldReplayFloorAdjustDirectly(fc, floorAdjust);
   const overlayFloorAdjust = shouldDirectReplayFloorAdjust ? buildOverlayFloorAdjust(floorAdjust) : null;
+  let wallsAnchorNudgeLngLat = null;
   if (floorAdjust) {
     const hasAdjust = hasFloorAdjust(floorAdjust);
     if (hasAdjust) {
       const adjustedResult = applyFloorAdjustWithTransform(fc, floorAdjust, fitTransform, {
         updateFitTransform: !shouldDirectReplayFloorAdjust
       });
+      wallsAnchorNudgeLngLat = adjustedResult?.anchorNudgeLngLat || null;
       if (adjustedResult?.fc && adjustedResult.fc !== fc) {
         fc = adjustedResult.fc;
         fitTransform = adjustedResult.fitTransform || fitTransform;
@@ -6080,7 +6093,8 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affine,
       rotationOverride,
       fitTransform,
-      overlayFloorAdjust
+      overlayFloorAdjust,
+      anchorNudgeLngLat: wallsAnchorNudgeLngLat
     });
     try { map.setPaintProperty(FLOOR_FILL_ID, "fill-opacity", 0.25); } catch {}
   }
