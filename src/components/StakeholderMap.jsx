@@ -11539,6 +11539,11 @@ const USGS_NAIP_BASEMAP_LAYER_ID = 'mf-usgs-naip-basemap-layer';
 const USGS_NAIP_TILES = [
   'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=false&interpolation=RSP_BilinearInterpolation&renderingRule=%7B%22rasterFunction%22%3A%22NaturalColor%22%7D&f=image'
 ];
+const SARPY_AERIALS_2025_BASEMAP_SOURCE_ID = 'mf-sarpy-aerials-2025-basemap-source';
+const SARPY_AERIALS_2025_BASEMAP_LAYER_ID = 'mf-sarpy-aerials-2025-basemap-layer';
+const SARPY_AERIALS_2025_TILES = [
+  'https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Aerials2025/MapServer/tile/{z}/{y}/{x}'
+];
 const parseFirestoreTimestampMs = (value) => {
   if (!value) return 0;
   if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
@@ -11758,7 +11763,8 @@ const StakeholderMap = ({
   const BASEMAP_VIEWS = {
     STREETS: 'streets',
     SATELLITE: 'satellite',
-    NAIP: 'naip'
+    NAIP: 'naip',
+    SARPY_AERIALS_2025: 'sarpy-aerials-2025'
   };
   const hasRuntimeMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
   const [basemapView, setBasemapView] = useState(BASEMAP_VIEWS.STREETS);
@@ -12096,6 +12102,7 @@ const StakeholderMap = ({
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
   const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
+  const showSarpyAerials2025BasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
@@ -25220,8 +25227,21 @@ useEffect(() => {
           }
         });
       }
+      if (showSarpyAerials2025BasemapOption) {
+        ensureRasterBasemapLayer({
+          sourceId: SARPY_AERIALS_2025_BASEMAP_SOURCE_ID,
+          layerId: SARPY_AERIALS_2025_BASEMAP_LAYER_ID,
+          sourceConfig: {
+            type: 'raster',
+            tiles: SARPY_AERIALS_2025_TILES,
+            tileSize: 256,
+            attribution: 'Sarpy County GIS'
+          }
+        });
+      }
       setMapLayerVisibility(map, SATELLITE_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SATELLITE);
       setMapLayerVisibility(map, USGS_NAIP_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.NAIP);
+      setMapLayerVisibility(map, SARPY_AERIALS_2025_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SARPY_AERIALS_2025);
     };
 
     applyBasemapView();
@@ -25231,7 +25251,7 @@ useEffect(() => {
         map.off('style.load', applyBasemapView);
       } catch {}
     };
-  }, [mapLoaded, basemapView, showBasemapSelector, showSarpyNaipBasemapOption, BASEMAP_VIEWS.SATELLITE, BASEMAP_VIEWS.NAIP]);
+  }, [mapLoaded, basemapView, showBasemapSelector, showSarpyNaipBasemapOption, showSarpyAerials2025BasemapOption, BASEMAP_VIEWS.SATELLITE, BASEMAP_VIEWS.NAIP, BASEMAP_VIEWS.SARPY_AERIALS_2025]);
 
 
   // ---------- Load data (markers/assessments/conditions) ----------
@@ -30585,6 +30605,9 @@ useEffect(() => {
                 <option value={BASEMAP_VIEWS.SATELLITE}>Satellite</option>
                 {showSarpyNaipBasemapOption && (
                   <option value={BASEMAP_VIEWS.NAIP}>NAIP Test</option>
+                )}
+                {showSarpyAerials2025BasemapOption && (
+                  <option value={BASEMAP_VIEWS.SARPY_AERIALS_2025}>2025 Aerial</option>
                 )}
               </select>
             </div>
