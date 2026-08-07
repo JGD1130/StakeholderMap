@@ -10229,7 +10229,16 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankD
       room = lookup.byRoomId?.get(roomIdKey) || null;
     }
   }
-  if (!room) return null;
+  if (!room) {
+    // Sarpy: Airtable is authoritative for department, so an ambiguous match
+    // (e.g. two Airtable rows sharing one Revit_UniqueId, which setUnique()
+    // nulls out) or no match at all must not let a stale NCES_Department
+    // baked into the static Revit export leak through as current data.
+    if (allowBlankDepartment) {
+      return { department: '', Department: '' };
+    }
+    return null;
+  }
 
   const occupancyStatus = String(room.occupancyStatus ?? '').trim();
   const occupant = String(room.occupant ?? '').trim();
