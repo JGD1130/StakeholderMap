@@ -27580,7 +27580,16 @@ useEffect(() => {
         return;
       }
       const overridePatch = roomMergeKey ? roomPatches.get(roomMergeKey) : null;
-      const pp = overridePatch ? { ...rawProps, ...overridePatch } : rawProps;
+      // Sarpy: Airtable is authoritative for these fields (see loadFloorGeojson's
+      // airtableWins ordering and the live map-resync effect). rawProps already
+      // reflects the correctly-merged Airtable value, so a stale Firestore
+      // roomPatches entry must not be allowed to clobber it here too.
+      const sarpySafeOverridePatch = (overridePatch && isSarpyCountyInstance)
+        ? Object.fromEntries(
+            Object.entries(overridePatch).filter(([key]) => !ROOM_PATCH_PROTECTED_KEYS.has(key))
+          )
+        : overridePatch;
+      const pp = sarpySafeOverridePatch ? { ...rawProps, ...sarpySafeOverridePatch } : rawProps;
       const roomNum2 = pp.Number ?? pp.RoomNumber ?? pp.number ?? pp.Room ?? '';
       const initialRoomType = norm(getRoomTypeLabelFromProps(pp) || pp.__roomType || '');
       const initialDept = norm(getDeptFromProps(pp) || pp.__dept || '');
