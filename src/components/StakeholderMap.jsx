@@ -11992,7 +11992,14 @@ const StakeholderMap = ({
   const showFullMapfluenceControls = isAdminMode && !engagementMode && !technicalMode;
   const planningScenarioControlsEnabled = showFullMapfluenceControls || publicPlanningScenarioAllowed;
   const isHastingsCollegeInstance = /hastings/i.test(String(activeUniversityName || ''));
-  const aiEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
+  // Airtable room-sync is a plain data read, not an OpenAI-backed call, so it
+  // should reach the ai-server on Sarpy's /client and public routes too, not
+  // just /admin. Only an explicit config opt-out disables it here.
+  const aiEnabledForCurrentView = config?.enableMapfluenceAI !== false;
+  // Chat/assistant AI features (Explain via AI, the Mapfluence AI panel) stay
+  // gated off for Sarpy's non-admin views, since those are the actual
+  // OpenAI-backed calls we don't want unauthenticated/public traffic triggering.
+  const aiChatFeaturesEnabledForCurrentView = (config?.enableMapfluenceAI ?? !(isSarpyCountyInstance && !isAdminMode)) !== false;
   const configuredAiServerUrl = String(config?.aiServerUrl || '').trim();
   const hasFallbackAiBase = Boolean(String(import.meta.env.VITE_AI_BASE_URL || '').trim());
   const hasConfiguredAiBackend = aiEnabledForCurrentView && Boolean(configuredAiServerUrl || hasFallbackAiBase || isStaticGithubHost());
@@ -13222,14 +13229,12 @@ const StakeholderMap = ({
     if (!buildingKeyOrName || !normalizedFloorId) return null;
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
     if (!folderKey) return null;
-    const preferSarpyPublicFloorAsset =
-      isSarpyPublicReadonlyMode &&
-      floorplanCampus === 'SarpyCounty';
+    // Sarpy public/client floorplans load the same file /admin uses. A
+    // sanitized "_Dept_Rooms_Public.geojson" variant was never actually
+    // generated/deployed for any building, so redirecting to it 404'd.
     const toPreferredAssetUrl = (candidateUrl) => {
       if (!candidateUrl) return candidateUrl;
-      const resolved = /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
-      if (!preferSarpyPublicFloorAsset) return resolved;
-      return resolved.replace(/_Dept_Rooms\.geojson(\?.*)?$/i, '_Dept_Rooms_Public.geojson$1');
+      return /^https?:\/\//i.test(candidateUrl) ? candidateUrl : assetUrl(candidateUrl);
     };
     const floors = getAvailableFloors(folderKey);
     if (!floors.includes(normalizedFloorId)) return null;
@@ -13242,7 +13247,7 @@ const StakeholderMap = ({
     const buildingSeg = encodeURIComponent(folderKey);
     const floorSeg = encodeURIComponent(normalizedFloorId);
     return toPreferredAssetUrl(`floorplans/${campusSeg}/${buildingSeg}/Rooms/${floorSeg}_Dept_Rooms.geojson`);
-  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled, isSarpyPublicReadonlyMode]);
+  }, [getAvailableFloors, getBuildingFolderKey, floorplanCampus, floorplansEnabled]);
   const ensureFloorsForBuilding = useCallback(async (buildingKeyOrName) => {
     if (!floorplansEnabled) return [];
     const folderKey = getBuildingFolderKey(buildingKeyOrName);
@@ -13366,14 +13371,14 @@ const StakeholderMap = ({
     clearRoomEditSelection
   ]);
   useEffect(() => {
-    if (aiEnabledForCurrentView) return;
+    if (aiChatFeaturesEnabledForCurrentView) return;
     setAskOpen(false);
     setAiInfoOpen(false);
     setAiOpen(false);
     setAiBuildingOpen(false);
     setAiCampusOpen(false);
     setAiCreateScenarioOpen(false);
-  }, [aiEnabledForCurrentView]);
+  }, [aiChatFeaturesEnabledForCurrentView]);
   useEffect(() => {
     if (aiCreatePlanningScenarioAllowed) return;
     setAiCreateScenarioOpen(false);
@@ -19088,10 +19093,7 @@ const StakeholderMap = ({
     if (!floorId && floorIdRaw && floorOverrideValue && buildingKey && (!buildingFloors || buildingFloors.length === 0)) {
       floorId = floorIdRaw;
       const campusSeg = encodeURIComponent(floorplanCampus);
-      const baseFallbackUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
-      floorUrl = (isSarpyPublicReadonlyMode && floorplanCampus === 'SarpyCounty')
-        ? baseFallbackUrl.replace(/_Dept_Rooms\.geojson$/i, '_Dept_Rooms_Public.geojson')
-        : baseFallbackUrl;
+      floorUrl = assetUrl(`floorplans/${campusSeg}/${buildingKey}/Rooms/${floorId}_Dept_Rooms.geojson`);
       if (buildingFloors && !buildingFloors.includes(floorId)) {
         buildingFloors = [...buildingFloors, floorId];
         availableFloorsByBuildingRef.current.set(buildingKey, buildingFloors);
@@ -29625,9 +29627,9 @@ useEffect(() => {
                 setPopupMode('building');
               }}
               onExportPDF={handleExportBuilding}
-              onExplainBuilding={aiEnabledForCurrentView ? onExplainBuilding : null}
+              onExplainBuilding={aiChatFeaturesEnabledForCurrentView ? onExplainBuilding : null}
               explainBuildingLoading={aiBuildingLoading}
-              explainBuildingDisabled={!aiEnabledForCurrentView || aiIsDown || !buildingStats}
+              explainBuildingDisabled={!aiChatFeaturesEnabledForCurrentView || aiIsDown || !buildingStats}
               explainBuildingError={aiBuildingErr}
               dragHandleProps={spacePanelDragHandleProps}
             />
@@ -29686,9 +29688,9 @@ useEffect(() => {
                 setPopupMode('building');
               }}
               onExportPDF={handleExportFloor}
-              onExplainFloor={aiEnabledForCurrentView ? onExplain : null}
+              onExplainFloor={aiChatFeaturesEnabledForCurrentView ? onExplain : null}
               explainLoading={aiLoading}
-              explainDisabled={!aiEnabledForCurrentView || aiIsDown || !floorStats}
+              explainDisabled={!aiChatFeaturesEnabledForCurrentView || aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
               onToggleMoveScenarioMode={planningScenarioControlsEnabled ? handleToggleMoveScenarioMode : undefined}
@@ -31906,7 +31908,7 @@ useEffect(() => {
           */}
 
 
-            {!stakeholderWorkflowActive && !technicalMode && aiEnabledForCurrentView && (
+            {!stakeholderWorkflowActive && !technicalMode && aiChatFeaturesEnabledForCurrentView && (
             <div
               style={{
                 marginTop: 4,
