@@ -24212,13 +24212,17 @@ useEffect(() => {
   }, [universityId, defaultDashboardTitle, fetchCampusRoomsPayload, floorplansEnabled, recordAirtableScopeCheck, isSarpyCountyInstance, isSarpyPublicReadonlyMode, syncAirtableRoomEditOptions, isCherokeeMentalHealthInstance, cherokeeStaticManifestOptions]);
 
   useEffect(() => {
-    if (isSarpyPublicReadonlyMode || isCherokeeMentalHealthInstance) return undefined;
+    // Sarpy's /client route should stay synced like /admin; only the truly
+    // anonymous public route skips this to avoid unauthenticated traffic
+    // hammering the Airtable-backed API on a timer.
+    const isSarpyAnonymousPublic = isSarpyCountyInstance && isDemoPublicMode && !isClientMode;
+    if (isSarpyAnonymousPublic || isCherokeeMentalHealthInstance) return undefined;
     const intervalMs = 30 * 60 * 1000;
     const id = setInterval(() => {
       refreshCampusRoomsFromApi();
     }, intervalMs);
     return () => clearInterval(id);
-  }, [refreshCampusRoomsFromApi, isSarpyPublicReadonlyMode, isCherokeeMentalHealthInstance]);
+  }, [refreshCampusRoomsFromApi, isSarpyCountyInstance, isDemoPublicMode, isClientMode, isCherokeeMentalHealthInstance]);
 
   useEffect(() => {
     if (!isHastingsCollegeInstance) {
