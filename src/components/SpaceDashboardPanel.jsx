@@ -425,6 +425,64 @@ const StrategicDashboardSection = ({ strategic, onExpandedStateChange, hideTitle
   );
 };
 
+const PopulationSummaryCard = ({ data }) => {
+  if (!data) return null;
+  const rows = [data.current, data.census2020, data.projected2030, data.projected2040, data.projected2050];
+  return (
+    <PanelCard style={{ marginTop: 6 }}>
+      <div className="mf-section-title">County Population</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, marginTop: 4 }}>
+        {rows.map((row) => (
+          <StatCard key={row.label} label={row.label} value={fmtCount(row.value)} sublabel={String(row.year)} />
+        ))}
+      </div>
+      {data.source ? (
+        <div style={{ fontSize: 9, color: '#98a2b3', marginTop: 6 }}>{data.source}</div>
+      ) : null}
+    </PanelCard>
+  );
+};
+
+const PopulationDensitySection = ({ legend = [], layerOn, onToggleLayer, periodLabel = '' }) => {
+  if (!legend.length) return null;
+  return (
+    <PanelCard style={{ marginTop: 6 }}>
+      <div className="mf-section-title">Population Density</div>
+      {periodLabel ? (
+        <div style={{ fontSize: 9, color: '#98a2b3', marginTop: 2 }}>{periodLabel}</div>
+      ) : null}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 11 }}>
+        <input
+          type="checkbox"
+          checked={Boolean(layerOn)}
+          onChange={(event) => onToggleLayer?.(event.target.checked)}
+        />
+        Show density by Census block group
+      </label>
+      <div style={{ display: 'grid', gap: 3, marginTop: 6 }}>
+        {legend.map((item) => (
+          <div
+            key={item.label}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#1f2937' }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 10,
+                height: 10,
+                borderRadius: 2,
+                background: item.color,
+                flexShrink: 0
+              }}
+            />
+            <span>{item.label} people/sq mi</span>
+          </div>
+        ))}
+      </div>
+    </PanelCard>
+  );
+};
+
 const FacilityTypeLegend = ({ items = [] }) => {
   if (!items.length) return null;
   return (
@@ -467,6 +525,11 @@ export default function SpaceDashboardPanel({
   strategic,
   spaceContextTitle = 'Campus Space Context',
   facilityTypeLegend = [],
+  populationSummary = null,
+  densityLayerOn = false,
+  onToggleDensityLayer,
+  densityLegend = [],
+  densityPeriodLabel = '',
   showUtilizationSection = true,
   showStrategicSection = true
 }) {
@@ -522,6 +585,14 @@ export default function SpaceDashboardPanel({
               <FacilityTypeLegend items={facilityTypeLegend} />
             </PanelCard>
           ) : null}
+
+          <PopulationSummaryCard data={populationSummary} />
+          <PopulationDensitySection
+            legend={densityLegend}
+            layerOn={densityLayerOn}
+            onToggleLayer={onToggleDensityLayer}
+            periodLabel={densityPeriodLabel}
+          />
 
           {showUtilizationSection ? (
             <PanelCard style={{ marginTop: 6 }}>

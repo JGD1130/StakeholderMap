@@ -4869,6 +4869,51 @@ const SARPY_FACILITY_TYPE_COLOR_EXPR = [
   '#9ca3af'
 ];
 
+// Static as of 2025 -- update annually alongside the ACS 5-year refresh in
+// scripts/generate-sarpy-block-group-density.cjs.
+const SARPY_POPULATION_SUMMARY = Object.freeze({
+  current: { year: 2025, value: 208303, label: 'Current Estimate' },
+  census2020: { year: 2020, value: 190604, label: '2020 Census' },
+  projected2030: { year: 2030, value: 213311, label: 'Projected 2030' },
+  projected2040: { year: 2040, value: 232217, label: 'Projected 2040' },
+  projected2050: { year: 2050, value: 245861, label: 'Projected 2050' },
+  source: 'U.S. Census Bureau (current); UNO Center for Public Affairs Research (projections)'
+});
+
+// Sourced from public/Data/SarpyCounty_BlockGroup_Density.geojson, generated
+// by scripts/generate-sarpy-block-group-density.cjs (TIGERweb boundaries +
+// ACS 5-year population, table B01003). Re-run that script annually.
+const SARPY_POPULATION_DENSITY_SOURCE_ID = 'mf-sarpy-population-density-source';
+const SARPY_POPULATION_DENSITY_FILL_LAYER_ID = 'mf-sarpy-population-density-fill';
+const SARPY_POPULATION_DENSITY_OUTLINE_LAYER_ID = 'mf-sarpy-population-density-outline';
+const SARPY_POPULATION_DENSITY_GEOJSON_PATH = 'Data/SarpyCounty_BlockGroup_Density.geojson';
+// Matches ACS_YEAR in scripts/generate-sarpy-block-group-density.cjs (2024 ==
+// the 2020-2024 5-year vintage) -- keep these two in sync when that's bumped.
+const SARPY_POPULATION_DENSITY_PERIOD_LABEL = 'Based on 2020–2024 American Community Survey 5-Year Estimates';
+
+// ColorBrewer YlOrRd (sequential), bucketed from the actual generated
+// density range (~33-11,700 people/sq mi of land area).
+const SARPY_POPULATION_DENSITY_LEGEND = [
+  { max: 500, color: '#ffffb2', label: '0 – 499' },
+  { max: 1500, color: '#fed976', label: '500 – 1,499' },
+  { max: 3000, color: '#feb24c', label: '1,500 – 2,999' },
+  { max: 6000, color: '#fd8d3c', label: '3,000 – 5,999' },
+  { max: 9000, color: '#f03b20', label: '6,000 – 8,999' },
+  { max: Infinity, color: '#bd0026', label: '9,000+' }
+];
+const SARPY_POPULATION_DENSITY_NO_DATA_COLOR = '#e5e7eb';
+const SARPY_POPULATION_DENSITY_FILL_EXPR = [
+  'step',
+  ['coalesce', ['get', 'densitySqMi'], -1],
+  SARPY_POPULATION_DENSITY_NO_DATA_COLOR,
+  0, SARPY_POPULATION_DENSITY_LEGEND[0].color,
+  SARPY_POPULATION_DENSITY_LEGEND[0].max, SARPY_POPULATION_DENSITY_LEGEND[1].color,
+  SARPY_POPULATION_DENSITY_LEGEND[1].max, SARPY_POPULATION_DENSITY_LEGEND[2].color,
+  SARPY_POPULATION_DENSITY_LEGEND[2].max, SARPY_POPULATION_DENSITY_LEGEND[3].color,
+  SARPY_POPULATION_DENSITY_LEGEND[3].max, SARPY_POPULATION_DENSITY_LEGEND[4].color,
+  SARPY_POPULATION_DENSITY_LEGEND[4].max, SARPY_POPULATION_DENSITY_LEGEND[5].color
+];
+
 // Cache to avoid double-loading sources
 const floorCache = new Map();
 const floorTransformCache = new Map();
@@ -11768,6 +11813,7 @@ const StakeholderMap = ({
   };
   const hasRuntimeMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
   const [basemapView, setBasemapView] = useState(BASEMAP_VIEWS.STREETS);
+  const [showPopulationDensityLayer, setShowPopulationDensityLayer] = useState(false);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(mode === 'admin'); // Paths feature removed
   const [markers, setMarkers] = useState([]); // Paths feature removed
@@ -12103,6 +12149,9 @@ const StakeholderMap = ({
   const showBasemapSelector = hasRuntimeMapboxToken;
   const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const showSarpyAerials2025BasemapOption = showBasemapSelector && isSarpyCountyInstance;
+  const sarpyPopulationSummary = isSarpyCountyInstance ? SARPY_POPULATION_SUMMARY : null;
+  const sarpyPopulationDensityLegend = isSarpyCountyInstance ? SARPY_POPULATION_DENSITY_LEGEND : [];
+  const sarpyPopulationDensityPeriodLabel = isSarpyCountyInstance ? SARPY_POPULATION_DENSITY_PERIOD_LABEL : '';
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
@@ -25253,6 +25302,74 @@ useEffect(() => {
     };
   }, [mapLoaded, basemapView, showBasemapSelector, showSarpyNaipBasemapOption, showSarpyAerials2025BasemapOption, BASEMAP_VIEWS.SATELLITE, BASEMAP_VIEWS.NAIP, BASEMAP_VIEWS.SARPY_AERIALS_2025]);
 
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !isSarpyCountyInstance) return;
+    const map = mapRef.current;
+
+    // Lazy: only fetches the static GeoJSON the first time a user actually
+    // turns this layer on, not on every Sarpy page load.
+    const applyPopulationDensityLayer = () => {
+      if (!showPopulationDensityLayer) {
+        setMapLayerVisibility(map, SARPY_POPULATION_DENSITY_FILL_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_POPULATION_DENSITY_OUTLINE_LAYER_ID, false);
+        return;
+      }
+      try {
+        if (!map.getSource(SARPY_POPULATION_DENSITY_SOURCE_ID)) {
+          map.addSource(SARPY_POPULATION_DENSITY_SOURCE_ID, {
+            type: 'geojson',
+            data: assetUrl(SARPY_POPULATION_DENSITY_GEOJSON_PATH)
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to add population density source:', err);
+        return;
+      }
+      try {
+        if (!map.getLayer(SARPY_POPULATION_DENSITY_FILL_LAYER_ID)) {
+          const firstSymbolLayer = map
+            .getStyle()
+            ?.layers?.find((layerDef) => layerDef?.type === 'symbol');
+          map.addLayer(
+            {
+              id: SARPY_POPULATION_DENSITY_FILL_LAYER_ID,
+              type: 'fill',
+              source: SARPY_POPULATION_DENSITY_SOURCE_ID,
+              layout: { visibility: 'none' },
+              paint: {
+                'fill-color': SARPY_POPULATION_DENSITY_FILL_EXPR,
+                'fill-opacity': 0.65
+              }
+            },
+            firstSymbolLayer?.id || undefined
+          );
+        }
+        if (!map.getLayer(SARPY_POPULATION_DENSITY_OUTLINE_LAYER_ID)) {
+          map.addLayer({
+            id: SARPY_POPULATION_DENSITY_OUTLINE_LAYER_ID,
+            type: 'line',
+            source: SARPY_POPULATION_DENSITY_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': 'rgba(0,0,0,0.25)', 'line-width': 0.75 }
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to add population density layer:', err);
+        return;
+      }
+      setMapLayerVisibility(map, SARPY_POPULATION_DENSITY_FILL_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_POPULATION_DENSITY_OUTLINE_LAYER_ID, true);
+    };
+
+    applyPopulationDensityLayer();
+    map.on('style.load', applyPopulationDensityLayer);
+    return () => {
+      try {
+        map.off('style.load', applyPopulationDensityLayer);
+      } catch {}
+    };
+  }, [mapLoaded, isSarpyCountyInstance, showPopulationDensityLayer]);
+
 
   // ---------- Load data (markers/assessments/conditions) ----------
   useEffect(() => {
@@ -29469,6 +29586,11 @@ useEffect(() => {
               onToggleHeatmap={setUtilizationHeatmapOn}
               spaceContextTitle={dashboardSpaceContextTitle}
               facilityTypeLegend={sarpyFacilityTypeLegend}
+              populationSummary={sarpyPopulationSummary}
+              densityLayerOn={showPopulationDensityLayer}
+              onToggleDensityLayer={setShowPopulationDensityLayer}
+              densityLegend={sarpyPopulationDensityLegend}
+              densityPeriodLabel={sarpyPopulationDensityPeriodLabel}
               showUtilizationSection={showClassroomUtilizationDashboard}
               showStrategicSection={showStrategicDashboard}
               strategic={isAdminMode && showStrategicDashboard ? {
