@@ -3863,17 +3863,46 @@ async function loadWallsFC({ basePath, floorId, affine }) {
   return applyAffineIfPresent(rawFC, affine);
 }
 
+// Doors/stairs corroboration for isFloorAlreadyGeoreferenced, used when a floor
+// has no walls export to corroborate against (e.g. every Cherokee building).
+async function loadDoorStairFC({ basePath, floorId }) {
+  const doorCandidates = [
+    `${basePath}/Doors/${floorId}_Dept_Doors.geojson`,
+    `${basePath}/Doors/${floorId}_Doors.geojson`,
+    `${basePath}/${floorId}_Dept_Doors.geojson`,
+    `${basePath}/${floorId}_Doors.geojson`
+  ];
+  const stairCandidates = [
+    `${basePath}/Stairs/${floorId}_Dept_Stairs.geojson`,
+    `${basePath}/Stairs/${floorId}_Stairs.geojson`,
+    `${basePath}/${floorId}_Dept_Stairs.geojson`,
+    `${basePath}/${floorId}_Stairs.geojson`
+  ];
+  const [{ data: doorsRaw }, { data: stairsRaw }] = await Promise.all([
+    loadGeoJsonWithFallbacks(doorCandidates),
+    loadGeoJsonWithFallbacks(stairCandidates)
+  ]);
+  const doorsFC = ensureFeatureCollection(doorsRaw);
+  const stairsFC = ensureFeatureCollection(stairsRaw);
+  if (!doorsFC?.features?.length) return stairsFC;
+  if (!stairsFC?.features?.length) return doorsFC;
+  return { type: 'FeatureCollection', features: [...doorsFC.features, ...stairsFC.features] };
+}
+
 // Rooms with no affine.json can still already be real-world lon/lat (e.g. the
 // script.py WGS84 export from commit 732b643), in which case shouldFitFloorplanToBuilding
 // must not rescale them onto the building bbox. When a companion walls file exists we use
 // it as corroboration, but some exports embed walls in the room GeoJSON and do not ship a
-// separate walls asset at all.
+// separate walls asset at all. Cherokee never ships a walls export at all, so fall back to
+// doors/stairs corroboration rather than trusting the room coordinates unverified.
 async function isFloorAlreadyGeoreferenced(roomsFC, basePath, floorId) {
   if (!isLikelyLonLat(roomsFC)) return false;
   try {
     const wallsFC = await loadWallsFC({ basePath, floorId, affine: null });
-    if (!wallsFC?.features?.length) return true;
-    return isLikelyLonLat(wallsFC);
+    if (wallsFC?.features?.length) return isLikelyLonLat(wallsFC);
+    const doorStairFC = await loadDoorStairFC({ basePath, floorId });
+    if (!doorStairFC?.features?.length) return true;
+    return isLikelyLonLat(doorStairFC);
   } catch {
     return true;
   }
