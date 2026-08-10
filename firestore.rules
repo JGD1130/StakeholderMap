@@ -48,6 +48,22 @@ service cloud.firestore {
         || universityId == 'cherokee-mh';
     }
 
+    // Cherokee-only bypass for floorAdjustments writes, deliberately not the
+    // shared isOpenPilotCampus() (which also matches Sarpy identifiers) —
+    // this collection's write rule is being loosened for Cherokee only, to
+    // match the posture every other Cherokee collection already has via
+    // isOpenPilotCampus(); Sarpy's floorAdjustments permission is unchanged.
+    function isCherokeeCampus(universityId) {
+      return universityId == 'cherokee-mental-health'
+        || universityId == 'cherokee'
+        || universityId == 'cherokee-mh';
+    }
+
+    function canWriteFloorAdjustment(universityId) {
+      return isUniversityAdmin(universityId)
+        || isCherokeeCampus(universityId);
+    }
+
     function canCreateEngagementMarker(universityId) {
       return isUniversityAdmin(universityId)
         || isOpenPilotCampus(universityId);
@@ -120,7 +136,7 @@ service cloud.firestore {
 
       match /floorAdjustments/{docId} {
         allow read: if true;
-        allow write: if isUniversityAdmin(universityId);
+        allow write: if canWriteFloorAdjustment(universityId);
       }
 
       match /planningScenarios/{scenarioId} {
