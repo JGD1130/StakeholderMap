@@ -240,6 +240,52 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-10) — Sarpy department showing stale baked values (`__dept`/`detectFeatureKind`), and a floor-offset flash on /client (`36d3ea4`, `655ab27`)
+
+### Summary
+
+Two unrelated Sarpy-only bugs investigated and fixed this session, both scoped via `isSarpyCountyInstance`/`options.airtableWins`. Hastings and Cherokee were not touched by either.
+
+### Bug 1 — Administration/Courthouse BASEMENT showing "Courthouse" as department for almost every room (`36d3ea4`)
+
+**Report:** BASEMENT floor showed "Courthouse" as the department for nearly every room, including unassignable spaces (stairs/hallways) that should have no department, and assignable rooms that Airtable confirms should show a different department (e.g. Room 172 → "911" in Airtable, shown as "Courthouse" on the map).
+
+**Investigated first, no changes until confirmed** (per the Room 108 lesson from the 2026-08-06 session). Pulled raw baked GeoJSON for rooms 172, 101, 103, 186 and compared against live Airtable data (queried directly and via the deployed `mapfluence-sarpy-ai.onrender.com/api/rooms`). Confirmed: Airtable data reaching the app was correct (172="911", 101="Public Defense", 103="Sheriff" — coincidentally matching baked, which is why not literally every room looked wrong); the bug was entirely on the frontend merge/render side.
+
+**Root cause 1 — stale `__dept` snapshot:** `loadRoomsFC` (`StakeholderMap.jsx:3821-3851`) stamps `__dept: resolveNcesDept(props)` on every room feature **before Airtable is ever consulted** — and `resolveNcesDept` (`:2077`) itself prioritizes the legacy baked `NCES_Department` field ahead of `department`/`Department`. Later, `loadFloorGeojson`'s Airtable-merge block correctly computed `department`/`Department` (including the `allowBlankDepartment` fallback for no-match rooms) but never refreshed `__dept`. The map's department color/label layer (`buildFloorRoomLabelExpressions`, `:10576-10587`) reads `__dept` **ahead of** `department`/`Department` in its Mapbox `coalesce`, so it always showed the pre-Airtable baked value.
+
+**Fix:** after the Airtable/room-patch merge, for Sarpy only, `__dept` is recomputed via `getDeptFromProps(mergedProps)` — which checks `department`/`Department` first via `hasOwnProperty`, so an intentional blank (from `allowBlankDepartment`) is respected instead of falling through to `NCES_Department`. Non-Sarpy tenants: `__dept` stays exactly `mergedProps.__dept`, unchanged.
+
+**Root cause 2 — `detectFeatureKind` misclassifying room polygons:** after fixing `__dept`, four rooms still showed "Courthouse" (185, 186, 055 on BASEMENT; 146 on LEVEL_1 — all stairs). Investigated for a Room-108-style GUID collision first (per explicit ask) — ruled out: none of the four have any Airtable record at all (stairs were never synced), and while their Revit document-GUID prefix genuinely does collide with 32-49 sibling rooms each (correctly nulled by the existing `setUnique` collision guard), that's moot since the full compound key already misses cleanly. The real cause: `detectFeatureKind` (`:1638-1655`) classifies a feature as `'stair'`/`'door'` by checking `Name` for that substring — these four rooms are named "STAIR"/"FIRE STAIR" even though they're legitimate room polygons (`Element: "Room"`, with `Number`/`Area_SF`/`RevitId` like any other room). `applyAirtablePatch`'s guard (`:5869`, pre-fix) skipped the entire Airtable merge for anything `detectFeatureKind` didn't call `'room'` — so these four never got a `department` key at all, regardless of GUID matching.
+
+**Fix:** for Sarpy only, the `applyAirtablePatch` guard now also treats a feature as room-kind if `baseProps.Element === 'Room'` (OR'd with the existing `detectFeatureKind` check — strictly more permissive, never less). `detectFeatureKind` itself is untouched, so its other 4 call sites (door/stair overlay-ID collection, dashboard filtering, etc.) are unaffected.
+
+**Scope:** this class of bug is general to any Sarpy room whose baked `NCES_Department` diverges from Airtable, or whose `Name`/`Type`/etc. contains "stair"/"door" — not isolated to BASEMENT or to Administration/Courthouse. 1246 Building, Juvenile Justice Center, and Sheriff's Office are reasonable places to spot-check next if a similar report comes in, per the same legacy-baked-data pattern noted in the 2026-08-06 walls session.
+
+**Not fixed, flagged separately:** `ai-server/server.js:1240` — `SARPY_AIRTABLE_BASE_ID = "appmIFbql4ktdsPxc"` (capital `I`) doesn't match the real base ID `appmlFbql4ktdsPxc` (lowercase `l`) in `.env.sarpy`. This silently defeats the intended routing to Airtable's "Grid view" (full source of truth per the code's own comment), falling back to `"Mapfluence_Rooms"` instead. Currently harmless — that view happens to contain the full 1197-record dataset today — but fragile: if that view is ever filtered, Sarpy would silently lose data with no error. User has seen this and is deciding whether/when to fix it; do not fix without asking.
+
+### Bug 2 — Sarpy floorplan renders offset on /client (and public routes) in incognito, but correct on /admin (`655ab27`)
+
+**Report:** loading a Sarpy floorplan on `/client` (or the true public route) in incognito showed the floor significantly offset from its correct position, while `/admin` loaded it correctly.
+
+**Investigated first.** Ruled out a mode-based gate: `skipFloorAdjust` is only ever set for a Cherokee-specific condition, never for Sarpy — floorAdjust application in `loadFloorGeojson`/`handleLoadFloorplan` runs identical code regardless of `mode`. Ruled out `isSarpyPublicReadonlyMode`: every usage of that flag gates campus-rooms *dashboard data* hydration, nowhere near floor geometry/positioning. Ruled out a canonical-tenant-ID mismatch between routes: `App.jsx` passes the identical `canonicalUniversityId` (via `getTenantId`) to `/admin`, `/client`, and public routes alike, so the Firestore `floorAdjustments` doc path is the same regardless of route. Firestore rules also allow anonymous reads of `floorAdjustments` (`allow read: if true`), so that wasn't blocking it either.
+
+**Root cause:** the floorAdjust mechanism is localStorage-first (synchronous, used for the very first render) with an async Firestore check running in parallel that — if newer — updates localStorage and silently triggers a second `handleLoadFloorplan` reload. A fresh/incognito session starts with **empty localStorage on any route**, so the first paint of any floor with a saved correction is always unadjusted, self-correcting only after the Firestore round-trip resolves and the silent reload completes. `/admin` "working correctly" was most likely explained by the admin's regular (non-incognito) browser already having the correction cached from prior sessions, not by anything route-specific in the code. (Could not live-verify this in-browser this session — no Chrome tooling available — so this is the strongest evidence-based hypothesis from static tracing, not a confirmed root cause from reproduction.)
+
+**Fix (UX, not root-cause-elimination):** rather than changing the localStorage/Firestore precedence itself, `handleLoadFloorplan` now — for Sarpy only, and only when there's no cached local adjustment yet — **awaits** the Firestore floorAdjust check up front (writing the result into the same caches `loadFloorGeojson` reads from) before ever calling `loadFloorGeojson`, instead of firing it in the background and reloading later. A new `floorAdjustPending` flag (Sarpy-gated) drives a full-viewport "Loading floorplan…" spinner overlay for the duration of that one Firestore round-trip, so the unadjusted position is never painted. Floors that already have a cached local adjustment keep the original fire-and-forget background-check behavior, byte-for-byte unchanged.
+
+### Current status
+
+| Item | Status |
+|---|---|
+| `__dept` staleness fix (`36d3ea4`) | ✅ Committed and pushed. Not yet live-re-verified on the deployed site. |
+| `detectFeatureKind`/`Element` fix for rooms 185, 186, 055, 146 (`36d3ea4`) | ✅ Committed and pushed, same commit. Verified against a full simulation of the real matching algorithm + live Airtable data before committing; not yet live-re-verified in a browser. |
+| `SARPY_AIRTABLE_BASE_ID` typo (`server.js:1240`) | ⚠️ Flagged, not fixed — user's call on timing. |
+| Floor-offset loading-state fix (`655ab27`) | ✅ Committed and pushed. Root cause is a strong hypothesis from static tracing, not confirmed by live reproduction (no browser tooling available this session) — worth an incognito re-test on `/client` for the buildings with the largest saved corrections (Administration/Courthouse, 1246 Building, JJC, Sheriff's Office) to confirm the spinner shows briefly and the floor is never offset. |
+| Hastings / Cherokee | ✅ Unaffected — every change this session gated on `isSarpyCountyInstance`/`options.airtableWins`, confirmed as pure no-ops for other tenants at each call site. |
+
+---
+
 ## Recent Changes (2026-08-06, session 2) — Sarpy Airtable refresh left already-displayed floors stale (`7e87a17`)
 
 ### Summary
