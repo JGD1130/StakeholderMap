@@ -5866,7 +5866,17 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       const baseProps = feature.properties || {};
       let mergedProps = baseProps;
       const applyAirtablePatch = () => {
-        if (!canUseAirtable || detectFeatureKind(baseProps) !== 'room') return;
+        if (!canUseAirtable) return;
+        // Sarpy: detectFeatureKind guesses 'stair'/'door' from a Name-substring
+        // match, which misclassifies real room polygons named e.g. "STAIR" or
+        // "FIRE STAIR" as overlay elements and skips the Airtable merge for them
+        // entirely (see Element: "Room" on these features in the raw export).
+        // Element reliably says "Room" for actual room polygons, so trust it
+        // ahead of the name-guessing heuristic for Sarpy specifically.
+        const isRoomFeature = options.airtableWins
+          ? (String(baseProps.Element ?? '').trim().toLowerCase() === 'room' || detectFeatureKind(baseProps) === 'room')
+          : detectFeatureKind(baseProps) === 'room';
+        if (!isRoomFeature) return;
         const airtablePatch = getAirtableRoomPatch(
           baseProps,
           airtableLookup,
@@ -5896,12 +5906,26 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         ...mergedProps,
         __roomType: typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '')
       });
+      // Sarpy: __dept is stamped once in loadRoomsFC from the raw baked GeoJSON
+      // (resolveNcesDept, which prioritizes the legacy NCES_Department field),
+      // before Airtable is ever consulted. Once Airtable has been applied above,
+      // that snapshot is stale and must be refreshed here — otherwise the map's
+      // department coalesce (buildFloorRoomLabelExpressions, which reads __dept
+      // ahead of department/Department) keeps showing the pre-Airtable baked
+      // value even when Airtable found a real (or intentionally blank, via
+      // allowBlankDepartment) department. getDeptFromProps checks department/
+      // Department first via hasOwnProperty, so an explicit blank from Airtable
+      // is respected instead of falling through to NCES_Department.
+      const deptForFeature = options.airtableWins
+        ? getDeptFromProps(mergedProps)
+        : mergedProps.__dept;
       return {
         ...feature,
         properties: {
           ...mergedProps,
           __roomType: typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || ''),
-          __roomCategory: categoryLabel ? String(categoryLabel).trim() : (mergedProps.__roomCategory || '')
+          __roomCategory: categoryLabel ? String(categoryLabel).trim() : (mergedProps.__roomCategory || ''),
+          __dept: deptForFeature
         }
       };
     });
