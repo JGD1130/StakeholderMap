@@ -240,6 +240,59 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-10, session 2) — Cherokee floor positioning, door/stair overlay, and Save Adjust persistence fully resolved
+
+### Summary
+
+Multi-part Cherokee-only investigation and fix spanning two back-to-back sessions today. All changes gated on `isCherokeeMentalHealthInstance` or the Cherokee-only `skipCherokeeSharedPlanFit` flag; Hastings and Sarpy were not touched (per standing instruction, confirmed at every call site).
+
+### Part 1 (earlier session) — georeferenced-flag protection, silent save failures surfaced, write permission
+
+| Commit | What it did |
+|---|---|
+| `4fdb1a6` | Cherokee floorplans use the same pre-baked lon/lat geometry pattern as Sarpy (no `affine.json`), but only Sarpy was gated into the `__mfGeoreferenced` protection that stops `shouldFitFloorplanToBuilding` from re-fitting already-correct geometry against the (manually-traced, not survey-accurate) building footprint. Added a parallel `isCherokeeMentalHealthInstance`-gated block calling the same `isFloorAlreadyGeoreferenced` check Sarpy uses. Purely additive. |
+| `c6038f6` | `saveFloorAdjustToDb` had a bare `catch {}` that silently discarded any Firestore write error, including permission-denied. Since Save Adjust writes to localStorage first and unconditionally, a rejected Firestore write looked identical to a successful save in the UI. Now `console.warn`s and returns `false` on failure; all 4 call sites (`clearFloorAdjustForFloor`, drag `onMouseUp`, the Save Adjust button, `onScaleChange`) check the result and surface a specific `floorAdjustNotice` on failure. Shared plumbing, not tenant-branched, but behaviorally inert for tenants whose saves already succeed. |
+| `36485ff` | `floorAdjustments` was the one Cherokee-related Firestore collection still gated strictly on `isUniversityAdmin(universityId)` while every sibling collection already allowed `isOpenPilotCampus(universityId)` (which includes Cherokee). Added a Cherokee-only `canWriteFloorAdjustment()` bypass in `firestore.rules`. **⚠️ Commit message explicitly flagged this as "not yet deployed"** — `firestore.rules` changes require `firebase deploy --only firestore:rules`, separate from the GitHub Pages pipeline, and no `firebase` CLI was available in the assistant's shell to perform or verify that deploy. See guardrail below — this was never confirmed live. |
+
+### Part 2 (this session) — door/stair overlay, save-block-on-load, georeferenced corroboration, and the real persistence bug
+
+| Commit | What it did |
+|---|---|
+| `22cc7f1` | Two bundled changes: (a) extended `shouldBlockOnDbAdjust` — the Sarpy offset-flash fix from `655ab27` — to Cherokee, so it awaits the Firestore floorAdjust check before first render instead of firing it in the background; (b) removed Cherokee's synthetic door/stair linework rendering (`buildCherokeeDoorLinework`/`buildCherokeeStairLinework`, `useVectorDoorStairOverlay`, the whole `useSharedCherokeeLinework` block) in favor of the same icon-symbol overlay (`door-swing.png`/`stairs-run.png`) every other tenant uses. Deleted the now-fully-unused `src/utils/cherokeeArchitecturalOverlays.js`. |
+| `ca2f249` | `isFloorAlreadyGeoreferenced`'s walls-file corroboration was silently no-op-ing for every Cherokee floor, since **no Cherokee building ships a `Walls/` export at all** — it fell back to trusting raw room-coordinate plausibility unverified. Added `loadDoorStairFC` as a corroboration fallback (doors first, then stairs, merged if both present) for floors with no walls file. Confirmed via direct bbox computation that it doesn't change the outcome for Main_Administration BASEMENT (still `true`) and doesn't regress Voldeng/Wirth. |
+| `981afdd` | **The actual root cause of "Save Adjust doesn't persist."** See below. |
+
+### The real bug, and the debugging detour that preceded it
+
+**Reported:** moving Main_Administration BASEMENT and clicking Save Adjust appeared to do nothing — position reverted after navigating away and back.
+
+**False lead (~2 hours of investigation this session):** repeatedly checked the Firestore doc `universities/cherokee-mental-health/floorAdjustments/main_administration__basement` via the REST API (reads are public per `firestore.rules`) and found it permanently empty, `updateTime` frozen at 2026-08-06, no matter how many times the user saved. Looked exactly like a silent write failure and drove real investigation into `firestore.rules` deploy status, possible client-side early-returns in the Save Adjust handler, and building-label mismatches — all dead ends.
+
+**Actual architecture** (confirmed via `src/Configs/CherokeeMentalHealth.json`'s `floorplanBuildings` list and `src/Configs/geojson/Cherokee_Mental_Health_Buildings.geojson`): "Main/Administration" is not a standalone floorplan folder. It's one of **8 named regions — Main/Administration, North A, North B, North C, South A, South B, South C, Rear Center — that all share one combined floorplan folder called `Overall`.** `getBuildingFolderKey` correctly resolves any of these 8 region names to folder `"Overall"`, so the Firestore doc used for save/load is keyed `overall__<floorId>`, not a doc named after the clicked region. `main_administration__basement` is a dead, orphaned doc from before the site was consolidated into the shared Overall plan (created 2026-07-23, never written to since) — the live app has never read or written it. The real doc, `overall__basement`, was confirmed saving correctly the whole time (fresh `updateTime`, fully populated fields, matching the user's actual save attempts).
+
+**The actual bug (`981afdd`):** in `handleLoadFloorplan`, the Overall-folder path set both `skipBuildingFit: skipCherokeeSharedPlanFit` and `skipFloorAdjust: skipCherokeeSharedPlanFit` (introduced together in `681f044`, "Fix Cherokee static floorplan scope", 2026-08-01). `skipBuildingFit` is correct and still needed — it stops the shared 8-region image from being auto-fit to any single building's bbox. But tying `skipFloorAdjust` to the same flag also unconditionally nulled out the saved rotation/scale/translate (`loadFloorGeojson`, `const floorAdjust = skipFloorAdjust ? null : floorAdjustPick.adjust;`) on **every** load of the Overall floorplan — so the save always succeeded, but the reapply was unconditionally skipped, for all 8 regions, not just Main Administration. **Fix:** decoupled the two flags — `skipBuildingFit` stays tied to `skipCherokeeSharedPlanFit`; `skipFloorAdjust` is no longer passed and defaults to `false`.
+
+**Confirmed fixed** by user retest after `981afdd` deployed.
+
+### ⚠️ Guardrails for future Cherokee sessions
+
+- Before investigating a Cherokee "doesn't save"/"doesn't persist" report by checking a Firestore doc named after the clicked building/region, **check `floorplanBuildings` in `src/Configs/CherokeeMentalHealth.json` first.** 8 of Cherokee's 11 configured regions (everything except Ginzberg, Voldeng Building, Wirth Hall) share the single `"Overall"` folder, and any floorAdjust doc is keyed by **folder**, not by the region name the user clicked. A doc named after the region (e.g. `main_administration__basement`, `north_a__basement`) is very likely a stale pre-consolidation leftover, not the live one (`overall__basement`).
+- `36485ff`'s firestore.rules Cherokee write-permission bypass was committed with an explicit "not yet deployed" note and was never confirmed live this session (no `firebase` CLI available). Every write tested today succeeded regardless, which only proves the acting session already had `isUniversityAdmin` — it does not confirm the rules change went live. If a genuinely non-admin Cherokee editor ever reports floorAdjustments saves failing, check whether `firestore.rules` was actually deployed (`firebase deploy --only firestore:rules`) before re-investigating the app code.
+
+### Current status
+
+| Item | Commit | Status |
+|---|---|---|
+| Cherokee georeferenced-flag protection (fit heuristic) | `4fdb1a6` | ✅ Committed, pushed |
+| Silent Firestore save failures now surfaced (console.warn + UI notice) | `c6038f6` | ✅ Committed, pushed |
+| Cherokee floorAdjustments write-permission bypass | `36485ff` | ⚠️ Committed, pushed to app repo — **firestore.rules deploy status unverified** |
+| Block Cherokee floor render on Firestore check + icon-symbol door/stair overlay | `22cc7f1` | ✅ Committed, pushed, deployed, confirmed live |
+| Door/stair corroboration fallback in `isFloorAlreadyGeoreferenced` | `ca2f249` | ✅ Committed, pushed, deployed; confirmed no regression on Voldeng/Wirth |
+| `skipFloorAdjust` decoupled from shared-Overall-plan flag | `981afdd` | ✅ Committed, pushed, deployed, **confirmed fixed by user retest** on Main_Administration BASEMENT |
+| Hastings / Sarpy | ✅ Unaffected — every change gated on `isCherokeeMentalHealthInstance` or the Cherokee-only `skipCherokeeSharedPlanFit` flag |
+
+---
+
 ## Recent Changes (2026-08-10) — Sarpy department showing stale baked values (`__dept`/`detectFeatureKind`), and a floor-offset flash on /client (`36d3ea4`, `655ab27`)
 
 ### Summary
@@ -1316,6 +1369,6 @@ Removed the `out.__mfGeoreferenced = true;` line (and its justifying comment) fr
 GitHub Pages returned "Deployment failed, try again later." again after pushing `8770e08` — the same transient deploy-step failure documented in the 2026-07-02 section above (build succeeds, the separate Pages-upload step fails independently). Still no `gh` CLI or `GITHUB_TOKEN` available in the assistant's shell environment to retry programmatically; use the Actions tab → the failed run → "Re-run failed jobs."
 
 ---
-*Last updated: 2026-08-06 - update this file whenever the architecture, client list, or critical behavior changes.*
+*Last updated: 2026-08-10 - update this file whenever the architecture, client list, or critical behavior changes.*
 
 
