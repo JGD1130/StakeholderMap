@@ -14,10 +14,6 @@ import { surveyConfigs } from '../surveyConfigs';
 import * as turf from '@turf/turf';
 import { bId, fId, rId, canon } from '../utils/idUtils';
 import { computeFloorSummary } from '../utils/floorSummary';
-import {
-  buildCherokeeDoorLinework,
-  buildCherokeeStairLinework
-} from '../utils/cherokeeArchitecturalOverlays';
 import { DEPT_COLORS, getDeptColor } from '../style/roomColors';
 import BuildingPanel from './panels/BuildingPanel';
 import FloorPanel from './panels/FloorPanel';
@@ -4072,7 +4068,7 @@ async function tryLoadWallsOverlay({ basePath, floorId, map, roomsFC, affine, ro
   }
 }
 
-async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null, returnData = false }) {
+async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, buildingLabel, enabled = false, overlayFloorAdjust = null }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4116,35 +4112,10 @@ async function tryLoadDoorsOverlay({ basePath, floorId, map, affine, rotationOve
     invertBearing: shouldFlipDoorSwing(buildingLabel, floorId)
   });
 
-  if (useVectorOverlay) {
-    fc = buildCherokeeDoorLinework(fc, roomsFC);
-  }
-  if (returnData) return fc;
-
   if (map.getSource(DOORS_SOURCE)) map.getSource(DOORS_SOURCE).setData(fc);
   else map.addSource(DOORS_SOURCE, { type: "geojson", data: fc });
 
-  if (!map.getLayer(DOORS_LAYER) && useVectorOverlay) {
-    map.addLayer({
-      id: DOORS_LAYER,
-      type: "line",
-      source: DOORS_SOURCE,
-      layout: {
-        "line-join": "round",
-        "line-cap": "round"
-      },
-      paint: {
-        "line-color": "#334155",
-        "line-width": [
-          "interpolate", ["linear"], ["zoom"],
-          16, 0.55,
-          18, 1.0,
-          20, 1.5
-        ],
-        "line-opacity": 0.96
-      }
-    });
-  } else if (!map.getLayer(DOORS_LAYER)) {
+  if (!map.getLayer(DOORS_LAYER)) {
     try {
       if (!map.hasImage('mf-door-swing')) {
         await loadIcon(map, 'mf-door-swing', assetUrl('icons/door-swing.png'));
@@ -4537,7 +4508,7 @@ function applyFrenchChapelBasementFix(roomsFC, affine, buildingFeature) {
   return next;
 }
 
-async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, enabled = false, useVectorOverlay = false, overlayFloorAdjust = null, returnData = false }) {
+async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOverride, fitTransform, roomsFC, enabled = false, overlayFloorAdjust = null }) {
   if (!(enabled || ENABLE_DOOR_STAIR_OVERLAY)) return;
   if (!basePath || !floorId || !map) return;
   const normalizedFloor = String(floorId || '').trim().toUpperCase();
@@ -4578,37 +4549,12 @@ async function tryLoadStairsOverlay({ basePath, floorId, map, affine, rotationOv
     }
   }
 
-  if (useVectorOverlay) {
-    fc = buildCherokeeStairLinework(fc, roomsFC);
-  }
-  if (returnData) return fc;
-
   console.log("[stairs] loaded features", fc.features.length);
 
   if (map.getSource(STAIRS_SOURCE)) map.getSource(STAIRS_SOURCE).setData(fc);
   else map.addSource(STAIRS_SOURCE, { type: "geojson", data: fc });
 
-  if (!map.getLayer(STAIRS_LAYER) && useVectorOverlay) {
-    map.addLayer({
-      id: STAIRS_LAYER,
-      type: "line",
-      source: STAIRS_SOURCE,
-      layout: {
-        "line-join": "round",
-        "line-cap": "round"
-      },
-      paint: {
-        "line-color": "#8a5a00",
-        "line-width": [
-          "interpolate", ["linear"], ["zoom"],
-          16, 0.55,
-          18, 1.0,
-          20, 1.5
-        ],
-        "line-opacity": 0.96
-      }
-    });
-  } else if (!map.getLayer(STAIRS_LAYER)) {
+  if (!map.getLayer(STAIRS_LAYER)) {
     try {
       if (!map.hasImage('mf-stairs-run')) {
         await loadIcon(map, 'mf-stairs-run', assetUrl('icons/stairs-run.png'));
@@ -5828,7 +5774,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
     fitTransform?.rotationPivot ||
     turf.centroid(fc)?.geometry?.coordinates ||
     null;
-  const shouldDirectReplayFloorAdjust = (Boolean(options?.useVectorDoorStairOverlay) || isSarpyCountyInstance) &&
+  const shouldDirectReplayFloorAdjust = (isSarpyCountyInstance || isCherokeeMentalHealthInstance) &&
     shouldReplayFloorAdjustDirectly(fc, floorAdjust);
   const overlayFloorAdjust = shouldDirectReplayFloorAdjust ? buildOverlayFloorAdjust(floorAdjust) : null;
   let wallsAnchorNudgeLngLat = null;
@@ -5983,73 +5929,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   }
   cacheFloorSummary(summary, patchedFC);
 
-  const useSharedCherokeeLinework = Boolean(options?.useVectorDoorStairOverlay);
-  if (useSharedCherokeeLinework) {
-    const sharedOverlayBasePath = options?.roomsBasePath || options?.wallsBasePath;
-    const sharedOverlayFloorId =
-      options?.roomsFloorId ||
-      options?.wallsFloorId ||
-      floor ||
-      (url?.match(/(BASEMENT|LEVEL_\d+|LEVEL|L\d+)/)?.[0]) ||
-      null;
-    const sharedOverlayBuildingLabel =
-      buildingId ||
-      affineParams?.fitBuilding?.properties?.id ||
-      affineParams?.fitBuilding?.properties?.name ||
-      null;
-
-    if (sharedOverlayBasePath && sharedOverlayFloorId) {
-      const sharedFitTransform = skipBuildingFit
-        ? null
-        : (fitTransform || cachedTransform.fitTransform || null);
-      const [doorsFC, stairsFC] = await Promise.all([
-        tryLoadDoorsOverlay({
-          basePath: sharedOverlayBasePath,
-          floorId: sharedOverlayFloorId,
-          map,
-          affine,
-          rotationOverride,
-          fitTransform: sharedFitTransform,
-          roomsFC: patchedFC,
-          buildingLabel: sharedOverlayBuildingLabel,
-          enabled: enableDoorStairOverlay,
-          useVectorOverlay: true,
-          overlayFloorAdjust,
-          returnData: true
-        }),
-        tryLoadStairsOverlay({
-          basePath: sharedOverlayBasePath,
-          floorId: sharedOverlayFloorId,
-          map,
-          affine,
-          rotationOverride,
-          fitTransform: sharedFitTransform,
-          roomsFC: patchedFC,
-          enabled: enableDoorStairOverlay,
-          useVectorOverlay: true,
-          overlayFloorAdjust,
-          returnData: true
-        })
-      ]);
-      const architecturalFeatures = [
-        ...(doorsFC?.features || []),
-        ...(stairsFC?.features || [])
-      ];
-      if (architecturalFeatures.length) {
-        patchedFC = {
-          ...patchedFC,
-          features: [...(patchedFC.features || []), ...architecturalFeatures]
-        };
-        if (currentFloorContextRef && typeof currentFloorContextRef === 'object') {
-          currentFloorContextRef.current = {
-            ...(currentFloorContextRef.current || {}),
-            fc: patchedFC
-          };
-        }
-      }
-    }
-  }
-
   // add / update source
   unloadFloorplan(map);
   const floorSrc = getGeojsonSource(map, FLOOR_SOURCE);
@@ -6186,7 +6065,7 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
       affineParams?.fitBuilding?.properties?.id ||
       affineParams?.fitBuilding?.properties?.name ||
       null;
-    if (!useSharedCherokeeLinework && overlayBasePath) {
+    if (overlayBasePath) {
       const overlayFloorId =
         options?.roomsFloorId ||
         options?.wallsFloorId ||
@@ -6204,7 +6083,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
           roomsFC: patchedFC,
           buildingLabel: overlayBuildingLabel,
           enabled: enableDoorStairOverlay,
-          useVectorOverlay: Boolean(options?.useVectorDoorStairOverlay),
           overlayFloorAdjust
         });
       await tryLoadStairsOverlay({
@@ -6216,7 +6094,6 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
         fitTransform: skipBuildingFit ? null : (fitTransform || cachedTransform.fitTransform || null),
         roomsFC: patchedFC,
         enabled: enableDoorStairOverlay,
-        useVectorOverlay: Boolean(options?.useVectorDoorStairOverlay),
         overlayFloorAdjust
       });
     }
@@ -19297,11 +19174,11 @@ const StakeholderMap = ({
         if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
         return true;
       };
-      // Sarpy: with no saved local adjustment yet (fresh/incognito session,
-      // empty localStorage), block on the Firestore check instead of
+      // Sarpy + Cherokee: with no saved local adjustment yet (fresh/incognito
+      // session, empty localStorage), block on the Firestore check instead of
       // painting the unadjusted floor and silently reloading a moment later.
       // The floorAdjustPending flag drives a loading overlay in the JSX below.
-      const shouldBlockOnDbAdjust = isSarpyCountyInstance && !localHasAdjust;
+      const shouldBlockOnDbAdjust = (isSarpyCountyInstance || isCherokeeMentalHealthInstance) && !localHasAdjust;
       if (shouldBlockOnDbAdjust) {
         setFloorAdjustPending(true);
         try {
@@ -19381,7 +19258,6 @@ const StakeholderMap = ({
         skipBuildingFit: skipCherokeeSharedPlanFit,
         skipFloorAdjust: skipCherokeeSharedPlanFit,
         enableDoorStairOverlay: Boolean(config?.enableDoorStairOverlay),
-        useVectorDoorStairOverlay: isCherokeeMentalHealthInstance,
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
           if (depts) setDeptOptions((prev) => mergeOptionsList(prev, depts));
@@ -28484,7 +28360,7 @@ useEffect(() => {
       </div>
     </div>
 
-    {isSarpyCountyInstance && floorAdjustPending && (
+    {(isSarpyCountyInstance || isCherokeeMentalHealthInstance) && floorAdjustPending && (
       <div
         style={{
           position: 'fixed',
