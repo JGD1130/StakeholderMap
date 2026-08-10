@@ -5392,7 +5392,7 @@ function isLikelyLonLat(gj) {
 
 async function loadFloorGeojson(map, url, rehighlightId, affineParams, options = {}) {
   if (!map || !url) return;
-  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup, skipBuildingFit = false, skipFloorAdjust = false, enableDoorStairOverlay = false, isSarpyCountyInstance = false } = options;
+  const { buildingId, floor, roomPatches, onOptionsCollected, currentFloorContextRef, airtableLookup, skipBuildingFit = false, skipFloorAdjust = false, enableDoorStairOverlay = false, isSarpyCountyInstance = false, isCherokeeMentalHealthInstance = false } = options;
 
   const floorBasePath = options?.roomsBasePath || options?.wallsBasePath;
   const floorId = options?.roomsFloorId || options?.wallsFloorId || floor || null;
@@ -5708,6 +5708,16 @@ async function loadFloorGeojson(map, url, rehighlightId, affineParams, options =
   };
 
   if (isSarpyCountyInstance && !fc.__mfGeoreferenced && !fc.__mfNoFit && !affine && floorBasePath && floorId) {
+    if (await isFloorAlreadyGeoreferenced(fc, floorBasePath, floorId)) {
+      fc.__mfGeoreferenced = true;
+    }
+  }
+  // Cherokee: same pre-baked-lon/lat pattern as Sarpy (no affine.json), so it
+  // needs the identical georeferenced-flag protection — otherwise
+  // shouldFitFloorplanToBuilding's automatic re-fit heuristic runs unguarded
+  // on every load and can distort already-correct geometry against the
+  // manually-traced building footprint.
+  if (isCherokeeMentalHealthInstance && !fc.__mfGeoreferenced && !fc.__mfNoFit && !affine && floorBasePath && floorId) {
     if (await isFloorAlreadyGeoreferenced(fc, floorBasePath, floorId)) {
       fc.__mfGeoreferenced = true;
     }
@@ -19352,6 +19362,7 @@ const StakeholderMap = ({
         airtableLookup: airtableRoomLookup,
         airtableWins: isSarpyCountyInstance,
         isSarpyCountyInstance,
+        isCherokeeMentalHealthInstance,
         currentFloorContextRef,
         roomsBasePath: basePath,
         roomsFloorId: floorId,
