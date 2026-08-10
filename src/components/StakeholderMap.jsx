@@ -18864,11 +18864,18 @@ const StakeholderMap = ({
     [db, universityId, buildFloorAdjustDocId]
   );
 
+  // Returns true on a successful write, false on failure (and warns to the
+  // console either way a failure occurs) — callers use this instead of
+  // trusting a bare try/catch, since a rejected Firestore write (e.g. a
+  // permission-denied from a missing admin role) used to be swallowed here
+  // silently, making "Save Adjust" look successful when it never reached
+  // the database. See HANDOFF.md 2026-08-10 Cherokee session for the bug
+  // this was masking.
   const saveFloorAdjustToDb = useCallback(
     async (buildingLabel, floorId, adjust) => {
-      if (!universityId || !buildingLabel || !floorId || !adjust) return;
+      if (!universityId || !buildingLabel || !floorId || !adjust) return true;
       const docId = buildFloorAdjustDocId(buildingLabel, floorId);
-      if (!docId) return;
+      if (!docId) return true;
       try {
         const ref = doc(db, 'universities', universityId, 'floorAdjustments', docId);
         await setDoc(
@@ -18887,7 +18894,11 @@ const StakeholderMap = ({
           },
           { merge: true }
         );
-      } catch {}
+        return true;
+      } catch (err) {
+        console.warn(`Floor adjustment save to Firestore failed for ${buildingLabel}/${floorId}:`, err);
+        return false;
+      }
     },
     [db, universityId, buildFloorAdjustDocId, authUser]
   );
@@ -18997,17 +19008,15 @@ const StakeholderMap = ({
     if (adjustBasePath) clearFloorAdjustByBasePath(adjustBasePath, floorId);
     const adjustUrl = currentFloorContextRef.current?.url || buildFloorUrl(selectedBuilding, floorId);
     if (adjustUrl) clearFloorAdjustByUrl(adjustUrl);
-    try {
-      await saveFloorAdjustToDb(adjustLabel, floorId, {
-        rotationDeg: 0,
-        scale: 1,
-        translateMeters: [0, 0],
-        translateLngLat: null,
-        anchorLngLat: null,
-        pivot: null
-      });
-    } catch {}
-    setFloorAdjustNotice('');
+    const dbOk = await saveFloorAdjustToDb(adjustLabel, floorId, {
+      rotationDeg: 0,
+      scale: 1,
+      translateMeters: [0, 0],
+      translateLngLat: null,
+      anchorLngLat: null,
+      pivot: null
+    });
+    setFloorAdjustNotice(dbOk ? '' : 'Cleared locally, but failed to sync to the database — other users may still see the old adjustment.');
     const url = adjustUrl || buildFloorUrl(selectedBuilding, floorId);
     if (url) {
       floorCache.delete(url);
@@ -27525,7 +27534,11 @@ useEffect(() => {
       saveFloorAdjust(saveLabel, drag.floorId, nextAdjust);
       if (drag.adjustUrl) saveFloorAdjustByUrl(drag.adjustUrl, nextAdjust);
       if (drag.adjustBasePath) saveFloorAdjustByBasePath(drag.adjustBasePath, drag.floorId, nextAdjust);
-      try { saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust); } catch {}
+      void saveFloorAdjustToDb(saveLabel, drag.floorId, nextAdjust).then((dbOk) => {
+        if (!dbOk) {
+          setFloorAdjustNotice('Adjustment applied locally, but failed to sync to the database — other users may not see this change.');
+        }
+      });
       const sig = getFloorAdjustSignature(nextAdjust);
       if (sig && currentData) {
         const cached = { ...currentData, __mfUserAdjustSignature: sig };
@@ -29976,7 +29989,8 @@ useEffect(() => {
                 saveFloorAdjust(adjustLabel, ctx.floorId, adjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, adjustWithPivot);
                 if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, adjustWithPivot);
-                try { await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot); } catch {}
+                const dbOk = await saveFloorAdjustToDb(adjustLabel, ctx.floorId, adjustWithPivot);
+                setFloorAdjustNotice(dbOk ? '' : 'Saved locally, but failed to sync to the database — other users will not see this change until it succeeds.');
                 if (adjustUrl) {
                   floorCache.delete(adjustUrl);
                   floorTransformCache.delete(adjustUrl);
@@ -30022,7 +30036,11 @@ useEffect(() => {
                 saveFloorAdjust(adjustLabel, ctx.floorId, nextAdjustWithPivot);
                 if (adjustUrl) saveFloorAdjustByUrl(adjustUrl, nextAdjustWithPivot);
                 if (adjustBasePath) saveFloorAdjustByBasePath(adjustBasePath, ctx.floorId, nextAdjustWithPivot);
-                try { saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot); } catch {}
+                void saveFloorAdjustToDb(adjustLabel, ctx.floorId, nextAdjustWithPivot).then((dbOk) => {
+                  if (!dbOk) {
+                    setFloorAdjustNotice('Adjustment applied locally, but failed to sync to the database — other users may not see this change.');
+                  }
+                });
                 const sig = getFloorAdjustSignature(nextAdjustWithPivot);
                 const currentData = baseData || currentFloorContextRef.current?.fc || null;
                 if (sig && currentData) {
