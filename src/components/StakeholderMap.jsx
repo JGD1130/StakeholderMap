@@ -13350,6 +13350,10 @@ const StakeholderMap = ({
   }, [getBuildingFolderKey, getAvailableFloors, floorplanCampus, floorplansEnabled]);
   const [loadedFloors, setLoadedFloors] = useState([]);
   const [loadedSingleFloor, setLoadedSingleFloor] = useState(false);
+  // Sarpy: true while handleLoadFloorplan is blocked on the Firestore
+  // floorAdjust check for a floor with no saved local adjustment yet (e.g. a
+  // fresh/incognito session), so the unadjusted floor is never painted.
+  const [floorAdjustPending, setFloorAdjustPending] = useState(false);
   const loadedFloorsRef = useRef([]);
   const floorUrlRef = useRef(null);
 
@@ -19246,8 +19250,8 @@ const StakeholderMap = ({
       }
       const localHasAdjust = hasFloorAdjust(localAdjust);
       const localSavedAt = Number(localAdjust?.savedAt) || 0;
-      void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
-        if (!dbAdjust) return;
+      const applyDbAdjustIfNewer = (dbAdjust) => {
+        if (!dbAdjust) return false;
         const dbCandidate = {
           rotationDeg: Number(dbAdjust.rotationDeg) || 0,
           scale: Number(dbAdjust.scale) || 1,
@@ -19266,17 +19270,38 @@ const StakeholderMap = ({
         const shouldPreferDb = dbUpdatedAtMs
           ? dbUpdatedAtMs >= localSavedAt
           : (!localHasAdjust && dbHasAdjust);
-        if (!shouldPreferDb) return;
+        if (!shouldPreferDb) return false;
         adjustLabels.forEach((label) => {
           saveFloorAdjust(label, floorId, dbCandidate);
         });
         if (url) saveFloorAdjustByUrl(url, dbCandidate);
         if (basePath) saveFloorAdjustByBasePath(basePath, floorId, dbCandidate);
-        if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) !== url) return;
-        floorCache.delete(url);
-        floorTransformCache.delete(url);
-        void handleLoadFloorplan(floorId);
-      }).catch(() => {});
+        return true;
+      };
+      // Sarpy: with no saved local adjustment yet (fresh/incognito session,
+      // empty localStorage), block on the Firestore check instead of
+      // painting the unadjusted floor and silently reloading a moment later.
+      // The floorAdjustPending flag drives a loading overlay in the JSX below.
+      const shouldBlockOnDbAdjust = isSarpyCountyInstance && !localHasAdjust;
+      if (shouldBlockOnDbAdjust) {
+        setFloorAdjustPending(true);
+        try {
+          const dbAdjust = await loadFloorAdjustFromDb(adjustLabel, floorId);
+          applyDbAdjustIfNewer(dbAdjust);
+        } catch {
+          // No saved adjustment reachable; proceed with whatever local state exists.
+        } finally {
+          setFloorAdjustPending(false);
+        }
+      } else {
+        void loadFloorAdjustFromDb(adjustLabel, floorId).then((dbAdjust) => {
+          if (!applyDbAdjustIfNewer(dbAdjust)) return;
+          if ((currentFloorUrlRef.current || currentFloorContextRef.current?.url) !== url) return;
+          floorCache.delete(url);
+          floorTransformCache.delete(url);
+          void handleLoadFloorplan(floorId);
+        }).catch(() => {});
+      }
       let fitBuilding = selectedBuildingFeatureRef.current || null;
       const targetRaw = String(selectedBuildingId || selectedBuilding || '');
       try {
@@ -28434,6 +28459,48 @@ useEffect(() => {
         <div ref={mapContainerRef} className="map-container" />
       </div>
     </div>
+
+    {isSarpyCountyInstance && floorAdjustPending && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          display: 'grid',
+          placeItems: 'center',
+          background: 'rgba(255,255,255,0.85)',
+          pointerEvents: 'none'
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 10,
+            padding: '16px 20px',
+            borderRadius: 10,
+            background: '#ffffff',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+            fontSize: 14,
+            color: '#333'
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              border: '3px solid #d1d5db',
+              borderTopColor: '#2563eb',
+              animation: 'mf-floor-adjust-spin 0.8s linear infinite'
+            }}
+          />
+          <div>Loading floorplan…</div>
+        </div>
+        <style>{'@keyframes mf-floor-adjust-spin { to { transform: rotate(360deg); } }'}</style>
+      </div>
+    )}
 
     {programTestFitOpen && programTestFitTarget && (
       <div
