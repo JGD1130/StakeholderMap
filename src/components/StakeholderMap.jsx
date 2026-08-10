@@ -19285,7 +19285,6 @@ const StakeholderMap = ({
         wallsBasePath: basePath,
         wallsFloorId: floorId,
         skipBuildingFit: skipCherokeeSharedPlanFit,
-        skipFloorAdjust: skipCherokeeSharedPlanFit,
         enableDoorStairOverlay: Boolean(config?.enableDoorStairOverlay),
         onOptionsCollected: ({ typeOptions: types, deptOptions: depts }) => {
           if (types?.length) setTypeOptions((prev) => mergeTypeOptions(prev, types));
