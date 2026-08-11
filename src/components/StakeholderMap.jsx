@@ -4889,6 +4889,153 @@ const SARPY_POPULATION_DENSITY_FILL_EXPR = [
   SARPY_POPULATION_DENSITY_LEGEND[4].max, SARPY_POPULATION_DENSITY_LEGEND[5].color
 ];
 
+// Sourced from public/SarpyCounty_Proposed_Land_Use.geojson (Sarpy County
+// GIS, LANDUSECODE field). Labels/colors are the county's standard planning
+// palette supplied directly for this layer -- not derived from the source
+// LANDUSEDESC field, which has inconsistent spellings/typos for the same
+// code. Codes not present here fall back to SARPY_LAND_USE_FALLBACK_COLOR
+// with the raw code as the label.
+const SARPY_LAND_USE_SOURCE_ID = 'mf-sarpy-land-use-source';
+const SARPY_LAND_USE_FILL_LAYER_ID = 'mf-sarpy-land-use-fill';
+const SARPY_LAND_USE_OUTLINE_LAYER_ID = 'mf-sarpy-land-use-outline';
+const SARPY_LAND_USE_HIGHLIGHT_LAYER_ID = 'mf-sarpy-land-use-highlight';
+const SARPY_LAND_USE_GEOJSON_PATH = 'SarpyCounty_Proposed_Land_Use.geojson';
+const SARPY_LAND_USE_FALLBACK_COLOR = '#CCCCCC';
+
+const SARPY_LAND_USE_LOOKUP = Object.freeze({
+  LDR: { label: 'Low Density Residential', color: '#FFF3B0' },
+  MDR: { label: 'Medium Density Residential', color: '#FFD966' },
+  HDR: { label: 'High Density Residential', color: '#F4A83B' },
+  LMDR: { label: 'Low-Medium Density Residential', color: '#FFE699' },
+  MHDR: { label: 'Medium-High Density Residential', color: '#F7B955' },
+  SF: { label: 'Single Family', color: '#FFEFB0' },
+  SMFR: { label: 'Small Multi-Family Residential', color: '#FFDC8C' },
+  RN: { label: 'Residential Neighborhood', color: '#FFE7A8' },
+  RR: { label: 'Rural Residential', color: '#F0DDA0' },
+  RA: { label: 'Residential Agricultural', color: '#E8D8A0' },
+  RE: { label: 'Residential Estate', color: '#F5E1A8' },
+  TN: { label: 'Traditional Neighborhood', color: '#FFCC80' },
+  NMU: { label: 'Neighborhood Mixed Use', color: '#F2A65C' },
+  MU: { label: 'Mixed Use', color: '#EF8354' },
+  'MU 1': { label: 'Mixed Use 1', color: '#EF8354' },
+  'MU 2': { label: 'Mixed Use 2', color: '#D96A3D' },
+  'MX USE DIS': { label: 'Mixed Use District', color: '#E07A45' },
+  'DT/MU': { label: 'Downtown Mixed Use', color: '#C65D33' },
+  C: { label: 'Commercial', color: '#E03C31' },
+  CC: { label: 'Community Commercial', color: '#C7362D' },
+  NC: { label: 'Neighborhood Commercial', color: '#EF6A5C' },
+  RC: { label: 'Regional Commercial', color: '#B8322A' },
+  GC: { label: 'General Commercial', color: '#D14A3F' },
+  I: { label: 'Industrial', color: '#8E6BAF' },
+  IND: { label: 'Industrial', color: '#8E6BAF' },
+  LI: { label: 'Light Industrial', color: '#A587C4' },
+  HI: { label: 'Heavy Industrial', color: '#6E4C8E' },
+  'I/F': { label: 'Industrial/Flex', color: '#9D7EC0' },
+  EI: { label: 'Employment/Industrial', color: '#7C5A9E' },
+  BP: { label: 'Business Park', color: '#5B7FA6' },
+  MN: { label: 'Manufacturing', color: '#725A87' },
+  OTG: { label: 'Office/Tech/General', color: '#4E7FA8' },
+  OFF: { label: 'Office', color: '#5A8CB5' },
+  PRO: { label: 'Professional Office', color: '#6592B0' },
+  PO: { label: 'Professional Office', color: '#6592B0' },
+  'P/O': { label: 'Professional Office', color: '#6592B0' },
+  BPO: { label: 'Business/Professional Office', color: '#4D7593' },
+  AP: { label: 'Airport', color: '#7C7C7C' },
+  CIVIC: { label: 'Civic', color: '#3D7A9E' },
+  'CIV FAC': { label: 'Civic Facility', color: '#3D7A9E' },
+  PUBLIC: { label: 'Public', color: '#2E6B8C' },
+  P: { label: 'Public', color: '#2E6B8C' },
+  INST: { label: 'Institutional', color: '#4A6FA5' },
+  SCHL: { label: 'School', color: '#5C7FB0' },
+  UC: { label: 'University Campus', color: '#4A6FA5' },
+  UHIR: { label: 'Urban High-Intensity Residential', color: '#D98A3D' },
+  UMIR: { label: 'Urban Medium-Intensity Residential', color: '#E8A863' },
+  OS: { label: 'Open Space', color: '#7FB069' },
+  'AG/OS': { label: 'Agricultural/Open Space', color: '#9CBF7A' },
+  AG: { label: 'Agricultural', color: '#B5A167' },
+  CONSERVE: { label: 'Conservation', color: '#4C8C5B' },
+  PARKS: { label: 'Parks', color: '#5FA05F' },
+  PR: { label: 'Parks/Recreation', color: '#5FA05F' },
+  UTILITIES: { label: 'Utilities', color: '#9A9A9A' },
+  TA: { label: 'Transitional Area', color: '#C9BFA5' },
+  DNT: { label: 'Downtown', color: '#A34E3A' }
+});
+
+const getSarpyLandUseColor = (code) => (
+  SARPY_LAND_USE_LOOKUP[String(code || '').trim()]?.color || SARPY_LAND_USE_FALLBACK_COLOR
+);
+const getSarpyLandUseLabel = (code) => {
+  const trimmed = String(code || '').trim();
+  return SARPY_LAND_USE_LOOKUP[trimmed]?.label || trimmed || 'Unknown';
+};
+const SARPY_LAND_USE_COLOR_EXPR = [
+  'match',
+  ['get', 'LANDUSECODE'],
+  ...Object.entries(SARPY_LAND_USE_LOOKUP).flatMap(([code, { color }]) => [code, color]),
+  SARPY_LAND_USE_FALLBACK_COLOR
+];
+
+// Sourced from public/SarpyCounty_Zoning_Overlay_Districts.geojson (Sarpy
+// County GIS, ZONECLASS field). Same convention as SARPY_LAND_USE_LOOKUP
+// above -- labels/colors are the standard planning palette, not derived from
+// the source ZONEDESC field.
+const SARPY_ZONING_SOURCE_ID = 'mf-sarpy-zoning-source';
+const SARPY_ZONING_FILL_LAYER_ID = 'mf-sarpy-zoning-fill';
+const SARPY_ZONING_OUTLINE_LAYER_ID = 'mf-sarpy-zoning-outline';
+const SARPY_ZONING_HIGHLIGHT_LAYER_ID = 'mf-sarpy-zoning-highlight';
+const SARPY_ZONING_GEOJSON_PATH = 'SarpyCounty_Zoning_Overlay_Districts.geojson';
+const SARPY_ZONING_FALLBACK_COLOR = '#CCCCCC';
+
+const SARPY_ZONING_LOOKUP = Object.freeze({
+  PS: { label: 'Public/Semi-Public', color: '#3D7A9E' },
+  PUD: { label: 'Planned Unit Development', color: '#EF8354' },
+  PCO: { label: 'Planned Commercial Overlay', color: '#E03C31' },
+  HC: { label: 'Highway Commercial', color: '#C7362D' },
+  CO: { label: 'Commercial Overlay', color: '#D14A3F' },
+  GWAY: { label: 'Gateway Overlay', color: '#8E6BAF' },
+  PTD: { label: 'Planned Transitional District', color: '#F2A65C' },
+  M: { label: 'Manufacturing', color: '#725A87' },
+  PO: { label: 'Professional Office', color: '#6592B0' },
+  SC: { label: 'Special/Sensitive Corridor', color: '#5FA05F' },
+  DT: { label: 'Downtown', color: '#A34E3A' },
+  OTO: { label: 'Overlay/Transitional', color: '#C9BFA5' },
+  HCO: { label: 'Highway Corridor Overlay', color: '#B8322A' },
+  MSO: { label: 'Main Street Overlay', color: '#D96A3D' },
+  PD: { label: 'Planned Development', color: '#EF8354' },
+  CD: { label: 'Conservation District', color: '#4C8C5B' },
+  BTA: { label: 'Business/Transitional Area', color: '#4D7593' },
+  CCO: { label: 'Corridor Commercial Overlay', color: '#E07A45' },
+  IC: { label: 'Industrial Corridor', color: '#9D7EC0' },
+  HOD: { label: 'Historic Overlay District', color: '#8C6D4F' }
+});
+
+const getSarpyZoningColor = (code) => (
+  SARPY_ZONING_LOOKUP[String(code || '').trim()]?.color || SARPY_ZONING_FALLBACK_COLOR
+);
+const getSarpyZoningLabel = (code) => {
+  const trimmed = String(code || '').trim();
+  return SARPY_ZONING_LOOKUP[trimmed]?.label || trimmed || 'Unknown';
+};
+const SARPY_ZONING_COLOR_EXPR = [
+  'match',
+  ['get', 'ZONECLASS'],
+  ...Object.entries(SARPY_ZONING_LOOKUP).flatMap(([code, { color }]) => [code, color]),
+  SARPY_ZONING_FALLBACK_COLOR
+];
+
+// Sourced from public/Data/SarpyCounty_Tax_Parcels_trimmed.geojson, built by
+// scripts/trim-sarpy-tax-parcels.cjs (strips PII/unused fields from the
+// county's raw ~127MB parcel export and simplifies geometry). At 77k+
+// parcels this is still a heavy client fetch, so the layer only loads once
+// the user is both zoomed to SARPY_TAX_PARCELS_MIN_ZOOM+ AND has toggled it
+// on -- not on every campus-wide page load.
+const SARPY_TAX_PARCELS_SOURCE_ID = 'mf-sarpy-tax-parcels-source';
+const SARPY_TAX_PARCELS_FILL_LAYER_ID = 'mf-sarpy-tax-parcels-fill';
+const SARPY_TAX_PARCELS_OUTLINE_LAYER_ID = 'mf-sarpy-tax-parcels-outline';
+const SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID = 'mf-sarpy-tax-parcels-highlight';
+const SARPY_TAX_PARCELS_GEOJSON_PATH = 'Data/SarpyCounty_Tax_Parcels_trimmed.geojson';
+const SARPY_TAX_PARCELS_MIN_ZOOM = 13;
+
 // Cache to avoid double-loading sources
 const floorCache = new Map();
 const floorTransformCache = new Map();
@@ -11754,6 +11901,18 @@ const StakeholderMap = ({
   const hasRuntimeMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
   const [basemapView, setBasemapView] = useState(BASEMAP_VIEWS.STREETS);
   const [showPopulationDensityLayer, setShowPopulationDensityLayer] = useState(false);
+  const [showSarpyLandUseLayer, setShowSarpyLandUseLayer] = useState(false);
+  const [showSarpyZoningLayer, setShowSarpyZoningLayer] = useState(false);
+  const [showSarpyTaxParcelsLayer, setShowSarpyTaxParcelsLayer] = useState(false);
+  const [sarpyLandUseData, setSarpyLandUseData] = useState(null);
+  const [sarpyZoningData, setSarpyZoningData] = useState(null);
+  const [sarpyTaxParcelsZoomBlocked, setSarpyTaxParcelsZoomBlocked] = useState(false);
+  const sarpyLandUseFetchRef = useRef(null);
+  const sarpyZoningFetchRef = useRef(null);
+  const sarpyTaxParcelsFetchRef = useRef(null);
+  const sarpyLandUseSelectedIdRef = useRef(null);
+  const sarpyZoningSelectedIdRef = useRef(null);
+  const sarpyTaxParcelsSelectedIdRef = useRef(null);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(mode === 'admin'); // Paths feature removed
   const [markers, setMarkers] = useState([]); // Paths feature removed
@@ -12092,6 +12251,46 @@ const StakeholderMap = ({
   const sarpyPopulationSummary = isSarpyCountyInstance ? SARPY_POPULATION_SUMMARY : null;
   const sarpyPopulationDensityLegend = isSarpyCountyInstance ? SARPY_POPULATION_DENSITY_LEGEND : [];
   const sarpyPopulationDensityPeriodLabel = isSarpyCountyInstance ? SARPY_POPULATION_DENSITY_PERIOD_LABEL : '';
+  const sarpyLandUseLegend = useMemo(() => {
+    const features = Array.isArray(sarpyLandUseData?.features) ? sarpyLandUseData.features : [];
+    if (!features.length) return [];
+    const codes = new Set();
+    features.forEach((feature) => {
+      const code = String(feature?.properties?.LANDUSECODE || '').trim();
+      if (code) codes.add(code);
+    });
+    const knownOrder = Object.keys(SARPY_LAND_USE_LOOKUP);
+    const ordered = [
+      ...knownOrder.filter((code) => codes.has(code)),
+      ...Array.from(codes)
+        .filter((code) => !knownOrder.includes(code))
+        .sort((a, b) => a.localeCompare(b))
+    ];
+    return ordered.map((code) => ({
+      label: getSarpyLandUseLabel(code),
+      color: getSarpyLandUseColor(code)
+    }));
+  }, [sarpyLandUseData]);
+  const sarpyZoningLegend = useMemo(() => {
+    const features = Array.isArray(sarpyZoningData?.features) ? sarpyZoningData.features : [];
+    if (!features.length) return [];
+    const codes = new Set();
+    features.forEach((feature) => {
+      const code = String(feature?.properties?.ZONECLASS || '').trim();
+      if (code) codes.add(code);
+    });
+    const knownOrder = Object.keys(SARPY_ZONING_LOOKUP);
+    const ordered = [
+      ...knownOrder.filter((code) => codes.has(code)),
+      ...Array.from(codes)
+        .filter((code) => !knownOrder.includes(code))
+        .sort((a, b) => a.localeCompare(b))
+    ];
+    return ordered.map((code) => ({
+      label: getSarpyZoningLabel(code),
+      color: getSarpyZoningColor(code)
+    }));
+  }, [sarpyZoningData]);
   const mapViewLabel = isStakeholderTechnicalMode ? 'Workflow:' : 'Map View:';
   const accessControlLabel = isAdminMode ? 'Admin access' : 'Authorized access';
   const routeModeMeta = useMemo(() => {
@@ -25343,6 +25542,433 @@ useEffect(() => {
     };
   }, [mapLoaded, isSarpyCountyInstance, showPopulationDensityLayer]);
 
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !isSarpyCountyInstance) return;
+    const map = mapRef.current;
+
+    // Lazy: only fetches the static GeoJSON the first time a user actually
+    // turns this layer on, not on every Sarpy page load.
+    const applySarpyLandUseLayer = async () => {
+      if (!showSarpyLandUseLayer) {
+        setMapLayerVisibility(map, SARPY_LAND_USE_FILL_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_LAND_USE_OUTLINE_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_LAND_USE_HIGHLIGHT_LAYER_ID, false);
+        return;
+      }
+      let data;
+      try {
+        if (!map.getSource(SARPY_LAND_USE_SOURCE_ID)) {
+          if (!sarpyLandUseFetchRef.current) {
+            sarpyLandUseFetchRef.current = fetch(assetUrl(SARPY_LAND_USE_GEOJSON_PATH)).then((res) => res.json());
+          }
+          data = await sarpyLandUseFetchRef.current;
+          setSarpyLandUseData(data);
+          if (!map.getSource(SARPY_LAND_USE_SOURCE_ID)) {
+            map.addSource(SARPY_LAND_USE_SOURCE_ID, { type: 'geojson', data });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to add Sarpy land use source:', err);
+        sarpyLandUseFetchRef.current = null;
+        return;
+      }
+      try {
+        if (!map.getLayer(SARPY_LAND_USE_FILL_LAYER_ID)) {
+          const firstSymbolLayer = map
+            .getStyle()
+            ?.layers?.find((layerDef) => layerDef?.type === 'symbol');
+          map.addLayer(
+            {
+              id: SARPY_LAND_USE_FILL_LAYER_ID,
+              type: 'fill',
+              source: SARPY_LAND_USE_SOURCE_ID,
+              layout: { visibility: 'none' },
+              paint: {
+                'fill-color': SARPY_LAND_USE_COLOR_EXPR,
+                'fill-opacity': 0.6
+              }
+            },
+            firstSymbolLayer?.id || undefined
+          );
+        }
+        if (!map.getLayer(SARPY_LAND_USE_OUTLINE_LAYER_ID)) {
+          map.addLayer({
+            id: SARPY_LAND_USE_OUTLINE_LAYER_ID,
+            type: 'line',
+            source: SARPY_LAND_USE_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': 'rgba(0,0,0,0.25)', 'line-width': 0.75 }
+          });
+        }
+        if (!map.getLayer(SARPY_LAND_USE_HIGHLIGHT_LAYER_ID)) {
+          // Matches the cyan selection style used for room/floor highlighting
+          // (FLOOR_HL_BORDER_ID) so selected-state color is consistent app-wide.
+          map.addLayer({
+            id: SARPY_LAND_USE_HIGHLIGHT_LAYER_ID,
+            type: 'line',
+            source: SARPY_LAND_USE_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: {
+              'line-color': '#00ffff',
+              'line-width': 6,
+              'line-opacity': 1,
+              'line-gap-width': 0
+            },
+            filter: ['==', ['get', 'OBJECTID'], -1]
+          });
+        }
+        if (!map.__mf_sarpy_land_use_click_bound) {
+          const onSarpyLandUseFillClick = (e) => {
+            const f = e.features?.[0];
+            if (!f) return;
+            const p = f.properties || {};
+            const objectId = p.OBJECTID;
+            const isSameSelection = sarpyLandUseSelectedIdRef.current === objectId;
+            const nextSelectedId = isSameSelection ? null : objectId;
+            sarpyLandUseSelectedIdRef.current = nextSelectedId;
+            try {
+              map.setFilter(SARPY_LAND_USE_HIGHLIGHT_LAYER_ID, ['==', ['get', 'OBJECTID'], nextSelectedId ?? -1]);
+            } catch {}
+            if (nextSelectedId == null) return;
+            const popup = new mapboxgl.Popup({ closeOnClick: true, maxWidth: '280px' })
+              .setLngLat(e.lngLat)
+              .setHTML(`
+                <div class="mf-popup">
+                  <div style="font-weight:700;margin-bottom:4px;">Proposed Land Use</div>
+                  <div><b>Code:</b> ${p.LANDUSECODE || '-'}</div>
+                  <div><b>Description:</b> ${p.LANDUSEDESC || '-'}</div>
+                  <div><b>Jurisdiction:</b> ${p.JURISDICTION || '-'}</div>
+                </div>
+              `)
+              .addTo(map);
+            popup.on('close', () => {
+              if (sarpyLandUseSelectedIdRef.current === nextSelectedId) {
+                sarpyLandUseSelectedIdRef.current = null;
+                try {
+                  map.setFilter(SARPY_LAND_USE_HIGHLIGHT_LAYER_ID, ['==', ['get', 'OBJECTID'], -1]);
+                } catch {}
+              }
+            });
+          };
+          const onEnter = () => { try { map.getCanvas().style.cursor = 'pointer'; } catch {} };
+          const onLeave = () => { try { map.getCanvas().style.cursor = ''; } catch {} };
+          map.on('click', SARPY_LAND_USE_FILL_LAYER_ID, onSarpyLandUseFillClick);
+          map.on('mouseenter', SARPY_LAND_USE_FILL_LAYER_ID, onEnter);
+          map.on('mouseleave', SARPY_LAND_USE_FILL_LAYER_ID, onLeave);
+          map.__mf_sarpy_land_use_click_bound = true;
+        }
+      } catch (err) {
+        console.warn('Failed to add Sarpy land use layer:', err);
+        return;
+      }
+      setMapLayerVisibility(map, SARPY_LAND_USE_FILL_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_LAND_USE_OUTLINE_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_LAND_USE_HIGHLIGHT_LAYER_ID, true);
+    };
+
+    applySarpyLandUseLayer();
+    map.on('style.load', applySarpyLandUseLayer);
+    return () => {
+      try {
+        map.off('style.load', applySarpyLandUseLayer);
+      } catch {}
+    };
+  }, [mapLoaded, isSarpyCountyInstance, showSarpyLandUseLayer]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !isSarpyCountyInstance) return;
+    const map = mapRef.current;
+
+    // Lazy: only fetches the static GeoJSON the first time a user actually
+    // turns this layer on, not on every Sarpy page load.
+    const applySarpyZoningLayer = async () => {
+      if (!showSarpyZoningLayer) {
+        setMapLayerVisibility(map, SARPY_ZONING_FILL_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_ZONING_OUTLINE_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_ZONING_HIGHLIGHT_LAYER_ID, false);
+        return;
+      }
+      let data;
+      try {
+        if (!map.getSource(SARPY_ZONING_SOURCE_ID)) {
+          if (!sarpyZoningFetchRef.current) {
+            sarpyZoningFetchRef.current = fetch(assetUrl(SARPY_ZONING_GEOJSON_PATH)).then((res) => res.json());
+          }
+          data = await sarpyZoningFetchRef.current;
+          setSarpyZoningData(data);
+          if (!map.getSource(SARPY_ZONING_SOURCE_ID)) {
+            map.addSource(SARPY_ZONING_SOURCE_ID, { type: 'geojson', data });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to add Sarpy zoning source:', err);
+        sarpyZoningFetchRef.current = null;
+        return;
+      }
+      try {
+        if (!map.getLayer(SARPY_ZONING_FILL_LAYER_ID)) {
+          const firstSymbolLayer = map
+            .getStyle()
+            ?.layers?.find((layerDef) => layerDef?.type === 'symbol');
+          map.addLayer(
+            {
+              id: SARPY_ZONING_FILL_LAYER_ID,
+              type: 'fill',
+              source: SARPY_ZONING_SOURCE_ID,
+              layout: { visibility: 'none' },
+              paint: {
+                'fill-color': SARPY_ZONING_COLOR_EXPR,
+                'fill-opacity': 0.6
+              }
+            },
+            firstSymbolLayer?.id || undefined
+          );
+        }
+        if (!map.getLayer(SARPY_ZONING_OUTLINE_LAYER_ID)) {
+          map.addLayer({
+            id: SARPY_ZONING_OUTLINE_LAYER_ID,
+            type: 'line',
+            source: SARPY_ZONING_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': 'rgba(0,0,0,0.25)', 'line-width': 0.75 }
+          });
+        }
+        if (!map.getLayer(SARPY_ZONING_HIGHLIGHT_LAYER_ID)) {
+          // Matches the cyan selection style used for room/floor highlighting
+          // (FLOOR_HL_BORDER_ID) so selected-state color is consistent app-wide.
+          map.addLayer({
+            id: SARPY_ZONING_HIGHLIGHT_LAYER_ID,
+            type: 'line',
+            source: SARPY_ZONING_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: {
+              'line-color': '#00ffff',
+              'line-width': 6,
+              'line-opacity': 1,
+              'line-gap-width': 0
+            },
+            filter: ['==', ['get', 'OBJECTID'], -1]
+          });
+        }
+        if (!map.__mf_sarpy_zoning_click_bound) {
+          const onSarpyZoningFillClick = (e) => {
+            const f = e.features?.[0];
+            if (!f) return;
+            const p = f.properties || {};
+            const objectId = p.OBJECTID;
+            const isSameSelection = sarpyZoningSelectedIdRef.current === objectId;
+            const nextSelectedId = isSameSelection ? null : objectId;
+            sarpyZoningSelectedIdRef.current = nextSelectedId;
+            try {
+              map.setFilter(SARPY_ZONING_HIGHLIGHT_LAYER_ID, ['==', ['get', 'OBJECTID'], nextSelectedId ?? -1]);
+            } catch {}
+            if (nextSelectedId == null) return;
+            const popup = new mapboxgl.Popup({ closeOnClick: true, maxWidth: '280px' })
+              .setLngLat(e.lngLat)
+              .setHTML(`
+                <div class="mf-popup">
+                  <div style="font-weight:700;margin-bottom:4px;">Zoning Overlay District</div>
+                  <div><b>Code:</b> ${p.ZONECLASS || '-'}</div>
+                  <div><b>Description:</b> ${p.ZONEDESC || '-'}</div>
+                  <div><b>Jurisdiction:</b> ${p.JURISDICTION || '-'}</div>
+                </div>
+              `)
+              .addTo(map);
+            popup.on('close', () => {
+              if (sarpyZoningSelectedIdRef.current === nextSelectedId) {
+                sarpyZoningSelectedIdRef.current = null;
+                try {
+                  map.setFilter(SARPY_ZONING_HIGHLIGHT_LAYER_ID, ['==', ['get', 'OBJECTID'], -1]);
+                } catch {}
+              }
+            });
+          };
+          const onEnter = () => { try { map.getCanvas().style.cursor = 'pointer'; } catch {} };
+          const onLeave = () => { try { map.getCanvas().style.cursor = ''; } catch {} };
+          map.on('click', SARPY_ZONING_FILL_LAYER_ID, onSarpyZoningFillClick);
+          map.on('mouseenter', SARPY_ZONING_FILL_LAYER_ID, onEnter);
+          map.on('mouseleave', SARPY_ZONING_FILL_LAYER_ID, onLeave);
+          map.__mf_sarpy_zoning_click_bound = true;
+        }
+      } catch (err) {
+        console.warn('Failed to add Sarpy zoning layer:', err);
+        return;
+      }
+      setMapLayerVisibility(map, SARPY_ZONING_FILL_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_ZONING_OUTLINE_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_ZONING_HIGHLIGHT_LAYER_ID, true);
+    };
+
+    applySarpyZoningLayer();
+    map.on('style.load', applySarpyZoningLayer);
+    return () => {
+      try {
+        map.off('style.load', applySarpyZoningLayer);
+      } catch {}
+    };
+  }, [mapLoaded, isSarpyCountyInstance, showSarpyZoningLayer]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !isSarpyCountyInstance) return;
+    const map = mapRef.current;
+
+    // Lazy + zoom-gated: this dataset is 77k+ parcels even after trimming,
+    // so unlike Land Use/Zoning we don't fetch just because the toggle is
+    // on -- we also wait until the user is actually zoomed in far enough
+    // to see individual parcels. If they toggle on while zoomed out, we
+    // show a "zoom in" message and let the zoomend listener below retrigger
+    // this once they cross the threshold.
+    const applySarpyTaxParcelsLayer = async () => {
+      if (!showSarpyTaxParcelsLayer) {
+        setMapLayerVisibility(map, SARPY_TAX_PARCELS_FILL_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_TAX_PARCELS_OUTLINE_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID, false);
+        setSarpyTaxParcelsZoomBlocked(false);
+        return;
+      }
+      if (!map.getSource(SARPY_TAX_PARCELS_SOURCE_ID) && map.getZoom() < SARPY_TAX_PARCELS_MIN_ZOOM) {
+        setSarpyTaxParcelsZoomBlocked(true);
+        return;
+      }
+      setSarpyTaxParcelsZoomBlocked(false);
+      let data;
+      try {
+        if (!map.getSource(SARPY_TAX_PARCELS_SOURCE_ID)) {
+          if (!sarpyTaxParcelsFetchRef.current) {
+            sarpyTaxParcelsFetchRef.current = fetch(assetUrl(SARPY_TAX_PARCELS_GEOJSON_PATH)).then((res) => res.json());
+          }
+          data = await sarpyTaxParcelsFetchRef.current;
+          if (!map.getSource(SARPY_TAX_PARCELS_SOURCE_ID)) {
+            map.addSource(SARPY_TAX_PARCELS_SOURCE_ID, { type: 'geojson', data });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to add Sarpy tax parcels source:', err);
+        sarpyTaxParcelsFetchRef.current = null;
+        return;
+      }
+      try {
+        if (!map.getLayer(SARPY_TAX_PARCELS_FILL_LAYER_ID)) {
+          const firstSymbolLayer = map
+            .getStyle()
+            ?.layers?.find((layerDef) => layerDef?.type === 'symbol');
+          map.addLayer(
+            {
+              id: SARPY_TAX_PARCELS_FILL_LAYER_ID,
+              type: 'fill',
+              source: SARPY_TAX_PARCELS_SOURCE_ID,
+              minzoom: SARPY_TAX_PARCELS_MIN_ZOOM,
+              layout: { visibility: 'none' },
+              paint: {
+                'fill-color': '#60a5fa',
+                'fill-opacity': 0.12
+              }
+            },
+            firstSymbolLayer?.id || undefined
+          );
+        }
+        if (!map.getLayer(SARPY_TAX_PARCELS_OUTLINE_LAYER_ID)) {
+          map.addLayer({
+            id: SARPY_TAX_PARCELS_OUTLINE_LAYER_ID,
+            type: 'line',
+            source: SARPY_TAX_PARCELS_SOURCE_ID,
+            minzoom: SARPY_TAX_PARCELS_MIN_ZOOM,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': 'rgba(0,0,0,0.35)', 'line-width': 1 }
+          });
+        }
+        if (!map.getLayer(SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID)) {
+          // Matches the cyan selection style used for room/floor highlighting
+          // (FLOOR_HL_BORDER_ID) so selected-state color is consistent app-wide.
+          map.addLayer({
+            id: SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID,
+            type: 'line',
+            source: SARPY_TAX_PARCELS_SOURCE_ID,
+            minzoom: SARPY_TAX_PARCELS_MIN_ZOOM,
+            layout: { visibility: 'none' },
+            paint: {
+              'line-color': '#00ffff',
+              'line-width': 6,
+              'line-opacity': 1,
+              'line-gap-width': 0
+            },
+            filter: ['==', ['get', 'PARCELID'], '']
+          });
+        }
+        if (!map.__mf_sarpy_tax_parcels_click_bound) {
+          const fmtMoney = (v) => (Number.isFinite(Number(v)) ? `$${Number(v).toLocaleString()}` : '-');
+          const onSarpyTaxParcelsFillClick = (e) => {
+            const f = e.features?.[0];
+            if (!f) return;
+            const p = f.properties || {};
+            const parcelId = p.PARCELID != null ? String(p.PARCELID) : '';
+            const isSameSelection = sarpyTaxParcelsSelectedIdRef.current === parcelId;
+            const nextSelectedId = isSameSelection ? null : parcelId;
+            sarpyTaxParcelsSelectedIdRef.current = nextSelectedId;
+            try {
+              map.setFilter(SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID, ['==', ['get', 'PARCELID'], nextSelectedId ?? '']);
+            } catch {}
+            if (nextSelectedId == null) return;
+            const popup = new mapboxgl.Popup({ closeOnClick: true, maxWidth: '280px' })
+              .setLngLat(e.lngLat)
+              .setHTML(`
+                <div class="mf-popup">
+                  <div style="font-weight:700;margin-bottom:4px;">Tax Parcel</div>
+                  <div><b>Parcel ID:</b> ${p.PARCELID || '-'}</div>
+                  <div><b>Site Address:</b> ${p.SITEADDRESS || '-'}</div>
+                  <div><b>Class:</b> ${p.CLASSDSCRP || '-'}</div>
+                  <div><b>Acreage:</b> ${Number.isFinite(Number(p.ACREAGE)) ? Number(p.ACREAGE).toFixed(2) : '-'}</div>
+                  <div><b>Land Value:</b> ${fmtMoney(p.LNDVALUE)}</div>
+                  <div><b>Assessed Value:</b> ${fmtMoney(p.CNTASSDVAL)}</div>
+                  <div><b>Year Built:</b> ${p.RESYRBLT || '-'}</div>
+                </div>
+              `)
+              .addTo(map);
+            popup.on('close', () => {
+              if (sarpyTaxParcelsSelectedIdRef.current === nextSelectedId) {
+                sarpyTaxParcelsSelectedIdRef.current = null;
+                try {
+                  map.setFilter(SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID, ['==', ['get', 'PARCELID'], '']);
+                } catch {}
+              }
+            });
+          };
+          const onEnter = () => { try { map.getCanvas().style.cursor = 'pointer'; } catch {} };
+          const onLeave = () => { try { map.getCanvas().style.cursor = ''; } catch {} };
+          map.on('click', SARPY_TAX_PARCELS_FILL_LAYER_ID, onSarpyTaxParcelsFillClick);
+          map.on('mouseenter', SARPY_TAX_PARCELS_FILL_LAYER_ID, onEnter);
+          map.on('mouseleave', SARPY_TAX_PARCELS_FILL_LAYER_ID, onLeave);
+          map.__mf_sarpy_tax_parcels_click_bound = true;
+        }
+      } catch (err) {
+        console.warn('Failed to add Sarpy tax parcels layer:', err);
+        return;
+      }
+      setMapLayerVisibility(map, SARPY_TAX_PARCELS_FILL_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_TAX_PARCELS_OUTLINE_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_TAX_PARCELS_HIGHLIGHT_LAYER_ID, true);
+    };
+
+    applySarpyTaxParcelsLayer();
+    map.on('style.load', applySarpyTaxParcelsLayer);
+
+    const onZoomEnd = () => {
+      if (!showSarpyTaxParcelsLayer) return;
+      if (map.getSource(SARPY_TAX_PARCELS_SOURCE_ID)) return;
+      if (map.getZoom() >= SARPY_TAX_PARCELS_MIN_ZOOM) {
+        applySarpyTaxParcelsLayer();
+      }
+    };
+    map.on('zoomend', onZoomEnd);
+
+    return () => {
+      try {
+        map.off('style.load', applySarpyTaxParcelsLayer);
+        map.off('zoomend', onZoomEnd);
+      } catch {}
+    };
+  }, [mapLoaded, isSarpyCountyInstance, showSarpyTaxParcelsLayer]);
+
 
   // ---------- Load data (markers/assessments/conditions) ----------
   useEffect(() => {
@@ -32240,6 +32866,73 @@ useEffect(() => {
                 {aiErr || aiBuildingErr || aiCampusErr}
               </div>
             ) : null}
+          </div>
+        )}
+
+        {!stakeholderWorkflowActive && !technicalMode && isSarpyCountyInstance && (
+          <div
+            className="floorplans-section"
+            style={{
+              marginTop: 8,
+              padding: 6,
+              borderRadius: 8,
+              border: '1px solid rgba(0,0,0,0.25)',
+              background: 'linear-gradient(180deg, rgba(240,250,235,0.94), rgba(224,244,214,0.94))'
+            }}
+          >
+            <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Sarpy County Planning Layers</h4>
+            {[
+              { key: 'landUse', title: 'Proposed Land Use', on: showSarpyLandUseLayer, toggle: setShowSarpyLandUseLayer, legend: sarpyLandUseLegend },
+              { key: 'zoning', title: 'Zoning Overlay Districts', on: showSarpyZoningLayer, toggle: setShowSarpyZoningLayer, legend: sarpyZoningLegend }
+            ].map((layer) => (
+              <div key={layer.key} style={{ marginTop: layer.key === 'zoning' ? 8 : 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                  <input
+                    type="checkbox"
+                    checked={layer.on}
+                    onChange={(e) => layer.toggle(e.target.checked)}
+                  />
+                  {layer.title}
+                </label>
+                {layer.on && layer.legend.length > 0 && (
+                  <div style={{ display: 'grid', gap: 3, marginTop: 4, marginLeft: 4 }}>
+                    {layer.legend.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#1f2937' }}
+                      >
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            width: 10,
+                            height: 10,
+                            borderRadius: 2,
+                            background: item.color,
+                            flexShrink: 0
+                          }}
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ marginTop: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input
+                  type="checkbox"
+                  checked={showSarpyTaxParcelsLayer}
+                  onChange={(e) => setShowSarpyTaxParcelsLayer(e.target.checked)}
+                />
+                Tax Parcels
+              </label>
+              {showSarpyTaxParcelsLayer && sarpyTaxParcelsZoomBlocked && (
+                <div style={{ fontSize: 10, color: '#8a5a00', marginTop: 4, marginLeft: 4 }}>
+                  Zoom in to view tax parcels
+                </div>
+              )}
+            </div>
           </div>
         )}
         </div>
