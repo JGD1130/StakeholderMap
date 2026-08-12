@@ -20,6 +20,7 @@ import FloorPanel from './panels/FloorPanel';
 import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
+import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -13353,6 +13354,108 @@ const StakeholderMap = ({
   const closeBuildingResourceModal = useCallback(() => {
     setBuildingResourceModal((prev) => ({ ...prev, open: false }));
   }, []);
+  const onExportBuildingResourcePdf = useCallback(() => {
+    if (!buildingResourceModal.entry || buildingResourceModal.kind !== 'deferred') return;
+    try {
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 24;
+      const maxWidth = pageWidth - margin * 2;
+      const lineHeight = 14;
+      let y = margin;
+
+      const ensureSpace = (required = lineHeight) => {
+        if (y + required <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+
+      const addWrapped = (text, options = {}) => {
+        const value = String(text ?? '').trim();
+        if (!value) return;
+        const fontStyle = options.fontStyle || 'normal';
+        const fontSize = options.fontSize || 11;
+        doc.setFont(undefined, fontStyle);
+        doc.setFontSize(fontSize);
+        const lines = doc.splitTextToSize(value, maxWidth);
+        lines.forEach((line) => {
+          ensureSpace(lineHeight);
+          doc.text(line, margin, y);
+          y += lineHeight;
+        });
+      };
+
+      const addSpacer = (height = 8) => {
+        ensureSpace(height);
+        y += height;
+      };
+
+      const buildingName = buildingResourceModal.buildingName || activeBuildingName || 'Building';
+      const deferred = buildingResourceModal.entry?.deferredMaintenance || null;
+      const condition = buildingResourceModal.entry?.conditionAssessment || null;
+
+      addWrapped(buildingName, { fontStyle: 'bold', fontSize: 14 });
+      addWrapped('Deferred Maintenance + Condition', { fontSize: 10 });
+      addSpacer(8);
+
+      if (deferred) {
+        addWrapped('Deferred Maintenance', { fontStyle: 'bold', fontSize: 12 });
+        if (deferred.summary) addWrapped(`Summary: ${deferred.summary}`);
+        if (deferred.priority) addWrapped(`Priority: ${deferred.priority}`);
+        const costSummary = formatDeferredCostSummary(deferred, formatMaintenanceCurrency);
+        if (costSummary) addWrapped(`Estimated Cost: ${costSummary}`);
+        if (Array.isArray(deferred.items) && deferred.items.length) {
+          addSpacer(4);
+          addWrapped('Top Items:', { fontStyle: 'bold', fontSize: 11 });
+          deferred.items.slice(0, 8).forEach((item) => {
+            const cost = Number.isFinite(Number(item.cost)) ? formatMaintenanceCurrency(item.cost) : '';
+            const priority = item.priority ? ` (${item.priority})` : '';
+            addWrapped(`- ${item.label}${priority}${cost ? `: ${cost}` : ''}`, { fontSize: 10 });
+          });
+        }
+        if (deferred.sourceUrl || deferred.sourceLabel) {
+          addWrapped(`Source: ${deferred.sourceLabel || deferred.sourceUrl}`, { fontSize: 10 });
+        }
+        addSpacer(10);
+      }
+
+      if (hasConditionAssessmentContent(condition)) {
+        addWrapped('Condition Assessment', { fontStyle: 'bold', fontSize: 12 });
+        if (condition.averageScore != null) {
+          addWrapped(`Average Score: ${formatConditionScore(condition.averageScore)}${condition.scale ? ` (${condition.scale})` : ''}`);
+        }
+        if (condition.notes) addWrapped(`Notes: ${condition.notes}`);
+        [
+          { label: 'Architecture', scores: condition?.architecture || null },
+          { label: 'Engineering', scores: condition?.engineering || null },
+          { label: 'Functionality', scores: condition?.functionality || null }
+        ]
+          .filter((section) => section.scores && Object.keys(section.scores).length > 0)
+          .forEach((section) => {
+            addSpacer(4);
+            addWrapped(section.label, { fontStyle: 'bold', fontSize: 11 });
+            Object.entries(section.scores).forEach(([metric, score]) => {
+              addWrapped(`${formatConditionMetricLabel(metric)}: ${formatConditionScore(score)}`, { fontSize: 10 });
+            });
+          });
+        if (condition.sourceUrl || condition.sourceLabel) {
+          addSpacer(4);
+          addWrapped(`Source: ${condition.sourceLabel || condition.sourceUrl}`, { fontSize: 10 });
+        }
+      }
+
+      const slug = String(buildingName)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'building-resources';
+      doc.save(`${slug}-deferred-maintenance.pdf`);
+    } catch (err) {
+      console.error('Building resource PDF export failed', err);
+      alert('PDF export failed - see console for details.');
+    }
+  }, [buildingResourceModal, activeBuildingName, formatMaintenanceCurrency]);
   const openProgramTestFitForBuilding = useCallback(() => {
     const availableSf = Number(buildingStats?.totalSf || 0) || 0;
     if (!availableSf) {
@@ -30254,6 +30357,15 @@ useEffect(() => {
                 selectedMetrics: strategicSelectedYearMetrics,
                 capacityMetrics: strategicCapacityMetrics
               } : null}
+            />
+          </div>
+        )}
+        {isAdminMode && Boolean(config?.enableCapitalPriorities) && (
+          <div className="dashboard-box">
+            <CapitalPrioritiesPanel
+              universityId={universityId}
+              enabled={isAdminMode && Boolean(config?.enableCapitalPriorities)}
+              buildingFeatures={Array.isArray(config?.buildings?.features) ? config.buildings.features : []}
             />
           </div>
         )}
