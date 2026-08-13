@@ -134,6 +134,35 @@ service cloud.firestore {
         allow create, update, delete: if canWritePlannerCopilot(universityId);
       }
 
+      // Capital Priorities shell (Capital Compass integration, Option B).
+      // Admin-only in both directions — this is an internal planning tool,
+      // not exposed to public/client routes. Read-only relationship to
+      // buildings/buildingAssessments/buildingConditions: this collection
+      // is never written to by any existing code path.
+      match /capitalPriorities/{buildingId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+
+      // Classroom Utilization Planner. Admin-only in both directions, same
+      // posture as capitalPriorities immediately above — internal planning
+      // tool, not exposed to any public/client route. Hastings-only is
+      // enforced by the app's enableClassroomUtilization flag gate, not
+      // repeated here, consistent with how every other collection in this
+      // file scopes by isUniversityAdmin(universityId) rather than a
+      // hardcoded tenant id.
+      match /spaceConfig/{spaceCategory} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+      match /terms/{termId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+      match /roomUtilizationMeta/{roomKey} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+      match /courseMeetings/{meetingId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+
       match /floorAdjustments/{docId} {
         allow read: if true;
         allow write: if canWriteFloorAdjustment(universityId);

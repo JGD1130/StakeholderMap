@@ -9,6 +9,8 @@ const TENANT_DEFS = [
       enableEngagementTechnicalAssessment: false,
       enablePublicAiCreatePlanningScenario: false,
       enableMaintenanceWorkflow: false,
+      enableCapitalPriorities: false,
+      enableClassroomUtilization: false,
       enableRoomEdit: true,
       requireClientAuth: true,
       clientWorkspaceRoute: 'client',

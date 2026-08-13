@@ -11,6 +11,8 @@
   
   "outdoorSpacesUrl": "geojson/HC_Outdoor_map.geojson",
   "enableMaintenanceWorkflow": false,
+  "enableCapitalPriorities": true,
+  "enableClassroomUtilization": false,
   "enableRoomEdit": true,
   "requireClientAuth": true,
   "clientWorkspaceRoute": "client",
