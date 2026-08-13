@@ -21,6 +21,7 @@ import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
+import ClassroomUtilizationPanel from './ClassroomUtilizationPanel.jsx';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -30562,6 +30563,13 @@ useEffect(() => {
               enabled={isAdminMode && Boolean(config?.enableCapitalPriorities)}
               buildingFeatures={Array.isArray(config?.buildings?.features) ? config.buildings.features : []}
               getBuildingResourceEntry={getBuildingResourceEntry}
+            />
+          </div>
+        )}
+        {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
+          <div className="dashboard-box">
+            <ClassroomUtilizationPanel
+              enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
             />
           </div>
         )}

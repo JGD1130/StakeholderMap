@@ -36,6 +36,8 @@
   flex-direction: column;
   gap: 12px;
   z-index: 20;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .mf-right-logos {
@@ -81,13 +83,33 @@
 .dashboard-box {
   width: 100%;
   align-items: stretch;
-  flex: 0 1 auto;
+  /* flex-shrink: 0 (was 1) -- a box must never be squeezed shorter than its
+     own natural content height. With shrink allowed, the flex algorithm
+     would compress boxes to fit inside .mf-right-rail's bounded height
+     before the rail's own overflow-y: auto ever got a chance to kick in,
+     which is what was cutting off the bottom of Terms: not a missing
+     property, but the rail's scroll never actually triggering because the
+     boxes were shrinking (and, with overflow-y: auto + max-height: 100%
+     below, independently scrolling) to fit instead of overflowing. */
+  flex: 0 0 auto;
+  /* Restores the standard "don't shrink below your own content" default
+     (equivalent to min-height: auto's min-content floor for a block flex
+     item). The previous min-height: 0 here was a pre-existing, uncommitted,
+     incomplete attempt at this same scroll fix from an earlier session --
+     it only makes sense paired with flex-shrink: 1 + the box's own
+     overflow/max-height (i.e. "let this box get squeezed and scroll
+     internally"), which is exactly the competing-scroll-containers behavior
+     this fix removes. */
   min-height: fit-content;
-  max-height: 100%;
+  /* No longer capped at the rail's height -- a box renders at its full
+     natural height regardless of how tall the rail is; .mf-right-rail
+     alone (not any individual box) is the single scroll surface for the
+     whole stacked column. */
+  max-height: none;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: visible;
   padding: 6px;
   background: #fff;
   border-radius: 10px;
