@@ -12629,22 +12629,6 @@ const StakeholderMap = ({
     const key = normalizeClassScheduleRoomKey(buildingName, roomLabel);
     return key ? (classScheduleByRoom.get(key) || []) : [];
   }, [classScheduleByRoom]);
-  const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
-    const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
-    const todaysEntries = getScheduleEntriesForToday(entries, date);
-    const activeEntries = todaysEntries.filter((entry) => isScheduleEntryActiveAt(entry, date));
-    const nowMinutes = (date.getHours() * 60) + date.getMinutes();
-    const upcomingEntries = todaysEntries.filter((entry) => {
-      const startMinutes = Number(entry?.startMinutes);
-      return Number.isFinite(startMinutes) && startMinutes >= nowMinutes;
-    });
-    return {
-      entries,
-      todaysEntries,
-      activeEntries,
-      upcomingEntries
-    };
-  }, [getScheduleEntriesForRoom]);
   const getPreferredRoomScheduleSession = useCallback((entries = [], date = new Date()) => {
     const roomSessionMap = new Map();
     (entries || []).forEach((entry) => {
@@ -12665,6 +12649,24 @@ const StakeholderMap = ({
     }
     return sessionOptions[0];
   }, [classScheduleSessionOptions]);
+  const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
+    const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
+    const preferredSession = getPreferredRoomScheduleSession(entries, date);
+    const sessionEntries = getScheduleEntriesForSession(entries, preferredSession?.key || '');
+    const todaysEntries = getScheduleEntriesForToday(sessionEntries, date);
+    const activeEntries = todaysEntries.filter((entry) => isScheduleEntryActiveAt(entry, date));
+    const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+    const upcomingEntries = todaysEntries.filter((entry) => {
+      const startMinutes = Number(entry?.startMinutes);
+      return Number.isFinite(startMinutes) && startMinutes >= nowMinutes;
+    });
+    return {
+      entries,
+      todaysEntries,
+      activeEntries,
+      upcomingEntries
+    };
+  }, [getScheduleEntriesForRoom, getPreferredRoomScheduleSession]);
 
   const getRoomWeeklyScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
     const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
@@ -13319,6 +13321,16 @@ const StakeholderMap = ({
       entry.aliases.some((alias) => matchKeys.includes(alias))
     )) || null;
   }, [isHastingsCollegeInstance, buildingResourcesCatalog, activeBuildingId, activeBuildingName, selectedBuilding, selectedBuildingId]);
+  // Read-only lookup into the same building-resources.json catalog the "Deferred + Condition"
+  // modal renders from. Never fetches, never mutates buildingResourcesCatalog.
+  const getBuildingResourceEntry = useCallback((buildingIdOrName) => {
+    if (!isHastingsCollegeInstance) return null;
+    const entries = Array.isArray(buildingResourcesCatalog?.buildings) ? buildingResourcesCatalog.buildings : [];
+    if (!entries.length) return null;
+    const key = String(canon(buildingIdOrName || '') || '').trim().toLowerCase();
+    if (!key) return null;
+    return entries.find((entry) => Array.isArray(entry?.aliases) && entry.aliases.includes(key)) || null;
+  }, [isHastingsCollegeInstance, buildingResourcesCatalog]);
   const hasDeferredMaintenanceForActiveBuilding = useMemo(() => {
     const deferred = activeBuildingResourceEntry?.deferredMaintenance;
     const hasDeferred = Boolean(
@@ -21771,6 +21783,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         }
       }
       let classScheduleRowsPayload = null;
+      let classScheduleInstructions = null;
       if (isHastingsCollegeInstance && classScheduleRows.length) {
         const roomKeys = new Set(
           scopeRooms
@@ -21780,7 +21793,36 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const filteredScheduleRows = roomKeys.size
           ? classScheduleRows.filter((entry) => roomKeys.has(normalizeClassScheduleRoomKey(entry?.building, entry?.room)))
           : classScheduleRows;
-        classScheduleRowsPayload = filteredScheduleRows.slice(0, 150).map((entry) => ({
+        // Cross-tallied classes (same physical meeting entered once per catalog number)
+        // share room, day-pattern, start/end time, and instructor. Merge those rows into
+        // one before truncating, so the 150-row cap counts merged entries, not raw rows.
+        const scheduleGroups = new Map();
+        filteredScheduleRows.forEach((entry) => {
+          const key = [
+            String(entry?.building || '').trim().toLowerCase(),
+            String(entry?.room || '').trim().toLowerCase(),
+            String(entry?.daysText || '').trim().toUpperCase(),
+            entry?.startMinutes,
+            entry?.endMinutes,
+            String(entry?.instructor || '').trim().toLowerCase()
+          ].join('|');
+          if (!scheduleGroups.has(key)) scheduleGroups.set(key, []);
+          scheduleGroups.get(key).push(entry);
+        });
+        const mergedScheduleRows = Array.from(scheduleGroups.values()).map((group) => {
+          const courseCodes = Array.from(new Set(
+            group.map((entry) => String(entry?.courseCode || '').trim()).filter(Boolean)
+          ));
+          const titles = Array.from(new Set(
+            group.map((entry) => String(entry?.title || '').trim()).filter(Boolean)
+          ));
+          return {
+            ...group[0],
+            courseCode: courseCodes.join('/'),
+            title: titles.join('/')
+          };
+        });
+        classScheduleRowsPayload = mergedScheduleRows.slice(0, 150).map((entry) => ({
           building: String(entry?.building || '').trim(),
           room: String(entry?.room || '').trim(),
           courseCode: String(entry?.courseCode || '').trim(),
@@ -21790,8 +21832,15 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           days: String(entry?.daysText || '').trim(),
           time: formatScheduleEntryTime(entry),
           enrollment: Number.isFinite(Number(entry?.enrollment)) ? Number(entry.enrollment) : '',
-          capacity: Number.isFinite(Number(entry?.capacity)) ? Number(entry.capacity) : ''
+          capacity: Number.isFinite(Number(entry?.capacity)) ? Number(entry.capacity) : '',
+          sessionLabel: String(entry?.sessionLabel || '').trim(),
+          sessionRaw: String(entry?.sessionRaw || '').trim()
         }));
+        classScheduleInstructions = "When answering a question about what's scheduled in a specific room, " +
+          "list every course meeting in that room for the relevant time period — do not summarize, truncate, " +
+          "or omit rows for concision. Cross-tallied classes are already merged into a single row with both " +
+          "course codes joined by a slash (e.g. 'EDUC630/EDUC430') — treat each such row as one class " +
+          "meeting, not two.";
       }
       const data = {
         campusStats,
@@ -21802,7 +21851,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         dashboardMetrics: undefined,
         scopeSummary: fallbackSummary || undefined,
         roomRows: roomRowsPayload || undefined,
-        classScheduleRows: classScheduleRowsPayload || undefined
+        classScheduleRows: classScheduleRowsPayload || undefined,
+        scheduleInstructions: classScheduleInstructions || undefined
       };
 
       const out = await askMapfluence({ question: q, context, data });
@@ -30366,6 +30416,7 @@ useEffect(() => {
               universityId={universityId}
               enabled={isAdminMode && Boolean(config?.enableCapitalPriorities)}
               buildingFeatures={Array.isArray(config?.buildings?.features) ? config.buildings.features : []}
+              getBuildingResourceEntry={getBuildingResourceEntry}
             />
           </div>
         )}
