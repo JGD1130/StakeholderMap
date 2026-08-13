@@ -9132,6 +9132,27 @@ const getScheduleEntriesForDayTokens = (entries = [], dayTokens = []) => {
   });
 };
 
+// Reuses SCHEDULE_DAY_QUERY_OPTIONS' per-weekday regexes (otherwise only used for the
+// room-click popup's day-column labels). Tests the full question text first, then also
+// tests each individual word with a trailing "s" stripped, since none of these regexes
+// (except Thursday's, which already special-cases it) match a plain plural like
+// "Tuesdays" -- \b can't land between "day" and a following "s" in the same word.
+const extractQueryDayTokens = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!text) return [];
+  const words = text.match(/[a-z]+/g) || [];
+  const matchedTokens = new Set();
+  SCHEDULE_DAY_QUERY_OPTIONS.forEach((option) => {
+    const matches = option.regex.test(text) || words.some((word) => {
+      if (!word.endsWith('s')) return false;
+      const singular = word.slice(0, -1);
+      return Boolean(singular) && option.regex.test(singular);
+    });
+    if (matches) option.tokens.forEach((token) => matchedTokens.add(token));
+  });
+  return Array.from(matchedTokens);
+};
+
 const getScheduleEntriesForSession = (entries = [], sessionKey = '') => {
   const targetKey = buildScheduleSessionKey(sessionKey);
   if (!targetKey) return entries || [];
@@ -9157,7 +9178,7 @@ const isCurrentEmptyClassroomQuery = (question = '') => {
   const text = String(question || '').toLowerCase();
   const asksForCurrentAvailability =
     /\b(currently|right now|at the moment|now)\b/.test(text) ||
-    (/\b(empty|available|open|vacant)\b/.test(text) && /\b(find|show|list|which|what)\b/.test(text));
+    (/\b(empty|available|open|vacant|free)\b/.test(text) && /\b(find|show|list|which|what)\b/.test(text));
   if (!asksForCurrentAvailability) return false;
   if (/\bclassroom(s)?\b|\bteaching room(s)?\b/.test(text)) return true;
   return /\bclass(es)?\b/.test(text) && /\broom(s)?\b|\bseat(s)?\b|\bcapacity\b/.test(text);
@@ -9183,6 +9204,67 @@ const extractMinimumSeatCountFromQuestion = (question = '') => {
   return 0;
 };
 
+// Extracts a stated time-of-day from question text into minutes-since-midnight, or null
+// if none is stated. Requires a colon (HH:MM) or an explicit AM/PM marker before matching
+// at all -- unlike ai-server/server.js's parseTimeToMinutes (which parses a dedicated
+// spreadsheet time cell, so a bare 1-2 digit number is always safe to treat as a time),
+// question text can contain unrelated bare numbers (seat counts, room numbers) that must
+// not be misread as a time. The AM/PM disambiguation itself mirrors parseTimeToMinutes
+// exactly: an unmarked hour below 8 with a colon is treated as afternoon, since classes
+// essentially never start before 7am.
+const extractQueryTimeMinutes = (question = '') => {
+  const raw = String(question || '');
+  if (!raw) return null;
+  const compact = raw.replace(/\s+/g, ' ').toUpperCase();
+  const colonMatch = compact.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/);
+  const bareMatch = colonMatch ? null : compact.match(/(\d{1,2})\s*(AM|PM)\b/);
+  if (!colonMatch && !bareMatch) return null;
+  let hours;
+  let minutes;
+  let meridiem;
+  if (colonMatch) {
+    hours = Number(colonMatch[1]);
+    minutes = Number(colonMatch[2]);
+    meridiem = String(colonMatch[3] || '');
+  } else {
+    hours = Number(bareMatch[1]);
+    minutes = 0;
+    meridiem = String(bareMatch[2] || '');
+  }
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes < 0 || minutes > 59) return null;
+  if (meridiem === 'PM' && hours < 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  if (!meridiem && hours < 8) hours += 12;
+  if (hours < 0 || hours > 23) return null;
+  return (hours * 60) + minutes;
+};
+
+const formatMinutesAsClockLabel = (minutes) => {
+  if (!Number.isFinite(minutes)) return '';
+  const safeMinutes = Math.max(0, Math.min(23 * 60 + 59, Math.round(minutes)));
+  const hours24 = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${String(mins).padStart(2, '0')} ${meridiem}`;
+};
+
+// Describes only what was explicitly stated in the question (not any fallback-to-"now"
+// values used internally for filtering), for the answer/bullets text.
+const describeQueryMoment = (dayTokens = [], minutes = null) => {
+  const dayLabel = (Array.isArray(dayTokens) && dayTokens.length)
+    ? SCHEDULE_DAY_QUERY_OPTIONS
+      .filter((option) => option.tokens.some((token) => dayTokens.includes(token)))
+      .map((option) => option.label)
+      .join(' and ')
+    : '';
+  const timeLabel = formatMinutesAsClockLabel(minutes);
+  if (dayLabel && timeLabel) return `on ${dayLabel} at ${timeLabel}`;
+  if (dayLabel) return `on ${dayLabel}`;
+  if (timeLabel) return `at ${timeLabel}`;
+  return 'currently';
+};
+
 const isScheduleEntryActiveAt = (entry, date = new Date()) => {
   if (!entry) return false;
   const dayTokens = Array.isArray(entry.dayTokens) ? entry.dayTokens : [];
@@ -9204,6 +9286,30 @@ const getScheduleEntriesForToday = (entries = [], date = new Date()) => {
     if (!dayTokens.length) return true;
     return todaysTokens.some((token) => dayTokens.includes(token));
   });
+};
+
+// Day/time-filtering equivalent of getScheduleEntriesForToday + isScheduleEntryActiveAt,
+// parameterized by explicit dayTokens/minutes instead of a Date -- needed because a
+// query-stated day/time override (e.g. "Tuesdays and Thursdays") can name more than one
+// day, which a single Date object can't represent.
+const filterScheduleEntriesByDayAndMinutes = (entries = [], { dayTokens = [], minutes = null } = {}) => {
+  const targetTokens = Array.isArray(dayTokens) ? dayTokens.filter(Boolean) : [];
+  const todaysEntries = (entries || []).filter((entry) => {
+    const entryTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
+    if (!entryTokens.length || !targetTokens.length) return true;
+    return targetTokens.some((token) => entryTokens.includes(token));
+  });
+  const activeEntries = todaysEntries.filter((entry) => {
+    const startMinutes = Number(entry?.startMinutes);
+    const endMinutes = Number(entry?.endMinutes);
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || !Number.isFinite(minutes)) return false;
+    return minutes >= startMinutes && minutes < endMinutes;
+  });
+  const upcomingEntries = todaysEntries.filter((entry) => {
+    const startMinutes = Number(entry?.startMinutes);
+    return Number.isFinite(startMinutes) && Number.isFinite(minutes) && startMinutes >= minutes;
+  });
+  return { todaysEntries, activeEntries, upcomingEntries };
 };
 
 const formatScheduleEntryTime = (entry) => {
@@ -12649,10 +12755,23 @@ const StakeholderMap = ({
     }
     return sessionOptions[0];
   }, [classScheduleSessionOptions]);
-  const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date()) => {
+  // `override` ({ dayTokens, minutes }) lets a caller substitute an explicit day/time
+  // (e.g. extracted from question text) for the day/time normally derived from `date`.
+  // `date` itself still always drives block/session resolution (getPreferredRoomScheduleSession),
+  // since overriding day-of-week/time-of-day says nothing about which term/block is meant --
+  // per Clark's decision, that always resolves to whichever block is currently/next active.
+  // When `override` is omitted, behavior is byte-for-byte unchanged from before.
+  const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date(), override = null) => {
     const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
     const preferredSession = getPreferredRoomScheduleSession(entries, date);
     const sessionEntries = getScheduleEntriesForSession(entries, preferredSession?.key || '');
+    if (override && (override.dayTokens?.length || Number.isFinite(override.minutes))) {
+      const { todaysEntries, activeEntries, upcomingEntries } = filterScheduleEntriesByDayAndMinutes(sessionEntries, {
+        dayTokens: override.dayTokens || [],
+        minutes: Number.isFinite(override.minutes) ? override.minutes : ((date.getHours() * 60) + date.getMinutes())
+      });
+      return { entries, todaysEntries, activeEntries, upcomingEntries };
+    }
     const todaysEntries = getScheduleEntriesForToday(sessionEntries, date);
     const activeEntries = todaysEntries.filter((entry) => isScheduleEntryActiveAt(entry, date));
     const nowMinutes = (date.getHours() * 60) + date.getMinutes();
@@ -12693,6 +12812,8 @@ const StakeholderMap = ({
   const buildCurrentlyAvailableClassroomRows = useCallback((rooms = [], options = {}) => {
     const now = options?.now instanceof Date ? options.now : new Date();
     const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
+    const override = options?.override || null;
+    const momentLabel = override ? (options?.momentLabel || 'at the requested time') : 'now';
     const rows = [];
     const seen = new Set();
     (rooms || []).forEach((room) => {
@@ -12705,7 +12826,7 @@ const StakeholderMap = ({
       const dedupeKey = `${normalizeDashboardKey(building)}|${normalizeUtilizationRoomKey(roomNumber)}`;
       if (seen.has(dedupeKey)) return;
       seen.add(dedupeKey);
-      const schedule = getRoomScheduleSnapshot(building, roomNumber, now);
+      const schedule = getRoomScheduleSnapshot(building, roomNumber, now, override);
       if (schedule.activeEntries.length) return;
       const nextEntry = schedule.upcomingEntries[0] || null;
       rows.push({
@@ -12714,8 +12835,8 @@ const StakeholderMap = ({
         Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
         'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
         Status: nextEntry
-          ? `Available now | Next: ${formatScheduleEntryTime(nextEntry)}`
-          : 'Available now',
+          ? `Available ${momentLabel} | Next: ${formatScheduleEntryTime(nextEntry)}`
+          : `Available ${momentLabel}`,
         'Next Class': nextEntry
           ? `${String(nextEntry?.courseCode || nextEntry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(nextEntry)})`
           : 'No more classes today'
@@ -21500,20 +21621,44 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           return;
         }
         const minimumSeats = extractMinimumSeatCountFromQuestion(q);
+        // Day/time stated in the question (e.g. "Tuesdays at 9:30") overrides the real
+        // wall-clock day/time used for filtering; block/session resolution still always
+        // uses the real current date (see getRoomScheduleSnapshot). When neither a day
+        // nor a time is stated, `override` stays null and behavior is unchanged from
+        // before this query text can also mention a day/time.
+        const queryDayTokens = extractQueryDayTokens(q);
+        const queryTimeMinutes = extractQueryTimeMinutes(q);
+        const hasQueryMomentOverride = queryDayTokens.length > 0 || Number.isFinite(queryTimeMinutes);
+        const nowForQuery = new Date();
+        const override = hasQueryMomentOverride
+          ? {
+            dayTokens: queryDayTokens.length ? queryDayTokens : getScheduleDayTokensForDate(nowForQuery),
+            minutes: Number.isFinite(queryTimeMinutes) ? queryTimeMinutes : ((nowForQuery.getHours() * 60) + nowForQuery.getMinutes())
+          }
+          : null;
+        const momentLabel = describeQueryMoment(queryDayTokens, queryTimeMinutes);
         const rows = buildCurrentlyAvailableClassroomRows(scopeRooms, {
           minimumSeats,
-          now: new Date()
+          now: nowForQuery,
+          override,
+          momentLabel
         });
         const scopeLabel = forceCampusScope
           ? 'campus'
           : (inferredBuilding ? inferredBuilding : 'selected scope');
-        const answer = rows.length
-          ? `Found ${rows.length.toLocaleString()} currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
-          : `No currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`;
+        const answer = hasQueryMomentOverride
+          ? (rows.length
+            ? `Found ${rows.length.toLocaleString()} classrooms free ${momentLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
+            : `No classrooms free ${momentLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`)
+          : (rows.length
+            ? `Found ${rows.length.toLocaleString()} currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
+            : `No currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`);
         setAskResult({
           answer,
           bullets: [
-            'Availability is based on the current local time, the loaded class schedule workbook, and classroom seat counts from the room inventory.'
+            hasQueryMomentOverride
+              ? 'Availability is based on the stated day/time, the loaded class schedule workbook (resolved to the current or next active block), and classroom seat counts from the room inventory.'
+              : 'Availability is based on the current local time, the loaded class schedule workbook, and classroom seat counts from the room inventory.'
           ],
           resultType: rows.length ? 'table' : 'none',
           columns: rows.length ? ['Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class'] : [],
