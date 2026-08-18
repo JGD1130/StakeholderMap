@@ -21939,11 +21939,21 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         const filteredScheduleRows = roomKeys.size
           ? classScheduleRows.filter((entry) => roomKeys.has(normalizeClassScheduleRoomKey(entry?.building, entry?.room)))
           : classScheduleRows;
+        // A day of the week stated in the free-text question (e.g. "on Wednesdays") is
+        // filtered here, mechanically, against each row's already-parsed dayTokens --
+        // not left for the model to infer from raw day-pattern strings like "MTRF" vs
+        // "MWR". Same reasoning as the cross-tally dedup below: a per-row pattern check
+        // repeated across up to 150 rows is exactly the kind of task free-text
+        // instructions have already proven unreliable for this session.
+        const queryDayTokens = extractQueryDayTokens(q);
+        const dayFilteredScheduleRows = queryDayTokens.length
+          ? getScheduleEntriesForDayTokens(filteredScheduleRows, queryDayTokens)
+          : filteredScheduleRows;
         // Cross-tallied classes (same physical meeting entered once per catalog number)
         // share room, day-pattern, start/end time, and instructor. Merge those rows into
         // one before truncating, so the 150-row cap counts merged entries, not raw rows.
         const scheduleGroups = new Map();
-        filteredScheduleRows.forEach((entry) => {
+        dayFilteredScheduleRows.forEach((entry) => {
           const key = [
             String(entry?.building || '').trim().toLowerCase(),
             String(entry?.room || '').trim().toLowerCase(),
@@ -21986,7 +21996,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           "list every course meeting in that room for the relevant time period — do not summarize, truncate, " +
           "or omit rows for concision. Cross-tallied classes are already merged into a single row with both " +
           "course codes joined by a slash (e.g. 'EDUC630/EDUC430') — treat each such row as one class " +
-          "meeting, not two.";
+          "meeting, not two." +
+          (queryDayTokens.length
+            ? " The rows below have already been filtered to only the day(s) of the week the question " +
+              "asked about — do not apply any additional day-of-week filtering yourself, and do not exclude " +
+              "or second-guess any row based on its day-pattern text; every row shown already meets on the " +
+              "requested day."
+            : "");
       }
       const data = {
         campusStats,
