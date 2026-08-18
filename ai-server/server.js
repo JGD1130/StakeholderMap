@@ -96,7 +96,14 @@ const HASTINGS_CLASS_SCHEDULE_BUILDING_ALIASES = {
   MR: "Morrison-Reeves Science Center",
   SCOTT: "Scott Studio Theater",
   SEAT: "Scott Studio Theater",
-  WILSON: "Wilson Center"
+  WILSON: "Wilson Center",
+  MORRISONREEVES: "Morrison-Reeves Science Center",
+  HURLEYMCDONALD: "Hurley-McDonald Hall",
+  FARRELLFLEHARTY: "Farrell-Fleharty",
+  KIEWIT: "Kiewit Building",
+  MCCORMICK: "McCormick Hall",
+  JACKSONDINSDALEARTCENTER: "Jackson Dinsdale Art Center",
+  GRAYCENTER: "Gray Center"
 };
 const requestContextStorage = new AsyncLocalStorage();
 const aiRuntimeHealth = {
