@@ -61,7 +61,9 @@ export const COURSE_MEETINGS_COLLECTION = 'courseMeetings';
  * minimal, explicit export) rather than re-deriving the key format.
  *
  * @typedef {Object} RoomUtilizationMetaDoc
- * @property {string} spaceCategory - Matches a spaceConfig/{spaceCategory} document id.
+ * @property {string} building - Denormalized for Firestore-console readability, same convention as CourseMeetingDoc.building.
+ * @property {string} room - Denormalized for Firestore-console readability, same convention as CourseMeetingDoc.room.
+ * @property {string} spaceCategory - Matches a spaceConfig/{spaceCategory} document id, or '' if this room is intentionally untagged.
  * @property {string} notes - Free-text admin notes about this room.
  */
 

@@ -10,15 +10,21 @@
 // writes any existing collection, and nothing here touches server.js or any
 // other panel.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Timestamp, collection, doc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { Timestamp, collection, doc, getDocs, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { COURSE_MEETINGS_COLLECTION, SPACE_CONFIG_COLLECTION, TERMS_COLLECTION } from '../utils/classroomUtilizationSchema';
+import {
+  COURSE_MEETINGS_COLLECTION,
+  ROOM_UTILIZATION_META_COLLECTION,
+  SPACE_CONFIG_COLLECTION,
+  TERMS_COLLECTION
+} from '../utils/classroomUtilizationSchema';
 import {
   buildCourseMeetingId,
   dedupeCrossTalliedScheduleRows,
   fetchClassScheduleRows,
   mapScheduleEntryToCourseMeetingDoc
 } from '../utils/classroomScheduleImport';
+import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -705,6 +711,292 @@ function TermsSection() {
   );
 }
 
+// Room Utilization Tagging -- one row per physical room that actually has
+// scheduled classes (universities/hastings/roomUtilizationMeta/{roomKey}),
+// per Clark's decisions: (1) only rooms with real courseMeetings entries are
+// offered for tagging, not every Airtable room -- this section never reads
+// Airtable at all, the room list comes entirely from the already-imported
+// schedule; (2) spaceCategory is picked from spaceConfig's existing category
+// ids, never free text, so a mistyped category can't silently fail to match
+// anything downstream; (3) untagged rooms are excluded from the future calc
+// engine but flagged visibly here (the summary banner below) rather than
+// blocking the whole module until every room is tagged -- see
+// classroomUtilizationSchema.js's RoomUtilizationMetaDoc comment for the
+// original decision writeup.
+//
+// Mirrors SpaceConfigSection/TermsSection's conventions: dirty-tracking
+// against a persisted snapshot, single "Save" button for whichever rows
+// changed, validate-before-write, plain setDoc overwrite (no {merge: true}).
+function RoomUtilizationMetaSection() {
+  const [roomList, setRoomList] = useState([]); // [{roomKey, building, room}], derived from courseMeetings
+  const [categoryOptions, setCategoryOptions] = useState([]); // spaceConfig doc ids, kept live -- see onSnapshot below
+  const [form, setForm] = useState({}); // roomKey -> {spaceCategory, notes}
+  const [persisted, setPersisted] = useState({}); // roomKey -> {spaceCategory, notes}, only for rooms with an existing doc
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+
+  const roomUtilizationMetaCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ROOM_UTILIZATION_META_COLLECTION),
+    []
+  );
+  const spaceConfigCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_COLLECTION),
+    []
+  );
+  const courseMeetingsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
+    []
+  );
+
+  // Live, not a one-time load -- per Clark's requirement that the category
+  // dropdown reflect whatever spaceConfig categories exist right now
+  // (currently just "Classroom"), not a list hardcoded into this component.
+  // Read-only listener; this section never writes to spaceConfig.
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      spaceConfigCollection,
+      (snap) => {
+        setCategoryOptions(snap.docs.map((docSnap) => docSnap.id).sort((a, b) => a.localeCompare(b)));
+      },
+      (error) => setLoadError(String(error?.message || 'Failed to load space categories.'))
+    );
+    return () => unsubscribe();
+  }, [spaceConfigCollection]);
+
+  const loadRooms = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [meetingsSnap, metaSnap] = await Promise.all([
+        getDocs(courseMeetingsCollection),
+        getDocs(roomUtilizationMetaCollection)
+      ]);
+      const rooms = deriveDistinctRoomsFromCourseMeetings(
+        meetingsSnap.docs.map((docSnap) => docSnap.data())
+      );
+      const nextPersisted = {};
+      metaSnap.docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        nextPersisted[docSnap.id] = {
+          spaceCategory: String(data.spaceCategory || ''),
+          notes: String(data.notes || '')
+        };
+      });
+      const nextForm = {};
+      rooms.forEach(({ roomKey }) => {
+        nextForm[roomKey] = nextPersisted[roomKey]
+          ? { ...nextPersisted[roomKey] }
+          : { spaceCategory: '', notes: '' };
+      });
+      setRoomList(rooms);
+      setPersisted(nextPersisted);
+      setForm(nextForm);
+    } catch (error) {
+      setLoadError(String(error?.message || 'Failed to load rooms.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [courseMeetingsCollection, roomUtilizationMetaCollection]);
+
+  useEffect(() => {
+    void loadRooms();
+  }, [loadRooms]);
+
+  const handleFieldChange = useCallback((roomKey, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [roomKey]: { ...(prev[roomKey] || { spaceCategory: '', notes: '' }), [field]: value }
+    }));
+  }, []);
+
+  const isRoomDirty = useCallback((roomKey) => {
+    const row = form[roomKey];
+    if (!row) return false;
+    const saved = persisted[roomKey] || { spaceCategory: '', notes: '' };
+    return row.spaceCategory !== saved.spaceCategory || row.notes !== saved.notes;
+  }, [form, persisted]);
+
+  const dirtyRoomKeys = useMemo(
+    () => roomList.map((r) => r.roomKey).filter((roomKey) => isRoomDirty(roomKey)),
+    [roomList, isRoomDirty]
+  );
+
+  // Read from the live form (not just `persisted`) so the summary updates
+  // the instant an admin picks a category -- not only after Save -- per
+  // Clark's "impossible to miss, updates as rooms get tagged/saved" ask.
+  // Reloading after a successful save repopulates form from the fresh
+  // persisted snapshot, so this stays correct post-save too.
+  const taggedCount = useMemo(
+    () => roomList.filter((r) => String(form[r.roomKey]?.spaceCategory || '').trim()).length,
+    [roomList, form]
+  );
+  const untaggedCount = roomList.length - taggedCount;
+
+  const validateRoomRow = useCallback((row) => {
+    const category = String(row?.spaceCategory || '').trim();
+    if (!category) return []; // explicitly untagged/blank is always valid
+    if (!categoryOptions.includes(category)) {
+      return [`"${category}" is not a space category defined in Space Configuration`];
+    }
+    return [];
+  }, [categoryOptions]);
+
+  const handleSave = useCallback(async () => {
+    if (saving || !dirtyRoomKeys.length) return;
+    setSaving(true);
+    setSaveMessage('');
+    setSaveError('');
+
+    // Validate every changed row before writing anything -- same
+    // fail-fast-the-whole-batch convention as SpaceConfigSection/TermsSection.
+    const invalid = dirtyRoomKeys
+      .map((roomKey) => ({ roomKey, errors: validateRoomRow(form[roomKey]) }))
+      .filter((entry) => entry.errors.length);
+    if (invalid.length) {
+      setSaveError(invalid.map((entry) => `${entry.roomKey}: ${entry.errors.join('; ')}`).join(' | '));
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const roomsByKey = new Map(roomList.map((r) => [r.roomKey, r]));
+      for (const roomKey of dirtyRoomKeys) {
+        const row = form[roomKey];
+        const roomInfo = roomsByKey.get(roomKey);
+        const payload = {
+          building: roomInfo?.building || '',
+          room: roomInfo?.room || '',
+          spaceCategory: String(row.spaceCategory || '').trim(),
+          notes: String(row.notes || '').trim()
+        };
+        // Plain overwrite (no {merge: true}) -- same reasoning as
+        // SpaceConfigSection/TermsSection: the form supplies every field
+        // together, so there's no partial-update case to preserve.
+        await setDoc(doc(roomUtilizationMetaCollection, roomKey), payload);
+      }
+      setSaveMessage(
+        `Saved ${dirtyRoomKeys.length.toLocaleString()} room${dirtyRoomKeys.length === 1 ? '' : 's'}.`
+      );
+      await loadRooms();
+    } catch (error) {
+      setSaveError(String(error?.message || 'Failed to save room tagging.'));
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, dirtyRoomKeys, form, roomList, roomUtilizationMetaCollection, loadRooms, validateRoomRow]);
+
+  // Edge case: spaceConfig has zero categories defined. Shouldn't happen
+  // today ("Classroom" already exists), but show a clear message and
+  // disable tagging instead of rendering empty/broken dropdowns.
+  const noCategoriesYet = !loading && categoryOptions.length === 0;
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <h4 style={{ margin: 0, fontSize: 12.5 }}>Room Utilization Tagging</h4>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving || !dirtyRoomKeys.length || noCategoriesYet}
+        >
+          {saving ? 'Saving...' : `Save Room Tagging${dirtyRoomKeys.length ? ` (${dirtyRoomKeys.length})` : ''}`}
+        </button>
+      </div>
+
+      <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+        One row per room with scheduled classes (from the imported class schedule, not the full room inventory).
+        Tag each room with a space category so the future utilization calc engine knows how to score it.
+      </div>
+
+      {/* Prominent, can't-miss tagged/untagged summary -- per Clark's
+          "flag visibly" requirement, not a footnote. */}
+      <div
+        style={{
+          marginTop: 8,
+          padding: '8px 10px',
+          borderRadius: 6,
+          fontSize: 12.5,
+          fontWeight: 700,
+          textAlign: 'center',
+          background: untaggedCount > 0 ? '#fffbeb' : '#f0fdf4',
+          border: `1px solid ${untaggedCount > 0 ? '#fde68a' : '#bbf7d0'}`,
+          color: untaggedCount > 0 ? '#92400e' : '#15803d'
+        }}
+      >
+        {roomList.length
+          ? `${taggedCount} of ${roomList.length} room${roomList.length === 1 ? '' : 's'} tagged, ${untaggedCount} untagged`
+          : (loading ? 'Loading rooms...' : 'No rooms found in the imported class schedule yet.')}
+      </div>
+
+      {noCategoriesYet ? (
+        <div style={{ marginTop: 8, fontSize: 11, color: '#b42318' }}>
+          No space categories are defined yet. Add at least one category in Space Configuration above before tagging rooms.
+        </div>
+      ) : null}
+
+      {loading && !roomList.length ? (
+        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading rooms...</div>
+      ) : (
+        <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+          {roomList.map(({ roomKey, building, room }) => {
+            const row = form[roomKey] || { spaceCategory: '', notes: '' };
+            const dirty = isRoomDirty(roomKey);
+            const rowErrors = dirty ? validateRoomRow(row) : [];
+            return (
+              <div
+                key={roomKey}
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  alignItems: 'center',
+                  padding: 6,
+                  background: dirty ? '#fffbeb' : '#f8fafc',
+                  border: `1px solid ${dirty ? '#fde68a' : '#e5e7eb'}`,
+                  borderRadius: 6
+                }}
+              >
+                <div style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                  {building} — {room}
+                </div>
+                <select
+                  value={row.spaceCategory}
+                  onChange={(e) => handleFieldChange(roomKey, 'spaceCategory', e.target.value)}
+                  disabled={noCategoriesYet}
+                  style={{ flex: '0 1 150px', minWidth: 130, fontSize: 11, padding: '3px 5px' }}
+                >
+                  <option value="">-- untagged --</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Notes (optional)"
+                  value={row.notes}
+                  onChange={(e) => handleFieldChange(roomKey, 'notes', e.target.value)}
+                  style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, padding: '3px 5px' }}
+                />
+                {rowErrors.length ? (
+                  <div style={{ flex: '1 1 100%', fontSize: 10, color: '#b42318' }}>{rowErrors.join('; ')}</div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
+      {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
+      {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
+    </div>
+  );
+}
+
 export default function ClassroomUtilizationPanel({
   enabled = false,
   // Deliberately distinct from SpaceDashboardPanel's pre-existing, unrelated
@@ -875,6 +1167,7 @@ export default function ClassroomUtilizationPanel({
 
       <SpaceConfigSection />
       <TermsSection />
+      <RoomUtilizationMetaSection />
     </div>
   );
 }
