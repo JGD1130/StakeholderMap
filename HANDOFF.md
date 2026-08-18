@@ -258,6 +258,24 @@ Follow-up to 2026-08-13's Hastings class-schedule work. Two fixes landed, pushed
 
 **Status:** known limitation, not actively causing incorrect information, deprioritized in favor of today's higher-severity fixes (day-token filtering, cross-tally merging, building-name resolution), all of which are confirmed working and live.
 
+### courseMeetings re-imported against real data
+
+Later the same session, `courseMeetings` was re-imported (Import Schedule button) against the real Fall 2026 combined Block 1+2 workbook now that `5d31af0`'s building-alias fix and workbook cutover were live: **219 course meetings across 48 rooms**, replacing the earlier import that had been built against the retired test workbook. This is the dataset the roomUtilizationMeta work below is built and verified against.
+
+### roomUtilizationMeta built and verified (`628f29e`) — roadmap item 4 of 6
+
+Added `RoomUtilizationMetaSection` to `ClassroomUtilizationPanel.jsx` — per-room space-category tagging, `universities/hastings/roomUtilizationMeta/{roomKey}`. Same conventions as Space Configuration/Terms (dirty-tracking, single Save button, validate-before-write, plain overwrite). New isolated helper file `src/utils/roomUtilizationMeta.js` (`buildRoomUtilizationMetaKey`, `deriveDistinctRoomsFromCourseMeetings`) — mirrors `StakeholderMap.jsx`'s `normalizeClassScheduleRoomKey` roomKey format but intentionally skips its fuzzy building-name resolver, since `courseMeetings.building` is already alias-resolved to canonical names by ai-server at import time; this build step stayed scoped to `ClassroomUtilizationPanel.jsx` and its own helper/schema files only, no `StakeholderMap.jsx` changes.
+
+Per Clark's decisions, all verified live in the browser:
+- **Room list sourced from `courseMeetings`, not all Airtable rooms.** Only the 48 distinct building+room pairs that actually have scheduled classes are offered for tagging — this section never reads Airtable at all.
+- **Category dropdown is live, not hardcoded.** Sourced via `onSnapshot` on `spaceConfig`'s existing category docs. Verified: adding a new "Lab" category in Space Configuration made it appear in the Room Utilization Tagging dropdown with no page reload.
+- **Visible tagged/untagged banner, exclude-and-flag behavior.** Untagged rooms are never blocked from saving; a prominent banner reads live form state (updates the instant a category is picked, before Save is even clicked) so partial tagging can't be mistaken for complete data. Verified: 3 of 48 rooms tagged and saved (2 Classroom, 1 Lab) — the banner correctly read "3 of 48 tagged, 45 untagged." **This is expected, correct behavior at this stage, not a bug** — most rooms will show untagged until further tagging happens in a future session; the module is designed to produce partial-but-honest numbers rather than block on full completion.
+- Zero-categories edge case (spaceConfig empty) shows a clear message and disables tagging instead of a broken/empty dropdown — not hit in testing since "Classroom" already existed, but confirmed present in the code.
+
+`enableClassroomUtilization` is `false` in this commit (flipped back from today's local-only `true` testing state before committing) — module remains not live-visible, same manual-toggle-for-local-testing workflow as every prior session.
+
+**Roadmap status: 5 of 6 items complete.** Shell/schema, Space Configuration, Terms, and now Room Utilization Tagging are done. Only item 6 — the **utilization calc engine** (time/seat utilization per room, replicating the original spec's §3 CE Calc logic against live Firestore data instead of Excel formulas) — remains. **Next session should start there.**
+
 ---
 
 ## Recent Changes (2026-08-13) — Hastings class-schedule term/block fixes; Capital Priorities Portfolio Prioritizer + collapse-by-default; Classroom Utilization Planner module built (shell, Import Schedule, Space Configuration, Terms)
