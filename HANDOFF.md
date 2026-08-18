@@ -240,6 +240,122 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-18) — Day-specific free-text query fix; building-alias/real-workbook cutover; free-text completeness gap logged (not fixed)
+
+### Summary
+
+Follow-up to 2026-08-13's Hastings class-schedule work. Two fixes landed, pushed, and deployed (`5d31af0`, `e6f768f`) — see their commit messages for full detail: building-name alias resolution extended for the real registrar file's spellings, plus the test schedule workbook retired in favor of the real Fall 2026 combined Block 1+2 workbook; and a day-token filtering gap in the free-text `classScheduleRowsPayload` path (day-of-week filtering had only ever been wired into the rule-based "currently available classroom" query, not general free-text questions). Both confirmed working and live. A separate, lower-severity issue was investigated and is logged below, not fixed this session.
+
+### Known limitation: free-text answer completeness (not fixed, logged for awareness)
+
+**The pattern:** free-text Ask Mapfluence answers can occasionally omit a row that is correctly present in the payload sent to the model. Confirmed twice today on the same course (EDUC630/EDUC430, Hurley-McDonald 220), under two different fix states. This rules out session/block filtering or a payload bug as the cause: the free-text `classScheduleRowsPayload` path was traced end-to-end (fetch → state → room-key filter → day-token filter → cross-tally dedup → payload) and confirmed to contain no session/block filtering anywhere — both Block 1 and Block 2 rows for a given room/day reach the model every time.
+
+**Completeness gap, not a correctness gap.** The model is dropping a row it was given, not being given wrong or incomplete information — distinct from, and lower-severity than, the day-token bug and cross-tally issue fixed earlier, both of which were code-level, deterministically-guaranteed fixes (mechanical row filtering / grouping, not something left to the model's judgment).
+
+**Why this is logged rather than fixed:** there is no clean deterministic mechanism to guarantee prose completeness the way the cross-tally dedup guarantees correct merging or the day-token filter guarantees correct day scoping — both of those work by removing the judgment call from the model entirely. Prose completeness has no equivalent mechanical substitute short of restructuring how answers render (e.g., always surfacing the full backing table rather than trusting the prose summary alone), which is a rendering-behavior change, not a targeted fix.
+
+**Mitigating factor:** the structured table that accompanies each free-text answer has been consistently complete and accurate throughout today's testing — only the prose summary has occasionally under-reported.
+
+**Status:** known limitation, not actively causing incorrect information, deprioritized in favor of today's higher-severity fixes (day-token filtering, cross-tally merging, building-name resolution), all of which are confirmed working and live.
+
+---
+
+## Recent Changes (2026-08-13) — Hastings class-schedule term/block fixes; Capital Priorities Portfolio Prioritizer + collapse-by-default; Classroom Utilization Planner module built (shell, Import Schedule, Space Configuration, Terms)
+
+### Summary
+
+Long investigation-and-fix session on the Hastings-only "Ask Mapfluence" class-schedule feature (room-click popup + natural-language availability queries), which had been silently losing Block 1/Block 2 term context and mixing up terms/times. Two commits landed, pushed, and deployed. Also built the Capital Priorities module's Portfolio Prioritizer sub-section (`CapitalPrioritiesPanel.jsx`) earlier in the session, plus a collapse-by-default fix added later — both **now committed locally, not pushed, see Part 3.** Later in the same day, a brand-new Hastings-only, admin-only **Classroom Utilization Planner** module was built from scratch (shell → Import Schedule → Space Configuration → Terms, 3 of 6 roadmap items) — see Part 3 for the full writeup. Every change this session is gated on `isHastingsCollegeInstance`/`enableClassroomUtilization`/`enableCapitalPriorities` (all Hastings-only, admin-only); Sarpy and Cherokee were not touched by any commit, and `ai-server/server.js` was never modified all session.
+
+### Part 1 — Capital Priorities: Portfolio Prioritizer built, NOT yet committed
+
+Added a second major sub-section to `CapitalPrioritiesPanel.jsx` (below the existing per-building scoring form): a read-only "Portfolio Prioritizer" that takes all `capitalPriorities` Firestore docs the panel already loads, sorts by total score, and lets the admin drag a budget-cap slider to see which buildings are Funded vs. Deferred (cumulative-cost funding line, highest score first). Cost per building prefers the same building-resources.json deferred-maintenance data the scoring suggestions already use; falls back to a manual per-building `$` input (session-only, not persisted) when no such data exists.
+
+**⚠️ Uncommitted as of end of session** — this is real, completed, requested work sitting in the working tree, not yet staged or committed. Whoever picks this up next should either commit it or confirm intentionally leaving it for later.
+
+### Part 2 — Class-schedule term/block investigation
+
+**Report:** Ask Mapfluence answers about Hastings classroom schedules were dropping Block 1/Block 2 context and mixing terms up.
+
+**Where the data actually lives (not Airtable, not Firestore):** a local `.xlsx` workbook read live off disk by ai-server on each request (`ai-server/Docs/`), auto-selected by a filename-scoring heuristic in `resolveClassScheduleFilePath` (`server.js:1138`) since `CLASS_SCHEDULE_FILE_NAME` isn't set. Currently-active file: `Block 1 & 2 test data cleanded up.xlsx` (scores 14) — beats both of the seemingly-more-official `Fall 2026 ... Grid Rev 8` per-block files already sitting in the same folder (score 10 and 5). Room/space inventory (rooms, capacity, dept) is a *completely separate* system — Airtable base `appQbbKh2wTFogpN5`, table `Rooms` — joined only by building+room-name string matching client-side.
+
+**Root causes found (all in `StakeholderMap.jsx` — the ai-server-side parsing itself was already correct):**
+1. `Year / Term / Session` parses correctly into `sessionRaw`/`sessionLabel` server-side, but the frontend's `classScheduleRowsPayload` mapping (the object sent to `/ai/ask-mapfluence`) dropped both fields before they ever reached the model.
+2. The rule-based "currently available classroom" query (`isCurrentEmptyClassroomQuery` → `buildCurrentlyAvailableClassroomRows` → `getRoomScheduleSnapshot`) filtered only by day-of-week/time-of-day, never by session — Block 1 and Block 2 entries for the same room/day/time were treated as one, so a room's occupied/free status could be wrong depending on which block was actually active. The room-click popup (`getRoomWeeklyScheduleSnapshot`) already resolved session correctly; `getRoomScheduleSnapshot` just never called the same logic.
+3. Cross-tallied classes (same physical meeting entered once per catalog number, e.g. `EDUC630`/`EDUC430`) were sent to the model as two separate rows. Prompt instructions asking the model to merge them were tried twice (including a strengthened "MUST merge" version) and the model complied inconsistently — solved with a code-level dedup instead.
+4. `isCurrentEmptyClassroomQuery`'s day/time-scoped queries (e.g. "what classrooms are free on Tuesdays at 9:30?") were silently routed to the current-moment branch regardless of any stated day/time — no day/time-of-day extraction existed anywhere client-side.
+
+### Commits (both on `feature/multi-university-refactor`, pushed, GitHub Pages deploy confirmed via Actions API by exact `head_sha` for both)
+
+| Commit | What it did |
+|---|---|
+| `b99cd61` | Restored `sessionLabel`/`sessionRaw` to the AI payload; made `getRoomScheduleSnapshot` session-aware (reordered below `getPreferredRoomScheduleSession` to avoid a temporal-dead-zone crash — both functions are defined unconditionally for every tenant, only their call sites are Hastings-gated, so an ordering mistake here would've crashed the app for Sarpy/Cherokee too, not just Hastings); added code-level cross-tally dedup (groups rows by room+day-pattern+start/end+instructor, joins `courseCode` with `/`) replacing the unreliable prompt-based merge instruction. Also carries pre-existing, unrelated `getBuildingResourceEntry` plumbing for Capital Priorities that predated this session and happened to share the file — called out explicitly in the commit message rather than silently bundled. |
+| `5c76bb8` | Day/time-scoped availability queries. Added `free` to `isCurrentEmptyClassroomQuery`'s synonym regex (was bypassing the classifier entirely while "available" phrasing matched it). Added `extractQueryDayTokens`/`extractQueryTimeMinutes` to parse day-of-week and time-of-day out of question text — day extraction reuses `SCHEDULE_DAY_QUERY_OPTIONS`'s existing per-weekday regexes with an added plural-day fallback (none of those regexes except Thursday's match a plain plural like "Tuesdays" — `\b` can't land between "day" and a trailing "s" within one word). Time extraction mirrors ai-server's `parseTimeToMinutes` AM/PM-ambiguity convention (unmarked hour <8 with a colon → treated as PM) but requires a colon or explicit AM/PM marker before matching at all, unlike the server version — question text can contain unrelated bare numbers (seat counts) that would otherwise be misread as a time. `getRoomScheduleSnapshot`/`buildCurrentlyAvailableClassroomRows` take an optional `{dayTokens, minutes}` override; block/session resolution still always uses the real current date (`getPreferredRoomScheduleSession`, unchanged logic, `date.getMonth() >= 9` cutoff) regardless of any override, per explicit product decision that unstated-block queries resolve to whichever block is currently/next active. |
+
+### Part 3 — Classroom Utilization Planner module built (shell → Import Schedule → Space Configuration → Terms)
+
+**Purpose and roadmap.** A brand-new Hastings-only, admin-only module for classroom time/seat utilization, feature-flagged behind `enableClassroomUtilization` (off by default in both `src/tenants/registry.js` and the committed `Hastings.json`, same convention as `enableCapitalPriorities`). Six-item build order, decided up front:
+1. Shell + schema (four new Firestore collections defined, empty panel) — ✅ done
+2. `spaceConfig` admin form (SF/station target + target utilization rate per space category) — ✅ done
+3. `terms` admin form (academic term/session calendar + standard weekly hours) — ✅ done
+4. `roomUtilizationMeta` (per-room space-category tagging) — **next up, not started**
+5. Utilization calc engine (time/seat utilization per room, replicating the original spec's §3 CE Calc logic against live Firestore data instead of Excel formulas) — not started
+6. Growth/right-sizing module (depends on everything above plus enrollment projections) — not started
+
+**Key decisions made this session, and why:**
+- **`spaceConfig` uses a simple overwrite model, not versioned/effective-dated history.** One doc per space category (`universities/hastings/spaceConfig/{spaceCategory}`), plain `setDoc` (no `{merge: true}`) on every save. Decided this way because the module needs to generalize to future clients, not just replicate Hastings' historical Excel-era workflow — a full effective-dated history model would be over-engineering for a "your target SF/station and utilization rate right now" input, and can be added later if a client actually needs it.
+- **`terms` are per-session grain, not per-term with nested sessions.** One doc per `academicYear` + `term` + `sessionNumber` combination (e.g. `2026-fall-1`, `2026-fall-2` are two separate docs, not two entries under one "Fall 2026" doc) — matches how the underlying schedule data itself is already block/session-scoped (see Part 2 above), and keeps `standardWeeklyHours` naturally per-session rather than needing a nested structure.
+- **`roomUtilizationMeta` will exclude untagged rooms from calculations with a visible flag/count, rather than blocking all output until every room is tagged.** Decided (not yet built) so the module can produce real numbers as soon as *some* rooms are tagged, improving incrementally, instead of being blocked behind a one-time full-tagging effort across potentially hundreds of Hastings rooms before it's useful at all. The tradeoff — partial numbers being possible to misread as final — was addressed by requiring the "unconfigured" flag stay visually prominent, not an afterthought footnote.
+- Both `spaceConfig` and `terms` are **data-driven, not hardcoded to a fixed list.** Neither the space-category list nor the term list is baked into `classroomUtilizationSchema.js` as a constant (checked before building — no such list existed there, only prose JSDoc examples) — both sections render whatever docs already exist in Firestore plus an "Add" flow to create new ones by name, so extending either list for Hastings or a future client never requires a code change.
+
+**`courseMeetings` import mechanism (`ClassroomUtilizationPanel.jsx`'s "Import Schedule" button, backed by `src/utils/classroomScheduleImport.js`):**
+- Reuses ai-server's existing, already-correct `/class-schedule` endpoint read-only — **no new server-side parsing code was written**, `ai-server/server.js` diff is empty for this entire module.
+- Applies the exact same cross-tally dedup grouping key already proven in Part 2's class-schedule fixes above (building + room + day-pattern + start/end minutes + instructor, `courseCode`/`title` joined with `/` across the group) — ported as a standalone function (`dedupeCrossTalliedScheduleRows`) rather than reimplemented differently, since the original logic lives inline in a `StakeholderMap.jsx` closure, not an exported function.
+- Each import is **delete-then-write** (clears every existing `courseMeetings` doc, then writes the freshly deduped set), not a merge — makes re-running the import idempotent and self-cleaning (a straight merge-only approach would have left stale docs from any prior meetingId scheme permanently orphaned in the collection). The panel surfaces this as two distinct phases in the UI ("Clearing old data..." then "Importing...") so it isn't a silent pause, and a failure during clearing stops before any new data is written (never writes on top of a partially-cleared collection).
+
+**The real bug found and fixed: `buildCourseMeetingId()` meetingId collision causing silent data loss.** The function originally derived its Firestore doc ID from a *different*, narrower field list (building + room + `courseCode` + day + time) than the one `dedupeCrossTalliedScheduleRows` actually groups by (building + room + day + time + **instructor**, no `courseCode`) — on the theory that instructor was already "covered" by the dedup step. That's wrong whenever two dedup groups are genuinely distinct (different instructor) but happen to share every other field including the merged `courseCode`. Found and reproduced against live data: **Gray Center 107, MUSC300-03, MTRF 740–840** had two real, different Special Topics classes — "History of Rock&Roll" (Eckhardt, Louie) and "Video Game Music" (Rush, Matthew) — both collapsing onto the identical meetingId and one silently overwriting the other in the same `writeBatch` (confirmed empirically: 322 raw rows → 212 deduped groups → only 211 unique meetingIds pre-fix). **Fix:** extracted the grouping key into one shared function (`scheduleGroupKeyParts`), used by both the dedup step *and* the ID builder, so the meetingId can never again drift out of sync with what dedup actually considers "the same meeting." Re-verified against the same live data post-fix: 212 groups → 212 unique IDs, zero collisions anywhere in the dataset, and the Gray Center pair specifically now produces two distinct documents.
+
+**`.mf-right-rail`/`.dashboard-box` CSS scroll fix (`StakeholderMap.css`), and why it was needed:** as this module's own content (Import Schedule + Space Configuration + Terms, stacked) grew the right-side dashboard column past one screen's height, the bottom of the Terms section became unreachable. Root cause was two competing scroll mechanisms, not a missing property: `.mf-right-rail` (the outer column) had no `overflow` at all, while every individual `.dashboard-box` had its own `overflow-y: auto` + `max-height: 100%` + `flex-shrink: 1` (`flex: 0 1 auto`) — meaning the flex layout would compress/scroll each box individually to fit inside the rail's bounded height, so the rail's own overflow (added first, then found insufficient on its own) never actually got a chance to activate. **Fix, in two parts:** (1) gave `.mf-right-rail` `overflow-y: auto`/`overflow-x: hidden` so it's a real scroll container; (2) changed `.dashboard-box` to `flex-shrink: 0` + `min-height: fit-content` + `max-height: none` + `overflow-y: visible` so boxes render at their natural content height instead of being squeezed/independently scrolled — `.mf-right-rail` is now the single scroll surface for the whole stacked column. A follow-up horizontal-overflow issue in the Terms/Space Configuration "Add" rows (fixed-width CSS Grid columns forcing single-line overflow at the column's width) was fixed separately, in the components themselves, by converting those rows to `flex-wrap` with per-field `minWidth`s.
+
+**Current state:** two local commits, **not pushed**:
+
+| Commit | What |
+|---|---|
+| `3f5f71c` | Classroom Utilization Planner module — new files, `StakeholderMap.jsx` mount, `StakeholderMap.css` scroll fix, `ai-server` archiver v7 realignment (see guardrails below). |
+| `1b5f19e` (amended from `cf87f56`) | Capital Priorities Portfolio Prioritizer (pre-existing, see Part 1) + collapse-by-default + the shared `firestore.rules`/`registry.js`/`Hastings.json` changes for **both** Capital Priorities and Classroom Utilization (couldn't be cleanly split across files/hunks — see the commit message for the exact breakdown). |
+
+`enableClassroomUtilization` is **`false`** in the committed `Hastings.json` (confirmed via `git show`) — it was flipped to `true` mid-session for local testing, then explicitly confirmed by Clark and flipped back to `false` before ending the session, amended into the same commit rather than adding a separate revert-only commit. Safe default restored: this module is not visible to Hastings admins in the current committed state.
+
+**`firestore.rules`** already has the four new match blocks (`spaceConfig`, `terms`, `roomUtilizationMeta`, `courseMeetings`, all `allow read, write: if isUniversityAdmin(universityId)`, same posture as `capitalPriorities`) written to disk and committed — **but not deployed by either commit**. Deploying rules is a separate `firebase deploy --only firestore:rules` step outside this repo's GitHub Pages pipeline; `courseMeetings`/`spaceConfig`/`terms` reads and writes will fail with "Missing or insufficient permissions" until that deploy happens (it was performed once already this session, by Clark, to unblock local testing of Import Schedule).
+
+**Next session should pick up with item 4, `roomUtilizationMeta`** — per-room space-category tagging. Needs read access to the Airtable `Rooms` table (same base/table the live client site already reads from, `appQbbKh2wTFogpN5` — see Part 2 above) to know what rooms actually exist to offer for tagging in the UI. This should stay strictly read-only against Airtable, matching every other guardrail in this module about never writing to an existing collection or data source.
+
+### Guardrails / notes for next session
+
+- **`ai-server/server.js` was never touched this session**, by design — every fix above is frontend-only (`StakeholderMap.jsx`). Confirmed via empty `git diff` on that file before every commit this session.
+- **The real Fall 2026 registrar schedule is expected to replace the test workbook soon** (flagged mid-session, not yet resolved). `resolveClassScheduleFilePath`'s scoring heuristic is a real, concrete risk here: the two already-present real-looking per-block files (`Grid Rev 8`) already lose to the test file today, and a typically-named registrar delivery (e.g. `Fall 2026 Class Schedule.xlsx`, scores ~7) would too. **Before/when the new file lands:** either remove the old test file from `ai-server/Docs/` (it's git-tracked, unlike the two Grid Rev 8 files, which are untracked local additions), or set `CLASS_SCHEDULE_FILE_NAME` explicitly in Render env vars to bypass the scoring heuristic entirely.
+- **`npm run dev:ai`'s local startup crash** (`SyntaxError: The requested module 'archiver' does not provide an export named 'default'`) — flagged here as unfixed when this note was first written, but **fixed later the same session** (see Part 3): local `node_modules` had drifted to `archiver` 8.0.0 (native ESM, no default export, different API) while `package.json` and `server.js` both still expected v7's CJS factory API. Realigned the local install back to `^7.x` (`ai-server/package.json`/`package-lock.json`/`node_modules/.package-lock.json`, part of commit `3f5f71c`) — `server.js` itself was never touched.
+- **`CapitalPrioritiesPanel.jsx` (Portfolio Prioritizer) was uncommitted when this note was first written — now committed** (see Part 3): landed in `1b5f19e` (amended from `cf87f56`) alongside a later collapse-by-default change to the same panel. Not pushed.
+- All class-schedule changes confirmed reachable only by Hastings: `isHastingsCollegeInstance` gates every call site, and the state that feeds them (`classScheduleRows`) is unconditionally emptied for every other tenant before any of this code runs.
+
+### Current status
+
+| Item | Commit | Status |
+|---|---|---|
+| `sessionLabel`/`sessionRaw` restored to AI payload | `b99cd61` | ✅ Committed, pushed, deployed |
+| Session-aware `getRoomScheduleSnapshot` (Block 1/2 no longer conflated) | `b99cd61` | ✅ Committed, pushed, deployed; verified against real workbook data (BIOL342/BIOL101 asymmetric flip test) |
+| Cross-tally dedup (code-level, replaces prompt instruction) | `b99cd61` | ✅ Committed, pushed, deployed; verified against the real EDUC630/EDUC430 pair |
+| Day/time-scoped availability queries | `5c76bb8` | ✅ Committed, pushed, deployed; verified against real workbook data (Tuesday-9:30 asymmetric test) |
+| Capital Priorities Portfolio Prioritizer | `1b5f19e` | ✅ Committed (not pushed) — was uncommitted when this note was first written, see Part 3 |
+| Capital Priorities collapse-by-default | `1b5f19e` | ✅ Committed (not pushed) |
+| Real Fall 2026 schedule file swap | — | ⚠️ Not yet happened — see guardrail above, plan before it lands |
+| `ai-server` local dev crash (archiver import) | `3f5f71c` | ✅ Fixed (not pushed) — archiver realigned to `^7.x`, `server.js` untouched, see Part 3 |
+| Classroom Utilization Planner: shell + Import Schedule + Space Configuration + Terms | `3f5f71c` | ✅ Committed (not pushed); `enableClassroomUtilization` is `false` in this commit, module not live-visible |
+| Classroom Utilization Planner: `firestore.rules` for the 4 new collections | `1b5f19e` | ✅ Committed (not pushed); **not deployed by either commit** — deployed once separately this session by Clark to unblock local testing |
+| Classroom Utilization Planner: `roomUtilizationMeta`, calc engine, growth module | — | ⚠️ Not started — `roomUtilizationMeta` is next up, see Part 3 |
+| Hastings / Sarpy / Cherokee | ✅ Confirmed unaffected — every change gated on `isHastingsCollegeInstance`/`enableClassroomUtilization`/`enableCapitalPriorities`; `ai-server/server.js` never touched this session despite Sarpy's separate Render instance deploying from this same branch |
+
+---
+
 ## Recent Changes (2026-08-10, session 2) — Cherokee floor positioning, door/stair overlay, and Save Adjust persistence fully resolved
 
 ### Summary
