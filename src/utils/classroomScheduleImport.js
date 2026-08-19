@@ -119,6 +119,43 @@ export function buildCourseMeetingId(entry) {
   return scheduleGroupKeyParts(entry).map(slugPart).join('__');
 }
 
+const ALL_WEEKDAYS_TOKENS = ['M', 'T', 'W', 'R', 'F'];
+
+// ai-server's normalizeScheduleDayTokens() (server.js) doesn't expand a
+// daysText of "ALL" to actual weekday tokens -- confirmed by direct
+// execution against the real function: "ALL" falls through every
+// day-matching branch untouched and returns [], identically to genuinely
+// unscheduled TBA/ARR rows. That silently made computeMeetingWeeklyHours()
+// compute a real 0% Time Utilization for meetings that actually run every
+// weekday (found via Gray Center 116, Fall 2026 Block 1). Fixed here rather
+// than in server.js: the raw daysText this decision needs is already
+// present on `entry` (scheduleGroupKeyParts() above already reads
+// entry.daysText), and this file is the Hastings-only, no-shared-file-risk
+// place to make the correction -- server.js's parser itself is untouched.
+function resolveDayTokens(entry) {
+  const daysText = String(entry?.daysText || '').trim();
+  if (daysText.toUpperCase() === 'ALL') return [...ALL_WEEKDAYS_TOKENS];
+  return Array.isArray(entry?.dayTokens) ? entry.dayTokens.filter(Boolean) : [];
+}
+
+// ai-server's parseScheduleNumber() correctly returns null (not a number)
+// when a source cell is blank/missing -- confirmed by reading server.js:843.
+// The bug was here: `Number(null)` is `0` in JS, and `0` is finite, so the
+// old ternary (`Number.isFinite(Number(entry?.enrollment)) ? ... : ''`)
+// treated a genuinely-missing value as "a real number: 0" and wrote a
+// literal 0 into Firestore instead of ''. That made Seat Utilization show a
+// computed "0%" instead of "pending enrollment data" for every meeting from
+// a workbook with no enrollment column at all (found via Gray Center 116).
+// This checks for null/undefined/'' BEFORE calling Number() on it, so a
+// truly missing value can never reach the finite-check and get coerced into
+// 0 -- while a genuine 0 (the source cell literally contains "0") is still
+// preserved as 0, not blanked out.
+function toOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const num = Number(value);
+  return Number.isFinite(num) ? num : '';
+}
+
 // Field-for-field match to CourseMeetingDoc in classroomUtilizationSchema.js,
 // minus importedAt (a Firestore serverTimestamp() sentinel -- added by the
 // caller, which owns the Firestore import).
@@ -132,10 +169,10 @@ export function mapScheduleEntryToCourseMeetingDoc(entry) {
     instructor: String(entry?.instructor || '').trim(),
     sessionLabel: String(entry?.sessionLabel || '').trim(),
     sessionRaw: String(entry?.sessionRaw || '').trim(),
-    dayTokens: Array.isArray(entry?.dayTokens) ? entry.dayTokens.filter(Boolean) : [],
+    dayTokens: resolveDayTokens(entry),
     startMinutes: Number.isFinite(entry?.startMinutes) ? entry.startMinutes : null,
     endMinutes: Number.isFinite(entry?.endMinutes) ? entry.endMinutes : null,
-    enrollment: Number.isFinite(Number(entry?.enrollment)) ? Number(entry.enrollment) : '',
-    capacity: Number.isFinite(Number(entry?.capacity)) ? Number(entry.capacity) : ''
+    enrollment: toOptionalNumber(entry?.enrollment),
+    capacity: toOptionalNumber(entry?.capacity)
   };
 }

@@ -25,6 +25,7 @@ import {
   mapScheduleEntryToCourseMeetingDoc
 } from '../utils/classroomScheduleImport';
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
+import { computeClassroomUtilization, fetchAirtableRoomsForUtilization } from '../utils/classroomUtilizationCalc';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -728,6 +729,16 @@ function TermsSection() {
 // against a persisted snapshot, single "Save" button for whichever rows
 // changed, validate-before-write, plain setDoc overwrite (no {merge: true}).
 function RoomUtilizationMetaSection() {
+  // Collapsed by default -- one-time setup task, not something checked
+  // repeatedly, and the panel has grown crowded (Import Schedule, Space
+  // Config, Terms, Room Tagging, Utilization Results all stacked). Same
+  // native <details>/<summary> disclosure pattern CapitalPrioritiesPanel.jsx
+  // already uses (collapse-by-default, added 2026-08-13) -- this only gates
+  // visibility below; loadRooms()/the live spaceConfig listener both still
+  // run unconditionally via their own useEffects regardless of open/collapsed
+  // state, so expanding never has to trigger a load, it just reveals data
+  // (and the tagged/untagged count) that's already there.
+  const [sectionOpen, setSectionOpen] = useState(false);
   const [roomList, setRoomList] = useState([]); // [{roomKey, building, room}], derived from courseMeetings
   const [categoryOptions, setCategoryOptions] = useState([]); // spaceConfig doc ids, kept live -- see onSnapshot below
   const [form, setForm] = useState({}); // roomKey -> {spaceCategory, notes}
@@ -893,106 +904,353 @@ function RoomUtilizationMetaSection() {
   // disable tagging instead of rendering empty/broken dropdowns.
   const noCategoriesYet = !loading && categoryOptions.length === 0;
 
+  // Tagged count baked into the summary text itself -- per the "visible
+  // without expanding" requirement -- so the collapsed state still answers
+  // "is this done yet" at a glance. Mirrors the same numbers the full banner
+  // below shows, just as plain text instead of the colored box (native
+  // <summary> content is best kept simple/inline).
+  const summaryLabel = roomList.length
+    ? `Room Utilization Tagging (${taggedCount} of ${roomList.length} tagged)`
+    : 'Room Utilization Tagging';
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      {/* Collapsed by default -- same disclosure pattern as
+          CapitalPrioritiesPanel.jsx: title/count as the summary, everything
+          else (including the full colored tagged/untagged banner) as
+          children. The Save button is deliberately kept OUTSIDE <summary>,
+          not alongside the title inside it -- a nested interactive element
+          inside <summary> would fight the native click-to-toggle behavior,
+          same reasoning CapitalPrioritiesPanel.jsx's own Refresh button
+          followed. */}
+      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          {summaryLabel}
+        </summary>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving || !dirtyRoomKeys.length || noCategoriesYet}
+          >
+            {saving ? 'Saving...' : `Save Room Tagging${dirtyRoomKeys.length ? ` (${dirtyRoomKeys.length})` : ''}`}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          One row per room with scheduled classes (from the imported class schedule, not the full room inventory).
+          Tag each room with a space category so the future utilization calc engine knows how to score it.
+        </div>
+
+        {/* Prominent, can't-miss tagged/untagged summary -- per Clark's
+            "flag visibly" requirement, not a footnote. Still shown in full
+            here (unchanged) once expanded; the same count also lives in the
+            summary label above so it's visible without expanding at all. */}
+        <div
+          style={{
+            marginTop: 8,
+            padding: '8px 10px',
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: 700,
+            textAlign: 'center',
+            background: untaggedCount > 0 ? '#fffbeb' : '#f0fdf4',
+            border: `1px solid ${untaggedCount > 0 ? '#fde68a' : '#bbf7d0'}`,
+            color: untaggedCount > 0 ? '#92400e' : '#15803d'
+          }}
+        >
+          {roomList.length
+            ? `${taggedCount} of ${roomList.length} room${roomList.length === 1 ? '' : 's'} tagged, ${untaggedCount} untagged`
+            : (loading ? 'Loading rooms...' : 'No rooms found in the imported class schedule yet.')}
+        </div>
+
+        {noCategoriesYet ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#b42318' }}>
+            No space categories are defined yet. Add at least one category in Space Configuration above before tagging rooms.
+          </div>
+        ) : null}
+
+        {loading && !roomList.length ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading rooms...</div>
+        ) : (
+          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            {roomList.map(({ roomKey, building, room }) => {
+              const row = form[roomKey] || { spaceCategory: '', notes: '' };
+              const dirty = isRoomDirty(roomKey);
+              const rowErrors = dirty ? validateRoomRow(row) : [];
+              return (
+                <div
+                  key={roomKey}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    alignItems: 'center',
+                    padding: 6,
+                    background: dirty ? '#fffbeb' : '#f8fafc',
+                    border: `1px solid ${dirty ? '#fde68a' : '#e5e7eb'}`,
+                    borderRadius: 6
+                  }}
+                >
+                  <div style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    {building} — {room}
+                  </div>
+                  <select
+                    value={row.spaceCategory}
+                    onChange={(e) => handleFieldChange(roomKey, 'spaceCategory', e.target.value)}
+                    disabled={noCategoriesYet}
+                    style={{ flex: '0 1 150px', minWidth: 130, fontSize: 11, padding: '3px 5px' }}
+                  >
+                    <option value="">-- untagged --</option>
+                    {categoryOptions.map((category) => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Notes (optional)"
+                    value={row.notes}
+                    onChange={(e) => handleFieldChange(roomKey, 'notes', e.target.value)}
+                    style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, padding: '3px 5px' }}
+                  />
+                  {rowErrors.length ? (
+                    <div style={{ flex: '1 1 100%', fontSize: 10, color: '#b42318' }}>{rowErrors.join('; ')}</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
+        {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
+        {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
+      </details>
+    </div>
+  );
+}
+
+// Utilization Calc Engine (roadmap item 6/6) -- the first real output of
+// this module. Strictly read-only against courseMeetings/terms/Airtable;
+// nothing here writes anything, unlike every section above. Does NOT depend
+// on roomUtilizationMeta tagging -- Time/Seat Utilization are computed from
+// courseMeetings+terms+Airtable capacity alone, per Clark's confirmation
+// this session that space-category tagging only matters for the future
+// growth/right-sizing module, not this one.
+//
+// Per Clark's decision, results are room+term grain, not room-level: a room
+// used in both Fall 2026 Block 1 and Block 2 produces two separate rows,
+// each scored only against that term's own meetings and standardWeeklyHours
+// -- never blended. See classroomUtilizationCalc.js's computeClassroomUtilization
+// header comment for the full reasoning, including why a term-unmatched
+// meeting has no row to belong to at all (not just no Time Utilization).
+//
+// Live Firestore verification of courseMeetings/terms field shapes was
+// attempted via a browser-console snippet this session but blocked by a
+// DevTools paste/autoclose issue unrelated to the snippet itself (confirmed
+// clean via node -c, no BOM, no non-ASCII, no CRLF). This section is built
+// defensively against the two conditions that couldn't be pre-verified --
+// see classroomUtilizationCalc.js's header comment for the full reasoning:
+// a courseMeetings doc whose sessionRaw doesn't resolve to any terms doc is
+// excluded from Time Utilization and counted in the visible banner below,
+// never silently dropped or defaulted; enrollment/capacity being null/absent
+// per meeting or room shows as an explicit "pending enrollment data" /
+// "capacity unknown" label, never a blank cell or a fabricated 0%.
+function formatPct(value) {
+  return Number.isFinite(value) ? `${Math.round(value)}%` : '—';
+}
+
+function UtilizationResultsSection() {
+  const [result, setResult] = useState(null); // { rooms, buildingSummary, unmatchedMeetings }
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const courseMeetingsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
+    []
+  );
+  const termsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
+    []
+  );
+
+  const runCalculation = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      // Airtable fetched via the existing, already-read-only /ai/api/rooms
+      // endpoint (same one StakeholderMap.jsx's Airtable sync uses) -- not
+      // fetched in parallel with the two Firestore reads below on purpose,
+      // no shared failure-handling need, but Promise.all is fine here since
+      // none of the three depends on another's result.
+      const [meetingsSnap, termsSnap, airtableRooms] = await Promise.all([
+        getDocs(courseMeetingsCollection),
+        getDocs(termsCollection),
+        fetchAirtableRoomsForUtilization().catch((error) => {
+          // Airtable is capacity-only input here (Seat Utilization). A
+          // failed fetch shouldn't block Time Utilization from computing --
+          // every room just falls back to "capacity unknown" instead of the
+          // whole section erroring out. The error is still surfaced below.
+          console.warn('Airtable rooms fetch failed for utilization calc:', error);
+          return [];
+        })
+      ]);
+      const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
+      const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+      setResult(computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms }));
+    } catch (error) {
+      setLoadError(String(error?.message || 'Failed to compute utilization.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [courseMeetingsCollection, termsCollection]);
+
+  useEffect(() => {
+    void runCalculation();
+  }, [runCalculation]);
+
+  const unmatchedCount = result?.unmatchedMeetings?.length || 0;
+
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <h4 style={{ margin: 0, fontSize: 12.5 }}>Room Utilization Tagging</h4>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving || !dirtyRoomKeys.length || noCategoriesYet}
-        >
-          {saving ? 'Saving...' : `Save Room Tagging${dirtyRoomKeys.length ? ` (${dirtyRoomKeys.length})` : ''}`}
+        <h4 style={{ margin: 0, fontSize: 12.5 }}>Utilization Results</h4>
+        <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+          {loading ? 'Calculating...' : 'Recalculate'}
         </button>
       </div>
 
       <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-        One row per room with scheduled classes (from the imported class schedule, not the full room inventory).
-        Tag each room with a space category so the future utilization calc engine knows how to score it.
+        One row per room per term -- a room used in both Fall 2026 Block 1 and Block 2 shows as two rows.
+        Read-only -- does not require room tagging above.
       </div>
 
-      {/* Prominent, can't-miss tagged/untagged summary -- per Clark's
-          "flag visibly" requirement, not a footnote. */}
-      <div
-        style={{
-          marginTop: 8,
-          padding: '8px 10px',
-          borderRadius: 6,
-          fontSize: 12.5,
-          fontWeight: 700,
-          textAlign: 'center',
-          background: untaggedCount > 0 ? '#fffbeb' : '#f0fdf4',
-          border: `1px solid ${untaggedCount > 0 ? '#fde68a' : '#bbf7d0'}`,
-          color: untaggedCount > 0 ? '#92400e' : '#15803d'
-        }}
-      >
-        {roomList.length
-          ? `${taggedCount} of ${roomList.length} room${roomList.length === 1 ? '' : 's'} tagged, ${untaggedCount} untagged`
-          : (loading ? 'Loading rooms...' : 'No rooms found in the imported class schedule yet.')}
+      <div style={{ marginTop: 6, fontSize: 10.5, color: '#667085', lineHeight: 1.4 }}>
+        <strong style={{ color: '#475467' }}>Time Utilization</strong> compares scheduled class hours against that
+        term's Standard Weekly Hours -- the baseline you set in the Terms section above for what counts as a
+        fully-booked week (e.g., an 8-hour teaching day × 5 days). A room scheduled beyond that baseline (over 100%)
+        means it's booked more than your defined standard, which may indicate a scheduling conflict worth checking.
+        Each row's actual standard is shown next to its term below.
+        (Formula: that term's weekly hours scheduled ÷ that term's standard weekly hours.)
       </div>
 
-      {noCategoriesYet ? (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#b42318' }}>
-          No space categories are defined yet. Add at least one category in Space Configuration above before tagging rooms.
+      <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.4 }}>
+        <strong style={{ color: '#475467' }}>Seat Utilization</strong> shows how full a room's classes run on
+        average relative to how many seats it has -- a room at 100% is filling every seat, on average, across
+        its scheduled classes. Only shown once both enrollment and capacity are known.
+        (Formula: average enrollment ÷ Airtable seat capacity.)
+      </div>
+
+      {unmatchedCount > 0 ? (
+        <div
+          style={{
+            marginTop: 8,
+            padding: '8px 10px',
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            background: '#fffbeb',
+            border: '1px solid #fde68a',
+            color: '#92400e'
+          }}
+        >
+          {unmatchedCount} meeting{unmatchedCount === 1 ? '' : 's'} couldn't be matched to a term
+          (excluded from these results entirely -- no term means no row to belong to) -- see details below.
         </div>
       ) : null}
 
-      {loading && !roomList.length ? (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading rooms...</div>
-      ) : (
-        <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-          {roomList.map(({ roomKey, building, room }) => {
-            const row = form[roomKey] || { spaceCategory: '', notes: '' };
-            const dirty = isRoomDirty(roomKey);
-            const rowErrors = dirty ? validateRoomRow(row) : [];
-            return (
-              <div
-                key={roomKey}
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 6,
-                  alignItems: 'center',
-                  padding: 6,
-                  background: dirty ? '#fffbeb' : '#f8fafc',
-                  border: `1px solid ${dirty ? '#fde68a' : '#e5e7eb'}`,
-                  borderRadius: 6
-                }}
-              >
-                <div style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, fontWeight: 600, overflowWrap: 'anywhere' }}>
-                  {building} — {room}
-                </div>
-                <select
-                  value={row.spaceCategory}
-                  onChange={(e) => handleFieldChange(roomKey, 'spaceCategory', e.target.value)}
-                  disabled={noCategoriesYet}
-                  style={{ flex: '0 1 150px', minWidth: 130, fontSize: 11, padding: '3px 5px' }}
-                >
-                  <option value="">-- untagged --</option>
-                  {categoryOptions.map((category) => (
-                    <option key={category} value={category}>{category}</option>
+      {loading && !result ? (
+        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating utilization...</div>
+      ) : result && result.rooms.length ? (
+        <div style={{ marginTop: 8, overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
+                <th style={{ padding: '4px 6px' }}>Building</th>
+                <th style={{ padding: '4px 6px' }}>Room</th>
+                <th style={{ padding: '4px 6px' }}>Term</th>
+                <th style={{ padding: '4px 6px' }}>Time Util.</th>
+                <th style={{ padding: '4px 6px' }}>Seat Util.</th>
+                <th style={{ padding: '4px 6px' }}>Meetings</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.rooms.map((r) => (
+                <tr key={r.rowKey} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '4px 6px' }}>{r.building}</td>
+                  <td style={{ padding: '4px 6px' }}>{r.room}</td>
+                  <td style={{ padding: '4px 6px' }}>
+                    {r.termLabel}
+                    {r.standardWeeklyHoursAvailable > 0 ? (
+                      <div style={{ fontSize: 9.5, color: '#98a2b3' }}>
+                        ({r.standardWeeklyHoursAvailable} hrs/wk standard)
+                      </div>
+                    ) : null}
+                  </td>
+                  <td style={{ padding: '4px 6px' }}>{formatPct(r.timeUtilizationPct)}</td>
+                  <td style={{ padding: '4px 6px', color: r.seatUtilizationStatus === 'computed' ? 'inherit' : '#94a3b8', fontStyle: r.seatUtilizationStatus === 'computed' ? 'normal' : 'italic' }}>
+                    {r.seatUtilizationStatus === 'computed'
+                      ? formatPct(r.seatUtilizationPct)
+                      : r.seatUtilizationStatus === 'capacity-unknown'
+                        ? 'capacity unknown'
+                        : 'pending enrollment data'}
+                  </td>
+                  <td style={{ padding: '4px 6px' }}>{r.meetingCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {result.buildingSummary.length ? (
+            <>
+              <div style={{ marginTop: 10, fontSize: 11, fontWeight: 600, color: '#344054' }}>By building</div>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11, marginTop: 4 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
+                    <th style={{ padding: '4px 6px' }}>Building</th>
+                    <th style={{ padding: '4px 6px' }}>Time Util.</th>
+                    <th style={{ padding: '4px 6px' }}>Rooms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.buildingSummary.map((b) => (
+                    <tr key={b.building} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '4px 6px' }}>{b.building}</td>
+                      <td style={{ padding: '4px 6px' }}>{formatPct(b.timeUtilizationPct)}</td>
+                      <td style={{ padding: '4px 6px' }}>{b.roomCount}</td>
+                    </tr>
                   ))}
-                </select>
-                <input
-                  type="text"
-                  placeholder="Notes (optional)"
-                  value={row.notes}
-                  onChange={(e) => handleFieldChange(roomKey, 'notes', e.target.value)}
-                  style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, padding: '3px 5px' }}
-                />
-                {rowErrors.length ? (
-                  <div style={{ flex: '1 1 100%', fontSize: 10, color: '#b42318' }}>{rowErrors.join('; ')}</div>
-                ) : null}
+                </tbody>
+              </table>
+            </>
+          ) : null}
+
+          {unmatchedCount > 0 ? (
+            <details style={{ marginTop: 10, fontSize: 10.5 }}>
+              <summary style={{ cursor: 'pointer', color: '#92400e', fontWeight: 600 }}>
+                Unmatched meetings ({unmatchedCount})
+              </summary>
+              <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+                {result.unmatchedMeetings.map((m, i) => (
+                  <div key={i} style={{ padding: 6, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4 }}>
+                    {m.building} — {m.room} — {m.courseCode || '(no course code)'} — sessionRaw: "{m.sessionRaw}"
+                    {m.sessionLabel ? ` (${m.sessionLabel})` : ''} — {m.reason}
+                    {m.derivedTermId ? ` (looked for term "${m.derivedTermId}")` : ''}
+                  </div>
+                ))}
               </div>
-            );
-          })}
+            </details>
+          ) : null}
+        </div>
+      ) : (
+        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
+          No courseMeetings data to compute against yet -- run Import Schedule above first.
         </div>
       )}
 
       {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
-      {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
-      {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
     </div>
   );
 }
@@ -1168,6 +1426,7 @@ export default function ClassroomUtilizationPanel({
       <SpaceConfigSection />
       <TermsSection />
       <RoomUtilizationMetaSection />
+      <UtilizationResultsSection />
     </div>
   );
 }
