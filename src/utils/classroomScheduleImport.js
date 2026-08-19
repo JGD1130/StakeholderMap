@@ -70,7 +70,8 @@ function scheduleGroupKeyParts(entry) {
     String(entry?.daysText || '').trim().toUpperCase(),
     entry?.startMinutes,
     entry?.endMinutes,
-    String(entry?.instructor || '').trim().toLowerCase()
+    String(entry?.instructor || '').trim().toLowerCase(),
+    String(entry?.sessionRaw || '').trim().toUpperCase()
   ];
 }
 

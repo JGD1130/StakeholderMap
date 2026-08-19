@@ -21960,7 +21960,8 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
             String(entry?.daysText || '').trim().toUpperCase(),
             entry?.startMinutes,
             entry?.endMinutes,
-            String(entry?.instructor || '').trim().toLowerCase()
+            String(entry?.instructor || '').trim().toLowerCase(),
+            String(entry?.sessionRaw || '').trim().toUpperCase()
           ].join('|');
           if (!scheduleGroups.has(key)) scheduleGroups.set(key, []);
           scheduleGroups.get(key).push(entry);
