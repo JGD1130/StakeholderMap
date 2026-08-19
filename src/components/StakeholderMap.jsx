@@ -9105,10 +9105,51 @@ const parseUtilizationCsv = (csvText = '') => {
   return { buildings, rooms, campus };
 };
 
+// Mirrors classroomUtilizationCalc.js's AIRTABLE_ROOM_PREFIX_STRIP pattern --
+// Airtable bakes a building-code prefix into some buildings' room number
+// field while the class-schedule/registrar side stores the bare number.
+// Keyed by the resolved canonical building name (same string
+// resolveBuildingNameFromInput() already produces for either an Airtable
+// raw name or a schedule alias name), so a room coming from either side
+// lands on the same key. Confirmed via a full 9-building audit of the real
+// schedule + Airtable data this session -- only these two buildings have
+// this shape of mismatch; Gray Center, Hurley-McDonald, Jackson Dinsdale,
+// McCormick, Morrison-Reeves, and Wilson Center are all already bare.
+// Kiewit's entry is scoped with a lookahead to ONLY strip "K " immediately
+// before "GYM" -- Kiewit's other rooms (113, 116, CR, CR2, ST1...) are
+// already bare and must not be touched; "SPC" (referenced by the schedule)
+// has no Airtable counterpart at all and is intentionally left unmatched
+// here, not force-fixed.
+const CLASS_SCHEDULE_ROOM_PREFIX_STRIP = {
+  'Farrell-Fleharty': /^FC-/i,
+  'Kiewit Building': /^K\s+(?=GYM$)/i
+};
+
+function stripKnownClassScheduleRoomPrefix(canonicalBuilding, roomLabel) {
+  const pattern = CLASS_SCHEDULE_ROOM_PREFIX_STRIP[canonicalBuilding];
+  return pattern ? String(roomLabel || '').replace(pattern, '') : roomLabel;
+}
+
+// Scott Studio Theater: the SCHEDULE side (not Airtable) stores a verbose,
+// inconsistently-formatted room label instead of a bare number -- confirmed
+// via direct audit of the real schedule data to have three distinct
+// variants for one physical room ("118 - Theater", "118 -Theat",
+// "118 - Theat"), none of which match Airtable's clean "118". Extracts the
+// leading digits when followed by a hyphen-separated suffix, discarding
+// everything after -- safe to apply unconditionally to any building's room
+// label: it only fires on a leading-digits-then-hyphen shape, which a
+// legitimate alphanumeric room label with no hyphen (e.g. "01A", "134A")
+// never matches, so it's a no-op everywhere else.
+function extractLeadingRoomNumber(roomLabel) {
+  const match = String(roomLabel || '').trim().match(/^(\d+)\s*-\s*.+$/);
+  return match ? match[1] : roomLabel;
+}
+
 const normalizeClassScheduleRoomKey = (buildingName, roomLabel) => {
   const resolvedBuilding = resolveBuildingNameFromInput(buildingName) || String(buildingName || '').trim();
   const buildingKey = normalizeDashboardKey(resolvedBuilding);
-  const roomKey = normalizeUtilizationRoomKey(roomLabel);
+  const cleanedRoomLabel = stripKnownClassScheduleRoomPrefix(resolvedBuilding, extractLeadingRoomNumber(roomLabel));
+  const roomKey = normalizeUtilizationRoomKey(cleanedRoomLabel);
   if (!buildingKey || !roomKey) return '';
   return `${buildingKey}||${roomKey}`;
 };
