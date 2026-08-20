@@ -65,6 +65,7 @@ export const ENROLLMENT_PROJECTIONS_COLLECTION = 'enrollmentProjections';
  * @property {string} building - Denormalized for Firestore-console readability, same convention as CourseMeetingDoc.building.
  * @property {string} room - Denormalized for Firestore-console readability, same convention as CourseMeetingDoc.room.
  * @property {string} spaceCategory - Matches a spaceConfig/{spaceCategory} document id, or '' if this room is intentionally untagged.
+ * @property {string} primaryDepartment - Matches an enrollmentProjections/{deptId} doc's `department` field (excluding the institution-wide "Overall" division record -- that's not a real department a room can belong to), or '' if not yet assigned. Optional and independent of spaceCategory -- a room can carry a space category with no department yet; existing tagged rooms are not backfilled retroactively. Added 2026-08-20 for the department-level Space Growth breakdown (see spaceGrowthCalc.js's computeDepartmentSpaceGrowth).
  * @property {string} notes - Free-text admin notes about this room.
  */
 

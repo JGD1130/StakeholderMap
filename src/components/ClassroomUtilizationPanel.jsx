@@ -38,7 +38,7 @@ import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationM
 import { computeClassroomUtilization, fetchAirtableRoomsForUtilization, buildAirtableAreaMap } from '../utils/classroomUtilizationCalc';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType } from '../utils/roomTypeSuggestion';
 import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../utils/enrollmentProjectionsImport';
-import { computeSpaceGrowth } from '../utils/spaceGrowthCalc';
+import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -789,8 +789,17 @@ function RoomUtilizationMetaSection() {
   const [roomList, setRoomList] = useState([]); // [{roomKey, building, room}], derived from courseMeetings
   const [categoryOptions, setCategoryOptions] = useState([]); // spaceConfig doc ids, kept live -- see onSnapshot below
   const [categoryOptionsLoaded, setCategoryOptionsLoaded] = useState(false);
-  const [form, setForm] = useState({}); // roomKey -> {spaceCategory, notes}
-  const [persisted, setPersisted] = useState({}); // roomKey -> {spaceCategory, notes}, only for rooms with an existing doc
+  // enrollmentProjections' distinct `department` names, excluding the
+  // institution-wide "Overall" division record -- that's not a real
+  // department a room can be tagged with (see spaceGrowthCalc.js's
+  // getDepartmentEnrollment header comment for the same exclusion). Kept
+  // live via onSnapshot, same reasoning as categoryOptions: a re-uploaded
+  // Enrollment & FTE Projections workbook should update this dropdown
+  // without a page reload.
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [departmentOptionsLoaded, setDepartmentOptionsLoaded] = useState(false);
+  const [form, setForm] = useState({}); // roomKey -> {spaceCategory, primaryDepartment, notes}
+  const [persisted, setPersisted] = useState({}); // roomKey -> {spaceCategory, primaryDepartment, notes}, only for rooms with an existing doc
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -831,6 +840,10 @@ function RoomUtilizationMetaSection() {
     () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
     []
   );
+  const enrollmentProjectionsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
+    []
+  );
 
   // Live, not a one-time load -- per Clark's requirement that the category
   // dropdown reflect whatever spaceConfig categories exist right now
@@ -847,6 +860,30 @@ function RoomUtilizationMetaSection() {
     );
     return () => unsubscribe();
   }, [spaceConfigCollection]);
+
+  // Live, same reasoning as categoryOptions above -- read-only listener,
+  // this section never writes to enrollmentProjections. Excludes the
+  // division: "Overall" institution-wide record and dedupes by department
+  // name (a department name is unique per division in the source workbook,
+  // but dedup defensively rather than assume that holds forever).
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      enrollmentProjectionsCollection,
+      (snap) => {
+        const names = new Set();
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() || {};
+          if (String(data.division || '').trim().toLowerCase() === 'overall') return;
+          const department = String(data.department || '').trim();
+          if (department) names.add(department);
+        });
+        setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
+        setDepartmentOptionsLoaded(true);
+      },
+      (error) => setLoadError(String(error?.message || 'Failed to load departments.'))
+    );
+    return () => unsubscribe();
+  }, [enrollmentProjectionsCollection]);
 
   // Fetch Airtable rooms once on mount (read-only, existing endpoint -- see
   // fetchAirtableRoomsForUtilization's own header comment for why this is
@@ -892,7 +929,7 @@ function RoomUtilizationMetaSection() {
       const next = { ...prev };
       roomList.forEach(({ roomKey }) => {
         if (persisted[roomKey]) return; // only rooms with no existing doc yet
-        const current = next[roomKey] || { spaceCategory: '', notes: '' };
+        const current = next[roomKey] || { spaceCategory: '', primaryDepartment: '', notes: '' };
         if (String(current.spaceCategory || '').trim()) return; // only blank/untouched
         const roomType = airtableRoomTypeByKey.get(roomKey);
         const suggestedCategory = suggestSpaceCategoryFromRoomType(roomType);
@@ -922,6 +959,7 @@ function RoomUtilizationMetaSection() {
         const data = docSnap.data() || {};
         nextPersisted[docSnap.id] = {
           spaceCategory: String(data.spaceCategory || ''),
+          primaryDepartment: String(data.primaryDepartment || ''),
           notes: String(data.notes || '')
         };
       });
@@ -929,7 +967,7 @@ function RoomUtilizationMetaSection() {
       rooms.forEach(({ roomKey }) => {
         nextForm[roomKey] = nextPersisted[roomKey]
           ? { ...nextPersisted[roomKey] }
-          : { spaceCategory: '', notes: '' };
+          : { spaceCategory: '', primaryDepartment: '', notes: '' };
       });
       setRoomList(rooms);
       setPersisted(nextPersisted);
@@ -948,7 +986,7 @@ function RoomUtilizationMetaSection() {
   const handleFieldChange = useCallback((roomKey, field, value) => {
     setForm((prev) => ({
       ...prev,
-      [roomKey]: { ...(prev[roomKey] || { spaceCategory: '', notes: '' }), [field]: value }
+      [roomKey]: { ...(prev[roomKey] || { spaceCategory: '', primaryDepartment: '', notes: '' }), [field]: value }
     }));
     // Any manual change to spaceCategory -- even re-picking the same
     // suggested value -- converts this from an unconfirmed suggestion into a
@@ -968,8 +1006,12 @@ function RoomUtilizationMetaSection() {
   const isRoomDirty = useCallback((roomKey) => {
     const row = form[roomKey];
     if (!row) return false;
-    const saved = persisted[roomKey] || { spaceCategory: '', notes: '' };
-    return row.spaceCategory !== saved.spaceCategory || row.notes !== saved.notes;
+    const saved = persisted[roomKey] || { spaceCategory: '', primaryDepartment: '', notes: '' };
+    return (
+      row.spaceCategory !== saved.spaceCategory
+      || row.primaryDepartment !== saved.primaryDepartment
+      || row.notes !== saved.notes
+    );
   }, [form, persisted]);
 
   const dirtyRoomKeys = useMemo(
@@ -989,13 +1031,22 @@ function RoomUtilizationMetaSection() {
   const untaggedCount = roomList.length - taggedCount;
 
   const validateRoomRow = useCallback((row) => {
+    const errors = [];
     const category = String(row?.spaceCategory || '').trim();
-    if (!category) return []; // explicitly untagged/blank is always valid
-    if (!categoryOptions.includes(category)) {
-      return [`"${category}" is not a space category defined in Space Configuration`];
+    if (category && !categoryOptions.includes(category)) {
+      errors.push(`"${category}" is not a space category defined in Space Configuration`);
     }
-    return [];
-  }, [categoryOptions]);
+    // primaryDepartment is optional (blank is always valid, per Clark's
+    // decision -- a room can carry a category with no department yet) but
+    // if set, must match an actual enrollmentProjections department, same
+    // "picked from existing options, never free text" convention as
+    // spaceCategory above.
+    const department = String(row?.primaryDepartment || '').trim();
+    if (department && !departmentOptions.includes(department)) {
+      errors.push(`"${department}" is not a department found in Enrollment & FTE Projections`);
+    }
+    return errors;
+  }, [categoryOptions, departmentOptions]);
 
   const handleSave = useCallback(async () => {
     if (saving || !dirtyRoomKeys.length) return;
@@ -1023,6 +1074,7 @@ function RoomUtilizationMetaSection() {
           building: roomInfo?.building || '',
           room: roomInfo?.room || '',
           spaceCategory: String(row.spaceCategory || '').trim(),
+          primaryDepartment: String(row.primaryDepartment || '').trim(),
           notes: String(row.notes || '').trim()
         };
         // Plain overwrite (no {merge: true}) -- same reasoning as
@@ -1045,6 +1097,11 @@ function RoomUtilizationMetaSection() {
   // today ("Classroom" already exists), but show a clear message and
   // disable tagging instead of rendering empty/broken dropdowns.
   const noCategoriesYet = !loading && categoryOptions.length === 0;
+  // Same edge case for departments, but non-blocking -- primaryDepartment is
+  // optional, so an empty Enrollment & FTE Projections upload only disables
+  // the department dropdown (with an explanatory hint below), it never
+  // blocks saving spaceCategory tagging the way noCategoriesYet does above.
+  const noDepartmentsYet = departmentOptionsLoaded && departmentOptions.length === 0;
 
   // Tagged count baked into the summary text itself -- per the "visible
   // without expanding" requirement -- so the collapsed state still answers
@@ -1084,6 +1141,16 @@ function RoomUtilizationMetaSection() {
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
           One row per room with scheduled classes (from the imported class schedule, not the full room inventory).
           Tag each room with a space category so the future utilization calc engine knows how to score it.
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          Primary department is optional -- pick one to include this room in the Space Growth "By Department"
+          breakdown below; a room can carry a space category with no department assigned yet.
+          {noDepartmentsYet ? (
+            <span style={{ color: '#b45309', fontWeight: 600 }}>
+              {' '}No departments found -- upload the Enrollment & FTE Projections workbook below to enable this dropdown.
+            </span>
+          ) : null}
         </div>
 
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#1d4ed8', lineHeight: 1.35 }}>
@@ -1179,6 +1246,18 @@ function RoomUtilizationMetaSection() {
                     <option value="">-- untagged --</option>
                     {categoryOptions.map((category) => (
                       <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={row.primaryDepartment || ''}
+                    onChange={(e) => handleFieldChange(roomKey, 'primaryDepartment', e.target.value)}
+                    disabled={noDepartmentsYet}
+                    title="Primary department (optional) -- used only by the Space Growth 'By Department' breakdown"
+                    style={{ flex: '0 1 150px', minWidth: 130, fontSize: 11, padding: '3px 5px' }}
+                  >
+                    <option value="">-- no department --</option>
+                    {departmentOptions.map((department) => (
+                      <option key={department} value={department}>{department}</option>
                     ))}
                   </select>
                   <input
@@ -1608,6 +1687,13 @@ function SpaceGrowthSection() {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [targetYear, setTargetYear] = useState(TARGET_YEAR_OPTIONS[TARGET_YEAR_OPTIONS.length - 1]);
   const [result, setResult] = useState(null);
+  // Department-level breakdown (computeDepartmentSpaceGrowth), rendered as a
+  // "By Department" detail view below the institution-wide table above.
+  // Shares this section's targetYear selector -- deliberately not a second,
+  // independent selector -- and is computed from the exact same fetched
+  // Firestore/Airtable snapshot as `result` in runCalculation below (one
+  // fetch, two computations), not a separate fetch.
+  const [departmentResult, setDepartmentResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -1656,6 +1742,18 @@ function SpaceGrowthSection() {
       const airtableAreaByRoomKey = buildAirtableAreaMap(airtableRooms);
 
       setResult(computeSpaceGrowth({
+        spaceConfigDocs,
+        roomUtilizationMetaDocs,
+        airtableAreaByRoomKey,
+        baselineYear: BASELINE_ENROLLMENT_YEAR,
+        targetYear,
+        enrollmentProjectionDocs
+      }));
+      // Additive -- computeSpaceGrowth above is untouched and drives the
+      // existing institution-wide table exactly as before. This groups the
+      // same roomUtilizationMetaDocs/airtableAreaByRoomKey by (category,
+      // department) pair instead.
+      setDepartmentResult(computeDepartmentSpaceGrowth({
         spaceConfigDocs,
         roomUtilizationMetaDocs,
         airtableAreaByRoomKey,
@@ -1800,6 +1898,103 @@ function SpaceGrowthSection() {
             No space categories defined yet -- add at least one in Space Configuration above.
           </div>
         )}
+
+        {/* "By Department" detail view -- ADDITIVE, below the institution-
+            wide table above, which is completely unchanged by this. Same
+            target-year selector (the one above, not a second one) drives
+            both. Only pairs with >=1 tagged+department-assigned room are
+            rendered here (see computeDepartmentSpaceGrowth) -- no full
+            category x department cross-product with empty rows. */}
+        <div style={{ marginTop: 16, borderTop: '1px dashed #d0d7e2', paddingTop: 10 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#1d2939' }}>By Department</div>
+          <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+            Same calculation as the table above, grouped by (space category, primary department) pair and priced
+            against that department's own enrollment (from Enrollment & FTE Projections) instead of the
+            institution-wide total. Uses the same target year selected above.
+          </div>
+
+          {departmentResult && departmentResult.taggedRoomsMissingDepartment > 0 ? (
+            <div
+              style={{
+                marginTop: 8,
+                padding: '6px 8px',
+                borderRadius: 6,
+                fontSize: 11,
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                color: '#92400e'
+              }}
+            >
+              {departmentResult.taggedRoomsMissingDepartment} tagged room{departmentResult.taggedRoomsMissingDepartment === 1 ? '' : 's'}{' '}
+              {departmentResult.taggedRoomsMissingDepartment === 1 ? 'has' : 'have'} a space category but no primary
+              department assigned -- excluded from this breakdown (still counted normally in the table above).
+            </div>
+          ) : null}
+
+          {loading && !departmentResult ? (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating...</div>
+          ) : departmentResult && departmentResult.rows.length ? (
+            <div style={{ marginTop: 8, overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
+                    <th style={{ padding: '4px 6px' }}>Category</th>
+                    <th style={{ padding: '4px 6px' }}>Department</th>
+                    <th style={{ padding: '4px 6px' }}>Ideal NSF/Student</th>
+                    <th style={{ padding: '4px 6px' }}>Tagged Rooms</th>
+                    <th style={{ padding: '4px 6px' }}>Current SF</th>
+                    <th style={{ padding: '4px 6px' }}>Ideal SF ({BASELINE_ENROLLMENT_YEAR})</th>
+                    <th style={{ padding: '4px 6px' }}>Gap ({BASELINE_ENROLLMENT_YEAR})</th>
+                    <th style={{ padding: '4px 6px' }}>Ideal SF ({targetYear})</th>
+                    <th style={{ padding: '4px 6px' }}>Gap ({targetYear})</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {departmentResult.rows.map((row) => {
+                    // Same low-sample flagging as the institution-wide table
+                    // above -- a (category, department) pair is very
+                    // frequently going to have a smaller room count than a
+                    // whole category, so this matters even more here.
+                    const lowConfidence = row.taggedRoomCount <= 2;
+                    return (
+                      <tr
+                        key={`${row.category}||${row.department}`}
+                        style={{
+                          borderBottom: '1px solid #f1f5f9',
+                          background: lowConfidence ? '#fffbeb' : 'transparent'
+                        }}
+                      >
+                        <td style={{ padding: '4px 6px', fontWeight: 600 }}>{row.category}</td>
+                        <td style={{ padding: '4px 6px' }}>{row.department}</td>
+                        <td style={{ padding: '4px 6px' }}>
+                          {row.idealNsfPerStudent != null ? (
+                            (Math.round(row.idealNsfPerStudent * 100) / 100).toLocaleString()
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>not set</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '4px 6px', color: lowConfidence ? '#92400e' : 'inherit', fontWeight: lowConfidence ? 700 : 400 }}>
+                          {row.taggedRoomCount}
+                          {lowConfidence ? ' (low sample)' : ''}
+                        </td>
+                        <td style={{ padding: '4px 6px' }}>{formatGrowthSF(row.currentSF)}</td>
+                        <td style={{ padding: '4px 6px' }}>{formatGrowthSF(row.idealSfNow)}</td>
+                        <td style={{ padding: '4px 6px' }}>{formatGrowthGap(row.gapNow)}</td>
+                        <td style={{ padding: '4px 6px' }}>{formatGrowthSF(row.idealSfTarget)}</td>
+                        <td style={{ padding: '4px 6px' }}>{formatGrowthGap(row.gapTarget)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
+              No rooms are tagged with both a space category and a primary department yet -- assign both in Room
+              Utilization Tagging above to populate this breakdown.
+            </div>
+          )}
+        </div>
 
         {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
       </details>
