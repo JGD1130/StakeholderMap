@@ -1,5 +1,4 @@
 import React from 'react';
-import UtilizationBars from './UtilizationBars';
 
 const fmtSF = (val) => {
   const n = Number(val || 0);
@@ -518,10 +517,6 @@ export default function SpaceDashboardPanel({
   loading,
   error,
   scopeLabel,
-  utilization,
-  utilizationScopeLabel,
-  heatmapOn,
-  onToggleHeatmap,
   strategic,
   spaceContextTitle = 'Campus Space Context',
   facilityTypeLegend = [],
@@ -530,7 +525,6 @@ export default function SpaceDashboardPanel({
   onToggleDensityLayer,
   densityLegend = [],
   densityPeriodLabel = '',
-  showUtilizationSection = true,
   showStrategicSection = true
 }) {
   const [strategicOpen, setStrategicOpen] = React.useState(false);
@@ -539,7 +533,6 @@ export default function SpaceDashboardPanel({
     setStrategicOpen(false);
   }, [strategic]);
   const officeOcc = metrics?.officeOccupancy || {};
-  const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
 
   return (
     <div style={{ padding: 3, width: '100%', display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -593,38 +586,6 @@ export default function SpaceDashboardPanel({
             onToggleLayer={onToggleDensityLayer}
             periodLabel={densityPeriodLabel}
           />
-
-          {showUtilizationSection ? (
-            <PanelCard style={{ marginTop: 6 }}>
-              <div className="mf-section-title">Classroom Utilization</div>
-              {utilizationScopeLabel ? (
-                <div style={{ fontSize: 10, color: '#667085', marginTop: -2, marginBottom: 4 }}>
-                  {utilizationScopeLabel}
-                </div>
-              ) : null}
-              {showUtilization ? (
-                <>
-                  <UtilizationBars
-                    timePct={utilization.timeUtilization}
-                    seatPct={utilization.seatUtilization}
-                    compact
-                  />
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(heatmapOn)}
-                      onChange={(event) => onToggleHeatmap?.(event.target.checked)}
-                    />
-                    Classroom Utilization Heat Map
-                  </label>
-                </>
-              ) : (
-                <div style={{ fontSize: 11, color: '#667085' }}>
-                  No classroom utilization data.
-                </div>
-              )}
-            </PanelCard>
-          ) : null}
 
           {showStrategicSection && strategic ? (
             <CollapsibleSection

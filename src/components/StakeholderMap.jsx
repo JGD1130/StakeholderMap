@@ -21,7 +21,7 @@ import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
-import ClassroomUtilizationPanel from './ClassroomUtilizationPanel.jsx';
+import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './ClassroomUtilizationPanel.jsx';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -12121,7 +12121,6 @@ const StakeholderMap = ({
   }, [config?.buildings?.features, isSarpyCountyInstance]);
   const defaultDashboardTitle = isSarpyCountyInstance ? 'County Summary' : 'Campus Summary';
   const dashboardSpaceContextTitle = isSarpyCountyInstance ? 'County Space Context' : 'Campus Space Context';
-  const showClassroomUtilizationDashboard = !isSarpyCountyInstance;
   const showStrategicDashboard = !isSarpyCountyInstance;
   const hasConfiguredUniversityLogo = Boolean(
     config?.logos && Object.prototype.hasOwnProperty.call(config.logos, 'university')
@@ -24928,40 +24927,6 @@ useEffect(() => {
     floorStats
   ]);
 
-  const dashboardUtilization = useMemo(() => {
-    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
-    if (hasBuildingScope) {
-      const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
-      if (!buildingLabel) return null;
-      return getUtilizationForBuilding(buildingLabel);
-    }
-    return utilizationCampus;
-  }, [
-    activeBuildingName,
-    selectedBuildingId,
-    selectedBuilding,
-    loadedSingleFloor,
-    utilizationCampus,
-    getUtilizationForBuilding
-  ]);
-
-  const dashboardUtilizationLabel = useMemo(() => {
-    const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
-    if (hasBuildingScope) {
-      const buildingLabel = norm(activeBuildingName || selectedBuildingId || selectedBuilding || '');
-      return buildingLabel || '';
-    }
-    if (utilizationCampus) return activeUniversityName || 'Campus';
-    return '';
-  }, [
-    activeBuildingName,
-    selectedBuildingId,
-    selectedBuilding,
-    loadedSingleFloor,
-    utilizationCampus,
-    activeUniversityName
-  ]);
-
   const applyScenarioOverrideToFeature = useCallback((feature) => {
     if (!moveScenarioMode) return feature;
     const props = feature?.properties || {};
@@ -30582,10 +30547,6 @@ useEffect(() => {
               metrics={dashboardMetrics}
               loading={dashboardLoading}
               error={dashboardError}
-              utilization={dashboardUtilization}
-              utilizationScopeLabel={dashboardUtilizationLabel}
-              heatmapOn={utilizationHeatmapOn}
-              onToggleHeatmap={setUtilizationHeatmapOn}
               spaceContextTitle={dashboardSpaceContextTitle}
               facilityTypeLegend={sarpyFacilityTypeLegend}
               populationSummary={sarpyPopulationSummary}
@@ -30593,7 +30554,6 @@ useEffect(() => {
               onToggleDensityLayer={setShowPopulationDensityLayer}
               densityLegend={sarpyPopulationDensityLegend}
               densityPeriodLabel={sarpyPopulationDensityPeriodLabel}
-              showUtilizationSection={showClassroomUtilizationDashboard}
               showStrategicSection={showStrategicDashboard}
               strategic={isAdminMode && showStrategicDashboard ? {
                 scenarioName: 'Baseline',
@@ -30627,6 +30587,13 @@ useEffect(() => {
         {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
           <div className="dashboard-box">
             <ClassroomUtilizationPanel
+              enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
+            />
+          </div>
+        )}
+        {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
+          <div className="dashboard-box">
+            <SpaceGrowthProjectionsPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
             />
           </div>
