@@ -162,6 +162,13 @@ service cloud.firestore {
       match /courseMeetings/{meetingId} {
         allow read, write: if isUniversityAdmin(universityId);
       }
+      // Enrollment & FTE Projections upload (growth/right-sizing module data
+      // layer). Same admin-only posture as every other Classroom Utilization
+      // Planner collection above -- internal planning tool, not exposed to
+      // any public/client route.
+      match /enrollmentProjections/{deptId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
 
       match /floorAdjustments/{docId} {
         allow read: if true;

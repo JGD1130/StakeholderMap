@@ -18,6 +18,7 @@ export const SPACE_CONFIG_COLLECTION = 'spaceConfig';
 export const TERMS_COLLECTION = 'terms';
 export const ROOM_UTILIZATION_META_COLLECTION = 'roomUtilizationMeta';
 export const COURSE_MEETINGS_COLLECTION = 'courseMeetings';
+export const ENROLLMENT_PROJECTIONS_COLLECTION = 'enrollmentProjections';
 
 /**
  * universities/{universityId}/spaceConfig/{spaceCategory}
@@ -92,4 +93,32 @@ export const COURSE_MEETINGS_COLLECTION = 'courseMeetings';
  * @property {number|''} enrollment
  * @property {number|''} capacity
  * @property {import('firebase/firestore').Timestamp} importedAt - When this snapshot was imported.
+ */
+
+/**
+ * universities/{universityId}/enrollmentProjections/{deptId}
+ * One doc per department PLUS one institution-wide overall doc, imported
+ * from an admin-uploaded Enrollment & FTE Projections workbook (see
+ * enrollmentProjectionsImport.js for the parser -- this is the data layer
+ * the future growth/right-sizing module (roadmap item beyond the original
+ * 6) will read from). deptId is deterministic: canon(`${division}_${department}`)
+ * (src/utils/idUtils.js), same slugification convention used everywhere
+ * else in this codebase (buildRoomUtilizationMetaKey, bId/fId/rId) -- so
+ * re-uploading a newer version of the same workbook overwrites the same
+ * docs rather than accumulating duplicates.
+ *
+ * @typedef {Object} EnrollmentProjectionDoc
+ * @property {string} division - e.g. "Arts & Humanities", or "Overall" for the institution-wide record.
+ * @property {string} department - e.g. "Art", or "Hastings College Overall" for the institution-wide record.
+ * @property {Object.<string, EnrollmentProjectionYearMetrics>} years - Keyed by year as a string (Firestore map keys are always strings), e.g. "2026".
+ * @property {import('firebase/firestore').Timestamp} importedAt - When this snapshot was imported.
+ */
+
+/**
+ * @typedef {Object} EnrollmentProjectionYearMetrics
+ * @property {number} [studentHeadcount] - Net Student Headcount.
+ * @property {number} [nttFacultyFte] - NTT Faculty FTE.
+ * @property {number} [tenureTtFacultyFte] - Tenure/TT Faculty FTE.
+ * @property {number} [adminStaffFte] - Admin/Staff FTE.
+ * @property {number} [totalFte] - Total FTE (all three FTE lines summed in the source workbook).
  */

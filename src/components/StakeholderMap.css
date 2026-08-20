@@ -28,7 +28,14 @@
 
 .mf-right-rail {
   position: absolute;
-  right: 16px;
+  /* Was 16px -- with four stacked admin panels now (SpaceDashboardPanel,
+     CapitalPrioritiesPanel, ClassroomUtilizationPanel, SpaceGrowthProjectionsPanel)
+     the rail overflows vertically far more often than when 16px was set, and
+     Clark's screenshot showed the column flush against the browser edge with
+     no breathing room. Bumped for a visible gap; single-property change,
+     same restraint as the earlier .dashboard-box scroll fix -- not a layout
+     redesign. */
+  right: 24px;
   top: 14px;
   bottom: 14px;
   width: 260px;

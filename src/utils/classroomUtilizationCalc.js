@@ -53,7 +53,14 @@ const AIRTABLE_BUILDING_NAME_OVERRIDES = {
   [canon('Scott Studio Theatre')]: 'Scott Studio Theater'
 };
 
-function resolveAirtableBuildingName(rawBuilding) {
+// Exported (in addition to being used internally below) so
+// roomTypeSuggestion.js can join Airtable rooms to roomUtilizationMeta's
+// roomKey with the exact same building/room resolution this file already
+// verified against live Airtable data -- avoids a second, independently
+// -maintained copy of AIRTABLE_BUILDING_NAME_OVERRIDES that could quietly
+// drift out of sync with this one. Purely additive (adds `export`, changes
+// no logic) -- computeClassroomUtilization()'s behavior is unchanged.
+export function resolveAirtableBuildingName(rawBuilding) {
   return AIRTABLE_BUILDING_NAME_OVERRIDES[canon(rawBuilding)] || rawBuilding;
 }
 
@@ -72,7 +79,9 @@ const AIRTABLE_ROOM_PREFIX_STRIP = {
   [canon('Farrell-Fleharty')]: /^FC-/i
 };
 
-function stripKnownAirtableRoomPrefix(canonicalBuilding, roomLabel) {
+// Exported for the same reason as resolveAirtableBuildingName above -- reused
+// as-is by roomTypeSuggestion.js, not re-derived.
+export function stripKnownAirtableRoomPrefix(canonicalBuilding, roomLabel) {
   const pattern = AIRTABLE_ROOM_PREFIX_STRIP[canon(canonicalBuilding)];
   return pattern ? String(roomLabel || '').replace(pattern, '') : roomLabel;
 }
@@ -147,6 +156,39 @@ export function buildAirtableCapacityMap(airtableRooms) {
     // but not impossible with duplicate/renumbered rooms) -- first one wins,
     // deterministic rather than last-write-wins on unordered array iteration.
     if (!map.has(roomKey)) map.set(roomKey, seatCount);
+  });
+  return map;
+}
+
+// building+room -> Airtable Room Area (Sq Ft), same join convention as
+// buildAirtableCapacityMap immediately above (kept as a separate function
+// rather than refactored into a shared helper, deliberately -- this file's
+// existing capacity-map logic is roadmap-6-verified against live data, and
+// this is a new, additive read with its own field, not a reason to touch
+// that function's body). Confirmed via direct /api/rooms pull (2026-08-19
+// groundwork session, Space Growth build): Airtable's raw field is
+// "Room Area Sq Ft" (AIRTABLE_AREA_FIELD), exposed here as `areaSF` on
+// 2,981 of 2,986 Hastings room records (e.g. Wilson Center "0CR1" ->
+// 955 sq ft, Gray Center 104 -> 83.71 sq ft) -- same near-universal
+// coverage pattern as Seat Count/Room Type Description.
+//
+// areaSF <= 0 (or missing) is treated as "not resolvable", same reasoning
+// as buildAirtableCapacityMap's seatCount handling -- a room with no real
+// area on file shouldn't silently count as 0 SF toward a category's total.
+export function buildAirtableAreaMap(airtableRooms) {
+  const map = new Map();
+  (Array.isArray(airtableRooms) ? airtableRooms : []).forEach((room) => {
+    const rawBuilding = String(room?.building || '').trim();
+    if (!rawBuilding) return;
+    const building = resolveAirtableBuildingName(rawBuilding);
+    const rawRoomLabel = String(room?.roomNumber || room?.roomId || '').trim();
+    const roomLabel = stripKnownAirtableRoomPrefix(building, rawRoomLabel);
+    if (!building || !roomLabel) return;
+    const areaSF = Number(room?.areaSF);
+    if (!Number.isFinite(areaSF) || areaSF <= 0) return;
+    const roomKey = buildRoomUtilizationMetaKey(building, roomLabel);
+    if (!roomKey) return;
+    if (!map.has(roomKey)) map.set(roomKey, areaSF);
   });
   return map;
 }

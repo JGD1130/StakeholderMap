@@ -21,7 +21,7 @@ import ComboInput from './ComboInput';
 import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
-import ClassroomUtilizationPanel from './ClassroomUtilizationPanel.jsx';
+import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './ClassroomUtilizationPanel.jsx';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -30587,6 +30587,13 @@ useEffect(() => {
         {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
           <div className="dashboard-box">
             <ClassroomUtilizationPanel
+              enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
+            />
+          </div>
+        )}
+        {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
+          <div className="dashboard-box">
+            <SpaceGrowthProjectionsPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
             />
           </div>
