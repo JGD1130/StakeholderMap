@@ -37,6 +37,11 @@ import {
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
 import { computeClassroomUtilization, fetchAirtableRoomsForUtilization, buildAirtableAreaMap } from '../utils/classroomUtilizationCalc';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType } from '../utils/roomTypeSuggestion';
+import {
+  buildAirtableDepartmentMap,
+  suggestPrimaryDepartmentFromAirtableDepartment,
+  AIRTABLE_DEPARTMENT_TO_ENROLLMENT_DEPARTMENT
+} from '../utils/departmentSuggestion';
 import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../utils/enrollmentProjectionsImport';
 import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
 
@@ -805,6 +810,12 @@ function RoomUtilizationMetaSection() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
+  // Summary text shown after "Suggest Departments" runs -- per Clark's
+  // 2026-08-20 request, once the mount-time investigation found the
+  // one-time auto-suggest effect deliberately skips already-persisted rooms
+  // (see suggestionsAppliedRef's effect below). This is the manual,
+  // repeatable equivalent for rooms that already have a saved doc.
+  const [suggestDeptMessage, setSuggestDeptMessage] = useState('');
 
   // Airtable Room Type Description -> suggested spaceCategory, per Clark's
   // 2026-08-19 request. Read-only against the existing /ai/api/rooms
@@ -813,6 +824,12 @@ function RoomUtilizationMetaSection() {
   // once per untagged room (see suggestionsAppliedRef below), not kept in
   // continuous sync with Airtable.
   const [airtableRoomTypeByKey, setAirtableRoomTypeByKey] = useState(() => new Map());
+  // Airtable Department -> suggested primaryDepartment, per Clark's
+  // 2026-08-20 request (same live /ai/api/rooms fetch as
+  // airtableRoomTypeByKey above -- one fetch, two derived maps, not a
+  // second network call). See departmentSuggestion.js's header comment for
+  // the full grouping writeup and confidence notes.
+  const [airtableDepartmentByKey, setAirtableDepartmentByKey] = useState(() => new Map());
   const [airtableSuggestionsLoaded, setAirtableSuggestionsLoaded] = useState(false);
   const [airtableSuggestionsError, setAirtableSuggestionsError] = useState('');
   // roomKeys whose current form.spaceCategory value was pre-filled by the
@@ -822,6 +839,11 @@ function RoomUtilizationMetaSection() {
   // a category (even re-picking the same one) clears a roomKey from this set
   // in handleFieldChange, downgrading it to a normal dirty row.
   const [suggestedRoomKeys, setSuggestedRoomKeys] = useState(() => new Set());
+  // Same tracking, independent set, for primaryDepartment -- a room's
+  // spaceCategory and primaryDepartment suggestions are unrelated (different
+  // source field, different target list) and can be confirmed/edited
+  // independently of each other.
+  const [suggestedDepartmentRoomKeys, setSuggestedDepartmentRoomKeys] = useState(() => new Set());
   // Suggestions are applied at most once per mount, per Clark's "on mount"
   // spec -- this guards the effect below from re-running (and re-clobbering
   // a since-edited field) every time roomList/categoryOptions changes, e.g.
@@ -856,7 +878,15 @@ function RoomUtilizationMetaSection() {
         setCategoryOptions(snap.docs.map((docSnap) => docSnap.id).sort((a, b) => a.localeCompare(b)));
         setCategoryOptionsLoaded(true);
       },
-      (error) => setLoadError(String(error?.message || 'Failed to load space categories.'))
+      (error) => {
+        setLoadError(String(error?.message || 'Failed to load space categories.'));
+        // A listener error still counts as "loaded" (with zero options) --
+        // otherwise categoryOptionsLoaded would stay false forever and the
+        // suggestion effect below, which requires it, would silently never
+        // run again for the rest of this mount. Surfaced separately via
+        // loadError above, not hidden by this.
+        setCategoryOptionsLoaded(true);
+      }
     );
     return () => unsubscribe();
   }, [spaceConfigCollection]);
@@ -880,7 +910,16 @@ function RoomUtilizationMetaSection() {
         setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
         setDepartmentOptionsLoaded(true);
       },
-      (error) => setLoadError(String(error?.message || 'Failed to load departments.'))
+      (error) => {
+        setLoadError(String(error?.message || 'Failed to load departments.'));
+        // Same "error still counts as loaded" reasoning as categoryOptions'
+        // listener above -- and more load-bearing here, since the one-time
+        // suggestion effect now gates BOTH spaceCategory and
+        // primaryDepartment suggestions on departmentOptionsLoaded. Without
+        // this, a single failed enrollmentProjections read would silently
+        // stall spaceCategory suggestions too, not just department ones.
+        setDepartmentOptionsLoaded(true);
+      }
     );
     return () => unsubscribe();
   }, [enrollmentProjectionsCollection]);
@@ -897,6 +936,7 @@ function RoomUtilizationMetaSection() {
       .then((rooms) => {
         if (cancelled) return;
         setAirtableRoomTypeByKey(buildAirtableRoomTypeMap(rooms));
+        setAirtableDepartmentByKey(buildAirtableDepartmentMap(rooms));
       })
       .catch((error) => {
         if (cancelled) return;
@@ -920,28 +960,56 @@ function RoomUtilizationMetaSection() {
   // hint instead (computed live from categoryOptions, not frozen here).
   useEffect(() => {
     if (suggestionsAppliedRef.current) return;
-    if (!roomList.length || !airtableSuggestionsLoaded || !categoryOptionsLoaded) return;
+    if (!roomList.length || !airtableSuggestionsLoaded || !categoryOptionsLoaded || !departmentOptionsLoaded) return;
     suggestionsAppliedRef.current = true;
 
     const nextSuggestedKeys = new Set();
+    const nextSuggestedDeptKeys = new Set();
     setForm((prev) => {
       let changed = false;
       const next = { ...prev };
       roomList.forEach(({ roomKey }) => {
         if (persisted[roomKey]) return; // only rooms with no existing doc yet
         const current = next[roomKey] || { spaceCategory: '', primaryDepartment: '', notes: '' };
-        if (String(current.spaceCategory || '').trim()) return; // only blank/untouched
-        const roomType = airtableRoomTypeByKey.get(roomKey);
-        const suggestedCategory = suggestSpaceCategoryFromRoomType(roomType);
-        if (!suggestedCategory || !categoryOptions.includes(suggestedCategory)) return;
-        next[roomKey] = { ...current, spaceCategory: suggestedCategory };
-        nextSuggestedKeys.add(roomKey);
-        changed = true;
+        let row = current;
+
+        if (!String(current.spaceCategory || '').trim()) {
+          const roomType = airtableRoomTypeByKey.get(roomKey);
+          const suggestedCategory = suggestSpaceCategoryFromRoomType(roomType);
+          if (suggestedCategory && categoryOptions.includes(suggestedCategory)) {
+            row = { ...row, spaceCategory: suggestedCategory };
+            nextSuggestedKeys.add(roomKey);
+            changed = true;
+          }
+        }
+
+        if (!String(current.primaryDepartment || '').trim()) {
+          const airtableDept = airtableDepartmentByKey.get(roomKey);
+          const suggestedDept = suggestPrimaryDepartmentFromAirtableDepartment(airtableDept, departmentOptions);
+          if (suggestedDept) {
+            row = { ...row, primaryDepartment: suggestedDept };
+            nextSuggestedDeptKeys.add(roomKey);
+            changed = true;
+          }
+        }
+
+        if (row !== current) next[roomKey] = row;
       });
       return changed ? next : prev;
     });
     setSuggestedRoomKeys(nextSuggestedKeys);
-  }, [roomList, persisted, airtableRoomTypeByKey, airtableSuggestionsLoaded, categoryOptions, categoryOptionsLoaded]);
+    setSuggestedDepartmentRoomKeys(nextSuggestedDeptKeys);
+  }, [
+    roomList,
+    persisted,
+    airtableRoomTypeByKey,
+    airtableDepartmentByKey,
+    airtableSuggestionsLoaded,
+    categoryOptions,
+    categoryOptionsLoaded,
+    departmentOptions,
+    departmentOptionsLoaded
+  ]);
 
   const loadRooms = useCallback(async () => {
     setLoading(true);
@@ -1001,7 +1069,67 @@ function RoomUtilizationMetaSection() {
         return next;
       });
     }
+    // Same downgrade-on-touch rule as spaceCategory above, independent set.
+    if (field === 'primaryDepartment') {
+      setSuggestedDepartmentRoomKeys((prev) => {
+        if (!prev.has(roomKey)) return prev;
+        const next = new Set(prev);
+        next.delete(roomKey);
+        return next;
+      });
+    }
   }, []);
+
+  // Manual, repeatable equivalent of the mount-time auto-suggest effect
+  // above, scoped to primaryDepartment only -- per Clark's 2026-08-20
+  // request, added after the mount-time investigation confirmed that
+  // effect deliberately skips any room with an existing roomUtilizationMeta
+  // doc (all 48 rooms already have one from an earlier tagging pass, mostly
+  // spaceCategory only, from before primaryDepartment existed). Same
+  // crosswalk/data source as the mount-time effect (airtableDepartmentByKey,
+  // suggestPrimaryDepartmentFromAirtableDepartment, live departmentOptions)
+  // -- not a different suggestion logic, just a different trigger and a
+  // different (broader) set of eligible rooms.
+  //
+  // Only ever fills a CURRENTLY BLANK form.primaryDepartment -- a room with
+  // any existing value (persisted or just manually typed this session) is
+  // left untouched, even if a different suggestion would be available.
+  // Never writes to Firestore: pre-fills local form state exactly like the
+  // mount-time effect does, flagged via the same suggestedDepartmentRoomKeys
+  // set (same blue "suggested, not yet saved" badge) -- admin still reviews
+  // and clicks Save to confirm.
+  const handleSuggestDepartments = useCallback(() => {
+    let suggestedCount = 0;
+    let noMatchCount = 0;
+    const nextSuggestedDeptKeys = new Set(suggestedDepartmentRoomKeys);
+
+    setForm((prev) => {
+      const next = { ...prev };
+      roomList.forEach(({ roomKey }) => {
+        const current = next[roomKey] || { spaceCategory: '', primaryDepartment: '', notes: '' };
+        if (String(current.primaryDepartment || '').trim()) return; // already has a value -- never touched
+
+        const airtableDept = airtableDepartmentByKey.get(roomKey);
+        const suggestedDept = suggestPrimaryDepartmentFromAirtableDepartment(airtableDept, departmentOptions);
+        if (suggestedDept) {
+          next[roomKey] = { ...current, primaryDepartment: suggestedDept };
+          nextSuggestedDeptKeys.add(roomKey);
+          suggestedCount += 1;
+        } else {
+          noMatchCount += 1;
+        }
+      });
+      return next;
+    });
+
+    setSuggestedDepartmentRoomKeys(nextSuggestedDeptKeys);
+    setSuggestDeptMessage(
+      suggestedCount || noMatchCount
+        ? `Suggested departments for ${suggestedCount} room${suggestedCount === 1 ? '' : 's'}`
+          + (noMatchCount ? `; ${noMatchCount} had no Airtable match` : '.')
+        : 'No blank department fields to suggest -- every room already has a value.'
+    );
+  }, [roomList, airtableDepartmentByKey, departmentOptions, suggestedDepartmentRoomKeys]);
 
   const isRoomDirty = useCallback((roomKey) => {
     const row = form[roomKey];
@@ -1131,12 +1259,27 @@ function RoomUtilizationMetaSection() {
           <button
             className="btn"
             type="button"
+            title="Pre-fill primary department for any room whose department is currently blank, from Airtable's Department field -- including rooms already saved with a space category. Review and click Save to confirm; nothing is written directly."
+            onClick={() => handleSuggestDepartments()}
+            disabled={!airtableSuggestionsLoaded || noDepartmentsYet}
+          >
+            Suggest Departments
+          </button>
+          <button
+            className="btn"
+            type="button"
             onClick={() => void handleSave()}
             disabled={saving || !dirtyRoomKeys.length || noCategoriesYet}
           >
             {saving ? 'Saving...' : `Save Room Tagging${dirtyRoomKeys.length ? ` (${dirtyRoomKeys.length})` : ''}`}
           </button>
         </div>
+
+        {suggestDeptMessage ? (
+          <div style={{ marginTop: 4, fontSize: 10.5, color: '#1d4ed8', textAlign: 'right' }}>
+            {suggestDeptMessage}
+          </div>
+        ) : null}
 
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
           One row per room with scheduled classes (from the imported class schedule, not the full room inventory).
@@ -1156,7 +1299,9 @@ function RoomUtilizationMetaSection() {
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#1d4ed8', lineHeight: 1.35 }}>
           Untagged rooms with a matching Airtable Room Type Description show a <strong>suggested</strong> category
           (blue) pre-filled but not yet saved -- change it or click Save to accept it. This never auto-saves and
-          never creates a new space category on its own.
+          never creates a new space category on its own. Primary department gets the same treatment from
+          Airtable's Department field, grouped to match Enrollment &amp; FTE Projections' real department names --
+          see the row-level hint if a suggested department hasn't been uploaded yet.
         </div>
 
         {airtableSuggestionsError ? (
@@ -1217,8 +1362,20 @@ function RoomUtilizationMetaSection() {
                 && !String(row.spaceCategory || '').trim()
               );
 
-              const rowBackground = isSuggested ? '#eff6ff' : (dirty ? '#fffbeb' : '#f8fafc');
-              const rowBorder = isSuggested ? '#bfdbfe' : (dirty ? '#fde68a' : '#e5e7eb');
+              const isDepartmentSuggested = suggestedDepartmentRoomKeys.has(roomKey);
+              const airtableDepartment = airtableDepartmentByKey.get(roomKey) || '';
+              const rawSuggestedDepartment = AIRTABLE_DEPARTMENT_TO_ENROLLMENT_DEPARTMENT[airtableDepartment] || '';
+              const suggestionNeedsDepartment = Boolean(
+                !persisted[roomKey]
+                && !isDepartmentSuggested
+                && rawSuggestedDepartment
+                && !departmentOptions.includes(rawSuggestedDepartment)
+                && !String(row.primaryDepartment || '').trim()
+              );
+
+              const anySuggested = isSuggested || isDepartmentSuggested;
+              const rowBackground = anySuggested ? '#eff6ff' : (dirty ? '#fffbeb' : '#f8fafc');
+              const rowBorder = anySuggested ? '#bfdbfe' : (dirty ? '#fde68a' : '#e5e7eb');
 
               return (
                 <div
@@ -1282,13 +1439,37 @@ function RoomUtilizationMetaSection() {
                       }}
                       title={`Airtable Room Type Description: "${airtableRoomType}"`}
                     >
-                      Suggested from Airtable — not yet saved
+                      Suggested category from Airtable — not yet saved
+                    </span>
+                  ) : null}
+                  {isDepartmentSuggested ? (
+                    <span
+                      style={{
+                        flex: '0 0 auto',
+                        fontSize: 9.5,
+                        fontWeight: 700,
+                        color: '#1d4ed8',
+                        background: '#dbeafe',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 4,
+                        padding: '1px 5px',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={`Airtable Department: "${airtableDepartment}"`}
+                    >
+                      Suggested department from Airtable — not yet saved
                     </span>
                   ) : null}
                   {suggestionNeedsCategory ? (
                     <div style={{ flex: '1 1 100%', fontSize: 10, color: '#475467' }}>
                       Airtable suggests "{rawSuggestedCategory}" (from "{airtableRoomType}") — add "{rawSuggestedCategory}"
                       as a category in Space Configuration above to enable this suggestion.
+                    </div>
+                  ) : null}
+                  {suggestionNeedsDepartment ? (
+                    <div style={{ flex: '1 1 100%', fontSize: 10, color: '#475467' }}>
+                      Airtable suggests "{rawSuggestedDepartment}" (from Department "{airtableDepartment}") — upload it via
+                      Enrollment & FTE Projections above to enable this suggestion.
                     </div>
                   ) : null}
                   {rowErrors.length ? (
