@@ -28984,7 +28984,7 @@ useEffect(() => {
           ? ''
           : `<div><b>Occupant:</b> ${occupancyValue}</div>`;
 
-        const utilization = isClassroomType
+        const utilization = (isClassroomType && isHastingsCollegeInstance)
           ? getUtilizationForRoom(buildingName, roomNum2 || roomLabel || '')
           : null;
         const hasUtilization = utilization && (
