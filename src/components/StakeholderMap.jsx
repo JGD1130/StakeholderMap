@@ -27,6 +27,8 @@ import {
   computeStrategicCapacityMetrics,
   computeStrategicSeatGapByYear
 } from '../dashboard/spaceDashboard';
+import { computeBuildingUtilizationForCurrentTerm, fetchAirtableRoomsForUtilization } from '../utils/classroomUtilizationCalc';
+import { COURSE_MEETINGS_COLLECTION, TERMS_COLLECTION } from '../utils/classroomUtilizationSchema';
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 const SCENARIO_OP_PERSIST_ENABLED = String(import.meta.env.VITE_SCENARIO_OP_PERSIST || 'false').toLowerCase() === 'true';
@@ -12693,6 +12695,14 @@ const StakeholderMap = ({
     });
   }, [universityId, defaultDashboardTitle, hasConfiguredAiBackend]);
   const [utilizationData, setUtilizationData] = useState({ buildings: {}, rooms: {}, campus: null });
+  // Real-schedule-derived building-popup utilization (replaces the retired
+  // CSV pipeline for Hastings only -- see the Stage 1 tenant-gate fix and
+  // classroomUtilizationCalc.js's computeBuildingUtilizationForCurrentTerm).
+  // Precomputed once for every Hastings building, not on-demand per click,
+  // so opening the popup feels as instant as the old CSV lookup did.
+  const [hastingsBuildingUtilizationByBuilding, setHastingsBuildingUtilizationByBuilding] = useState({});
+  const [hastingsBuildingUtilizationCurrentTerm, setHastingsBuildingUtilizationCurrentTerm] = useState(null);
+  const [hastingsBuildingUtilizationLoading, setHastingsBuildingUtilizationLoading] = useState(false);
   const [classScheduleRows, setClassScheduleRows] = useState([]);
   const [classScheduleMeta, setClassScheduleMeta] = useState({
     source: '',
@@ -12733,11 +12743,72 @@ const StakeholderMap = ({
     });
     return out;
   }, [utilizationByBuilding]);
-  const getUtilizationForBuilding = useCallback((buildingName) => {
+  // Building-popup display shape for the real-schedule-derived Hastings
+  // data above -- converts computeBuildingUtilizationForCurrentTerm's
+  // per-building record (or its absence) into the
+  // {timeUtilization, seatUtilization, timeStatusText, seatStatusText, note}
+  // contract UtilizationBars/BuildingPanel now understand, per Clark's
+  // decision to show real status text instead of a blank dash whenever a
+  // number can't be computed. Uses the SAME resolveBuildingNameFromInput()
+  // lookup the retired CSV-backed getUtilizationForBuilding used to use
+  // against the CSV's building names -- courseMeetings.building is already
+  // alias-resolved to a canonical name by ai-server at import time (see
+  // classroomUtilizationCalc.js's own building-name audit comments), so it
+  // should already match BUILDING_FOLDER_MAP's canonical names the same way
+  // the CSV's did. Not independently re-verified against every live
+  // building this pass -- flagged for confirmation during click-through
+  // testing below, same as Stage 1's deferred Task 3.
+  const getHastingsBuildingUtilizationDisplay = useCallback((buildingName) => {
     if (!buildingName) return null;
+
+    if (hastingsBuildingUtilizationLoading) {
+      return {
+        timeUtilization: null,
+        seatUtilization: null,
+        timeStatusText: 'Calculating…',
+        seatStatusText: 'Calculating…',
+        note: null
+      };
+    }
+
+    const currentTerm = hastingsBuildingUtilizationCurrentTerm;
+    const termNote = currentTerm && currentTerm.status !== 'current' ? (currentTerm.reason || null) : null;
+
     const resolved = resolveBuildingNameFromInput(buildingName) || buildingName;
-    return utilizationByBuilding[resolved] || null;
-  }, [utilizationByBuilding]);
+    const entry = hastingsBuildingUtilizationByBuilding[resolved] || null;
+
+    if (!entry) {
+      const noDataText = currentTerm?.termId
+        ? 'No scheduled classes on record for this building/term.'
+        : 'No current term configured for Classroom Utilization.';
+      return {
+        timeUtilization: null,
+        seatUtilization: null,
+        timeStatusText: noDataText,
+        seatStatusText: noDataText,
+        note: termNote
+      };
+    }
+
+    const seatStatusTextByStatus = {
+      'pending-enrollment': 'Pending enrollment data',
+      'capacity-unknown': 'Capacity unknown',
+      'mixed-unresolved': 'Pending enrollment / capacity unknown',
+      'no-data': 'No seat data available'
+    };
+    const seatIsFinite = Number.isFinite(entry.seatUtilizationPct);
+    const seatCaveat = seatIsFinite && entry.seatUtilizationStatus === 'partial'
+      ? `Seat Utilization reflects ${entry.seatComputedRoomCount} of ${entry.roomCount} room(s) with known enrollment/capacity.`
+      : null;
+
+    return {
+      timeUtilization: Number.isFinite(entry.timeUtilizationPct) ? entry.timeUtilizationPct : null,
+      seatUtilization: seatIsFinite ? entry.seatUtilizationPct : null,
+      timeStatusText: Number.isFinite(entry.timeUtilizationPct) ? null : 'No standard weekly hours configured for this term',
+      seatStatusText: seatIsFinite ? null : (seatStatusTextByStatus[entry.seatUtilizationStatus] || 'No seat data available'),
+      note: [termNote, seatCaveat].filter(Boolean).join(' ') || null
+    };
+  }, [hastingsBuildingUtilizationByBuilding, hastingsBuildingUtilizationCurrentTerm, hastingsBuildingUtilizationLoading]);
   const getUtilizationForRoom = useCallback((buildingName, roomLabel) => {
     if (!buildingName || !roomLabel) return null;
     const resolved = resolveBuildingNameFromInput(buildingName) || buildingName;
@@ -24870,6 +24941,56 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, []);
 
+  // Real-schedule-derived building-popup utilization, Hastings-only (Stage 2
+  // of the CSV-card replacement flagged in HANDOFF.md's "Known follow-up").
+  // Precomputed ONCE for every Hastings building here, not lazily per popup
+  // click -- per Clark's decision, this matches the old CSV pipeline's
+  // instant-click UX (that data was already fully loaded before any click
+  // could happen too). courseMeetings/terms are read directly via the same
+  // Firestore paths ClassroomUtilizationPanel.jsx's own Utilization Results
+  // section already uses; Airtable capacity comes from the same read-only
+  // fetchAirtableRoomsForUtilization() that section also calls -- no new
+  // server.js code, no new Airtable field, no write anywhere.
+  useEffect(() => {
+    if (!isHastingsCollegeInstance) return undefined;
+    let cancelled = false;
+    (async () => {
+      setHastingsBuildingUtilizationLoading(true);
+      try {
+        const [meetingsSnap, termsSnap, airtableRoomsForUtilization] = await Promise.all([
+          getDocs(collection(db, 'universities', universityId, COURSE_MEETINGS_COLLECTION)),
+          getDocs(collection(db, 'universities', universityId, TERMS_COLLECTION)),
+          fetchAirtableRoomsForUtilization().catch((err) => {
+            // Same fallback reasoning as ClassroomUtilizationPanel.jsx's own
+            // calc: Airtable is capacity-only input (Seat Utilization). A
+            // failed fetch shouldn't block Time Utilization from computing
+            // for every building -- rooms just fall back to
+            // 'capacity-unknown' instead of the whole popup showing nothing.
+            console.warn('Unable to fetch Airtable rooms for building-popup utilization', err);
+            return [];
+          })
+        ]);
+        if (cancelled) return;
+        const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
+        const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+        const { currentTerm, buildings } = computeBuildingUtilizationForCurrentTerm({
+          courseMeetingDocs,
+          termDocs,
+          airtableRooms: airtableRoomsForUtilization
+        });
+        const byBuilding = {};
+        buildings.forEach((b) => { byBuilding[b.building] = b; });
+        setHastingsBuildingUtilizationByBuilding(byBuilding);
+        setHastingsBuildingUtilizationCurrentTerm(currentTerm);
+      } catch (err) {
+        console.warn('Unable to compute Hastings building-level utilization', err);
+      } finally {
+        if (!cancelled) setHastingsBuildingUtilizationLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isHastingsCollegeInstance, universityId]);
+
   const dashboardScopeRooms = useMemo(() => {
     if (!campusRoomsLoaded) return [];
     const hasBuildingScope = Boolean(selectedBuildingId) || loadedSingleFloor;
@@ -30731,7 +30852,7 @@ useEffect(() => {
               stats={buildingStats}
               hideClassroomSummary={isSarpyCountyInstance}
               keyDepts={toKeyDeptList(buildingStats?.totalsByDept)}
-              utilization={getUtilizationForBuilding(activeBuildingName)}
+              utilization={isHastingsCollegeInstance ? getHastingsBuildingUtilizationDisplay(activeBuildingName) : null}
               floors={availableFloors}
               selectedFloor={panelSelectedFloor}
               onChangeFloor={(fl) => setSelectedFloor(fl)}

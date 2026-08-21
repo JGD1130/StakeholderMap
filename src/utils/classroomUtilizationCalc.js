@@ -408,3 +408,209 @@ export function computeClassroomUtilization({ courseMeetingDocs, termDocs, airta
 
   return { rooms, buildingSummary, unmatchedMeetings };
 }
+
+// --- "Current term" resolution -------------------------------------------
+//
+// Building-popup utilization (the replacement for the retired CSV card,
+// see HANDOFF.md's "Known follow-up" note) needs a single answer to "which
+// term is 'now'" -- unlike computeClassroomUtilization's buildingSummary
+// above, which deliberately sums every term a room has ever met in.
+//
+// This replaces the old month-heuristic pattern used elsewhere in this
+// codebase (StakeholderMap.jsx's getPreferredRoomScheduleSession,
+// `date.getMonth() >= 9` to guess Fall-vs-Spring/Block-1-vs-2) with the
+// real terms collection's own startDate/endDate, since that heuristic only
+// ever had to pick between two known blocks inside one hardcoded academic
+// calendar shape -- it can't generalize to "is there a configured term
+// covering today at all," across any number of terms, gaps, or clients.
+//
+// Fallback behavior is explicit and visible, never silent:
+//   - A term whose [startDate, endDate] window contains `now` wins. If more
+//     than one does (overlapping windows -- a data-entry mistake, not
+//     something this function tries to prevent), the earliest-starting one
+//     wins, deterministically, not by array/Firestore order.
+//   - If none contains `now`, the nearest FUTURE term (soonest startDate
+//     still after `now`) is used, status 'upcoming' -- e.g. checking during
+//     a semester break before the next term's window opens.
+//   - If there's no current or future term, the most recently ENDED term
+//     (latest endDate still before `now`) is used, status 'past' -- keeps
+//     building-level output non-empty and clearly labeled instead of going
+//     blank the moment a term's window lapses and nobody's entered the next
+//     one yet.
+//   - If termDocs is empty, or none has a usable startDate/endDate at all,
+//     status is 'unconfigured' and there is no resolved term. Callers must
+//     render this state explicitly -- never fall back to summing across
+//     every term, which is a different, already-existing computation
+//     (buildingSummary above), not a stand-in for "current."
+export function resolveCurrentTerm(termDocs, now = new Date()) {
+  const candidates = (Array.isArray(termDocs) ? termDocs : [])
+    .map((t) => {
+      const id = String(t?.id ?? '').trim();
+      const data = t?.data || {};
+      const start = data?.startDate?.toDate ? data.startDate.toDate() : null;
+      const end = data?.endDate?.toDate ? data.endDate.toDate() : null;
+      return { id, data, start, end };
+    })
+    .filter((t) => (
+      t.id
+      && t.start instanceof Date && !Number.isNaN(t.start.getTime())
+      && t.end instanceof Date && !Number.isNaN(t.end.getTime())
+      && t.end.getTime() >= t.start.getTime()
+    ));
+
+  if (!candidates.length) {
+    return {
+      status: 'unconfigured',
+      termId: null,
+      term: null,
+      reason: 'No terms with valid start/end dates are configured.'
+    };
+  }
+
+  const nowTime = now.getTime();
+
+  const current = candidates
+    .filter((t) => t.start.getTime() <= nowTime && nowTime <= t.end.getTime())
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  if (current.length) {
+    return { status: 'current', termId: current[0].id, term: current[0].data, reason: null };
+  }
+
+  const future = candidates
+    .filter((t) => t.start.getTime() > nowTime)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  if (future.length) {
+    return {
+      status: 'upcoming',
+      termId: future[0].id,
+      term: future[0].data,
+      reason: `No term is active today; showing the nearest upcoming term (starts ${future[0].start.toISOString().slice(0, 10)}).`
+    };
+  }
+
+  const past = candidates
+    .filter((t) => t.end.getTime() < nowTime)
+    .sort((a, b) => b.end.getTime() - a.end.getTime());
+  if (past.length) {
+    return {
+      status: 'past',
+      termId: past[0].id,
+      term: past[0].data,
+      reason: `No current or upcoming term is configured; showing the most recently ended term (ended ${past[0].end.toISOString().slice(0, 10)}).`
+    };
+  }
+
+  // Unreachable given every candidate is classified current/future/past
+  // above relative to `now` -- kept as an explicit fallback rather than an
+  // unhandled empty return, per this module's "never silent" convention.
+  return { status: 'unconfigured', termId: null, term: null, reason: 'No usable term could be resolved.' };
+}
+
+// --- Building-level Time + Seat Utilization for the resolved current term -
+//
+// Distinct from buildingSummary (computeClassroomUtilization's own return
+// value), which sums every term a room has ever met in. This filters down
+// to exactly the one term resolveCurrentTerm() resolves above before
+// aggregating -- a room used in both Fall 2026 Block 1 and Block 2 only
+// contributes its Block-2 row here if Block 2 is the resolved current term,
+// matching this module's existing room+term-grain, never-blended
+// convention (see computeClassroomUtilization's own header comment).
+//
+// Seat Utilization at building level is new: room-level seatUtilizationPct
+// values are weighted by capacity (a 200-seat lecture hall should move a
+// building's number more than a 15-seat seminar room) and averaged, but
+// ONLY across rooms whose own seatUtilizationPct is actually computed.
+// Rooms with 'pending-enrollment' or 'capacity-unknown' status are counted
+// and surfaced separately, never silently treated as 0% or dropped without
+// a trace -- same visible-flagging philosophy as every other function in
+// this module.
+export function computeBuildingUtilizationForCurrentTerm({ courseMeetingDocs, termDocs, airtableRooms, now = new Date() }) {
+  const currentTerm = resolveCurrentTerm(termDocs, now);
+
+  if (!currentTerm.termId) {
+    return { currentTerm, buildings: [], unmatchedMeetings: [] };
+  }
+
+  const { rooms, unmatchedMeetings } = computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms });
+  const termRooms = rooms.filter((r) => r.termId === currentTerm.termId);
+
+  const buildingMap = new Map();
+  termRooms.forEach((r) => {
+    if (!buildingMap.has(r.building)) {
+      buildingMap.set(r.building, {
+        building: r.building,
+        weeklyHoursUsed: 0,
+        standardWeeklyHoursAvailable: 0,
+        roomKeys: new Set(),
+        seatWeightedSum: 0,
+        seatWeightTotal: 0,
+        seatComputedRoomCount: 0,
+        seatPendingEnrollmentCount: 0,
+        seatCapacityUnknownCount: 0
+      });
+    }
+    const b = buildingMap.get(r.building);
+    b.roomKeys.add(r.roomKey);
+    b.weeklyHoursUsed += r.weeklyHoursUsed;
+    b.standardWeeklyHoursAvailable += r.standardWeeklyHoursAvailable;
+
+    if (r.seatUtilizationStatus === 'computed') {
+      b.seatComputedRoomCount += 1;
+      // Capacity is guaranteed present/positive whenever status is
+      // 'computed' (see computeClassroomUtilization above), so this is
+      // never a fallback-to-1 in practice for a real computed row -- kept
+      // only as a defensive floor, not a real code path.
+      const weight = Number(r.capacity) > 0 ? Number(r.capacity) : 1;
+      b.seatWeightedSum += r.seatUtilizationPct * weight;
+      b.seatWeightTotal += weight;
+    } else if (r.seatUtilizationStatus === 'pending-enrollment') {
+      b.seatPendingEnrollmentCount += 1;
+    } else if (r.seatUtilizationStatus === 'capacity-unknown') {
+      b.seatCapacityUnknownCount += 1;
+    }
+  });
+
+  const buildings = Array.from(buildingMap.values())
+    .map(({ roomKeys, seatWeightedSum, seatWeightTotal, ...b }) => {
+      const timeUtilizationPct = b.standardWeeklyHoursAvailable > 0
+        ? (b.weeklyHoursUsed / b.standardWeeklyHoursAvailable) * 100
+        : null;
+
+      // Building-level seat status mirrors room-level's three-way split,
+      // plus 'partial' (some rooms computed, some not -- the average is
+      // real but incomplete) and 'mixed-unresolved' (no rooms computed at
+      // all, but for two different unresolved reasons) so a caller can
+      // render exactly what's missing instead of one opaque "no data".
+      let seatUtilizationStatus;
+      let seatUtilizationPct = null;
+      const hasUnresolved = b.seatPendingEnrollmentCount > 0 || b.seatCapacityUnknownCount > 0;
+      if (b.seatComputedRoomCount > 0) {
+        seatUtilizationStatus = hasUnresolved ? 'partial' : 'computed';
+        seatUtilizationPct = seatWeightTotal > 0 ? seatWeightedSum / seatWeightTotal : null;
+      } else if (b.seatPendingEnrollmentCount > 0 && b.seatCapacityUnknownCount > 0) {
+        seatUtilizationStatus = 'mixed-unresolved';
+      } else if (b.seatPendingEnrollmentCount > 0) {
+        seatUtilizationStatus = 'pending-enrollment';
+      } else if (b.seatCapacityUnknownCount > 0) {
+        seatUtilizationStatus = 'capacity-unknown';
+      } else {
+        seatUtilizationStatus = 'no-data';
+      }
+
+      return {
+        building: b.building,
+        roomCount: roomKeys.size,
+        weeklyHoursUsed: b.weeklyHoursUsed,
+        standardWeeklyHoursAvailable: b.standardWeeklyHoursAvailable,
+        timeUtilizationPct,
+        seatUtilizationPct,
+        seatUtilizationStatus,
+        seatComputedRoomCount: b.seatComputedRoomCount,
+        seatPendingEnrollmentCount: b.seatPendingEnrollmentCount,
+        seatCapacityUnknownCount: b.seatCapacityUnknownCount
+      };
+    })
+    .sort((a, b) => a.building.localeCompare(b.building));
+
+  return { currentTerm, buildings, unmatchedMeetings };
+}

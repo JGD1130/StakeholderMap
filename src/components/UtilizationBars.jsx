@@ -10,12 +10,14 @@ const formatPct = (value) => {
   return `${Math.round(value)}%`;
 };
 
-const BarRow = ({ label, value, color, compact }) => {
+const BarRow = ({ label, value, color, compact, statusText }) => {
   if (!Number.isFinite(value)) {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
         <div style={{ fontSize: compact ? 11 : 12, color: '#344054' }}>{label}</div>
-        <div style={{ fontSize: compact ? 11 : 12, color: '#667085' }}>--</div>
+        <div style={{ fontSize: compact ? 11 : 12, color: '#667085', textAlign: 'right' }}>
+          {statusText || '--'}
+        </div>
       </div>
     );
   }
@@ -53,14 +55,33 @@ const BarRow = ({ label, value, color, compact }) => {
   );
 };
 
-export default function UtilizationBars({ timePct, seatPct, compact = false }) {
-  const hasValues = Number.isFinite(timePct) || Number.isFinite(seatPct);
+export default function UtilizationBars({
+  timePct,
+  seatPct,
+  compact = false,
+  // Optional, additive: shown in place of the numeric bar for the
+  // corresponding row when that row's value isn't a finite percent (e.g.
+  // "pending enrollment data", "no current term configured"). Falls back to
+  // the original bare "--" when omitted, so every pre-existing call site
+  // (there is exactly one, BuildingPanel.jsx) keeps its old behavior
+  // unchanged unless it opts in.
+  timeStatusText,
+  seatStatusText,
+  // Optional single line rendered above both rows (e.g. a term label/status
+  // note). Also additive -- omitted entirely when not passed.
+  note
+}) {
+  const hasValues = Number.isFinite(timePct) || Number.isFinite(seatPct)
+    || Boolean(timeStatusText) || Boolean(seatStatusText) || Boolean(note);
   if (!hasValues) return null;
 
   return (
     <div style={{ display: 'grid', gap: compact ? 6 : 10 }}>
-      <BarRow label="Time Utilization" value={timePct} color="#3b82f6" compact={compact} />
-      <BarRow label="Seat Utilization" value={seatPct} color="#f59e0b" compact={compact} />
+      {note ? (
+        <div style={{ fontSize: compact ? 10.5 : 11.5, color: '#667085', fontStyle: 'italic' }}>{note}</div>
+      ) : null}
+      <BarRow label="Time Utilization" value={timePct} color="#3b82f6" compact={compact} statusText={timeStatusText} />
+      <BarRow label="Seat Utilization" value={seatPct} color="#f59e0b" compact={compact} statusText={seatStatusText} />
     </div>
   );
 }

@@ -32,7 +32,18 @@ export default function BuildingPanel({
   const count = (v) => (Number.isFinite(v) ? Number(v).toLocaleString() : "-");
   const isDraggable = Boolean(dragHandleProps);
   const { style: dragStyle, ...dragProps } = dragHandleProps || {};
-  const showUtilization = utilization && (Number.isFinite(utilization.timeUtilization) || Number.isFinite(utilization.seatUtilization));
+  // Shows whenever there's a real number OR a granular status to report
+  // (e.g. "Pending enrollment data", "No current term configured") -- the
+  // Hastings real-schedule data source (see StakeholderMap.jsx's
+  // getHastingsBuildingUtilizationDisplay) always returns one or the other,
+  // never a silent blank.
+  const showUtilization = utilization && (
+    Number.isFinite(utilization.timeUtilization)
+    || Number.isFinite(utilization.seatUtilization)
+    || Boolean(utilization.timeStatusText)
+    || Boolean(utilization.seatStatusText)
+    || Boolean(utilization.note)
+  );
   const headerStyle = {
     display: "flex",
     justifyContent: "space-between",
@@ -125,6 +136,9 @@ export default function BuildingPanel({
           <UtilizationBars
             timePct={utilization.timeUtilization}
             seatPct={utilization.seatUtilization}
+            timeStatusText={utilization.timeStatusText}
+            seatStatusText={utilization.seatStatusText}
+            note={utilization.note}
             compact
           />
         </div>
