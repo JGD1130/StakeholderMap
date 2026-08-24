@@ -94,11 +94,29 @@ const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 // reasoning, different endpoint. /ai/api/rooms already exists and is already
 // read-only (StakeholderMap.jsx's own Airtable sync uses it); nothing new is
 // added to ai-server for this.
+//
+// The /ai prefix is a dev-only Vite proxy convention (vite.config.js strips
+// it before forwarding to the local ai-server) -- ai-server/server.js itself
+// only ever registers the bare route (`app.get("/api/rooms", ...)`), no /ai
+// prefix. Once a request leaves the dev proxy and hits the real Render host
+// directly (both branches below), that prefix must be stripped or the real
+// server 404s ("Cannot GET /ai/api/rooms") -- confirmed live in production,
+// silently degrading every capacity-dependent feature since dc27e6d because
+// every call site fails soft. Strip logic copied verbatim from
+// StakeholderMap.jsx's resolveAiUrl() (not reimplemented) -- that is the
+// proven-working version of this exact step; not imported directly since
+// StakeholderMap.jsx already imports fetchAirtableRoomsForUtilization from
+// this file and resolveAiUrl() isn't exported, so importing it back here
+// would be circular.
+function stripAiPrefix(path) {
+  return path.startsWith('/ai/') ? path.replace(/^\/ai/, '') : path;
+}
+
 export function resolveRoomsUrl() {
   const envBase = (import.meta.env.VITE_AI_BASE_URL || '').trim();
-  if (envBase) return `${envBase.replace(/\/$/, '')}/ai/api/rooms`;
+  if (envBase) return `${envBase.replace(/\/$/, '')}${stripAiPrefix('/ai/api/rooms')}`;
   if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
-    return `${DEFAULT_PUBLIC_AI_BASE_URL}/ai/api/rooms`;
+    return `${DEFAULT_PUBLIC_AI_BASE_URL}${stripAiPrefix('/ai/api/rooms')}`;
   }
   return '/ai/api/rooms';
 }
