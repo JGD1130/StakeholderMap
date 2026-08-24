@@ -240,6 +240,48 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-24) — Floorplan-vs-courseMeetings room-key normalization (groundwork, not wired to any UI yet)
+
+### Summary
+
+Groundwork for the known follow-up flagged at the end of the 2026-08-20 entry below: replacing the building-click popup's CSV-backed `UtilizationBars` room block with real calc-engine data eventually needs to join a clicked floorplan room (from `public/floorplans/Hastings/*/Rooms/*.geojson`'s `Number` property) to its `courseMeetings` schedule data. This session audited that join for real, fixed the room-number mismatches it found, and re-verified — but did **not** wire it into any display code. `buildRoomUtilizationMetaKey` (`src/utils/roomUtilizationMeta.js`) is the only file touched.
+
+### Audit method (no direct Firestore access in this environment)
+
+Reconstructed the same 48-room dataset `courseMeetings` holds by parsing the real `ai-server/Docs/Fall 2026 Combined Block 1 and 2 - 8.18.26.xlsx` workbook (the exact file `CLASS_SCHEDULE_FILE_NAME` points to) with a faithful port of `ai-server/server.js`'s own header-detection/building-alias/room-split logic, rather than trusting a written summary. Produced exactly **48 distinct building+room pairs across the same 9 buildings** documented in earlier sessions' audits — strong confirmation the reconstruction matches the live import. Cross-checked each pair against the real floorplan geojson `Number` values for its building.
+
+**Result: 36/48 already joined cleanly. 12/48 didn't** — 3 known prefix/suffix shapes (11 rooms) plus Kiewit's `SPC`, which has no floorplan counterpart at all (same as its known Airtable-side gap).
+
+### The fix
+
+Added building-scoped room-number normalization inside `buildRoomUtilizationMetaKey` itself, applied to whichever side of the join actually carries the messy shape (a no-op on the other side) — same design pattern as `StakeholderMap.jsx`'s `normalizeClassScheduleRoomKey`, but a **separate, isolated copy**, not a shared import: `AIRTABLE_ROOM_PREFIX_STRIP` and `CLASS_SCHEDULE_ROOM_PREFIX_STRIP` (both in `StakeholderMap.jsx`) serve the Airtable-vs-schedule join and were explicitly left untouched, since this is a different join with (confirmed) genuinely different data shapes, not just a cosmetic duplicate — e.g. Airtable's Kiewit GYM room ID has no prefix at all, while the *floorplan's* does ("K GYM"), so reusing `AIRTABLE_ROOM_PREFIX_STRIP` would have been wrong, not just redundant.
+
+1. **Farrell-Fleharty `FC-` prefix** — floorplan `Number` bakes this into every room in the 100-153 range (`FC-142`, etc., 6/6 confirmed); `courseMeetings.room` is bare. Stripped, scoped to this building only.
+2. **Kiewit `K ` prefix on GYM** — floorplan has `K GYM` (space-separated); `courseMeetings.room` has bare `GYM`. Stripped with a lookahead so it only ever touches `GYM`, leaving Kiewit's other already-bare rooms (113, 116, ...) untouched. `SPC` has no floorplan room at all and is intentionally left unmatched, not force-fixed.
+3. **Scott Studio Theater's messy suffix variants** — this one lives on the *courseMeetings* side, not the floorplan side: the floorplan's `Number` for this room is already a clean bare `118`, but `courseMeetings.room` stores three raw, uncleaned registrar-workbook variants (`"118 - Theater"`, `"118 -Theat"`, `"118 - Theat"` — `classroomScheduleImport.js` does no room-label cleanup at import time). Added a leading-digits-then-hyphen extractor, safe to apply unconditionally (no-op on any hyphen-free room label like `01EV01` or `148A`).
+
+### Morrison-Reeves 148 vs floorplan's 148A — investigated, not pattern-matched
+
+Per instruction, checked the floorplan geometry/context before assuming this was the same shape as the three patterns above. Enumerated every room number on both floors of Morrison-Reeves Science Center's real floorplan geojson: **there is exactly one room in the "148" numbering slot — `148A`** (a Psychology classroom, 819 SF) — **no separate bare `148` room exists anywhere in the building.** This matters because every *other* lettered room in this same floorplan (128/128A, 141/141A, 142/142A/142B, 146/146A, 150/150A) has **both** the base number and the suffixed one as distinct physical rooms — so a general "strip a trailing letter" rule would have been wrong, silently conflating those genuinely-different pairs. 148 is the one exception with no base-number sibling. Concluded this is a real registrar/floorplan naming gap for the same physical room, not two different rooms, and added it as a single scoped exact-match alias (`148A` → `148`, Morrison-Reeves only) — not a stripped pattern. Same judgment call already established for Kiewit's `SPC`: fix what the data supports, leave the rest unmatched rather than guess.
+
+### Re-verified coverage
+
+Re-ran the reconstructed 48-room audit against the actual edited `src/utils/roomUtilizationMeta.js` (not a copy) after the fix: **47/48 resolve.** The 11 previously-unresolved rooms with a real floorplan counterpart (Farrell-Fleharty ×6, Kiewit `GYM`, Scott Studio Theater ×3 variants, Morrison-Reeves `148`) now match; Kiewit's `SPC` remains unmatched, correctly, since it has no floorplan room to match to.
+
+### Scope confirmation
+
+`StakeholderMap.jsx` was not touched — `AIRTABLE_ROOM_PREFIX_STRIP` and `CLASS_SCHEDULE_ROOM_PREFIX_STRIP` are unmodified, verified by inspection, not just by not having opened the file's edit history. Only `src/utils/roomUtilizationMeta.js` changed.
+
+### Known side effect worth flagging to Clark
+
+`buildRoomUtilizationMetaKey` is not new-and-unused — it's the same key builder already live in production for Room Utilization Tagging, Room Type auto-suggest, and department auto-suggest (`roomTypeSuggestion.js`, `departmentSuggestion.js`, `spaceGrowthCalc.js`, `classroomUtilizationCalc.js`'s Airtable capacity join all import it). The Scott Studio Theater fix in particular changes what key those callers compute *today*: previously the 3 messy variants each produced their own distinct (wrong) key, so the Room Utilization Tagging list would have shown up to 3 separate "phantom" rows for one physical room; now they collapse into one correct row. This is a genuine bug fix, not a regression, but **if Clark has already manually tagged one of the old per-variant rows in the live Room Utilization Tagging section, that tag would need to be re-applied under the new, correct key** — worth a quick check before assuming zero user-facing impact.
+
+### What's still not done
+
+The floorplan side of this join was audited and validated against real data, but nothing calls `buildRoomUtilizationMetaKey` with a floorplan room yet — no floorplan-click handler, no display code, no wiring to the building popup's utilization block. That's the next step flagged in the 2026-08-20 entry's "Known follow-up" section below.
+
+---
+
 ## Recent Changes (2026-08-18/19) — Day-specific free-text query fix; building-alias/real-workbook cutover; Classroom Utilization module completed and split into two panels; old CSV-backed utilization card retired
 
 ### Summary
