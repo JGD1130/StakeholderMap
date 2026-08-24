@@ -240,6 +240,36 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-24, continued) — Critical fix: `resolveRoomsUrl()` 404'd against the real deployed ai-server; methodology lesson on verifying production-only URL paths
+
+### The bug
+
+`resolveRoomsUrl()` (`classroomUtilizationCalc.js`) sent every capacity-dependent Airtable request on the deployed GitHub Pages site to a nonexistent `/ai/api/rooms` path, live and broken since `dc27e6d` — **two full days**, across every commit that touched this module (`dd9f95e`, `70278ff`, `8e53015`, `c15b22b`, `768ad7b`). `ai-server/server.js` only ever registers the bare `/api/rooms` route; `/ai` is a dev-only Vite proxy convention (`vite.config.js` strips it before forwarding locally) that was never valid once a request left the proxy and hit the real Render host directly. Fixed in `5e9c774` by stripping the `/ai` prefix in both production URL branches, mirroring `StakeholderMap.jsx`'s already-correct `resolveAiUrl()`.
+
+### Methodology lesson: local dev-proxy testing looked identical to working correctly, for two days, across multiple "confirmed live" verifications
+
+This is the part worth remembering beyond the fix itself. Every one of the 6 affected call sites (`fetchAirtableRoomsForUtilization()`) wraps the fetch in a fail-soft catch (`console.warn`, degrade to `[]`) rather than surfacing a visible error — a deliberate, reasonable design choice on its own (Airtable is capacity-only input; a network failure shouldn't block Time Utilization from computing). But it had an unintended side effect: **a broken network request and a genuine Airtable data gap render as the exact same UI state** — "capacity unknown," "pending enrollment data," an excluded-room count. There is no visual difference between "the fetch 404'd" and "the room really has no Seat Count on file."
+
+That's why this survived multiple rounds of testing that were genuinely thorough by every other standard used on this branch — full click-through verification of the building/room popups (`8e53015`), the same isolated-build discipline on every commit, the same "confirmed by Clark" sign-off pattern used throughout this whole thread. All of that testing was real, but it was local-only (or looked at output that degrades identically whether local or broken-in-production) — nothing in that process ever made an actual request against the deployed Render host and checked the response. **The bug was only caught when Clark happened to see the raw `console.warn` error text (`Cannot GET /ai/api/rooms`) while testing the actual deployed site directly**, not through any planned verification step.
+
+**Going forward: any feature depending on a production-only URL-resolution path (anything with an `if (window.location.hostname.includes('github.io'))` branch, i.e. every `resolve*Url()` function in this codebase — `resolveRoomsUrl()`, `resolveClassScheduleUrl()`, `resolveAiUrl()`) needs to be verified with a direct request against the real deployed endpoint before being called confirmed, not assumed correct from local-only testing.** A one-line `curl` against the live Render URL costs nothing and would have caught this on day one. Local dev-proxy behavior and production URL construction are two different code paths that happen to produce the same shape of success — passing one is not evidence the other works.
+
+### Real before/after proof, confirmed live
+
+Direct `curl` against the real production Render endpoint (not local dev):
+```
+curl https://github-stakeholder-ai.onrender.com/api/rooms    -> 200, real Airtable JSON (912,023 bytes)
+curl https://github-stakeholder-ai.onrender.com/ai/api/rooms -> 404 "Cannot GET /ai/api/rooms" (the old broken path)
+```
+
+On the live site, the Size Range table's excluded-room count (see the entry below) went from **42 excluded rooms (broken — every scheduled room's Airtable fetch was failing, so `airtableRooms` was effectively empty)** to **3 excluded rooms (real, expected gaps — the genuine `seatCount: 0`/no-record cases documented below)** after the fix, confirmed live by Clark. Prior to the fix, the size-range table's own findings were true about the *shape* of the local data but not representative of what was actually rendering on the deployed site — the live table was showing the failure-mode number, not the real one, until `5e9c774`.
+
+### Status
+
+Fixed, isolated-build-verified, pushed, and deployed (`5e9c774`, GitHub Actions run `32760929285`, `build`/`deploy` both `success`). Scope: `classroomUtilizationCalc.js` only — no call sites touched, no `ai-server/server.js` changes, `functions/index.js`/`functions/package.json` remain intentionally excluded per the existing guardrail above.
+
+---
+
 ## Recent Changes (2026-08-24, continued) — Classroom Size Range Utilization table; Airtable Seat Count data-completeness finding
 
 ### Summary
