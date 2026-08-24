@@ -240,6 +240,29 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-24, continued) — Classroom Size Range Utilization table; Airtable Seat Count data-completeness finding
+
+### Summary
+
+New `computeSizeRangeUtilizationByTerm` (`src/utils/classroomUtilizationCalc.js`) and `SizeRangeUtilizationSection` (`ClassroomUtilizationPanel.jsx`), mounted in the "Classroom Utilization" box alongside Utilization Results and the Day/Time Heat Map. From the original Master Facilities Plan spec's classroom-size-range table — rooms bucketed into 10-seat capacity increments, with room count, times used, aggregated enrollment, total official capacity, and seat utilization per bucket. Data table only, per Clark's decision — no "ideal arrangement" recommendation. Buckets are computed generically from whatever capacities actually appear in the live data (not hardcoded to the original 2025 report's specific ranges), including zero-room gap buckets so the table reads as a complete size distribution.
+
+Deliberately reuses `computeClassroomUtilization`'s already-computed room+term rows wholesale rather than re-deriving anything — same Airtable capacity join (`buildAirtableCapacityMap`), same `termMatched` gate, same enrollment averaging. Rooms with unresolvable capacity are pulled out and counted per term (`unresolvedCapacityRoomCount`) *before* bucketing, rather than dropped silently or guessed into the wrong bucket.
+
+### Investigated before committing: the 3-per-term excluded-room count, traced to real rooms
+
+Rather than assume the excluded rooms were the already-known Farrell-Fleharty/Kiewit/Scott Studio room-key edge cases from earlier sessions, this was traced against real data: the real combined Fall 2026 workbook plus a live pull from the already-running local ai-server's `/api/rooms` endpoint (2,986 real Airtable room records). **Confirmed: none of the 4 distinct excluded rooms (3 per term, split differently since Kiewit's GYM and SPC each only meet in one of the two terms) are room-key join failures** — every one of them resolves its building+room key correctly, including the previously-fixed Scott Studio Theater suffix variants and the Kiewit `K GYM` → `GYM` floorplan-prefix strip. All 4 are genuine Airtable data gaps:
+
+- **Kiewit `SPC`** — no Airtable room record exists at all for this room (checked all 81 real Kiewit records). This is the expected, already-known, by-design gap from earlier sessions (same as the schedule-side room-key work) — correctly degrades rather than being force-matched.
+- **Kiewit `GYM`** — Airtable *does* have a matching record (`"Kiewit Building" | "K GYM"`), and the key resolves correctly. Excluded because that record's `seatCount` is `0` in Airtable, which `buildAirtableCapacityMap` correctly treats as "not resolvable" (its own documented convention — a real 0-seat classroom isn't a case that exists).
+- **Scott Studio Theater `118`** — same story: the room-key join is fully correct (both the Theatre/Theater building-name override and the earlier suffix-variant fix are working), but Airtable's matching record has `seatCount: 0`. Spot-checked several other rooms in the same building in the live payload — they're all `seatCount: 0` too, suggesting the whole building's Seat Count field was likely never populated (plausible: theater/performance spaces don't map cleanly onto ordinary classroom "seat count" the way lecture rooms do).
+- **Hurley-McDonald `222`** — **new, not previously flagged by any earlier session.** Airtable has a clean matching record (`"Hurley McDonald Hall" | "222"`, "Laboratory - Class", Teacher Education dept), key resolves without issue, but `seatCount: 0` on file.
+
+### Follow-up, not yet acted on: Airtable Seat Count data-completeness gap
+
+Same category as the earlier Farrell 142 scheduling-conflict and `"ALL"` day-pattern findings this session — a real source-data gap, not a code defect, worth relaying to Hastings or fixing directly in Airtable: **Hurley-McDonald 222 and the Scott Studio Theatre building (at least sampled rooms, possibly the whole building) appear to have no Seat Count value entered in Airtable.** Kiewit's `K GYM` likely falls in the same "not a real classroom" category as the theater spaces and may not need a fix at all. Nothing to do in the app for this — the size-range table already surfaces the gap visibly (excluded-room banner, not a silent drop) rather than needing a code change.
+
+---
+
 ## Recent Changes (2026-08-24, continued) — Room-level Classroom Utilization wired into the room-click popup; building-and-room-level replacement complete
 
 ### Summary

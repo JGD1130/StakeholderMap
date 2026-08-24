@@ -773,3 +773,164 @@ export function computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs }) {
 
   return { heatmaps };
 }
+
+// --- Classroom Size Range Utilization table, split by term ---------------
+//
+// From the original Master Facilities Plan spec's classroom-size-range
+// table: rooms bucketed into 10-seat capacity increments, with room count,
+// times used, aggregated enrollment, total official capacity, and seat
+// utilization per bucket. Data table only, per Clark's decision -- no
+// "ideal arrangement" recommendation, unlike the original report's fuller
+// treatment.
+//
+// Reuses computeClassroomUtilization's already-computed room+term rows
+// wholesale -- same Airtable capacity join (buildAirtableCapacityMap,
+// called internally by computeClassroomUtilization), same termMatched
+// gate, same enrollment averaging. This function only adds a bucketing
+// aggregation on top of those rows; it does not re-derive or duplicate any
+// of that logic. Room universe = every room with any scheduled meeting
+// that term, independent of roomUtilizationMeta tagging, same posture as
+// computeBuildingUtilizationForCurrentTerm/computeDayTimeHeatmapByTerm.
+// Split by term, never blended -- computeClassroomUtilization's rows are
+// already room+term grain (one row per room per term), so grouping them by
+// termId here is sufficient; no separate term-matching logic is needed.
+//
+// Buckets are computed generically from whatever capacities actually
+// appear in the data (1-10, 11-20, 21-30, ... up to the real max), not
+// hardcoded to the specific ranges the original 2025 report happened to
+// show -- Hastings' current room mix may differ. Every bucket between the
+// smallest and largest occupied bucket is included, even ones with zero
+// rooms, so the table reads as a complete size distribution rather than
+// silently skipping gaps a reader could mistake for missing data.
+//
+// Rooms whose capacity couldn't be resolved (Airtable has no Seat Count on
+// file, or the room never matched an Airtable record at all -- e.g.
+// Kiewit's SPC, which has no Airtable counterpart by design) are excluded
+// from every bucket rather than guessed into one, and counted separately
+// per term so the exclusion is visible, not silent.
+function bucketRangeForCapacity(capacity) {
+  const index = Math.floor((capacity - 1) / 10);
+  const start = (index * 10) + 1;
+  const end = start + 9;
+  return { index, start, end, label: `${start}-${end}` };
+}
+
+export function computeSizeRangeUtilizationByTerm({ courseMeetingDocs, termDocs, airtableRooms }) {
+  const { rooms } = computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms });
+
+  // termId -> { termLabel, resolvedRows: [room+term rows with known capacity], unresolvedCapacityRoomCount }
+  const byTerm = new Map();
+  rooms.forEach((r) => {
+    if (!byTerm.has(r.termId)) {
+      byTerm.set(r.termId, {
+        termId: r.termId,
+        termLabel: r.termLabel,
+        resolvedRows: [],
+        unresolvedCapacityRoomCount: 0
+      });
+    }
+    const entry = byTerm.get(r.termId);
+    if (r.capacity == null) {
+      entry.unresolvedCapacityRoomCount += 1; // visibly excluded, not dropped or guessed into a bucket
+      return;
+    }
+    entry.resolvedRows.push(r);
+  });
+
+  const sizeRangeTables = Array.from(byTerm.values())
+    .map(({ termId, termLabel, resolvedRows, unresolvedCapacityRoomCount }) => {
+      if (!resolvedRows.length) {
+        return { termId, termLabel, unresolvedCapacityRoomCount, buckets: [] };
+      }
+
+      const bucketAccByIndex = new Map();
+      let minIndex = Infinity;
+      let maxIndex = -Infinity;
+
+      resolvedRows.forEach((r) => {
+        const { index } = bucketRangeForCapacity(r.capacity);
+        minIndex = Math.min(minIndex, index);
+        maxIndex = Math.max(maxIndex, index);
+        if (!bucketAccByIndex.has(index)) {
+          bucketAccByIndex.set(index, {
+            roomCount: 0,
+            timesUsed: 0,
+            totalCapacity: 0,
+            seatComputedRoomCount: 0,
+            seatPendingEnrollmentCount: 0,
+            // Sums across only the seatUtilizationStatus === 'computed' rooms
+            // in this bucket -- mirrors computeBuildingUtilizationForCurrentTerm's
+            // seatWeightedSum/seatWeightTotal reasoning: a room with unknown
+            // enrollment must never silently count as 0 in either the
+            // numerator or denominator of the bucket's seat utilization.
+            computedEnrollmentSum: 0,
+            computedCapacitySum: 0
+          });
+        }
+        const b = bucketAccByIndex.get(index);
+        b.roomCount += 1;
+        b.timesUsed += r.meetingCount;
+        b.totalCapacity += r.capacity;
+        if (r.seatUtilizationStatus === 'computed') {
+          b.seatComputedRoomCount += 1;
+          b.computedEnrollmentSum += r.avgEnrollment;
+          b.computedCapacitySum += r.capacity;
+        } else {
+          // 'pending-enrollment' is the only other status a resolved-capacity
+          // row can have here -- 'capacity-unknown' rows never reach
+          // resolvedRows at all (excluded into unresolvedCapacityRoomCount
+          // above, before bucketing).
+          b.seatPendingEnrollmentCount += 1;
+        }
+      });
+
+      const buckets = [];
+      for (let index = minIndex; index <= maxIndex; index += 1) {
+        const start = (index * 10) + 1;
+        const end = start + 9;
+        const label = `${start}-${end}`;
+        const b = bucketAccByIndex.get(index);
+
+        if (!b) {
+          // A real gap in the size distribution -- zero rooms this size,
+          // shown explicitly rather than omitted, per instruction.
+          buckets.push({
+            label, start, end,
+            roomCount: 0,
+            timesUsed: 0,
+            totalCapacity: 0,
+            seatComputedRoomCount: 0,
+            seatPendingEnrollmentCount: 0,
+            aggregatedEnrollment: null,
+            seatUtilizationStatus: 'no-rooms',
+            seatUtilizationPct: null
+          });
+          continue;
+        }
+
+        const hasComputed = b.seatComputedRoomCount > 0;
+        const seatUtilizationStatus = hasComputed
+          ? (b.seatPendingEnrollmentCount > 0 ? 'partial' : 'computed')
+          : 'pending-enrollment';
+
+        buckets.push({
+          label, start, end,
+          roomCount: b.roomCount,
+          timesUsed: b.timesUsed,
+          totalCapacity: b.totalCapacity,
+          seatComputedRoomCount: b.seatComputedRoomCount,
+          seatPendingEnrollmentCount: b.seatPendingEnrollmentCount,
+          aggregatedEnrollment: hasComputed ? b.computedEnrollmentSum : null,
+          seatUtilizationStatus,
+          seatUtilizationPct: hasComputed && b.computedCapacitySum > 0
+            ? (b.computedEnrollmentSum / b.computedCapacitySum) * 100
+            : null
+        });
+      }
+
+      return { termId, termLabel, unresolvedCapacityRoomCount, buckets };
+    })
+    .sort((a, b) => a.termId.localeCompare(b.termId));
+
+  return { sizeRangeTables };
+}

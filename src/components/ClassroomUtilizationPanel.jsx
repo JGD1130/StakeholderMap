@@ -39,6 +39,7 @@ import {
   computeClassroomUtilization,
   computeDayTimeHeatmapByTerm,
   formatHeatmapHourLabel,
+  computeSizeRangeUtilizationByTerm,
   fetchAirtableRoomsForUtilization,
   buildAirtableAreaMap
 } from '../utils/classroomUtilizationCalc';
@@ -2577,6 +2578,179 @@ function DayTimeHeatmapSection() {
   );
 }
 
+// --- Classroom Size Range Utilization table -------------------------------
+//
+// From the original Master Facilities Plan spec's classroom-size-range
+// table (rooms bucketed by capacity, with count/times-used/enrollment/
+// capacity/seat-utilization per bucket) -- data table only, per Clark's
+// decision, no "ideal arrangement" recommendation. See
+// classroomUtilizationCalc.js's computeSizeRangeUtilizationByTerm for the
+// full bucketing/aggregation reasoning (reuses computeClassroomUtilization's
+// rows wholesale -- same Airtable capacity join, same room universe as
+// Utilization Results and the heat map above, independent of Room
+// Utilization Tagging). Same fetch pattern as UtilizationResultsSection --
+// same two Firestore collections plus the same read-only Airtable rooms
+// fetch UtilizationResultsSection already uses for capacity.
+function SizeRangeUtilizationSection() {
+  const [sizeRangeTables, setSizeRangeTables] = useState(null); // Array | null
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [sectionOpen, setSectionOpen] = useState(false);
+
+  const courseMeetingsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
+    []
+  );
+  const termsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
+    []
+  );
+
+  const runCalculation = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [meetingsSnap, termsSnap, airtableRooms] = await Promise.all([
+        getDocs(courseMeetingsCollection),
+        getDocs(termsCollection),
+        fetchAirtableRoomsForUtilization().catch((error) => {
+          console.warn('Airtable rooms fetch failed for size-range utilization:', error);
+          return [];
+        })
+      ]);
+      const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
+      const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+      const { sizeRangeTables: computed } = computeSizeRangeUtilizationByTerm({
+        courseMeetingDocs,
+        termDocs,
+        airtableRooms
+      });
+      setSizeRangeTables(computed);
+    } catch (error) {
+      setLoadError(String(error?.message || 'Failed to compute the size range table.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [courseMeetingsCollection, termsCollection]);
+
+  useEffect(() => {
+    void runCalculation();
+  }, [runCalculation]);
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          Classroom Size Range Utilization
+        </summary>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+          <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+            {loading ? 'Calculating...' : 'Recalculate'}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          One table per term -- rooms bucketed into 10-seat capacity ranges, computed from whatever capacities
+          actually appear in the data. "Times Used" counts scheduled meeting-rows, not hours. Independent of Room
+          Utilization Tagging above -- same room universe Utilization Results and the heat map use.
+        </div>
+
+        {loading && !sizeRangeTables ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating the size range table...</div>
+        ) : sizeRangeTables && sizeRangeTables.length ? (
+          <div style={{ marginTop: 10, display: 'grid', gap: 18 }}>
+            {sizeRangeTables.map((t) => (
+              <div key={t.termId}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#344054' }}>{t.termLabel}</div>
+
+                {t.unresolvedCapacityRoomCount > 0 ? (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      color: '#92400e'
+                    }}
+                  >
+                    {t.unresolvedCapacityRoomCount} room{t.unresolvedCapacityRoomCount === 1 ? '' : 's'} excluded --
+                    capacity unknown (no Airtable Seat Count on file, or no matching Airtable room at all).
+                  </div>
+                ) : null}
+
+                {t.buckets.length ? (
+                  <div style={{ marginTop: 6, overflowX: 'auto' }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
+                          <th style={{ padding: '4px 6px' }}>Size Range</th>
+                          <th style={{ padding: '4px 6px' }}>Rooms</th>
+                          <th style={{ padding: '4px 6px' }}>Times Used</th>
+                          <th style={{ padding: '4px 6px' }}>Aggregated Enrollment</th>
+                          <th style={{ padding: '4px 6px' }}>Total Official Capacity</th>
+                          <th style={{ padding: '4px 6px' }}>Seat Utilization</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {t.buckets.map((b) => (
+                          <tr key={b.label} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '4px 6px' }}>{b.label}</td>
+                            <td style={{ padding: '4px 6px' }}>{b.roomCount}</td>
+                            <td style={{ padding: '4px 6px' }}>{b.roomCount ? b.timesUsed : '—'}</td>
+                            <td style={{ padding: '4px 6px' }}>
+                              {b.aggregatedEnrollment != null ? Math.round(b.aggregatedEnrollment) : (
+                                <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                                  {b.seatUtilizationStatus === 'no-rooms' ? '—' : 'pending enrollment data'}
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>{b.roomCount ? b.totalCapacity.toLocaleString() : '—'}</td>
+                            <td style={{ padding: '4px 6px' }}>
+                              {b.seatUtilizationStatus === 'computed' || b.seatUtilizationStatus === 'partial' ? (
+                                <>
+                                  {formatPct(b.seatUtilizationPct)}
+                                  {b.seatUtilizationStatus === 'partial' ? (
+                                    <div style={{ fontSize: 9.5, color: '#98a2b3' }}>
+                                      ({b.seatComputedRoomCount} of {b.roomCount} room(s) with known enrollment)
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                                  {b.seatUtilizationStatus === 'no-rooms' ? '—' : 'pending enrollment data'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
+                    No rooms with a resolvable capacity this term.
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
+            No term has any scheduled classes matched to a configured term yet -- import a schedule and configure
+            Terms above, then Recalculate.
+          </div>
+        )}
+
+        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
+      </details>
+    </div>
+  );
+}
+
 // Structural split (2026-08-19), per Clark's decision: what used to be one
 // combined panel mounting all six sections below is now two separate
 // dashboard boxes in StakeholderMap.jsx -- ClassroomUtilizationPanel (this
@@ -2790,6 +2964,7 @@ export default function ClassroomUtilizationPanel({
       <TermsSection />
       <UtilizationResultsSection />
       <DayTimeHeatmapSection />
+      <SizeRangeUtilizationSection />
     </div>
   );
 }
