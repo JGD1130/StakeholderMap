@@ -240,6 +240,31 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-24, continued) — Room-level Classroom Utilization wired into the room-click popup; building-and-room-level replacement complete
+
+### Summary
+
+Closes out the building-and-room-level Classroom Utilization popup replacement that started with 2026-08-21's `70278ff`/`e60f39b` (building-click popup) and continued with this same day's floorplan-vs-courseMeetings room-key groundwork immediately below. Building on that fixed join, `computeBuildingUtilizationForCurrentTerm` (`src/utils/classroomUtilizationCalc.js`) now also returns the per-room rows it already computed internally to build its building-level aggregates (previously discarded) — purely additive, no change to the building-level logic. `StakeholderMap.jsx`'s existing building-level precompute effect caches those rows into a new `hastingsRoomUtilizationByRoomKey` map, keyed by each row's own `roomKey` (already built via `buildRoomUtilizationMetaKey`, reused rather than recomputed) — no new Firestore/Airtable reads, and the same loading flag now covers both grains for free. The room-click popup's old CSV-backed `getUtilizationForRoom` (one call site) was replaced with `getHastingsRoomUtilizationDisplay`, mirroring the building-level display function's `{timeUtilization, seatUtilization, timeStatusText, seatStatusText, note}` contract, with a new `renderUtilizationRowHtml` in the popup's HTML-string builder that shows a bar when a number is available and granular status text ("Pending enrollment data," "Capacity unknown," "No scheduled classes on record") otherwise — styled to match the popup's existing label/muted-text conventions rather than a new visual language.
+
+Two cleanups fell out of the swap: the now-fully-dead `utilizationByRoom` useMemo was removed (confirmed zero remaining consumers by grep), and a stale `getUtilizationForRoom` reference in a large `useEffect`'s dependency array was caught and fixed by the isolated `git archive` + `npm run build` check before it could ship as a runtime `ReferenceError` on room click — same isolated-build discipline used on every commit in this thread.
+
+**Confirmed by Clark via full click-through testing**: the "Calculating…" loading window, happy-path rooms with real data, all four rooms the room-key normalization fix resolved (Farrell-Fleharty, Kiewit `GYM`, Scott Studio Theater, Morrison-Reeves `148`), the Kiewit `SPC` negative control (correctly still shows no data), and Sarpy/Cherokee isolation (no utilization block, no console errors) — all verified live.
+
+### Commits, this thread end-to-end
+
+| Commit | What it did |
+|---|---|
+| `70278ff` | Building-popup utilization: real schedule data replaces the CSV card, Hastings-gated |
+| `e60f39b` | Room-popup utilization block gated on `isHastingsCollegeInstance` (prep only, still CSV-backed at this point) |
+| `1da1337` | Floorplan-vs-courseMeetings room-key join audited (36/48 → 47/48) and fixed in `buildRoomUtilizationMetaKey` — groundwork, not wired to display code yet |
+| `8e53015` | Room-level data exposed from the calc engine, cached, and wired into the room-click popup — the entry directly above this table |
+
+### Status: closed
+
+This was the last open item from 2026-08-21's list. No further work pending on this specific thread — the building-click and room-click popups both show real, schedule-derived Time/Seat Utilization for Hastings, with the same granular status-text treatment for incomplete data, and both are confirmed live.
+
+---
+
 ## Recent Changes (2026-08-24) — Floorplan-vs-courseMeetings room-key normalization (groundwork, not wired to any UI yet)
 
 ### Summary
