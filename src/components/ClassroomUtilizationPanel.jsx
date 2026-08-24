@@ -35,7 +35,13 @@ import {
   mapScheduleEntryToCourseMeetingDoc
 } from '../utils/classroomScheduleImport';
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
-import { computeClassroomUtilization, fetchAirtableRoomsForUtilization, buildAirtableAreaMap } from '../utils/classroomUtilizationCalc';
+import {
+  computeClassroomUtilization,
+  computeDayTimeHeatmapByTerm,
+  formatHeatmapHourLabel,
+  fetchAirtableRoomsForUtilization,
+  buildAirtableAreaMap
+} from '../utils/classroomUtilizationCalc';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType } from '../utils/roomTypeSuggestion';
 import {
   buildAirtableDepartmentMap,
@@ -2417,6 +2423,160 @@ function UtilizationResultsSection() {
   );
 }
 
+// --- Day/Time occupancy heat map ------------------------------------------
+//
+// Visual grid version of the original Master Facilities Plan's hourly
+// Day/Time utilization concept (hour rows, weekday columns, % of
+// classrooms occupied per cell) -- present in the original CE Calc spec but
+// never built until now. See classroomUtilizationCalc.js's
+// computeDayTimeHeatmapByTerm for the full aggregation reasoning (room
+// universe = every room with a scheduled meeting that term, independent of
+// Room Utilization Tagging; split by term, never blended). Same fetch
+// pattern as UtilizationResultsSection immediately above -- same two
+// Firestore collections, no Airtable read needed here since this is a pure
+// scheduling-density view, not a capacity-relative one.
+//
+// Color intensity is a fixed blue-alpha ramp (0.08 - 0.90) over the same
+// #2563eb family the rest of this module already uses for its "Time
+// Utilization" accents -- heavier color = higher occupancy, matching the
+// original plan's visual concept -- plus the actual percentage as text in
+// every cell, per instruction, never color-only.
+function heatmapCellBackground(pct) {
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+  const alpha = 0.08 + (clamped / 100) * 0.82;
+  return `rgba(37, 99, 235, ${alpha.toFixed(2)})`;
+}
+
+function DayTimeHeatmapSection() {
+  const [heatmaps, setHeatmaps] = useState(null); // Array<{ termId, termLabel, roomCount, days, dayLabels, hours, grid }> | null
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  // Collapsed by default -- same disclosure pattern as every other section
+  // in this panel. runCalculation()'s effect below still runs unconditionally
+  // on mount regardless of open/collapsed state.
+  const [sectionOpen, setSectionOpen] = useState(false);
+
+  const courseMeetingsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
+    []
+  );
+  const termsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
+    []
+  );
+
+  const runCalculation = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [meetingsSnap, termsSnap] = await Promise.all([
+        getDocs(courseMeetingsCollection),
+        getDocs(termsCollection)
+      ]);
+      const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
+      const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+      const { heatmaps: computed } = computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs });
+      setHeatmaps(computed);
+    } catch (error) {
+      setLoadError(String(error?.message || 'Failed to compute the Day/Time heat map.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [courseMeetingsCollection, termsCollection]);
+
+  useEffect(() => {
+    void runCalculation();
+  }, [runCalculation]);
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          Day/Time Occupancy Heat Map
+        </summary>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+          <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+            {loading ? 'Calculating...' : 'Recalculate'}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          One grid per term -- percent of that term's scheduled classrooms occupied in each hour, Mon-Fri, 7 AM-9 PM.
+          Independent of Room Utilization Tagging above -- every room with a scheduled class counts toward the total,
+          tagged or not, same room universe Utilization Results above uses.
+        </div>
+
+        {loading && !heatmaps ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating the heat map...</div>
+        ) : heatmaps && heatmaps.length ? (
+          <div style={{ marginTop: 10, display: 'grid', gap: 18 }}>
+            {heatmaps.map((hm) => (
+              <div key={hm.termId}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#344054' }}>
+                  {hm.termLabel}
+                  <span style={{ fontWeight: 400, color: '#98a2b3', marginLeft: 6 }}>
+                    ({hm.roomCount} scheduled room{hm.roomCount === 1 ? '' : 's'})
+                  </span>
+                </div>
+                <div style={{ marginTop: 6, overflowX: 'auto' }}>
+                  <table style={{ borderCollapse: 'collapse', fontSize: 10 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '2px 6px' }} />
+                        {hm.days.map((day) => (
+                          <th key={day} style={{ padding: '2px 6px', fontWeight: 600, color: '#475467', minWidth: 44 }}>
+                            {hm.dayLabels[day]}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hm.hours.map((hour, hourIndex) => (
+                        <tr key={hour}>
+                          <td style={{ padding: '2px 6px', textAlign: 'right', color: '#667085', whiteSpace: 'nowrap' }}>
+                            {formatHeatmapHourLabel(hour)}
+                          </td>
+                          {hm.grid.map((dayCol) => {
+                            const cell = dayCol.hours[hourIndex];
+                            return (
+                              <td
+                                key={dayCol.day}
+                                title={`${dayCol.dayLabel} ${formatHeatmapHourLabel(hour)}: ${cell.occupiedRoomCount} of ${hm.roomCount} rooms occupied`}
+                                style={{
+                                  padding: '4px 6px',
+                                  textAlign: 'center',
+                                  background: heatmapCellBackground(cell.pct),
+                                  color: cell.pct > 55 ? '#fff' : '#334155',
+                                  fontWeight: 600,
+                                  minWidth: 44
+                                }}
+                              >
+                                {Math.round(cell.pct)}%
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
+            No term has any scheduled classes matched to a configured term yet -- import a schedule and configure
+            Terms above, then Recalculate.
+          </div>
+        )}
+
+        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
+      </details>
+    </div>
+  );
+}
+
 // Structural split (2026-08-19), per Clark's decision: what used to be one
 // combined panel mounting all six sections below is now two separate
 // dashboard boxes in StakeholderMap.jsx -- ClassroomUtilizationPanel (this
@@ -2629,6 +2789,7 @@ export default function ClassroomUtilizationPanel({
 
       <TermsSection />
       <UtilizationResultsSection />
+      <DayTimeHeatmapSection />
     </div>
   );
 }

@@ -620,3 +620,156 @@ export function computeBuildingUtilizationForCurrentTerm({ courseMeetingDocs, te
   // above is unchanged.
   return { currentTerm, buildings, rooms: termRooms, unmatchedMeetings };
 }
+
+// --- Day/Time occupancy heat map, split by term --------------------------
+//
+// From the original Master Facilities Plan spec's hourly Day/Time
+// utilization grid (hour rows 7am-9pm, weekday columns, % of classrooms
+// occupied per cell) -- a concept present in the original CE Calc spec but
+// never built until now. Same courseMeetings fields the rest of this module
+// already trusts (dayTokens/startMinutes/endMinutes, already correctly
+// parsed/normalized at import time) -- this is a new AGGREGATION over that
+// existing data, not a new data source or a new parsing step.
+//
+// "% of rooms occupied" means percent of the rooms that actually have ANY
+// scheduled meeting that term (same posture as computeClassroomUtilization
+// above) -- deliberately independent of roomUtilizationMeta space-category
+// tagging. A term with 40 scheduled classrooms and 10 occupied at 9am on
+// Tuesday shows 25% for that cell, regardless of how many of those 40 rooms
+// have been tagged.
+//
+// Split by term, never blended: uses the exact same termMatched gate as
+// computeClassroomUtilization (sessionRaw must resolve to a real terms doc
+// with a positive standardWeeklyHours) so a term that has no rows in
+// Utilization Results also has no heatmap here -- no silent mismatch
+// between the two views of the same data. A room used in both Fall 2026
+// Block 1 and Block 2 contributes to BOTH terms' heatmaps independently,
+// each against that term's own room universe, never a combined one.
+const HEATMAP_HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]; // 7 AM - 9 PM, matching the original plan's row range
+
+// Canonical column keys/labels, decoupled from the exact courseMeetings
+// dayTokens value(s) that can represent each day. ai-server's
+// normalizeScheduleDayTokens (server.js:878-921) produces a different token
+// spelling for Tuesday/Thursday depending on which of its two parsing
+// branches the raw registrar text hits: dense clusters with no spaces (e.g.
+// "TF", "MWR", "MTRF") produce bare 'T' (Tuesday) and bare 'R' (Thursday);
+// spaced/verbose text produces 'TU'/'TH' instead. Both forms are real and
+// both appear in live data. Monday/Wednesday/Friday have no such ambiguity
+// -- 'M'/'W'/'F' are unambiguous single letters in either parsing branch.
+//
+// Mirrors the exact dual-token handling already established and tested at
+// StakeholderMap.jsx:9163-9215 (SCHEDULE_DAY_QUERY_OPTIONS /
+// getScheduleDayTokensForDate) -- same convention, not reinvented here. A
+// prior version of this file checked only 'TU'/'TH' and silently dropped
+// every dense-pattern Tuesday/Thursday meeting (confirmed: a "TF" meeting
+// produces dayTokens ['T','F'], and 'T' never matched 'TU').
+const HEATMAP_DAY_DEFS = [
+  { day: 'M', label: 'Mon', tokens: ['M'] },
+  { day: 'T', label: 'Tue', tokens: ['T', 'TU'] },
+  { day: 'W', label: 'Wed', tokens: ['W'] },
+  { day: 'R', label: 'Thu', tokens: ['R', 'TH'] },
+  { day: 'F', label: 'Fri', tokens: ['F'] }
+];
+const HEATMAP_DAYS = HEATMAP_DAY_DEFS.map((d) => d.day);
+const HEATMAP_DAY_LABELS = Object.fromEntries(HEATMAP_DAY_DEFS.map((d) => [d.day, d.label]));
+
+export function formatHeatmapHourLabel(hour) {
+  const h12 = hour % 12 || 12;
+  const meridiem = hour >= 12 ? 'PM' : 'AM';
+  return `${h12} ${meridiem}`;
+}
+
+// Single pass over courseMeetingDocs, splitting into per-term heatmaps as it
+// goes -- same shape as computeClassroomUtilization's own room+term split,
+// not N separate calls for N terms. Each returned entry is scoped to
+// exactly one term; nothing is ever blended across terms.
+export function computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs }) {
+  const termsById = new Map(
+    (Array.isArray(termDocs) ? termDocs : []).map((t) => [String(t?.id ?? ''), t?.data || {}])
+  );
+
+  const roomsByTerm = new Map(); // termId -> Set(roomKey) -- the term's room universe (denominator)
+  const occupiedByTerm = new Map(); // termId -> day -> hour -> Set(roomKey)
+  const termLabels = new Map(); // termId -> label, same fallback convention as computeClassroomUtilization's agg.termLabel
+
+  (Array.isArray(courseMeetingDocs) ? courseMeetingDocs : []).forEach((meeting) => {
+    const building = String(meeting?.building || '').trim();
+    const room = String(meeting?.room || '').trim();
+    if (!building || !room) return;
+    const roomKey = buildRoomUtilizationMetaKey(building, room);
+    if (!roomKey) return;
+
+    const termId = deriveTermIdFromSessionRaw(meeting?.sessionRaw);
+    const standardWeeklyHours = termId != null ? termsById.get(termId)?.standardWeeklyHours : undefined;
+    const termMatched = termId != null && Number.isFinite(Number(standardWeeklyHours)) && Number(standardWeeklyHours) > 0;
+    if (!termMatched) return; // same "no term to belong to" exclusion as computeClassroomUtilization
+
+    if (!termLabels.has(termId)) {
+      termLabels.set(termId, String(meeting?.sessionLabel || '') || termId);
+    }
+    if (!roomsByTerm.has(termId)) roomsByTerm.set(termId, new Set());
+    roomsByTerm.get(termId).add(roomKey);
+
+    const start = Number(meeting?.startMinutes);
+    const end = Number(meeting?.endMinutes);
+    const dayTokens = Array.isArray(meeting?.dayTokens) ? meeting.dayTokens.filter(Boolean) : [];
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !dayTokens.length) return;
+
+    const relevantDays = HEATMAP_DAY_DEFS
+      .filter((def) => def.tokens.some((token) => dayTokens.includes(token)))
+      .map((def) => def.day);
+    if (!relevantDays.length) return;
+
+    if (!occupiedByTerm.has(termId)) occupiedByTerm.set(termId, new Map());
+    const byDay = occupiedByTerm.get(termId);
+
+    relevantDays.forEach((day) => {
+      if (!byDay.has(day)) byDay.set(day, new Map());
+      const byHour = byDay.get(day);
+      HEATMAP_HOURS.forEach((hour) => {
+        const hourStart = hour * 60;
+        const hourEnd = hourStart + 60;
+        // Overlap test: the meeting occupies this hour bucket if its
+        // [start, end) range overlaps [hourStart, hourEnd) at all -- a
+        // class ending exactly at hourStart doesn't occupy that hour.
+        if (start < hourEnd && end > hourStart) {
+          if (!byHour.has(hour)) byHour.set(hour, new Set());
+          byHour.get(hour).add(roomKey);
+        }
+      });
+    });
+  });
+
+  const heatmaps = Array.from(roomsByTerm.entries())
+    .map(([termId, roomKeySet]) => {
+      const roomCount = roomKeySet.size;
+      const byDay = occupiedByTerm.get(termId) || new Map();
+      const grid = HEATMAP_DAYS.map((day) => ({
+        day,
+        dayLabel: HEATMAP_DAY_LABELS[day],
+        hours: HEATMAP_HOURS.map((hour) => {
+          const occupiedRoomCount = byDay.get(day)?.get(hour)?.size || 0;
+          return {
+            hour,
+            occupiedRoomCount,
+            // roomCount is guaranteed > 0 here -- a term only reaches this
+            // map at all via roomsByTerm.set(termId, ...) above, which only
+            // happens once a real room has been added to its Set.
+            pct: (occupiedRoomCount / roomCount) * 100
+          };
+        })
+      }));
+      return {
+        termId,
+        termLabel: termLabels.get(termId) || termId,
+        roomCount,
+        days: HEATMAP_DAYS,
+        dayLabels: HEATMAP_DAY_LABELS,
+        hours: HEATMAP_HOURS,
+        grid
+      };
+    })
+    .sort((a, b) => a.termId.localeCompare(b.termId));
+
+  return { heatmaps };
+}
