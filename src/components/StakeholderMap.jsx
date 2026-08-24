@@ -29,6 +29,7 @@ import {
 } from '../dashboard/spaceDashboard';
 import { computeBuildingUtilizationForCurrentTerm, fetchAirtableRoomsForUtilization } from '../utils/classroomUtilizationCalc';
 import { COURSE_MEETINGS_COLLECTION, TERMS_COLLECTION } from '../utils/classroomUtilizationSchema';
+import { buildRoomUtilizationMetaKey } from '../utils/roomUtilizationMeta';
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 const SCENARIO_OP_PERSIST_ENABLED = String(import.meta.env.VITE_SCENARIO_OP_PERSIST || 'false').toLowerCase() === 'true';
@@ -12703,6 +12704,13 @@ const StakeholderMap = ({
   const [hastingsBuildingUtilizationByBuilding, setHastingsBuildingUtilizationByBuilding] = useState({});
   const [hastingsBuildingUtilizationCurrentTerm, setHastingsBuildingUtilizationCurrentTerm] = useState(null);
   const [hastingsBuildingUtilizationLoading, setHastingsBuildingUtilizationLoading] = useState(false);
+  // Room-grain counterpart of hastingsBuildingUtilizationByBuilding above --
+  // same precompute-once effect, same underlying computeClassroomUtilization
+  // rows (now exposed via computeBuildingUtilizationForCurrentTerm's `rooms`
+  // return field), just also cached keyed by roomKey. Shares
+  // hastingsBuildingUtilizationLoading/CurrentTerm rather than duplicating
+  // its own -- there is only one fetch/compute pass for both grains.
+  const [hastingsRoomUtilizationByRoomKey, setHastingsRoomUtilizationByRoomKey] = useState({});
   const [classScheduleRows, setClassScheduleRows] = useState([]);
   const [classScheduleMeta, setClassScheduleMeta] = useState({
     source: '',
@@ -12731,7 +12739,6 @@ const StakeholderMap = ({
       [airtableRooms, campusRooms]
     );
   const utilizationByBuilding = useMemo(() => utilizationData?.buildings || {}, [utilizationData]);
-  const utilizationByRoom = useMemo(() => utilizationData?.rooms || {}, [utilizationData]);
   const utilizationCampus = utilizationData?.campus || null;
   const utilizationByBuildingId = useMemo(() => {
     const out = {};
@@ -12809,12 +12816,61 @@ const StakeholderMap = ({
       note: [termNote, seatCaveat].filter(Boolean).join(' ') || null
     };
   }, [hastingsBuildingUtilizationByBuilding, hastingsBuildingUtilizationCurrentTerm, hastingsBuildingUtilizationLoading]);
-  const getUtilizationForRoom = useCallback((buildingName, roomLabel) => {
+  // Room-grain counterpart of getHastingsBuildingUtilizationDisplay above --
+  // same {timeUtilization, seatUtilization, timeStatusText, seatStatusText,
+  // note} contract, same loading/current-term state (one precompute pass
+  // serves both grains, see the effect above). buildRoomUtilizationMetaKey
+  // is the now-fixed floorplan-vs-courseMeetings join key: buildingName/
+  // roomLabel here come straight from the clicked floorplan feature's own
+  // properties (renderReadOnlyPopup's buildingName/roomNum2), the exact
+  // input shape that join was normalized for.
+  const getHastingsRoomUtilizationDisplay = useCallback((buildingName, roomLabel) => {
     if (!buildingName || !roomLabel) return null;
+
+    if (hastingsBuildingUtilizationLoading) {
+      return {
+        timeUtilization: null,
+        seatUtilization: null,
+        timeStatusText: 'Calculating…',
+        seatStatusText: 'Calculating…',
+        note: null
+      };
+    }
+
+    const currentTerm = hastingsBuildingUtilizationCurrentTerm;
+    const termNote = currentTerm && currentTerm.status !== 'current' ? (currentTerm.reason || null) : null;
+
     const resolved = resolveBuildingNameFromInput(buildingName) || buildingName;
-    const key = buildUtilizationKey(resolved, roomLabel);
-    return utilizationByRoom[key] || null;
-  }, [utilizationByRoom]);
+    const roomKey = buildRoomUtilizationMetaKey(resolved, roomLabel);
+    const entry = roomKey ? (hastingsRoomUtilizationByRoomKey[roomKey] || null) : null;
+
+    if (!entry) {
+      const noDataText = currentTerm?.termId
+        ? 'No scheduled classes on record for this room/term.'
+        : 'No current term configured for Classroom Utilization.';
+      return {
+        timeUtilization: null,
+        seatUtilization: null,
+        timeStatusText: noDataText,
+        seatStatusText: noDataText,
+        note: termNote
+      };
+    }
+
+    const seatStatusTextByStatus = {
+      'pending-enrollment': 'Pending enrollment data',
+      'capacity-unknown': 'Capacity unknown'
+    };
+    const seatIsFinite = Number.isFinite(entry.seatUtilizationPct);
+
+    return {
+      timeUtilization: Number.isFinite(entry.timeUtilizationPct) ? entry.timeUtilizationPct : null,
+      seatUtilization: seatIsFinite ? entry.seatUtilizationPct : null,
+      timeStatusText: Number.isFinite(entry.timeUtilizationPct) ? null : 'No standard weekly hours configured for this term',
+      seatStatusText: seatIsFinite ? null : (seatStatusTextByStatus[entry.seatUtilizationStatus] || 'No seat data available'),
+      note: termNote
+    };
+  }, [hastingsRoomUtilizationByRoomKey, hastingsBuildingUtilizationCurrentTerm, hastingsBuildingUtilizationLoading]);
   const classScheduleByRoom = useMemo(() => {
     const grouped = new Map();
     (classScheduleRows || []).forEach((entry) => {
@@ -24973,14 +25029,21 @@ useEffect(() => {
         if (cancelled) return;
         const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
         const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
-        const { currentTerm, buildings } = computeBuildingUtilizationForCurrentTerm({
+        const { currentTerm, buildings, rooms } = computeBuildingUtilizationForCurrentTerm({
           courseMeetingDocs,
           termDocs,
           airtableRooms: airtableRoomsForUtilization
         });
         const byBuilding = {};
         buildings.forEach((b) => { byBuilding[b.building] = b; });
+        // rooms[].roomKey was already built with buildRoomUtilizationMetaKey
+        // inside computeClassroomUtilization -- reused as-is here rather than
+        // recomputed, so this map is guaranteed to key identically to how it
+        // was produced.
+        const byRoomKey = {};
+        rooms.forEach((r) => { byRoomKey[r.roomKey] = r; });
         setHastingsBuildingUtilizationByBuilding(byBuilding);
+        setHastingsRoomUtilizationByRoomKey(byRoomKey);
         setHastingsBuildingUtilizationCurrentTerm(currentTerm);
       } catch (err) {
         console.warn('Unable to compute Hastings building-level utilization', err);
@@ -28985,12 +29048,9 @@ useEffect(() => {
           : `<div><b>Occupant:</b> ${occupancyValue}</div>`;
 
         const utilization = (isClassroomType && isHastingsCollegeInstance)
-          ? getUtilizationForRoom(buildingName, roomNum2 || roomLabel || '')
+          ? getHastingsRoomUtilizationDisplay(buildingName, roomNum2 || roomLabel || '')
           : null;
-        const hasUtilization = utilization && (
-          Number.isFinite(utilization.timeUtilization) ||
-          Number.isFinite(utilization.seatUtilization)
-        );
+        const hasUtilization = Boolean(utilization);
         const renderUtilizationBarHtml = (label, value, color) => {
           if (!Number.isFinite(value)) return '';
           const width = Math.max(0, Math.min(value, 100));
@@ -29003,11 +29063,26 @@ useEffect(() => {
             </div>
           `;
         };
+        // A room row can be a real percentage (bar) or a reason it isn't one
+        // yet (status text) -- same granular-status convention as the
+        // building popup's getHastingsBuildingUtilizationDisplay, styled to
+        // match this popup's existing 10px/#444 label + #555 muted-text
+        // conventions rather than introducing a new visual language.
+        const renderUtilizationRowHtml = (label, value, statusText, color) => {
+          if (Number.isFinite(value)) return renderUtilizationBarHtml(label, value, color);
+          if (!statusText) return '';
+          return `
+            <div style="margin-top:3px;">
+              <div style="font-size:10px;color:#444;">${label}: <span style="color:#555;">${statusText}</span></div>
+            </div>
+          `;
+        };
         const utilizationHtml = hasUtilization
           ? `
             <div style="margin-top:6px; width:100%; max-width:220px;">
-              ${renderUtilizationBarHtml('Time Util', utilization.timeUtilization, '#3b82f6')}
-              ${renderUtilizationBarHtml('Seat Util', utilization.seatUtilization, '#f59e0b')}
+              ${renderUtilizationRowHtml('Time Util', utilization.timeUtilization, utilization.timeStatusText, '#3b82f6')}
+              ${renderUtilizationRowHtml('Seat Util', utilization.seatUtilization, utilization.seatStatusText, '#f59e0b')}
+              ${utilization.note ? `<div style="margin-top:3px;font-size:10px;color:#555;">${utilization.note}</div>` : ''}
             </div>
           `
           : '';
@@ -29279,7 +29354,7 @@ useEffect(() => {
       } catch {}
       currentRoomFeatureRef.current = null;
     };
-  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getUtilizationForRoom, getRoomScheduleSnapshot, getRoomWeeklyScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
+  }, [mapLoaded, floorUrl, selectedBuilding, selectedBuildingId, selectedFloor, showFloorStats, setMapView, setIsTechnicalPanelOpen, setIsBuildingPanelCollapsed, setPanelAnchor, panelStats, roomPatches, campusRooms, airtableRooms, roomEditCanWrite, authUser, universityId, resolveBuildingPlanKey, fetchBuildingSummary, fetchFloorSummaryByUrl, mapView, floorStatsByBuilding, moveScenarioMode, moveMode, pendingMove, setFloorHighlight, roomEditSelection, clearRoomEditSelection, applySelectionHighlight, getHighlightIdsForSelection, stakeholderWorkflowActive, maintenanceWorkflowActive, showMaintenanceActionPopup, applyScenarioOverrideToFeature, scenarioLayoutMode, scenarioSplitDraft, resolveScenarioRoomGeometry, applyScenarioRoomSplit, activeBuildingName, getHastingsRoomUtilizationDisplay, getRoomScheduleSnapshot, getRoomWeeklyScheduleSnapshot, isHastingsCollegeInstance, classScheduleRows, classScheduleMeta]);
 
 useEffect(() => {
   if (!mapLoaded || !mapRef.current) return;

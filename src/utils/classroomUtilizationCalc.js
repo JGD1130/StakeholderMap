@@ -528,7 +528,7 @@ export function computeBuildingUtilizationForCurrentTerm({ courseMeetingDocs, te
   const currentTerm = resolveCurrentTerm(termDocs, now);
 
   if (!currentTerm.termId) {
-    return { currentTerm, buildings: [], unmatchedMeetings: [] };
+    return { currentTerm, buildings: [], rooms: [], unmatchedMeetings: [] };
   }
 
   const { rooms, unmatchedMeetings } = computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms });
@@ -612,5 +612,11 @@ export function computeBuildingUtilizationForCurrentTerm({ courseMeetingDocs, te
     })
     .sort((a, b) => a.building.localeCompare(b.building));
 
-  return { currentTerm, buildings, unmatchedMeetings };
+  // rooms: the same per-room, per-current-term rows already computed above
+  // to build `buildings` (line 535's termRooms) -- exposed as-is, not
+  // recomputed, so the room-level popup (StakeholderMap.jsx) can look up a
+  // single room's own timeUtilizationPct/seatUtilizationPct/etc without a
+  // second Firestore/Airtable read. Purely additive: buildings' aggregation
+  // above is unchanged.
+  return { currentTerm, buildings, rooms: termRooms, unmatchedMeetings };
 }
