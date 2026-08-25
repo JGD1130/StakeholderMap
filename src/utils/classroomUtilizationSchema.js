@@ -19,6 +19,7 @@ export const TERMS_COLLECTION = 'terms';
 export const ROOM_UTILIZATION_META_COLLECTION = 'roomUtilizationMeta';
 export const COURSE_MEETINGS_COLLECTION = 'courseMeetings';
 export const ENROLLMENT_PROJECTIONS_COLLECTION = 'enrollmentProjections';
+export const SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION = 'spaceConfigDepartmentOverrides';
 
 /**
  * universities/{universityId}/spaceConfig/{spaceCategory}
@@ -122,4 +123,31 @@ export const ENROLLMENT_PROJECTIONS_COLLECTION = 'enrollmentProjections';
  * @property {number} [tenureTtFacultyFte] - Tenure/TT Faculty FTE.
  * @property {number} [adminStaffFte] - Admin/Staff FTE.
  * @property {number} [totalFte] - Total FTE (all three FTE lines summed in the source workbook).
+ */
+
+/**
+ * universities/{universityId}/spaceConfigDepartmentOverrides/{category}||{department}
+ * Department-specific SF/Station and Target Utilization overrides for the
+ * Space Growth / Right-Sizing "By Department" breakdown -- optional,
+ * per-(category, department) pair. When a doc exists for a given pair,
+ * computeDepartmentSpaceGrowth() (spaceGrowthCalc.js) uses it in place of
+ * that category's spaceConfig-wide default for that department only; every
+ * other department in the same category keeps using the category-level
+ * default exactly as before. Doc id is the same "category||department"
+ * pairKey computeDepartmentSpaceGrowth already builds internally (and the
+ * "By Department" table already uses as its row key) -- not a new key
+ * format. `department` must match an enrollmentProjections doc's
+ * `department` field exactly, same convention as roomUtilizationMeta's
+ * primaryDepartment field. Added 2026-08-25 so a department whose real,
+ * published space standard differs from its category's blanket default
+ * (see src/utils/masterPlanSpaceTargets.js for Hastings' master-plan-
+ * sourced suggested values) can be represented precisely instead of forcing
+ * every department in "Classroom"/"Lab" to share one target.
+ *
+ * @typedef {Object} SpaceConfigDepartmentOverrideDoc
+ * @property {string} category - Matches a spaceConfig/{spaceCategory} document id.
+ * @property {string} department - Matches an enrollmentProjections doc's `department` field.
+ * @property {number} sfPerStationTarget - Target square feet per station, this department's own value.
+ * @property {number} targetUtilizationRate - Target utilization, 0-1, this department's own value.
+ * @property {import('firebase/firestore').Timestamp} effectiveDate - When this override took effect.
  */

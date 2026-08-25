@@ -187,16 +187,35 @@ export function getDepartmentEnrollment(enrollmentProjectionDocs, departmentName
 // see classroomUtilizationSchema.js). Same "excluded rather than counted as 0
 // SF" convention as computeSpaceGrowth for a tagged room whose Airtable area
 // can't be resolved.
+//
+// departmentOverrideDocs (added 2026-08-25, ADDITIVE): optional array of
+// [{category, department, sfPerStationTarget, targetUtilizationRate}], from
+// spaceConfigDepartmentOverrides (see classroomUtilizationSchema.js). When a
+// (category, department) pair has an override doc, its sfPerStationTarget/
+// targetUtilizationRate are used INSTEAD of the category-level spaceConfig
+// entry for that pair only -- checked first, falling back to the existing
+// spaceConfigByCategory lookup below when no override exists, exactly the
+// same as before this param was added. An override is taken as a whole
+// (both fields together, same "full setDoc, no partial merge" convention
+// SpaceConfigSection already uses for spaceConfig itself) -- there is no
+// per-field fallback from an override doc back to the category default.
+// Every other line of this function's existing category-level path is
+// unchanged.
 export function computeDepartmentSpaceGrowth({
   spaceConfigDocs,
   roomUtilizationMetaDocs,
   airtableAreaByRoomKey,
   baselineYear,
   targetYear,
-  enrollmentProjectionDocs
+  enrollmentProjectionDocs,
+  departmentOverrideDocs
 }) {
   const spaceConfigByCategory = new Map(
     (Array.isArray(spaceConfigDocs) ? spaceConfigDocs : []).map((entry) => [entry.category, entry])
+  );
+  const departmentOverrideByPairKey = new Map(
+    (Array.isArray(departmentOverrideDocs) ? departmentOverrideDocs : [])
+      .map((entry) => [`${entry.category}||${entry.department}`, entry])
   );
 
   const pairAgg = new Map(); // "category||department" -> { category, department, currentSF, roomCount }
@@ -228,15 +247,20 @@ export function computeDepartmentSpaceGrowth({
   });
 
   const rows = Array.from(pairAgg.values()).map(({ category, department, currentSF, roomCount }) => {
+    // Department-specific override checked FIRST; falls back to the
+    // category-level spaceConfig entry when no override exists for this
+    // (category, department) pair -- see the header comment above.
+    const overrideEntry = departmentOverrideByPairKey.get(`${category}||${department}`);
     const spaceConfigEntry = spaceConfigByCategory.get(category);
-    const sfPerStation = Number(spaceConfigEntry?.sfPerStationTarget);
+    const targetEntry = overrideEntry || spaceConfigEntry;
+    const sfPerStation = Number(targetEntry?.sfPerStationTarget);
     const hasSfPerStation = Number.isFinite(sfPerStation) && sfPerStation > 0;
-    const utilizationRate = Number(spaceConfigEntry?.targetUtilizationRate);
+    const utilizationRate = Number(targetEntry?.targetUtilizationRate);
     const hasUtilizationRate = Number.isFinite(utilizationRate) && utilizationRate > 0;
 
-    // Same Ideal NSF/Student derivation as computeSpaceGrowth -- the
-    // category's target, not anything department-specific (spaceConfig has
-    // no per-department targets).
+    // Same Ideal NSF/Student derivation as computeSpaceGrowth -- either this
+    // department's own override target or, when absent, the category's
+    // blanket target (spaceConfig has no per-department targets of its own).
     const idealNsfPerStudent = hasSfPerStation && hasUtilizationRate
       ? sfPerStation / utilizationRate
       : null;
@@ -256,6 +280,10 @@ export function computeDepartmentSpaceGrowth({
       department,
       sfPerStationTarget: hasSfPerStation ? sfPerStation : null,
       targetUtilizationRate: hasUtilizationRate ? utilizationRate : null,
+      // True when this row's target came from a department-specific
+      // override doc rather than the category-level spaceConfig default --
+      // surfaced so the UI can label which source priced this row.
+      usingDepartmentOverride: Boolean(overrideEntry),
       idealNsfPerStudent,
       currentSF,
       taggedRoomCount: roomCount,

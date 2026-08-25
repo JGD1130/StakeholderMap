@@ -26,6 +26,7 @@ import {
   ENROLLMENT_PROJECTIONS_COLLECTION,
   ROOM_UTILIZATION_META_COLLECTION,
   SPACE_CONFIG_COLLECTION,
+  SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION,
   TERMS_COLLECTION
 } from '../utils/classroomUtilizationSchema';
 import {
@@ -51,6 +52,7 @@ import {
 } from '../utils/departmentSuggestion';
 import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../utils/enrollmentProjectionsImport';
 import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
+import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget } from '../utils/masterPlanSpaceTargets';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -1849,6 +1851,455 @@ function EnrollmentProjectionsSection() {
   );
 }
 
+// Department-Specific Space Targets (Classroom/Lab) -- added 2026-08-25.
+// Lets an admin set a per-(department, category) sfPerStationTarget/
+// targetUtilizationRate override, consumed by computeDepartmentSpaceGrowth
+// (see spaceGrowthCalc.js) in place of the category-level spaceConfig
+// default for that department only. Restricted to the "Classroom" and
+// "Lab" categories per explicit scope -- the master-plan reference table
+// this pre-fills from only publishes one instructional-space standard per
+// department, not a value for every possible space category.
+//
+// Same "suggested, review, confirm, never auto-save" convention as Room
+// Type / primary Department suggestions elsewhere in this module: a pair
+// with no saved override doc yet, whose department has a real master-plan
+// reference, is pre-filled locally (blue "suggested" badge) but never
+// written until the admin clicks Save. Admin can also freely type over any
+// value, suggested or not, same as every editable field in this module.
+const DEPARTMENT_OVERRIDE_TARGET_CATEGORIES = ['Classroom', 'Lab'];
+
+function DepartmentSpaceOverridesSection() {
+  const [sectionOpen, setSectionOpen] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [categoryOptionsLoaded, setCategoryOptionsLoaded] = useState(false);
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [departmentOptionsLoaded, setDepartmentOptionsLoaded] = useState(false);
+  const [form, setForm] = useState({}); // pairKey ("category||department") -> {sfPerStationTarget, targetUtilizationRatePct}
+  const [persisted, setPersisted] = useState({}); // pairKey -> {sfPerStationTarget, targetUtilizationRate}, only for pairs with an existing override doc
+  const [overridesLoaded, setOverridesLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  // Same tracking convention as suggestedRoomKeys/suggestedDepartmentRoomKeys
+  // in RoomUtilizationMetaSection -- pairKeys currently showing a pre-filled,
+  // not-yet-confirmed master-plan suggestion. Manually editing a field
+  // downgrades it out of this set (handleFieldChange below), same "touched
+  // once -> treated as a deliberate admin choice" rule.
+  const [suggestedPairKeys, setSuggestedPairKeys] = useState(() => new Set());
+  const suggestionsAppliedRef = useRef(false);
+
+  const overridesCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION),
+    []
+  );
+  const spaceConfigCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_COLLECTION),
+    []
+  );
+  const enrollmentProjectionsCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
+    []
+  );
+
+  // Live, same reasoning/pattern as RoomUtilizationMetaSection's identical
+  // listener -- this section never writes to spaceConfig, only reads which
+  // of "Classroom"/"Lab" currently exist so overrides are never offered for
+  // a category that doesn't exist yet.
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      spaceConfigCollection,
+      (snap) => {
+        setCategoryOptions(snap.docs.map((docSnap) => docSnap.id).sort((a, b) => a.localeCompare(b)));
+        setCategoryOptionsLoaded(true);
+      },
+      (error) => {
+        setLoadError(String(error?.message || 'Failed to load space categories.'));
+        setCategoryOptionsLoaded(true);
+      }
+    );
+    return () => unsubscribe();
+  }, [spaceConfigCollection]);
+
+  // Live, same reasoning/pattern as RoomUtilizationMetaSection's identical
+  // listener -- excludes the "Overall" institution-wide record, dedupes by
+  // department name.
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      enrollmentProjectionsCollection,
+      (snap) => {
+        const names = new Set();
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() || {};
+          if (String(data.division || '').trim().toLowerCase() === 'overall') return;
+          const department = String(data.department || '').trim();
+          if (department) names.add(department);
+        });
+        setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
+        setDepartmentOptionsLoaded(true);
+      },
+      (error) => {
+        setLoadError(String(error?.message || 'Failed to load departments.'));
+        setDepartmentOptionsLoaded(true);
+      }
+    );
+    return () => unsubscribe();
+  }, [enrollmentProjectionsCollection]);
+
+  // Pairs this section can ever show a row for: every live department x
+  // "Classroom"/"Lab", restricted to whichever of those two categories
+  // actually exist in spaceConfig right now. Not persisted state -- derived
+  // fresh from the two live lists above, same "data-driven, not a frozen
+  // snapshot" convention as SpaceConfigSection's own category list.
+  const availableTargetCategories = useMemo(
+    () => DEPARTMENT_OVERRIDE_TARGET_CATEGORIES.filter((category) => categoryOptions.includes(category)),
+    [categoryOptions]
+  );
+  const pairList = useMemo(() => {
+    const pairs = [];
+    departmentOptions.forEach((department) => {
+      availableTargetCategories.forEach((category) => {
+        pairs.push({ category, department, pairKey: `${category}||${department}` });
+      });
+    });
+    return pairs;
+  }, [departmentOptions, availableTargetCategories]);
+
+  const loadOverrides = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const snap = await getDocs(overridesCollection);
+      const nextPersisted = {};
+      // Read-back: pre-fill the form with the REAL saved value for every
+      // persisted pair, same convention SpaceConfigSection/TermsSection/
+      // EnrollmentProjectionsSection all already follow -- without this, a
+      // saved override has no path to ever render as anything but the
+      // blank placeholder, since nothing else in this section ever wrote
+      // a persisted pair's value into `form`.
+      const nextPersistedForm = {};
+      snap.docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        const category = String(data.category || '').trim();
+        const department = String(data.department || '').trim();
+        if (!category || !department) return; // malformed doc, skip rather than guess
+        const sf = Number(data.sfPerStationTarget);
+        const rate = Number(data.targetUtilizationRate);
+        const pairKey = `${category}||${department}`;
+        nextPersisted[pairKey] = {
+          sfPerStationTarget: Number.isFinite(sf) ? sf : null,
+          targetUtilizationRate: Number.isFinite(rate) ? rate : null
+        };
+        nextPersistedForm[pairKey] = {
+          sfPerStationTarget: Number.isFinite(sf) ? String(sf) : '',
+          targetUtilizationRatePct: Number.isFinite(rate) ? fractionToPctText(rate) : ''
+        };
+      });
+      setPersisted(nextPersisted);
+      // Merge, not replace -- pairList spans every live department x
+      // Classroom/Lab, independent of which pairs actually have a saved
+      // doc, so a pair with no saved doc yet may already be carrying an
+      // unsaved master-plan suggestion (or, on a post-save reload, another
+      // still-unsaved pair's in-progress edit) in `form` that this load
+      // must not clobber. Only pairKeys with an actual persisted doc are
+      // overwritten here, and the real saved value always wins over
+      // whatever a suggestion might already have pre-filled.
+      setForm((prev) => ({ ...prev, ...nextPersistedForm }));
+      setOverridesLoaded(true);
+    } catch (error) {
+      setLoadError(String(error?.message || 'Failed to load department space overrides.'));
+      setOverridesLoaded(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [overridesCollection]);
+
+  useEffect(() => {
+    void loadOverrides();
+  }, [loadOverrides]);
+
+  // One-time, mount-scoped pre-fill from the master-plan reference table --
+  // same "on mount, only into a currently-blank/unpersisted field, never
+  // auto-saved" spec as RoomUtilizationMetaSection's suggestion effect.
+  // Waits on all three live/loaded sources so it never runs against a
+  // partial pairList and silently misses pairs that show up a tick later.
+  useEffect(() => {
+    if (suggestionsAppliedRef.current) return;
+    if (!categoryOptionsLoaded || !departmentOptionsLoaded || !overridesLoaded) return;
+    if (!pairList.length) return;
+    suggestionsAppliedRef.current = true;
+
+    const nextSuggested = new Set();
+    setForm((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      pairList.forEach(({ category, department, pairKey }) => {
+        if (persisted[pairKey]) return; // already has a saved override -- never overwritten by a suggestion
+        const reference = getMasterPlanSpaceTarget(department, departmentOptions);
+        if (!reference) return;
+        next[pairKey] = {
+          sfPerStationTarget: String(reference.sfPerStationTarget),
+          targetUtilizationRatePct: fractionToPctText(reference.targetUtilizationRate)
+        };
+        nextSuggested.add(pairKey);
+        changed = true;
+      });
+      return changed ? next : prev;
+    });
+    setSuggestedPairKeys(nextSuggested);
+  }, [categoryOptionsLoaded, departmentOptionsLoaded, overridesLoaded, pairList, persisted, departmentOptions]);
+
+  const handleFieldChange = useCallback((pairKey, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [pairKey]: { ...prev[pairKey], [field]: value }
+    }));
+    // Same downgrade-on-touch rule as every other suggestion set in this
+    // module -- once edited, it's a deliberate admin value, not an
+    // unconfirmed suggestion, even if re-typed to the same number.
+    setSuggestedPairKeys((prev) => {
+      if (!prev.has(pairKey)) return prev;
+      const next = new Set(prev);
+      next.delete(pairKey);
+      return next;
+    });
+  }, []);
+
+  const isPairDirty = useCallback((pairKey) => {
+    const row = form[pairKey];
+    if (!row) return false;
+    const saved = persisted[pairKey];
+    if (!saved) {
+      return Boolean(String(row.sfPerStationTarget || '').trim() || String(row.targetUtilizationRatePct || '').trim());
+    }
+    const sf = Number(row.sfPerStationTarget);
+    const rate = pctToFraction(row.targetUtilizationRatePct);
+    return sf !== saved.sfPerStationTarget || rate !== saved.targetUtilizationRate;
+  }, [form, persisted]);
+
+  const dirtyPairs = useMemo(
+    () => pairList.filter(({ pairKey }) => isPairDirty(pairKey)),
+    [pairList, isPairDirty]
+  );
+
+  const handleSave = useCallback(async () => {
+    if (saving || !dirtyPairs.length) return;
+    setSaving(true);
+    setSaveMessage('');
+    setSaveError('');
+
+    const invalid = dirtyPairs
+      .map(({ pairKey }) => ({ pairKey, errors: validateSpaceConfigRow(form[pairKey]) }))
+      .filter((entry) => entry.errors.length);
+    if (invalid.length) {
+      setSaveError(invalid.map((entry) => `${entry.pairKey}: ${entry.errors.join('; ')}`).join(' | '));
+      setSaving(false);
+      return;
+    }
+
+    try {
+      // Plain overwrite (no {merge: true}), same "full setDoc, no partial
+      // update" convention as SpaceConfigSection -- an override always
+      // supplies both fields together.
+      for (const { category, department, pairKey } of dirtyPairs) {
+        const row = form[pairKey];
+        const payload = {
+          category,
+          department,
+          sfPerStationTarget: Number(row.sfPerStationTarget),
+          targetUtilizationRate: pctToFraction(row.targetUtilizationRatePct),
+          effectiveDate: serverTimestamp()
+        };
+        await setDoc(doc(overridesCollection, pairKey), payload);
+      }
+      // A just-saved pair is real persisted data now, not an unconfirmed
+      // suggestion -- clear it out of suggestedPairKeys so the blue
+      // "not yet saved" badge doesn't linger and misdescribe a value that
+      // was, in fact, just saved (the isUnsaved/dirty styling below already
+      // recomputes correctly off `persisted` via the loadOverrides() reload
+      // right after this; suggestedPairKeys is separate state that needs
+      // its own explicit downgrade).
+      setSuggestedPairKeys((prev) => {
+        if (!prev.size) return prev;
+        const next = new Set(prev);
+        dirtyPairs.forEach(({ pairKey }) => next.delete(pairKey));
+        return next;
+      });
+      setSaveMessage(
+        `Saved ${dirtyPairs.length.toLocaleString()} department override${dirtyPairs.length === 1 ? '' : 's'}.`
+      );
+      await loadOverrides();
+    } catch (error) {
+      setSaveError(String(error?.message || 'Failed to save department space overrides.'));
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, dirtyPairs, form, overridesCollection, loadOverrides]);
+
+  // Coverage accounting, per explicit request: which live departments got a
+  // real master-plan suggestion vs. which didn't (checked against the same
+  // live departmentOptions list every suggestion in this section gates on).
+  const departmentsWithReference = useMemo(
+    () => departmentOptions.filter((department) => getMasterPlanSpaceTarget(department, departmentOptions)),
+    [departmentOptions]
+  );
+  const departmentsWithoutReference = useMemo(
+    () => departmentOptions.filter((department) => !getMasterPlanSpaceTarget(department, departmentOptions)),
+    [departmentOptions]
+  );
+
+  const summaryLabel = dirtyPairs.length
+    ? `Department-Specific Space Targets (Classroom/Lab) (${dirtyPairs.length} unsaved)`
+    : 'Department-Specific Space Targets (Classroom/Lab)';
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          {summaryLabel}
+        </summary>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving || !dirtyPairs.length}
+          >
+            {saving ? 'Saving...' : `Save Department Overrides${dirtyPairs.length ? ` (${dirtyPairs.length})` : ''}`}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          Optional, per-department SF/station target and target utilization rate for the "Classroom" and "Lab"
+          categories, overriding Space Configuration's category-wide default for that department only in the "By
+          Department" table below. A department with no override here simply keeps using its category's default,
+          exactly as before this section existed.
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          The master plan publishes one combined "100 - Classroom / 200 - Class Lab" teaching-space target per
+          department, not separate Classroom and Lab figures -- suggested values below apply that same published
+          number to both category rows for a department, not two independently verified numbers.
+        </div>
+
+        {!availableTargetCategories.length && categoryOptionsLoaded ? (
+          <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, fontSize: 11, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8' }}>
+            Add "Classroom" and/or "Lab" as space categories in Space Configuration above to enable department-specific overrides.
+          </div>
+        ) : null}
+
+        {departmentOptionsLoaded && departmentOptions.length ? (
+          <div style={{ marginTop: 8, fontSize: 10.5, color: '#1d4ed8', lineHeight: 1.4 }}>
+            <strong>{departmentsWithReference.length}</strong> of <strong>{departmentOptions.length}</strong> live
+            department{departmentOptions.length === 1 ? '' : 's'} {departmentsWithReference.length === 1 ? 'has' : 'have'} a
+            published master-plan reference -- one shared combined Classroom/Lab teaching-space value, pre-filled
+            below into both category rows (suggested only). Applies only to the "Classroom"/"Lab" categories -- any
+            other space category is never pre-filled from this table.
+            {departmentsWithoutReference.length ? (
+              <div style={{ marginTop: 2, color: '#475467' }}>
+                No published reference for: {departmentsWithoutReference.join(', ')} -- manual entry only.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {loading && !departmentOptionsLoaded ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading department overrides...</div>
+        ) : !pairList.length ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
+            {departmentOptionsLoaded && !departmentOptions.length
+              ? 'No departments found yet -- upload Enrollment & FTE Projections above first.'
+              : 'No eligible (department, category) pairs yet.'}
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            {pairList.map(({ category, department, pairKey }) => {
+              const row = form[pairKey] || { sfPerStationTarget: '', targetUtilizationRatePct: '' };
+              const dirty = isPairDirty(pairKey);
+              const isSuggested = suggestedPairKeys.has(pairKey);
+              const isUnsaved = !persisted[pairKey];
+              const rowErrors = dirty ? validateSpaceConfigRow(row) : [];
+              const masterPlanLabel = MASTER_PLAN_DEPARTMENT_LABELS[department];
+              const rowBackground = isSuggested ? '#eff6ff' : (dirty ? '#fffbeb' : '#f8fafc');
+              const rowBorder = isSuggested ? '#bfdbfe' : (dirty ? '#fde68a' : '#e5e7eb');
+              return (
+                <div
+                  key={pairKey}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    alignItems: 'center',
+                    padding: 6,
+                    background: rowBackground,
+                    border: `1px solid ${rowBorder}`,
+                    borderRadius: 6
+                  }}
+                >
+                  <div style={{ flex: '1 1 180px', minWidth: 180, fontSize: 11, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    {department} <span style={{ fontWeight: 500, color: '#667085' }}>({category})</span>
+                    {isUnsaved ? <span style={{ color: '#b45309', fontWeight: 500 }}> (unsaved)</span> : null}
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="SF/station"
+                    value={row.sfPerStationTarget}
+                    onChange={(e) => handleFieldChange(pairKey, 'sfPerStationTarget', e.target.value)}
+                    style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    placeholder="Target %"
+                    value={row.targetUtilizationRatePct}
+                    onChange={(e) => handleFieldChange(pairKey, 'targetUtilizationRatePct', e.target.value)}
+                    style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                  />
+                  {isSuggested ? (
+                    <span
+                      style={{
+                        flex: '0 0 auto',
+                        fontSize: 9.5,
+                        fontWeight: 600,
+                        color: '#1d4ed8',
+                        background: '#dbeafe',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 4,
+                        padding: '1px 5px'
+                      }}
+                      title={
+                        `Suggested from the master plan's combined Classroom/Lab teaching-space target for this `
+                        + `department — the same published value applies to both categories, not independently `
+                        + `derived per room type.`
+                        + (masterPlanLabel ? ` Master plan calls this department "${masterPlanLabel}".` : '')
+                      }
+                    >
+                      Suggested from master plan (combined Classroom/Lab target) — not yet saved
+                    </span>
+                  ) : null}
+                  {rowErrors.length ? (
+                    <div style={{ flex: '1 1 100%', fontSize: 10, color: '#b42318' }}>{rowErrors.join('; ')}</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
+        {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
+        {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
+      </details>
+    </div>
+  );
+}
+
 // Space Growth / Right-Sizing -- roadmap item beyond the original 6, the
 // first consumer of enrollmentProjections. Strictly read-only against
 // spaceConfig, roomUtilizationMeta, enrollmentProjections, and Airtable
@@ -1897,15 +2348,25 @@ function SpaceGrowthSection() {
     () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
     []
   );
+  // Department-specific overrides, read-only here -- DepartmentSpaceOverridesSection
+  // above owns all writes to this collection. Additive: an empty/missing
+  // collection just means computeDepartmentSpaceGrowth falls back to the
+  // category-level spaceConfig default for every pair, exactly as before
+  // this collection existed.
+  const departmentOverridesCollection = useMemo(
+    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION),
+    []
+  );
 
   const runCalculation = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [spaceConfigSnap, roomMetaSnap, enrollmentSnap, airtableRooms] = await Promise.all([
+      const [spaceConfigSnap, roomMetaSnap, enrollmentSnap, departmentOverridesSnap, airtableRooms] = await Promise.all([
         getDocs(spaceConfigCollection),
         getDocs(roomUtilizationMetaCollection),
         getDocs(enrollmentProjectionsCollection),
+        getDocs(departmentOverridesCollection),
         // Airtable is area-only input here (Current SF). A failed fetch
         // shouldn't block the rest of the table from computing -- every
         // category just falls back to 0 tagged/resolved SF instead of the
@@ -1927,6 +2388,7 @@ function SpaceGrowthSection() {
         ...docSnap.data()
       }));
       const enrollmentProjectionDocs = enrollmentSnap.docs.map((docSnap) => docSnap.data());
+      const departmentOverrideDocs = departmentOverridesSnap.docs.map((docSnap) => docSnap.data());
       const airtableAreaByRoomKey = buildAirtableAreaMap(airtableRooms);
 
       setResult(computeSpaceGrowth({
@@ -1940,21 +2402,25 @@ function SpaceGrowthSection() {
       // Additive -- computeSpaceGrowth above is untouched and drives the
       // existing institution-wide table exactly as before. This groups the
       // same roomUtilizationMetaDocs/airtableAreaByRoomKey by (category,
-      // department) pair instead.
+      // department) pair instead, now also checking departmentOverrideDocs
+      // first for each pair (see computeDepartmentSpaceGrowth's header
+      // comment) before falling back to the category-level spaceConfig
+      // default -- unchanged for any pair with no override doc.
       setDepartmentResult(computeDepartmentSpaceGrowth({
         spaceConfigDocs,
         roomUtilizationMetaDocs,
         airtableAreaByRoomKey,
         baselineYear: BASELINE_ENROLLMENT_YEAR,
         targetYear,
-        enrollmentProjectionDocs
+        enrollmentProjectionDocs,
+        departmentOverrideDocs
       }));
     } catch (error) {
       setLoadError(String(error?.message || 'Failed to compute space growth.'));
     } finally {
       setLoading(false);
     }
-  }, [spaceConfigCollection, roomUtilizationMetaCollection, enrollmentProjectionsCollection, targetYear]);
+  }, [spaceConfigCollection, roomUtilizationMetaCollection, enrollmentProjectionsCollection, departmentOverridesCollection, targetYear]);
 
   // Re-runs whenever targetYear changes (it's a dependency of runCalculation
   // above), not just on mount -- picking a new target year in the selector
@@ -2160,6 +2626,9 @@ function SpaceGrowthSection() {
                           ) : (
                             <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>not set</span>
                           )}
+                          {row.usingDepartmentOverride ? (
+                            <div style={{ fontSize: 9, color: '#1d4ed8', fontWeight: 600 }}>department override</div>
+                          ) : null}
                         </td>
                         <td style={{ padding: '4px 6px', color: lowConfidence ? '#92400e' : 'inherit', fontWeight: lowConfidence ? 700 : 400 }}>
                           {row.taggedRoomCount}
@@ -2998,6 +3467,7 @@ export function SpaceGrowthProjectionsPanel({
       <SpaceConfigSection />
       <RoomUtilizationMetaSection />
       <EnrollmentProjectionsSection />
+      <DepartmentSpaceOverridesSection />
       <SpaceGrowthSection />
     </div>
   );

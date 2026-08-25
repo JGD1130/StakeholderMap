@@ -169,6 +169,16 @@ service cloud.firestore {
       match /enrollmentProjections/{deptId} {
         allow read, write: if isUniversityAdmin(universityId);
       }
+      // Department-specific SF/station + target utilization overrides for
+      // the Space Growth / Right-Sizing "By Department" breakdown. Same
+      // admin-only posture as every other Classroom Utilization Planner
+      // collection above -- internal planning tool, not exposed to any
+      // public/client route. docId is "{category}||{department}", same
+      // pairKey computeDepartmentSpaceGrowth (spaceGrowthCalc.js) already
+      // builds internally.
+      match /spaceConfigDepartmentOverrides/{pairKey} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
 
       match /floorAdjustments/{docId} {
         allow read: if true;
