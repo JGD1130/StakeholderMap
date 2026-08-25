@@ -45,6 +45,15 @@
   z-index: 20;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Reserves layout space for this rail's own vertical scrollbar so it
+     can't render as an overlay on top of box content (found on the
+     client-facing route's single-box SpaceDashboardPanel case, where the
+     scrollbar sat directly over the Departments list's right-aligned SF
+     numbers). Additive only -- doesn't change overflow-y/flex-shrink/
+     max-height, which already correctly make this rail the single scroll
+     surface for however many .dashboard-box panels are stacked inside it
+     (1 on the client route, up to 4 on admin). */
+  scrollbar-gutter: stable;
 }
 
 .mf-right-logos {
