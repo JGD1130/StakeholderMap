@@ -143,6 +143,16 @@ service cloud.firestore {
         allow read, write: if isUniversityAdmin(universityId);
       }
 
+      // Capital Phasing & Costs (Capital Priorities sub-section, added
+      // 2026-08-26) -- real project phasing/cost data parsed from the
+      // master plan's Phasing_and_Costs.xlsx. Same admin-only posture as
+      // capitalPriorities immediately above -- internal planning tool, not
+      // exposed to any public/client route. docId is a canon() slug of the
+      // project name, same convention as enrollmentProjections' deptId.
+      match /capitalPhasingProjects/{projectId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+
       // Classroom Utilization Planner. Admin-only in both directions, same
       // posture as capitalPriorities immediately above — internal planning
       // tool, not exposed to any public/client route. Hastings-only is

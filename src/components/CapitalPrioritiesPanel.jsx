@@ -14,8 +14,20 @@
 //   Tier 3: 40-59   (Long-term, 10-20 yrs) — continue planning, reassess at CIP updates
 //   Tier 4: <40     (Deferred / opportunistic) — reevaluate scope/funding/strategic importance
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
+import {
+  CAPITAL_PHASING_SHEET_NAME,
+  parseCapitalPhasingFile,
+  toCapitalPhasingDocs,
+  computeCapitalPhasingSchedule,
+  formatCapitalPhasingMonthYear
+} from '../utils/capitalPhasingImport';
+
+// Mirrors the existing writeBatch chunking convention in
+// ClassroomUtilizationPanel.jsx (BATCH_CHUNK_SIZE) -- Firestore's own cap
+// is 500 ops/batch, kept comfortably under that.
+const CAPITAL_PHASING_BATCH_CHUNK_SIZE = 400;
 
 const SCORE_FIELDS = [
   {
@@ -222,6 +234,345 @@ function PortfolioStat({ label, value, color }) {
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 6, background: '#f8fafc' }}>
       <div style={{ fontSize: 9.5, color: '#667085', textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</div>
       <div style={{ fontSize: 12.5, fontWeight: 700, color: color || '#1f2937', marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+// Capital Phasing & Costs -- new section, added 2026-08-26. Lives inside
+// Capital Priorities (this panel), NOT Classroom Utilization, per Clark's
+// explicit decision: these are two separate master-plan-derived features
+// that happen to both read Hastings master plan workbooks. Shows real
+// project phasing/cost data from the master plan's Phasing_and_Costs.xlsx
+// -- a chronological project-card list, not a full Gantt grid, per Clark's
+// decision (a future enhancement, not this one).
+//
+// Same "parse -> preview -> review -> Confirm & Save" pattern as Enrollment
+// Projections (ClassroomUtilizationPanel.jsx's EnrollmentProjectionsSection)
+// and the same delete-then-write idempotency pattern as Import Schedule/
+// Enrollment: re-uploading a newer version of the workbook always lands on
+// exactly the new project set, never merge-accumulating stale projects a
+// newer workbook version dropped.
+//
+// Writes ONLY to universities/{universityId}/capitalPhasingProjects/{projectId}
+// -- no other collection is read or written by this section.
+function CapitalPhasingSection({ universityId }) {
+  const [sectionOpen, setSectionOpen] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState('');
+  const [parsedResult, setParsedResult] = useState(null); // { projects, issues, sheetName, sourceFileName }
+  const [savePhase, setSavePhase] = useState(null); // null | 'clearing' | 'writing'
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [savedProjects, setSavedProjects] = useState([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [savedLoadError, setSavedLoadError] = useState('');
+
+  const capitalPhasingCollection = useMemo(
+    () => collection(db, 'universities', universityId, 'capitalPhasingProjects'),
+    [universityId]
+  );
+
+  const loadSavedProjects = useCallback(async () => {
+    if (!universityId) {
+      setSavedProjects([]);
+      return;
+    }
+    setSavedLoading(true);
+    setSavedLoadError('');
+    try {
+      const snap = await getDocs(capitalPhasingCollection);
+      const docs = snap.docs.map((docSnap) => ({ projectId: docSnap.id, ...(docSnap.data() || {}) }));
+      // Chronological, per the display spec -- completionDate is stored as
+      // an ISO "YYYY-MM-01" string, which sorts correctly lexicographically.
+      docs.sort((a, b) => String(a.completionDate || '').localeCompare(String(b.completionDate || '')));
+      setSavedProjects(docs);
+    } catch (error) {
+      setSavedLoadError(String(error?.message || 'Failed to load saved capital phasing projects.'));
+    } finally {
+      setSavedLoading(false);
+    }
+  }, [capitalPhasingCollection, universityId]);
+
+  useEffect(() => {
+    void loadSavedProjects();
+  }, [loadSavedProjects]);
+
+  const previewDocs = useMemo(
+    () => (parsedResult ? toCapitalPhasingDocs(parsedResult) : []),
+    [parsedResult]
+  );
+
+  const handleFileSelected = useCallback(async (event) => {
+    const file = event.target.files?.[0] || null;
+    // Reset the input value immediately so re-selecting the SAME file name
+    // still fires a change event and re-parses, same convention as
+    // EnrollmentProjectionsSection.
+    event.target.value = '';
+    if (!file) return;
+
+    setParsing(true);
+    setParseError('');
+    setParsedResult(null);
+    setSaveMessage('');
+    setSaveError('');
+    try {
+      const result = await parseCapitalPhasingFile(file);
+      if (!result.projects.length && !result.issues.length) {
+        throw new Error(
+          'Parsed the workbook but found no recognizable project blocks. Check that the sheet still has '
+          + 'project name in column B, completion date in column C, and phase rows with a duration '
+          + '(e.g. "4 months") in column C beneath each project header.'
+        );
+      }
+      setParsedResult(result);
+    } catch (error) {
+      setParseError(String(error?.message || 'Failed to parse workbook.'));
+    } finally {
+      setParsing(false);
+    }
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (savePhase || !previewDocs.length || !universityId) return;
+    let phase = 'clearing';
+    setSavePhase(phase);
+    setSaveMessage('');
+    setSaveError('');
+    try {
+      // Delete-then-write, same idempotency pattern as Import Schedule/
+      // Enrollment Projections: always lands on exactly len(previewDocs)
+      // docs instead of merge-only accumulating a stale project a newer
+      // workbook version removed. If this fails partway, we stop here and
+      // never reach the write step below.
+      const existingSnap = await getDocs(capitalPhasingCollection);
+      const existingRefs = existingSnap.docs.map((docSnap) => docSnap.ref);
+      for (let i = 0; i < existingRefs.length; i += CAPITAL_PHASING_BATCH_CHUNK_SIZE) {
+        const chunk = existingRefs.slice(i, i + CAPITAL_PHASING_BATCH_CHUNK_SIZE);
+        if (!chunk.length) continue;
+        const batch = writeBatch(db);
+        chunk.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+      }
+
+      phase = 'writing';
+      setSavePhase(phase);
+      for (let i = 0; i < previewDocs.length; i += CAPITAL_PHASING_BATCH_CHUNK_SIZE) {
+        const chunk = previewDocs.slice(i, i + CAPITAL_PHASING_BATCH_CHUNK_SIZE);
+        if (!chunk.length) continue;
+        const batch = writeBatch(db);
+        chunk.forEach((entry) => {
+          batch.set(doc(capitalPhasingCollection, entry.projectId), {
+            projectName: entry.projectName,
+            completionDate: entry.completionDate,
+            projectCost2026: entry.projectCost2026,
+            escalatedCost: entry.escalatedCost,
+            phases: entry.phases,
+            notes: entry.notes,
+            importedAt: serverTimestamp()
+          }, { merge: true });
+        });
+        await batch.commit();
+      }
+
+      setSaveMessage(
+        `Cleared ${existingRefs.length.toLocaleString()} old project${existingRefs.length === 1 ? '' : 's'}, `
+        + `imported ${previewDocs.length.toLocaleString()} project${previewDocs.length === 1 ? '' : 's'} `
+        + `from "${parsedResult?.sourceFileName || 'the uploaded file'}".`
+      );
+      // Clear the preview after a successful save -- requires a fresh file
+      // selection before Save can be clicked again.
+      setParsedResult(null);
+      await loadSavedProjects();
+    } catch (error) {
+      const phaseLabel = phase === 'clearing'
+        ? 'Failed while clearing old data (nothing new was written): '
+        : 'Failed while writing new data (old data was already cleared): ';
+      setSaveError(phaseLabel + String(error?.message || 'unknown error.'));
+    } finally {
+      setSavePhase(null);
+    }
+  }, [savePhase, previewDocs, capitalPhasingCollection, universityId, parsedResult, loadSavedProjects]);
+
+  const summaryLabel = previewDocs.length
+    ? `Capital Phasing & Costs (previewing ${previewDocs.length} unsaved project${previewDocs.length === 1 ? '' : 's'})`
+    : savedProjects.length
+      ? `Capital Phasing & Costs (${savedProjects.length.toLocaleString()} project${savedProjects.length === 1 ? '' : 's'} saved)`
+      : 'Capital Phasing & Costs';
+
+  // Shared card renderer for both the "currently saved" list and the
+  // unsaved preview -- same visual shape, different data source.
+  const renderProjectCard = (project, key) => {
+    const schedule = computeCapitalPhasingSchedule(project);
+    return (
+      <div key={key} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 8, background: '#f8fafc' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{project.projectName}</div>
+            <div style={{ fontSize: 10.5, color: '#667085' }}>
+              Completion: {formatCapitalPhasingMonthYear(project.completionDate) || '—'}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0, fontSize: 10.5 }}>
+            <div>2026 cost: <strong>{formatUsdCompact(project.projectCost2026) || '—'}</strong></div>
+            <div>Escalated: <strong>{formatUsdCompact(project.escalatedCost) || '—'}</strong></div>
+          </div>
+        </div>
+
+        {schedule.length ? (
+          <div style={{ marginTop: 6, display: 'grid', gap: 3 }}>
+            {schedule.map((phase, idx) => (
+              <div
+                key={`${phase.name}-${idx}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  fontSize: 10.5,
+                  padding: '3px 6px',
+                  background: '#fff',
+                  border: '1px solid #edf2f7',
+                  borderRadius: 4
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{phase.name}</span>
+                <span style={{ color: '#667085' }}>
+                  {formatCapitalPhasingMonthYear(phase.startDate)} – {formatCapitalPhasingMonthYear(phase.endDate)}
+                  {' '}({phase.durationMonths} mo)
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {Array.isArray(project.notes) && project.notes.length ? (
+          <div style={{ marginTop: 6, fontSize: 10, color: '#465569', lineHeight: 1.4 }}>
+            {project.notes.map((note, idx) => (
+              <div key={idx}>• {note}</div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          {summaryLabel}
+        </summary>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          Upload the master plan's Phasing & Costs workbook (sheet "{CAPITAL_PHASING_SHEET_NAME}"),
+          one project per card, phases and dates computed backward from each project's completion date.
+          Selecting a file only parses it and shows a preview below -- nothing is written until you review
+          it and click Confirm & Save.
+        </div>
+
+        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => void handleFileSelected(e)}
+            disabled={parsing || Boolean(savePhase)}
+            style={{ fontSize: 11 }}
+          />
+          {parsing ? <span style={{ fontSize: 11, color: '#667085' }}>Parsing...</span> : null}
+        </div>
+
+        {savedLoading && !savedProjects.length ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading saved projects...</div>
+        ) : savedProjects.length ? (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#344054', marginBottom: 4 }}>
+              Currently saved ({savedProjects.length.toLocaleString()} project{savedProjects.length === 1 ? '' : 's'})
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {savedProjects.map((project) => renderProjectCard(project, project.projectId))}
+            </div>
+          </div>
+        ) : !savedLoading ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>No capital phasing projects saved yet.</div>
+        ) : null}
+
+        {savedLoadError ? (
+          <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{savedLoadError}</div>
+        ) : null}
+
+        {parseError ? (
+          <div style={{ marginTop: 8, fontSize: 10.5, color: '#b42318' }}>{parseError}</div>
+        ) : null}
+
+        {parsedResult ? (
+          <div style={{ marginTop: 10 }}>
+            <div
+              style={{
+                padding: '8px 10px',
+                borderRadius: 6,
+                fontSize: 11.5,
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1e3a8a',
+                lineHeight: 1.5
+              }}
+            >
+              <strong>Preview</strong> — "{parsedResult.sourceFileName}" (sheet "{parsedResult.sheetName}"): {' '}
+              {previewDocs.length} project{previewDocs.length === 1 ? '' : 's'} parsed.
+              {parsedResult.issues.length ? ` ${parsedResult.issues.length} row${parsedResult.issues.length === 1 ? '' : 's'} flagged below -- review before saving.` : ''}
+            </div>
+
+            {/* Flagged rows -- same "flag visibly, never silently drop" philosophy
+                as every other suggestion/import path in this codebase. Shown even
+                when there are also valid projects, since a flagged project is
+                simply excluded from previewDocs rather than guessed at. */}
+            {parsedResult.issues.length ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  color: '#7c4a03'
+                }}
+              >
+                <strong>Could not parse ({parsedResult.issues.length}):</strong>
+                <div style={{ marginTop: 4, display: 'grid', gap: 3 }}>
+                  {parsedResult.issues.map((issue, idx) => (
+                    <div key={idx}>
+                      Row {issue.excelRow} ("{issue.rawName}") — {issue.reason}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {previewDocs.length ? (
+              <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+                {previewDocs.map((project) => renderProjectCard(project, project.projectId))}
+              </div>
+            ) : null}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={Boolean(savePhase) || !previewDocs.length}
+              >
+                {savePhase === 'clearing' ? 'Clearing old data...'
+                  : savePhase === 'writing' ? 'Saving...'
+                  : `Confirm & Save (${previewDocs.length})`}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
+        {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
+      </details>
     </div>
   );
 }
@@ -883,6 +1234,8 @@ export default function CapitalPrioritiesPanel({
           </div>
         )}
       </div>
+
+      <CapitalPhasingSection universityId={normalizedUniversityId} />
       </div>
       </details>
     </div>
