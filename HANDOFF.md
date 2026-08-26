@@ -240,6 +240,34 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-08-26) — `DepartmentSpaceOverridesSection` master-plan suggestion never re-ran after a category's formula type changed post-mount; re-keyed the guard per (pairKey, formulaType)
+
+### The bug
+
+The master-plan suggestion effect in `DepartmentSpaceOverridesSection` (`ClassroomUtilizationPanel.jsx`) was gated by a single component-wide `suggestionsAppliedRef.current` boolean that latched `true` after the first qualifying render. If a category's formula type (station-vs-FTE) was corrected in Space Configuration *after* this section had already mounted — e.g. "Office" fixed from SF/Station to SF/FTE — the effect never ran again, so the now-relevant `sfPerFteTarget` field stayed genuinely blank. `isPairDirty` still (correctly) flagged the pair dirty because the saved override's formula type no longer matched the category's current one, so Save validated the blank field and surfaced "SF/FTE must be a positive number" instead of ever re-offering the expected suggestion.
+
+### Confirmed root cause: empty, not stale-invalid
+
+Traced `loadOverrides`' read-back and the suggestion-write branches before concluding anything: a saved override only ever populates the field(s) belonging to *its own* `formulaType` (`detectFormulaType(data)` on the saved doc itself), and every suggestion/manual-edit write always sets a row's *other* field(s) explicitly (to `''`, at the time). So the failing field was `Number('') = 0` (fails the `>0` check) — never a leftover numeric value from a different formula type leaking through. This ruled out "wrong value suggested" and confirmed the actual defect was "suggestion never re-ran," which is what justified fixing the gate rather than adding fallback validation.
+
+### Fix
+
+Replaced the boolean with `suggestionAppliedFormulaTypeRef` (`Map<pairKey, formulaType last evaluated>`) — a pair is now only skipped once it's been evaluated for its *current* formula type; a formula-type change reopens exactly that pair, nothing more. `suggestedPairKeys` updates changed from a replace to an additive merge for the same reason (the effect can now legitimately fire more than once across a session).
+
+### Hardening found and fixed in the same pass
+
+Each suggestion-write branch replaced the whole row object, unconditionally blanking the *other* formula type's field(s). Invisible in the common case, but if an admin edited a field and the category's formula type flipped away and back again before saving, that edit was silently wiped. Both branches now spread the existing row instead of hard-resetting it, so a value in the currently-inactive field survives a flip-flop (it's never read/validated/saved while inactive anyway, so preserving it is free).
+
+### `getMasterPlanSpaceTarget`/`getMasterPlanOfficeSpaceTarget` cross-contamination, checked not assumed
+
+Grepped every call site in `src/` (only `masterPlanSpaceTargets.js` itself and this one component use either function). The only place either result feeds an actual form value is this effect, always called from inside the matching `formulaType` branch, with `formulaType` read fresh from the live `onSnapshot`-sourced `categoryFormulaTypeByCategory` on every run. No path exists for a station-shaped suggestion to land in an FTE row or vice versa, now or after any future formula-type change. (The other call site, `departmentsWithReference`/`departmentsWithoutReference`, is a deliberate union of both tables for a coverage-summary display, not a value write — correct as-is, left untouched.)
+
+### Status
+
+Uncommitted, isolated-build-verified (`npm run build`, clean — the one prior pass surfaced 3 esbuild "duplicate key in object literal" warnings from the first draft of the preserve-on-write spread, fixed by dropping the redundant default before the override). Scope: `ClassroomUtilizationPanel.jsx` only, inside `DepartmentSpaceOverridesSection`'s suggestion effect and its two write branches. Awaiting Clark's retest before commit/push.
+
+---
+
 ## Recent Changes (2026-08-24, continued) — Critical fix: `resolveRoomsUrl()` 404'd against the real deployed ai-server; methodology lesson on verifying production-only URL paths
 
 ### The bug

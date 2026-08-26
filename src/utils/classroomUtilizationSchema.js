@@ -24,11 +24,21 @@ export const SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION = 'spaceConfigDepartme
 /**
  * universities/{universityId}/spaceConfig/{spaceCategory}
  * Target space/utilization standards per space category (e.g. "Classroom",
- * "Lab"), used by the future calc engine to compare actual vs. target use.
+ * "Lab", "Office"), used by the calc engine to compare actual vs. target
+ * use. A doc carries fields for exactly ONE formula type -- EITHER
+ * {sfPerStationTarget, targetUtilizationRate} (enrollment-based: Ideal SF =
+ * sfPerStationTarget/targetUtilizationRate x enrollment) OR
+ * {sfPerFteTarget} (FTE-based, added 2026-08-25 for Office/support space:
+ * Ideal SF = sfPerFteTarget x Total FTE, no utilization-rate division) --
+ * never both. Formula type is detected by which field is populated, not by
+ * a separate stored flag; SpaceConfigSection's plain setDoc overwrite drops
+ * the other formula's stale fields whenever a category's formula type is
+ * changed and re-saved, so a doc can never end up with a stale mix of both.
  *
  * @typedef {Object} SpaceConfigDoc
- * @property {number} sfPerStationTarget - Target square feet per station.
- * @property {number} targetUtilizationRate - Target utilization, 0-1.
+ * @property {number} [sfPerStationTarget] - Enrollment-based only: target square feet per station.
+ * @property {number} [targetUtilizationRate] - Enrollment-based only: target utilization, 0-1.
+ * @property {number} [sfPerFteTarget] - FTE-based only: target square feet per FTE.
  * @property {import('firebase/firestore').Timestamp} effectiveDate - When this target took effect.
  */
 
@@ -144,10 +154,17 @@ export const SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION = 'spaceConfigDepartme
  * sourced suggested values) can be represented precisely instead of forcing
  * every department in "Classroom"/"Lab" to share one target.
  *
+ * Same "exactly one formula type, detected by which field is populated" rule
+ * as SpaceConfigDoc above (added 2026-08-25) -- an override for an
+ * enrollment-based category (e.g. "Classroom"/"Lab") carries
+ * {sfPerStationTarget, targetUtilizationRate}; an override for an FTE-based
+ * category (e.g. "Office") carries {sfPerFteTarget} instead.
+ *
  * @typedef {Object} SpaceConfigDepartmentOverrideDoc
  * @property {string} category - Matches a spaceConfig/{spaceCategory} document id.
  * @property {string} department - Matches an enrollmentProjections doc's `department` field.
- * @property {number} sfPerStationTarget - Target square feet per station, this department's own value.
- * @property {number} targetUtilizationRate - Target utilization, 0-1, this department's own value.
+ * @property {number} [sfPerStationTarget] - Enrollment-based only: target square feet per station, this department's own value.
+ * @property {number} [targetUtilizationRate] - Enrollment-based only: target utilization, 0-1, this department's own value.
+ * @property {number} [sfPerFteTarget] - FTE-based only: target square feet per FTE, this department's own value.
  * @property {import('firebase/firestore').Timestamp} effectiveDate - When this override took effect.
  */

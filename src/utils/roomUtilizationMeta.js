@@ -115,6 +115,13 @@ export function buildRoomUtilizationMetaKey(building, room) {
 // Deliberately reads only {building, room} off each doc -- this is a room
 // *list* derivation, not a schedule reducer, so course/section/time fields
 // are irrelevant here.
+//
+// `source: 'scheduled'` added 2026-08-25 so ClassroomUtilizationPanel.jsx
+// can merge this list with roomTypeSuggestion.js's
+// deriveOfficeRoomsFromAirtable() output into one combined tagging universe
+// while still distinguishing which rooms have real Utilization
+// Results/Heat Map/Size Range data (courseMeetings-derived) from which
+// don't (Office rooms never have courseMeetings docs at all).
 export function deriveDistinctRoomsFromCourseMeetings(courseMeetingDocs) {
   const seen = new Map();
   (Array.isArray(courseMeetingDocs) ? courseMeetingDocs : []).forEach((data) => {
@@ -123,7 +130,7 @@ export function deriveDistinctRoomsFromCourseMeetings(courseMeetingDocs) {
     if (!building || !room) return;
     const roomKey = buildRoomUtilizationMetaKey(building, room);
     if (!roomKey || seen.has(roomKey)) return;
-    seen.set(roomKey, { roomKey, building, room });
+    seen.set(roomKey, { roomKey, building, room, source: 'scheduled' });
   });
   return Array.from(seen.values()).sort((a, b) => {
     const buildingCompare = a.building.localeCompare(b.building);

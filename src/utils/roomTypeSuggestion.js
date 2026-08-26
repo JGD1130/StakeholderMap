@@ -39,6 +39,13 @@ import { resolveAirtableBuildingName, stripKnownAirtableRoomPrefix } from './cla
 // (e.g. a future new Airtable room type, or one of the many non-classroom
 // types like "Office" that will never appear here since roomList is already
 // scoped to courseMeetings' 48 scheduled rooms) simply has no suggestion.
+// Office subtypes added 2026-08-25, per the Office/support space
+// right-sizing investigation: pulled directly from a live /api/rooms fetch
+// (not assumed/remembered) -- all 17 distinct "Office - *" Room Type
+// Description values that currently exist in Airtable, ~275 rooms total.
+// Grouped to "Office" the same way every "Classroom - *"/"Laboratory - *"
+// subtype above already groups to "Classroom"/"Lab" -- one category per
+// physical-space family, not a finer split.
 export const ROOM_TYPE_TO_SPACE_CATEGORY = {
   'Classroom - General': 'Classroom',
   'Classroom - Multipurpose': 'Classroom',
@@ -46,7 +53,24 @@ export const ROOM_TYPE_TO_SPACE_CATEGORY = {
   'Classroom - Computer': 'Classroom',
   'Classroom - Indoor Amphitheater / Auditorium': 'Classroom',
   'Laboratory - Class': 'Lab',
-  'Laboratory - Studio': 'Lab'
+  'Laboratory - Studio': 'Lab',
+  'Office - Adjunct Faculty': 'Office',
+  'Office - Conference Room': 'Office',
+  'Office - Department / Suite Circulation': 'Office',
+  'Office - Emeritus Faculty': 'Office',
+  'Office - Faculty': 'Office',
+  'Office - File Room': 'Office',
+  'Office - Graduate / Post Doc Students': 'Office',
+  'Office - Library / Reference Room': 'Office',
+  'Office - Lounge / Lunch Room': 'Office',
+  'Office - Mail Room': 'Office',
+  'Office - Pantry / Kitchenette': 'Office',
+  'Office - Prof and Admin': 'Office',
+  'Office - Service': 'Office',
+  'Office - Staff': 'Office',
+  'Office - Student / Organization': 'Office',
+  'Office - Waiting / Reception': 'Office',
+  'Office - Work Room': 'Office'
 };
 
 export function suggestSpaceCategoryFromRoomType(roomTypeDescription) {
@@ -79,4 +103,52 @@ export function buildAirtableRoomTypeMap(airtableRooms) {
     if (!map.has(roomKey)) map.set(roomKey, roomType);
   });
   return map;
+}
+
+// Real Airtable inventory rooms whose Room Type Description starts with
+// "Office - ", added 2026-08-25 to settle the Office/support space
+// right-sizing blocker: these ~275 rooms are never course-scheduled (no
+// courseMeetings docs exist for them), so
+// deriveDistinctRoomsFromCourseMeetings (roomUtilizationMeta.js) can never
+// surface them for tagging on its own -- ClassroomUtilizationPanel.jsx
+// merges this function's output with that one into one combined tagging
+// universe.
+//
+// Filtered by PREFIX, not by exact membership in ROOM_TYPE_TO_SPACE_CATEGORY
+// above -- deliberately broader than the reviewed suggestion map, so a
+// future new "Office - <something>" subtype Airtable might add later still
+// shows up here for manual tagging (same as any of the 5 unmapped
+// courseMeetings rooms already do for Room Type today), rather than
+// silently staying invisible until this map is updated too. It just won't
+// get an auto-suggested category until the map catches up -- same
+// "no match, no suggestion, tag manually" convention as everywhere else in
+// this module.
+//
+// Same building/room-key resolution as buildAirtableRoomTypeMap above (not
+// re-derived), so a room here and its entry in airtableRoomTypeByKey always
+// agree on roomKey.
+const OFFICE_ROOM_TYPE_PREFIX = 'Office - ';
+
+export function deriveOfficeRoomsFromAirtable(airtableRooms) {
+  const seen = new Map();
+  (Array.isArray(airtableRooms) ? airtableRooms : []).forEach((room) => {
+    const roomType = String(room?.type || '').trim();
+    if (!roomType.startsWith(OFFICE_ROOM_TYPE_PREFIX)) return;
+    const rawBuilding = String(room?.building || '').trim();
+    if (!rawBuilding) return;
+    const building = resolveAirtableBuildingName(rawBuilding);
+    const rawRoomLabel = String(room?.roomNumber || room?.roomId || '').trim();
+    const roomLabel = stripKnownAirtableRoomPrefix(building, rawRoomLabel);
+    if (!building || !roomLabel) return;
+    const roomKey = buildRoomUtilizationMetaKey(building, roomLabel);
+    if (!roomKey) return;
+    // First record wins for a given key, same determinism convention as
+    // buildAirtableRoomTypeMap/buildAirtableCapacityMap above.
+    if (!seen.has(roomKey)) seen.set(roomKey, { roomKey, building, room: roomLabel, source: 'office' });
+  });
+  return Array.from(seen.values()).sort((a, b) => {
+    const buildingCompare = a.building.localeCompare(b.building);
+    if (buildingCompare !== 0) return buildingCompare;
+    return a.room.localeCompare(b.room, undefined, { numeric: true });
+  });
 }

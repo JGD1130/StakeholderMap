@@ -50,10 +50,20 @@ export function getInstitutionWideEnrollment(enrollmentProjectionDocs, year) {
   return Number.isFinite(headcount) ? headcount : null;
 }
 
-// spaceConfigDocs: [{category, sfPerStationTarget, targetUtilizationRate}]
-// (category = spaceConfig doc id, same convention RoomUtilizationMetaSection's
-// categoryOptions use; targetUtilizationRate is a 0-1 fraction, same as
-// SpaceConfigSection stores it).
+// spaceConfigDocs: [{category, sfPerStationTarget, targetUtilizationRate,
+// sfPerFteTarget}] (category = spaceConfig doc id, same convention
+// RoomUtilizationMetaSection's categoryOptions use; targetUtilizationRate is
+// a 0-1 fraction, same as SpaceConfigSection stores it).
+//
+// sfPerFteTarget (added 2026-08-25, FTE-based categories e.g. "Office") is
+// DELIBERATELY NOT HANDLED HERE -- this institution-wide table stays
+// enrollment-only, per Clark's explicit decision not to extend it; an
+// FTE-based category's row below falls through the same
+// hasSfPerStation/hasUtilizationRate checks as any category with no
+// sfPerStationTarget set at all and renders "not set", exactly like any
+// other incomplete spaceConfig doc -- not a crash, not a silently-wrong
+// number, just gracefully absent from this specific table. The FTE branch
+// only exists in computeDepartmentSpaceGrowth below.
 //
 // roomUtilizationMetaDocs: [{roomKey, spaceCategory}] -- only rows with a
 // non-blank spaceCategory are ever considered; an untagged room (blank
@@ -163,6 +173,29 @@ export function getDepartmentEnrollment(enrollmentProjectionDocs, departmentName
   return Number.isFinite(headcount) ? headcount : null;
 }
 
+// Department-specific Total FTE for a given department name and year --
+// same matching/exclusion rules as getDepartmentEnrollment above (excludes
+// division === "Overall", case-insensitive/trimmed department match,
+// null/"not set" for no match or no data for that year), reading `totalFte`
+// instead of `studentHeadcount`. `totalFte` is enrollmentProjectionsImport.js's
+// own field name for "Total FTE" (all three FTE lines summed in the source
+// workbook, see classroomUtilizationSchema.js's EnrollmentProjectionYearMetrics
+// typedef) -- confirmed directly from the parser that writes it, not assumed.
+// Added 2026-08-25 for the Office/support (FTE-based) growth formula.
+export function getDepartmentTotalFte(enrollmentProjectionDocs, departmentName, year) {
+  const target = String(departmentName || '').trim().toLowerCase();
+  if (!target) return null;
+  const match = (Array.isArray(enrollmentProjectionDocs) ? enrollmentProjectionDocs : [])
+    .find((d) => (
+      String(d?.division || '').trim().toLowerCase() !== 'overall'
+      && String(d?.department || '').trim().toLowerCase() === target
+    ));
+  if (!match) return null;
+  const yearData = match.years?.[String(year)];
+  const totalFte = Number(yearData?.totalFte);
+  return Number.isFinite(totalFte) ? totalFte : null;
+}
+
 // Department-level breakdown of the same Space Growth / Right-Sizing
 // calculation above -- ADDITIVE, not a replacement. computeSpaceGrowth()
 // (institution-wide, per-category) is untouched and keeps working exactly as
@@ -189,18 +222,30 @@ export function getDepartmentEnrollment(enrollmentProjectionDocs, departmentName
 // can't be resolved.
 //
 // departmentOverrideDocs (added 2026-08-25, ADDITIVE): optional array of
-// [{category, department, sfPerStationTarget, targetUtilizationRate}], from
-// spaceConfigDepartmentOverrides (see classroomUtilizationSchema.js). When a
-// (category, department) pair has an override doc, its sfPerStationTarget/
-// targetUtilizationRate are used INSTEAD of the category-level spaceConfig
-// entry for that pair only -- checked first, falling back to the existing
-// spaceConfigByCategory lookup below when no override exists, exactly the
-// same as before this param was added. An override is taken as a whole
-// (both fields together, same "full setDoc, no partial merge" convention
-// SpaceConfigSection already uses for spaceConfig itself) -- there is no
-// per-field fallback from an override doc back to the category default.
-// Every other line of this function's existing category-level path is
-// unchanged.
+// [{category, department, sfPerStationTarget, targetUtilizationRate}] OR
+// [{category, department, sfPerFteTarget}], from spaceConfigDepartmentOverrides
+// (see classroomUtilizationSchema.js). When a (category, department) pair
+// has an override doc, its target field(s) are used INSTEAD of the
+// category-level spaceConfig entry for that pair only -- checked first,
+// falling back to the existing spaceConfigByCategory lookup below when no
+// override exists, exactly the same as before this param was added. An
+// override is taken as a whole (all fields for its formula type together,
+// same "full setDoc, no partial merge" convention SpaceConfigSection
+// already uses for spaceConfig itself) -- there is no per-field fallback
+// from an override doc back to the category default.
+//
+// FORMULA DETECTION (added 2026-08-25): each row below checks whether its
+// target entry (override or category default, whichever won above) has a
+// populated sfPerFteTarget FIRST; if so, it's an FTE-based row (Ideal SF =
+// sfPerFteTarget x department's own Total FTE, NO utilization-rate
+// division -- structurally different from the enrollment formula, not just
+// a different number). Otherwise it falls through to the pre-existing
+// sfPerStationTarget/targetUtilizationRate enrollment-based path, unchanged
+// from before this formula existed. A target entry is expected to carry
+// fields for exactly one formula type (never both -- SpaceConfigSection's
+// plain setDoc overwrite drops the other formula's stale fields on save),
+// so this is a clean either/or, not a priority order between two
+// simultaneously-valid values.
 export function computeDepartmentSpaceGrowth({
   spaceConfigDocs,
   roomUtilizationMetaDocs,
@@ -253,47 +298,89 @@ export function computeDepartmentSpaceGrowth({
     const overrideEntry = departmentOverrideByPairKey.get(`${category}||${department}`);
     const spaceConfigEntry = spaceConfigByCategory.get(category);
     const targetEntry = overrideEntry || spaceConfigEntry;
-    const sfPerStation = Number(targetEntry?.sfPerStationTarget);
-    const hasSfPerStation = Number.isFinite(sfPerStation) && sfPerStation > 0;
-    const utilizationRate = Number(targetEntry?.targetUtilizationRate);
-    const hasUtilizationRate = Number.isFinite(utilizationRate) && utilizationRate > 0;
 
-    // Same Ideal NSF/Student derivation as computeSpaceGrowth -- either this
-    // department's own override target or, when absent, the category's
-    // blanket target (spaceConfig has no per-department targets of its own).
-    const idealNsfPerStudent = hasSfPerStation && hasUtilizationRate
-      ? sfPerStation / utilizationRate
-      : null;
+    const sfPerFte = Number(targetEntry?.sfPerFteTarget);
+    const hasSfPerFte = Number.isFinite(sfPerFte) && sfPerFte > 0;
 
-    const baselineEnrollment = getDepartmentEnrollment(enrollmentProjectionDocs, department, baselineYear);
-    const targetEnrollment = getDepartmentEnrollment(enrollmentProjectionDocs, department, targetYear);
+    let row;
+    if (hasSfPerFte) {
+      // FTE-based formula (e.g. "Office"): Ideal SF = sfPerFteTarget x
+      // department's own Total FTE. No utilization-rate division -- this
+      // formula has no such input at all, structurally, not just a value
+      // that happens to be unset.
+      const baselineFte = getDepartmentTotalFte(enrollmentProjectionDocs, department, baselineYear);
+      const targetFte = getDepartmentTotalFte(enrollmentProjectionDocs, department, targetYear);
+      const idealSfNow = Number.isFinite(baselineFte) ? sfPerFte * baselineFte : null;
+      const idealSfTarget = Number.isFinite(targetFte) ? sfPerFte * targetFte : null;
+      row = {
+        category,
+        department,
+        formulaType: 'fte',
+        sfPerStationTarget: null,
+        targetUtilizationRate: null,
+        sfPerFteTarget: sfPerFte,
+        usingDepartmentOverride: Boolean(overrideEntry),
+        // Reused field name (not idealSfPerFte) so every existing consumer
+        // of this row shape -- both formula types alike -- reads the same
+        // key for "the derived SF-per-unit figure that priced this row";
+        // the UI distinguishes the unit itself via formulaType, per the
+        // "By Department" table's formula-agnostic "Ideal SF/Unit" label.
+        idealNsfPerStudent: sfPerFte,
+        currentSF,
+        taggedRoomCount: roomCount,
+        baselineEnrollment: baselineFte,
+        idealSfNow,
+        gapNow: idealSfNow != null ? currentSF - idealSfNow : null,
+        targetEnrollment: targetFte,
+        idealSfTarget,
+        gapTarget: idealSfTarget != null ? currentSF - idealSfTarget : null
+      };
+    } else {
+      // Enrollment-based formula -- unchanged from before the FTE branch
+      // existed. Ideal NSF/Student = SF/station target ÷ target utilization
+      // rate, either this department's own override target or, when
+      // absent, the category's blanket target.
+      const sfPerStation = Number(targetEntry?.sfPerStationTarget);
+      const hasSfPerStation = Number.isFinite(sfPerStation) && sfPerStation > 0;
+      const utilizationRate = Number(targetEntry?.targetUtilizationRate);
+      const hasUtilizationRate = Number.isFinite(utilizationRate) && utilizationRate > 0;
+      const idealNsfPerStudent = hasSfPerStation && hasUtilizationRate
+        ? sfPerStation / utilizationRate
+        : null;
 
-    const idealSfNow = idealNsfPerStudent != null && Number.isFinite(baselineEnrollment)
-      ? idealNsfPerStudent * baselineEnrollment
-      : null;
-    const idealSfTarget = idealNsfPerStudent != null && Number.isFinite(targetEnrollment)
-      ? idealNsfPerStudent * targetEnrollment
-      : null;
+      const baselineEnrollment = getDepartmentEnrollment(enrollmentProjectionDocs, department, baselineYear);
+      const targetEnrollment = getDepartmentEnrollment(enrollmentProjectionDocs, department, targetYear);
 
-    return {
-      category,
-      department,
-      sfPerStationTarget: hasSfPerStation ? sfPerStation : null,
-      targetUtilizationRate: hasUtilizationRate ? utilizationRate : null,
-      // True when this row's target came from a department-specific
-      // override doc rather than the category-level spaceConfig default --
-      // surfaced so the UI can label which source priced this row.
-      usingDepartmentOverride: Boolean(overrideEntry),
-      idealNsfPerStudent,
-      currentSF,
-      taggedRoomCount: roomCount,
-      baselineEnrollment,
-      idealSfNow,
-      gapNow: idealSfNow != null ? currentSF - idealSfNow : null,
-      targetEnrollment,
-      idealSfTarget,
-      gapTarget: idealSfTarget != null ? currentSF - idealSfTarget : null
-    };
+      const idealSfNow = idealNsfPerStudent != null && Number.isFinite(baselineEnrollment)
+        ? idealNsfPerStudent * baselineEnrollment
+        : null;
+      const idealSfTarget = idealNsfPerStudent != null && Number.isFinite(targetEnrollment)
+        ? idealNsfPerStudent * targetEnrollment
+        : null;
+
+      row = {
+        category,
+        department,
+        formulaType: 'enrollment',
+        sfPerStationTarget: hasSfPerStation ? sfPerStation : null,
+        targetUtilizationRate: hasUtilizationRate ? utilizationRate : null,
+        sfPerFteTarget: null,
+        // True when this row's target came from a department-specific
+        // override doc rather than the category-level spaceConfig default --
+        // surfaced so the UI can label which source priced this row.
+        usingDepartmentOverride: Boolean(overrideEntry),
+        idealNsfPerStudent,
+        currentSF,
+        taggedRoomCount: roomCount,
+        baselineEnrollment,
+        idealSfNow,
+        gapNow: idealSfNow != null ? currentSF - idealSfNow : null,
+        targetEnrollment,
+        idealSfTarget,
+        gapTarget: idealSfTarget != null ? currentSF - idealSfTarget : null
+      };
+    }
+    return row;
   });
 
   rows.sort((a, b) => a.category.localeCompare(b.category) || a.department.localeCompare(b.department));

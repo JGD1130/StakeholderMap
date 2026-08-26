@@ -113,3 +113,60 @@ export function getMasterPlanSpaceTarget(departmentName, knownDepartmentNames) {
   const known = Array.isArray(knownDepartmentNames) ? knownDepartmentNames : [];
   return known.includes(key) ? entry : null;
 }
+
+// ---------------------------------------------------------------------
+// Office/support space (300-level, FTE-based), added 2026-08-25.
+//
+// STATIC REFERENCE DATA, HARDCODED ON PURPOSE, same reasoning as
+// MASTER_PLAN_SPACE_TARGETS above -- transcribed directly from the master
+// plan's own Office/support space-standards table (Ideal SF/FTE column;
+// "Current SF/FTE" is historical/as-built, not a target, and isn't
+// reproduced here -- only the Ideal figure feeds a suggestion).
+//
+// STRUCTURALLY DIFFERENT FORMULA, not just a different number: this table
+// has no target-utilization-rate column at all -- Ideal SF is
+// sfPerFteTarget x the department's own total FTE, with no division step
+// (see spaceGrowthCalc.js's getDepartmentTotalFte/computeDepartmentSpaceGrowth
+// FTE branch). Confirmed structurally different from the Classroom/Lab
+// table above at investigation time, not assumed.
+//
+// SAME VERIFIED NAMING CROSSWALK AS ABOVE, REUSED NOT RE-DERIVED -- every
+// key here is one of the same already-live-verified real
+// enrollmentProjections department name strings MASTER_PLAN_SPACE_TARGETS
+// uses (including the "History, Philosophy, & Religion" comma correction).
+// Re-deriving a second crosswalk for this table would risk it silently
+// drifting from the first if either table's department set ever changes.
+//
+// "Non-Academic (Admin/Student Support, Athletics)" is DELIBERATELY
+// EXCLUDED, not an oversight -- confirmed via a live roomUtilizationMeta/
+// Airtable audit (see the room-source investigation) that this bucket has
+// no equivalent real department in the live enrollmentProjections list (all
+// 12 real departments are academic-discipline departments); the existing
+// `known.includes(key)` gate below would silently withhold a suggestion for
+// it anyway, same as any other unmapped department, but it's left out of
+// the map entirely rather than included-and-always-withheld, per Clark's
+// explicit "skip" decision.
+export const MASTER_PLAN_OFFICE_SPACE_TARGETS = {
+  'Art': { sfPerFteTarget: 200 },
+  'History, Philosophy, & Religion': { sfPerFteTarget: 200 },
+  'Languages & Literatures': { sfPerFteTarget: 200 },
+  'Music & Theater': { sfPerFteTarget: 225 },
+  'Communication Studies & Political Science': { sfPerFteTarget: 200 },
+  'Education': { sfPerFteTarget: 200 },
+  'PHEP': { sfPerFteTarget: 200 },
+  'Psychology & Sociology': { sfPerFteTarget: 200 },
+  'Biology': { sfPerFteTarget: 200 },
+  'Business & Economics': { sfPerFteTarget: 200 },
+  'Chemistry & Physics': { sfPerFteTarget: 200 },
+  'Math & Computer Science': { sfPerFteTarget: 200 }
+};
+
+// Same "known must exist right now" gate as getMasterPlanSpaceTarget above.
+export function getMasterPlanOfficeSpaceTarget(departmentName, knownDepartmentNames) {
+  const key = String(departmentName || '').trim();
+  if (!key) return null;
+  const entry = MASTER_PLAN_OFFICE_SPACE_TARGETS[key];
+  if (!entry) return null;
+  const known = Array.isArray(knownDepartmentNames) ? knownDepartmentNames : [];
+  return known.includes(key) ? entry : null;
+}

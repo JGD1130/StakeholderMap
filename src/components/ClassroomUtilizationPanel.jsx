@@ -44,7 +44,7 @@ import {
   fetchAirtableRoomsForUtilization,
   buildAirtableAreaMap
 } from '../utils/classroomUtilizationCalc';
-import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType } from '../utils/roomTypeSuggestion';
+import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType, deriveOfficeRoomsFromAirtable } from '../utils/roomTypeSuggestion';
 import {
   buildAirtableDepartmentMap,
   suggestPrimaryDepartmentFromAirtableDepartment,
@@ -52,7 +52,7 @@ import {
 } from '../utils/departmentSuggestion';
 import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../utils/enrollmentProjectionsImport';
 import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
-import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget } from '../utils/masterPlanSpaceTargets';
+import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget, getMasterPlanOfficeSpaceTarget } from '../utils/masterPlanSpaceTargets';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -89,13 +89,35 @@ function fractionToPctText(fraction) {
   return Number.isFinite(fraction) ? String(Math.round(fraction * 10000) / 100) : '';
 }
 
-function validateSpaceConfigRow(row) {
+// formulaType: 'station' (default, enrollment-based -- SF/station + target
+// utilization %) or 'fte' (FTE-based -- a single SF/FTE value, no
+// utilization-rate input at all). Shared by SpaceConfigSection (per
+// category) and DepartmentSpaceOverridesSection (per category/department
+// pair, added 2026-08-25) so the two forms can never validate the same
+// formula type two different ways.
+function validateSpaceConfigRow(row, formulaType = 'station') {
+  const errors = [];
+  if (formulaType === 'fte') {
+    const sfPerFte = Number(row.sfPerFteTarget);
+    if (!Number.isFinite(sfPerFte) || sfPerFte <= 0) errors.push('SF/FTE must be a positive number');
+    return errors;
+  }
   const sf = Number(row.sfPerStationTarget);
   const pct = Number(row.targetUtilizationRatePct);
-  const errors = [];
   if (!Number.isFinite(sf) || sf <= 0) errors.push('SF/station must be a positive number');
   if (!Number.isFinite(pct) || pct <= 0 || pct > 100) errors.push('Target utilization must be > 0% and <= 100%');
   return errors;
+}
+
+// Formula type is DETECTED, not stored as its own field (see
+// classroomUtilizationSchema.js's SpaceConfigDoc/SpaceConfigDepartmentOverrideDoc
+// typedefs) -- a doc with a positive sfPerFteTarget is FTE-based, everything
+// else (including a brand-new, not-yet-saved doc) defaults to 'station'.
+// Shared by every place in this module that needs to know a category's
+// formula type from its raw Firestore data.
+function detectFormulaType(data) {
+  const sfPerFte = Number(data?.sfPerFteTarget);
+  return Number.isFinite(sfPerFte) && sfPerFte > 0 ? 'fte' : 'station';
 }
 
 function SpaceConfigSection() {
@@ -134,16 +156,22 @@ function SpaceConfigSection() {
       snap.docs.forEach((docSnap) => {
         const category = docSnap.id;
         const data = docSnap.data() || {};
+        const formulaType = detectFormulaType(data);
         const sf = Number(data.sfPerStationTarget);
         const rate = Number(data.targetUtilizationRate);
+        const sfFte = Number(data.sfPerFteTarget);
         order.push(category);
         nextPersisted[category] = {
+          formulaType,
           sfPerStationTarget: Number.isFinite(sf) ? sf : null,
-          targetUtilizationRate: Number.isFinite(rate) ? rate : null
+          targetUtilizationRate: Number.isFinite(rate) ? rate : null,
+          sfPerFteTarget: Number.isFinite(sfFte) ? sfFte : null
         };
         nextForm[category] = {
+          formulaType,
           sfPerStationTarget: Number.isFinite(sf) ? String(sf) : '',
-          targetUtilizationRatePct: Number.isFinite(rate) ? fractionToPctText(rate) : ''
+          targetUtilizationRatePct: Number.isFinite(rate) ? fractionToPctText(rate) : '',
+          sfPerFteTarget: Number.isFinite(sfFte) ? String(sfFte) : ''
         };
       });
       order.sort((a, b) => a.localeCompare(b));
@@ -172,7 +200,10 @@ function SpaceConfigSection() {
     const name = newCategoryName.trim();
     if (!name || categoryOrder.includes(name)) return;
     setCategoryOrder((prev) => [...prev, name].sort((a, b) => a.localeCompare(b)));
-    setForm((prev) => ({ ...prev, [name]: { sfPerStationTarget: '', targetUtilizationRatePct: '' } }));
+    // Defaults to 'station' (enrollment-based) -- least surprising, matches
+    // every pre-existing category. Admin switches the formula-type dropdown
+    // below before first save if the new category is FTE-based instead.
+    setForm((prev) => ({ ...prev, [name]: { formulaType: 'station', sfPerStationTarget: '', targetUtilizationRatePct: '', sfPerFteTarget: '' } }));
     setNewCategoryName('');
   }, [newCategoryName, categoryOrder]);
 
@@ -192,8 +223,20 @@ function SpaceConfigSection() {
     const row = form[category];
     const saved = persisted[category];
     if (!row) return false;
+    const formulaType = row.formulaType || 'station';
     if (!saved) {
-      return Boolean(String(row.sfPerStationTarget || '').trim() || String(row.targetUtilizationRatePct || '').trim());
+      return formulaType === 'fte'
+        ? Boolean(String(row.sfPerFteTarget || '').trim())
+        : Boolean(String(row.sfPerStationTarget || '').trim() || String(row.targetUtilizationRatePct || '').trim());
+    }
+    // A formula-type switch on an already-saved category is itself a
+    // change worth saving, even if the newly-shown field happens to be
+    // blank -- the switch alone means a resave is needed to actually drop
+    // the old formula's fields from Firestore (plain setDoc overwrite).
+    if (formulaType !== saved.formulaType) return true;
+    if (formulaType === 'fte') {
+      const sfFte = Number(row.sfPerFteTarget);
+      return sfFte !== saved.sfPerFteTarget;
     }
     const sf = Number(row.sfPerStationTarget);
     const rate = pctToFraction(row.targetUtilizationRatePct);
@@ -215,7 +258,7 @@ function SpaceConfigSection() {
     // blocks the whole save rather than silently writing the valid ones and
     // skipping the rest.
     const invalid = dirtyCategories
-      .map((category) => ({ category, errors: validateSpaceConfigRow(form[category]) }))
+      .map((category) => ({ category, errors: validateSpaceConfigRow(form[category], form[category].formulaType || 'station') }))
       .filter((entry) => entry.errors.length);
     if (invalid.length) {
       setSaveError(invalid.map((entry) => `${entry.category}: ${entry.errors.join('; ')}`).join(' | '));
@@ -226,16 +269,25 @@ function SpaceConfigSection() {
     try {
       // Plain overwrite (no {merge: true}) -- per Clark's "simple overwrite
       // model, one doc per space category, no history" decision. The form
-      // always supplies both fields together, so there's no partial-update
-      // case to preserve; a full setDoc also means a field that silently
-      // failed to reach the form can't hide behind a stale merged value.
+      // always supplies every field for its formula type together, so
+      // there's no partial-update case to preserve; a full setDoc also
+      // means a formula-type switch cleanly drops the OTHER formula's
+      // stale fields (e.g. switching a category from 'station' to 'fte'
+      // and saving removes sfPerStationTarget/targetUtilizationRate from
+      // the doc entirely, since they're simply absent from this payload).
       for (const category of dirtyCategories) {
         const row = form[category];
-        const payload = {
-          sfPerStationTarget: Number(row.sfPerStationTarget),
-          targetUtilizationRate: pctToFraction(row.targetUtilizationRatePct),
-          effectiveDate: serverTimestamp()
-        };
+        const formulaType = row.formulaType || 'station';
+        const payload = formulaType === 'fte'
+          ? {
+              sfPerFteTarget: Number(row.sfPerFteTarget),
+              effectiveDate: serverTimestamp()
+            }
+          : {
+              sfPerStationTarget: Number(row.sfPerStationTarget),
+              targetUtilizationRate: pctToFraction(row.targetUtilizationRatePct),
+              effectiveDate: serverTimestamp()
+            };
         await setDoc(doc(spaceConfigCollection, category), payload);
       }
       setSaveMessage(
@@ -278,8 +330,10 @@ function SpaceConfigSection() {
         </div>
 
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-          SF/station target and target utilization rate per space category. Changed rows are highlighted and
-          saved together with the button above.
+          Each category uses one of two formula types (pick below): <strong>SF/station + target utilization %</strong>
+          {' '}(enrollment-based -- e.g. Classroom, Lab) or <strong>SF/FTE</strong> (FTE-based, no utilization rate --
+          e.g. Office/support space, added 2026-08-25). Changed rows are highlighted and saved together with the
+          button above.
         </div>
 
         {loading && !categoryOrder.length ? (
@@ -287,10 +341,11 @@ function SpaceConfigSection() {
       ) : (
         <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
           {categoryOrder.map((category) => {
-            const row = form[category] || { sfPerStationTarget: '', targetUtilizationRatePct: '' };
+            const row = form[category] || { formulaType: 'station', sfPerStationTarget: '', targetUtilizationRatePct: '', sfPerFteTarget: '' };
+            const formulaType = row.formulaType || 'station';
             const dirty = isCategoryDirty(category);
             const isUnsaved = !persisted[category];
-            const rowErrors = dirty ? validateSpaceConfigRow(row) : [];
+            const rowErrors = dirty ? validateSpaceConfigRow(row, formulaType) : [];
             return (
               <div
                 key={category}
@@ -315,25 +370,48 @@ function SpaceConfigSection() {
                   {category}
                   {isUnsaved ? <span style={{ color: '#b45309', fontWeight: 500 }}> (unsaved)</span> : null}
                 </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  placeholder="SF/station"
-                  value={row.sfPerStationTarget}
-                  onChange={(e) => handleFieldChange(category, 'sfPerStationTarget', e.target.value)}
-                  style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  placeholder="Target %"
-                  value={row.targetUtilizationRatePct}
-                  onChange={(e) => handleFieldChange(category, 'targetUtilizationRatePct', e.target.value)}
-                  style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
-                />
+                <select
+                  value={formulaType}
+                  onChange={(e) => handleFieldChange(category, 'formulaType', e.target.value)}
+                  title="Formula type -- which fields this category's Ideal SF is derived from"
+                  style={{ flex: '0 1 170px', minWidth: 150, fontSize: 11, padding: '3px 5px' }}
+                >
+                  <option value="station">SF/Station + Utilization %</option>
+                  <option value="fte">SF/FTE</option>
+                </select>
+                {formulaType === 'fte' ? (
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="SF/FTE"
+                    value={row.sfPerFteTarget}
+                    onChange={(e) => handleFieldChange(category, 'sfPerFteTarget', e.target.value)}
+                    style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="SF/station"
+                      value={row.sfPerStationTarget}
+                      onChange={(e) => handleFieldChange(category, 'sfPerStationTarget', e.target.value)}
+                      style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      placeholder="Target %"
+                      value={row.targetUtilizationRatePct}
+                      onChange={(e) => handleFieldChange(category, 'targetUtilizationRatePct', e.target.value)}
+                      style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                    />
+                  </>
+                )}
                 {isUnsaved ? (
                   <button
                     type="button"
@@ -800,7 +878,12 @@ function RoomUtilizationMetaSection() {
   // state, so expanding never has to trigger a load, it just reveals data
   // (and the tagged/untagged count) that's already there.
   const [sectionOpen, setSectionOpen] = useState(false);
-  const [roomList, setRoomList] = useState([]); // [{roomKey, building, room}], derived from courseMeetings
+  // [{roomKey, building, room, source}], source is 'scheduled' (derived from
+  // courseMeetings -- has real Utilization Results/Heat Map/Size Range data)
+  // or 'office' (derived from Airtable's "Office - *" rooms -- added
+  // 2026-08-25, never course-scheduled, never appears in those other
+  // sections). See loadRooms() below for how the two are merged.
+  const [roomList, setRoomList] = useState([]);
   const [categoryOptions, setCategoryOptions] = useState([]); // spaceConfig doc ids, kept live -- see onSnapshot below
   const [categoryOptionsLoaded, setCategoryOptionsLoaded] = useState(false);
   // enrollmentProjections' distinct `department` names, excluding the
@@ -933,30 +1016,10 @@ function RoomUtilizationMetaSection() {
     return () => unsubscribe();
   }, [enrollmentProjectionsCollection]);
 
-  // Fetch Airtable rooms once on mount (read-only, existing endpoint -- see
-  // fetchAirtableRoomsForUtilization's own header comment for why this is
-  // already considered safe/established: UtilizationResultsSection below
-  // calls the exact same function). A failed fetch degrades to "no
-  // suggestions offered" rather than blocking the section -- same fail-soft
-  // convention UtilizationResultsSection already uses for this endpoint.
-  useEffect(() => {
-    let cancelled = false;
-    fetchAirtableRoomsForUtilization()
-      .then((rooms) => {
-        if (cancelled) return;
-        setAirtableRoomTypeByKey(buildAirtableRoomTypeMap(rooms));
-        setAirtableDepartmentByKey(buildAirtableDepartmentMap(rooms));
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.warn('Airtable rooms fetch failed for room-type suggestions:', error);
-        setAirtableSuggestionsError(String(error?.message || 'Failed to load Airtable room-type suggestions.'));
-      })
-      .finally(() => {
-        if (!cancelled) setAirtableSuggestionsLoaded(true);
-      });
-    return () => { cancelled = true; };
-  }, []);
+  // Airtable is now fetched inside loadRooms() above (folded in 2026-08-25
+  // alongside the Office room source), which sets airtableRoomTypeByKey/
+  // airtableDepartmentByKey/airtableSuggestionsLoaded/airtableSuggestionsError
+  // itself -- no separate effect needed here anymore.
 
   // One-time suggestion application, per Clark's "on mount" spec: once the
   // room list, spaceConfig categories, and Airtable data have all loaded,
@@ -1020,17 +1083,63 @@ function RoomUtilizationMetaSection() {
     departmentOptionsLoaded
   ]);
 
+  // Fetches courseMeetings (scheduled rooms), roomUtilizationMeta (persisted
+  // tagging), and Airtable (Office rooms + room-type/department suggestion
+  // data) together -- folded into one coordinated load, added 2026-08-25,
+  // since the tagging universe now genuinely needs all three. Previously
+  // Airtable was fetched by a separate, independent effect purely for
+  // suggestion maps; now that Office rooms are ALSO sourced from Airtable
+  // (not just courseMeetings), that fetch has to land before roomList/
+  // persisted/form can be built correctly, so it's one Promise.all instead
+  // of two uncoordinated ones.
   const loadRooms = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [meetingsSnap, metaSnap] = await Promise.all([
+      const [meetingsSnap, metaSnap, airtableRooms] = await Promise.all([
         getDocs(courseMeetingsCollection),
-        getDocs(roomUtilizationMetaCollection)
+        getDocs(roomUtilizationMetaCollection),
+        // Fail-soft: a failed Airtable fetch degrades to "no Office rooms,
+        // no suggestions offered" rather than blocking the course-scheduled
+        // half of this section -- same convention as every other
+        // fetchAirtableRoomsForUtilization call site in this module.
+        fetchAirtableRoomsForUtilization().catch((error) => {
+          console.warn('Airtable rooms fetch failed for room tagging:', error);
+          setAirtableSuggestionsError(String(error?.message || 'Failed to load Airtable room-type suggestions.'));
+          return [];
+        })
       ]);
-      const rooms = deriveDistinctRoomsFromCourseMeetings(
+
+      const scheduledRooms = deriveDistinctRoomsFromCourseMeetings(
         meetingsSnap.docs.map((docSnap) => docSnap.data())
       );
+      const officeRooms = deriveOfficeRoomsFromAirtable(airtableRooms);
+
+      // Combined tagging universe. Scheduled rooms take priority on a
+      // roomKey collision -- richer/real schedule data, and the source
+      // Utilization Results/Heat Map/Size Range already key off -- Office
+      // rooms fill in any roomKey not already claimed. A collision would
+      // mean a course-scheduled room's Airtable Room Type Description also
+      // happens to start with "Office - ", which shouldn't happen (a
+      // scheduled classroom/lab and an Office room are disjoint Room Type
+      // Description buckets) but is checked, not assumed -- deduped rather
+      // than duplicated into two rows for the same physical room.
+      const roomMap = new Map();
+      scheduledRooms.forEach((r) => roomMap.set(r.roomKey, r));
+      let officeDedupedCount = 0;
+      officeRooms.forEach((r) => {
+        if (roomMap.has(r.roomKey)) { officeDedupedCount += 1; return; }
+        roomMap.set(r.roomKey, r);
+      });
+      if (officeDedupedCount) {
+        console.warn(`${officeDedupedCount} Office-type Airtable room(s) shared a roomKey with an already-scheduled room -- kept as scheduled, not duplicated.`);
+      }
+      const rooms = Array.from(roomMap.values()).sort((a, b) => {
+        const buildingCompare = a.building.localeCompare(b.building);
+        if (buildingCompare !== 0) return buildingCompare;
+        return a.room.localeCompare(b.room, undefined, { numeric: true });
+      });
+
       const nextPersisted = {};
       metaSnap.docs.forEach((docSnap) => {
         const data = docSnap.data() || {};
@@ -1049,10 +1158,13 @@ function RoomUtilizationMetaSection() {
       setRoomList(rooms);
       setPersisted(nextPersisted);
       setForm(nextForm);
+      setAirtableRoomTypeByKey(buildAirtableRoomTypeMap(airtableRooms));
+      setAirtableDepartmentByKey(buildAirtableDepartmentMap(airtableRooms));
     } catch (error) {
       setLoadError(String(error?.message || 'Failed to load rooms.'));
     } finally {
       setLoading(false);
+      setAirtableSuggestionsLoaded(true);
     }
   }, [courseMeetingsCollection, roomUtilizationMetaCollection]);
 
@@ -1313,6 +1425,14 @@ function RoomUtilizationMetaSection() {
           see the row-level hint if a suggested department hasn't been uploaded yet.
         </div>
 
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          Two room sources, tagged per row (hover the badge for details): <strong>Scheduled</strong> rooms come from
+          the imported class schedule and also appear in Utilization Results, the Day/Time Heat Map, and the Size
+          Range table below. <strong>Office</strong> rooms come straight from Airtable's inventory ("Office - *" Room
+          Type Description) -- they were never course-scheduled, so they never appear in those other three sections;
+          they exist here only to be tagged with a space category/department for Space Growth.
+        </div>
+
         {airtableSuggestionsError ? (
           <div style={{ marginTop: 4, fontSize: 10, color: '#98a2b3' }}>
             Airtable suggestions unavailable ({airtableSuggestionsError}) -- manual tagging below still works normally.
@@ -1338,7 +1458,7 @@ function RoomUtilizationMetaSection() {
         >
           {roomList.length
             ? `${taggedCount} of ${roomList.length} room${roomList.length === 1 ? '' : 's'} tagged, ${untaggedCount} untagged`
-            : (loading ? 'Loading rooms...' : 'No rooms found in the imported class schedule yet.')}
+            : (loading ? 'Loading rooms...' : 'No rooms found in the imported class schedule or Airtable Office inventory yet.')}
         </div>
 
         {noCategoriesYet ? (
@@ -1351,7 +1471,7 @@ function RoomUtilizationMetaSection() {
           <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading rooms...</div>
         ) : (
           <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-            {roomList.map(({ roomKey, building, room }) => {
+            {roomList.map(({ roomKey, building, room, source }) => {
               const row = form[roomKey] || { spaceCategory: '', notes: '' };
               const dirty = isRoomDirty(roomKey);
               const rowErrors = dirty ? validateRoomRow(row) : [];
@@ -1402,6 +1522,27 @@ function RoomUtilizationMetaSection() {
                 >
                   <div style={{ flex: '1 1 140px', minWidth: 140, fontSize: 11, fontWeight: 600, overflowWrap: 'anywhere' }}>
                     {building} — {room}
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        marginLeft: 6,
+                        fontSize: 9,
+                        fontWeight: 600,
+                        color: source === 'office' ? '#7c3aed' : '#475467',
+                        background: source === 'office' ? '#ede9fe' : '#eef2f7',
+                        border: `1px solid ${source === 'office' ? '#ddd6fe' : '#e2e8f0'}`,
+                        borderRadius: 4,
+                        padding: '1px 5px',
+                        verticalAlign: 'middle'
+                      }}
+                      title={
+                        source === 'office'
+                          ? 'From Airtable inventory ("Office - *" Room Type Description) -- not a scheduled class, so this room never appears in Utilization Results, the Day/Time Heat Map, or the Size Range table below.'
+                          : 'From the imported class schedule -- also appears in Utilization Results, the Day/Time Heat Map, and the Size Range table below.'
+                      }
+                    >
+                      {source === 'office' ? 'Office' : 'Scheduled'}
+                    </span>
                   </div>
                   <select
                     value={row.spaceCategory}
@@ -1851,31 +1992,48 @@ function EnrollmentProjectionsSection() {
   );
 }
 
-// Department-Specific Space Targets (Classroom/Lab) -- added 2026-08-25.
-// Lets an admin set a per-(department, category) sfPerStationTarget/
-// targetUtilizationRate override, consumed by computeDepartmentSpaceGrowth
-// (see spaceGrowthCalc.js) in place of the category-level spaceConfig
-// default for that department only. Restricted to the "Classroom" and
-// "Lab" categories per explicit scope -- the master-plan reference table
-// this pre-fills from only publishes one instructional-space standard per
-// department, not a value for every possible space category.
+// Department-Specific Space Targets -- added 2026-08-25, extended the same
+// day to add "Office" (FTE-based) alongside "Classroom"/"Lab" (enrollment-
+// based). Lets an admin set a per-(department, category) override,
+// consumed by computeDepartmentSpaceGrowth (see spaceGrowthCalc.js) in
+// place of the category-level spaceConfig default for that department
+// only. Restricted to these three categories per explicit scope -- the
+// master-plan reference tables this pre-fills from only publish standards
+// for these, not a value for every possible space category.
+//
+// Each category in this list keeps its OWN formula type (detected live
+// from its spaceConfig doc via detectFormulaType, same as SpaceConfigSection)
+// -- "Classroom"/"Lab" are enrollment-based (SF/station + target utilization
+// %), "Office" is FTE-based (SF/FTE, no utilization rate). A pair's row
+// shows only the field(s) its category's formula type actually uses.
 //
 // Same "suggested, review, confirm, never auto-save" convention as Room
 // Type / primary Department suggestions elsewhere in this module: a pair
 // with no saved override doc yet, whose department has a real master-plan
-// reference, is pre-filled locally (blue "suggested" badge) but never
-// written until the admin clicks Save. Admin can also freely type over any
-// value, suggested or not, same as every editable field in this module.
-const DEPARTMENT_OVERRIDE_TARGET_CATEGORIES = ['Classroom', 'Lab'];
+// reference for its category's formula type, is pre-filled locally (blue
+// "suggested" badge) but never written until the admin clicks Save. Admin
+// can also freely type over any value, suggested or not, same as every
+// editable field in this module.
+const DEPARTMENT_OVERRIDE_TARGET_CATEGORIES = ['Classroom', 'Lab', 'Office'];
 
 function DepartmentSpaceOverridesSection() {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [categoryOptions, setCategoryOptions] = useState([]);
   const [categoryOptionsLoaded, setCategoryOptionsLoaded] = useState(false);
+  // category -> 'station' | 'fte', detected live from each spaceConfig doc
+  // (detectFormulaType) -- built alongside categoryOptions by the same
+  // listener below, so a category's formula type here can never drift from
+  // what Space Configuration actually has saved.
+  const [categoryFormulaTypeByCategory, setCategoryFormulaTypeByCategory] = useState(() => new Map());
   const [departmentOptions, setDepartmentOptions] = useState([]);
   const [departmentOptionsLoaded, setDepartmentOptionsLoaded] = useState(false);
-  const [form, setForm] = useState({}); // pairKey ("category||department") -> {sfPerStationTarget, targetUtilizationRatePct}
-  const [persisted, setPersisted] = useState({}); // pairKey -> {sfPerStationTarget, targetUtilizationRate}, only for pairs with an existing override doc
+  // pairKey ("category||department") -> {sfPerStationTarget, targetUtilizationRatePct, sfPerFteTarget}
+  // -- all three text fields always carried per row regardless of the
+  // pair's category's formula type; only the field(s) that type actually
+  // uses are ever rendered, validated, or saved for that row.
+  const [form, setForm] = useState({});
+  // pairKey -> {formulaType, sfPerStationTarget, targetUtilizationRate, sfPerFteTarget}, only for pairs with an existing override doc
+  const [persisted, setPersisted] = useState({});
   const [overridesLoaded, setOverridesLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -1888,7 +2046,6 @@ function DepartmentSpaceOverridesSection() {
   // downgrades it out of this set (handleFieldChange below), same "touched
   // once -> treated as a deliberate admin choice" rule.
   const [suggestedPairKeys, setSuggestedPairKeys] = useState(() => new Set());
-  const suggestionsAppliedRef = useRef(false);
 
   const overridesCollection = useMemo(
     () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION),
@@ -1905,13 +2062,15 @@ function DepartmentSpaceOverridesSection() {
 
   // Live, same reasoning/pattern as RoomUtilizationMetaSection's identical
   // listener -- this section never writes to spaceConfig, only reads which
-  // of "Classroom"/"Lab" currently exist so overrides are never offered for
-  // a category that doesn't exist yet.
+  // of "Classroom"/"Lab"/"Office" currently exist (and each one's formula
+  // type) so overrides are never offered for a category that doesn't exist
+  // yet, and each row shows the right fields for its category.
   useEffect(() => {
     const unsubscribe = onSnapshot(
       spaceConfigCollection,
       (snap) => {
         setCategoryOptions(snap.docs.map((docSnap) => docSnap.id).sort((a, b) => a.localeCompare(b)));
+        setCategoryFormulaTypeByCategory(new Map(snap.docs.map((docSnap) => [docSnap.id, detectFormulaType(docSnap.data())])));
         setCategoryOptionsLoaded(true);
       },
       (error) => {
@@ -1960,11 +2119,16 @@ function DepartmentSpaceOverridesSection() {
     const pairs = [];
     departmentOptions.forEach((department) => {
       availableTargetCategories.forEach((category) => {
-        pairs.push({ category, department, pairKey: `${category}||${department}` });
+        pairs.push({
+          category,
+          department,
+          pairKey: `${category}||${department}`,
+          formulaType: categoryFormulaTypeByCategory.get(category) || 'station'
+        });
       });
     });
     return pairs;
-  }, [departmentOptions, availableTargetCategories]);
+  }, [departmentOptions, availableTargetCategories, categoryFormulaTypeByCategory]);
 
   const loadOverrides = useCallback(async () => {
     setLoading(true);
@@ -1984,17 +2148,36 @@ function DepartmentSpaceOverridesSection() {
         const category = String(data.category || '').trim();
         const department = String(data.department || '').trim();
         if (!category || !department) return; // malformed doc, skip rather than guess
-        const sf = Number(data.sfPerStationTarget);
-        const rate = Number(data.targetUtilizationRate);
         const pairKey = `${category}||${department}`;
-        nextPersisted[pairKey] = {
-          sfPerStationTarget: Number.isFinite(sf) ? sf : null,
-          targetUtilizationRate: Number.isFinite(rate) ? rate : null
-        };
-        nextPersistedForm[pairKey] = {
-          sfPerStationTarget: Number.isFinite(sf) ? String(sf) : '',
-          targetUtilizationRatePct: Number.isFinite(rate) ? fractionToPctText(rate) : ''
-        };
+        const formulaType = detectFormulaType(data);
+        if (formulaType === 'fte') {
+          const sfFte = Number(data.sfPerFteTarget);
+          nextPersisted[pairKey] = {
+            formulaType,
+            sfPerFteTarget: Number.isFinite(sfFte) ? sfFte : null,
+            sfPerStationTarget: null,
+            targetUtilizationRate: null
+          };
+          nextPersistedForm[pairKey] = {
+            sfPerFteTarget: Number.isFinite(sfFte) ? String(sfFte) : '',
+            sfPerStationTarget: '',
+            targetUtilizationRatePct: ''
+          };
+        } else {
+          const sf = Number(data.sfPerStationTarget);
+          const rate = Number(data.targetUtilizationRate);
+          nextPersisted[pairKey] = {
+            formulaType,
+            sfPerStationTarget: Number.isFinite(sf) ? sf : null,
+            targetUtilizationRate: Number.isFinite(rate) ? rate : null,
+            sfPerFteTarget: null
+          };
+          nextPersistedForm[pairKey] = {
+            sfPerStationTarget: Number.isFinite(sf) ? String(sf) : '',
+            targetUtilizationRatePct: Number.isFinite(rate) ? fractionToPctText(rate) : '',
+            sfPerFteTarget: ''
+          };
+        }
       });
       setPersisted(nextPersisted);
       // Merge, not replace -- pairList spans every live department x
@@ -2019,35 +2202,131 @@ function DepartmentSpaceOverridesSection() {
     void loadOverrides();
   }, [loadOverrides]);
 
-  // One-time, mount-scoped pre-fill from the master-plan reference table --
-  // same "on mount, only into a currently-blank/unpersisted field, never
-  // auto-saved" spec as RoomUtilizationMetaSection's suggestion effect.
-  // Waits on all three live/loaded sources so it never runs against a
-  // partial pairList and silently misses pairs that show up a tick later.
+  // Pre-fill from the master-plan reference table -- same "only into a
+  // currently-blank/unpersisted field, never auto-saved" spec as
+  // RoomUtilizationMetaSection's suggestion effect. Waits on all three
+  // live/loaded sources so it never runs against a partial pairList and
+  // silently misses pairs that show up a tick later.
+  //
+  // FIXED 2026-08-25 (same-day bug, found via live testing): this used to
+  // be gated by a single component-wide `suggestionsAppliedRef.current`
+  // boolean that latched true forever after the first qualifying render --
+  // so a pair whose CATEGORY had its formula type corrected in Space
+  // Configuration *after* this section had already mounted (e.g. "Office"
+  // fixed from SF/Station to SF/FTE) was permanently skipped: the effect
+  // never ran again to fill the now-relevant sfPerFteTarget field, which
+  // stayed genuinely blank. isPairDirty's (correct, separate) "saved
+  // override's formulaType no longer matches this pair's current
+  // formulaType" check still flagged the pair dirty, so Save validated the
+  // blank field and surfaced "SF/FTE must be a positive number" instead of
+  // ever re-offering the expected 200 SF/FTE suggestion. Confirmed via the
+  // saved-doc/form-state read-back, not assumed: the relevant field itself
+  // was empty (Number('') is 0, which fails the ">0" check) -- nothing
+  // invalid was ever suggested INTO it, the suggestion simply never re-ran.
+  //
+  // Fix: track what's been evaluated per (pairKey, formulaType) pair, not
+  // once per component. A pair already evaluated for its CURRENT formula
+  // type is left alone (no re-suggestion thrash on every render); a pair
+  // whose formula type just changed has no entry for that new type yet, so
+  // it's evaluated fresh -- same as a brand-new pair. Mutable ref (not
+  // state): pure bookkeeping, must not itself trigger a re-render.
+  //
+  // getMasterPlanSpaceTarget/getMasterPlanOfficeSpaceTarget are NOT
+  // category-aware -- both match purely on department name against their
+  // own hardcoded table. That's safe here only because the branch below
+  // already selects which one to call from `formulaType`, which is read
+  // fresh from `pairList` (itself always live off categoryFormulaTypeByCategory)
+  // on every run -- so the FTE table can never be consulted for a pair
+  // currently in 'station' mode or vice versa, now or after any future
+  // formula-type change. Confirmed by inspection, not just by this fix:
+  // there is no path in either branch that calls the other table.
+  const suggestionAppliedFormulaTypeRef = useRef(new Map()); // pairKey -> formulaType last evaluated
+
   useEffect(() => {
-    if (suggestionsAppliedRef.current) return;
     if (!categoryOptionsLoaded || !departmentOptionsLoaded || !overridesLoaded) return;
     if (!pairList.length) return;
-    suggestionsAppliedRef.current = true;
 
-    const nextSuggested = new Set();
+    const nextSuggestedAdditions = new Set();
+    let changed = false;
     setForm((prev) => {
       const next = { ...prev };
-      let changed = false;
-      pairList.forEach(({ category, department, pairKey }) => {
-        if (persisted[pairKey]) return; // already has a saved override -- never overwritten by a suggestion
-        const reference = getMasterPlanSpaceTarget(department, departmentOptions);
-        if (!reference) return;
-        next[pairKey] = {
-          sfPerStationTarget: String(reference.sfPerStationTarget),
-          targetUtilizationRatePct: fractionToPctText(reference.targetUtilizationRate)
-        };
-        nextSuggested.add(pairKey);
+      pairList.forEach(({ category, department, pairKey, formulaType }) => {
+        // Already evaluated for this pair's CURRENT formula type -- either
+        // suggested, found no reference, or found the relevant field
+        // already occupied. Only a formula-type change (which changes this
+        // lookup) reopens it.
+        if (suggestionAppliedFormulaTypeRef.current.get(pairKey) === formulaType) return;
+
+        // A saved override matching the CURRENT formula type is real,
+        // confirmed data -- nothing to suggest, never overwritten. A saved
+        // override for a DIFFERENT (now-stale) formula type does NOT count
+        // as "already there" for the type actually in use today -- that
+        // mismatch is exactly the bug case above, and isPairDirty already
+        // flags it separately so the admin notices it needs a re-save.
+        const savedForCurrentType = persisted[pairKey]?.formulaType === formulaType ? persisted[pairKey] : null;
+        if (savedForCurrentType) {
+          suggestionAppliedFormulaTypeRef.current.set(pairKey, formulaType);
+          return;
+        }
+
+        const row = next[pairKey];
+        if (formulaType === 'fte') {
+          // Genuinely-occupied SF/FTE field (manual edit, or a suggestion
+          // already applied for this same type) -- never overwritten.
+          if (row && String(row.sfPerFteTarget || '').trim()) {
+            suggestionAppliedFormulaTypeRef.current.set(pairKey, formulaType);
+            return;
+          }
+          const reference = getMasterPlanOfficeSpaceTarget(department, departmentOptions);
+          suggestionAppliedFormulaTypeRef.current.set(pairKey, formulaType);
+          if (!reference) return;
+          // Spread the existing row (defaulted, not blanked) so a value
+          // sitting in the OTHER formula type's field(s) -- e.g. a manual
+          // station edit made before this category was switched to FTE --
+          // survives rather than being force-cleared by a suggestion that
+          // only concerns the currently-relevant field. That other field is
+          // never read/validated/saved while this formulaType is active, so
+          // preserving it is free; it only matters if the category's
+          // formula type is later flipped back.
+          next[pairKey] = {
+            sfPerStationTarget: '',
+            targetUtilizationRatePct: '',
+            ...row,
+            sfPerFteTarget: String(reference.sfPerFteTarget)
+          };
+        } else {
+          if (row && (String(row.sfPerStationTarget || '').trim() || String(row.targetUtilizationRatePct || '').trim())) {
+            suggestionAppliedFormulaTypeRef.current.set(pairKey, formulaType);
+            return;
+          }
+          const reference = getMasterPlanSpaceTarget(department, departmentOptions);
+          suggestionAppliedFormulaTypeRef.current.set(pairKey, formulaType);
+          if (!reference) return;
+          // Same preserve-the-other-field reasoning as the fte branch above.
+          next[pairKey] = {
+            sfPerFteTarget: '',
+            ...row,
+            sfPerStationTarget: String(reference.sfPerStationTarget),
+            targetUtilizationRatePct: fractionToPctText(reference.targetUtilizationRate)
+          };
+        }
+        nextSuggestedAdditions.add(pairKey);
         changed = true;
       });
       return changed ? next : prev;
     });
-    setSuggestedPairKeys(nextSuggested);
+    // Additive merge, not a replace -- this can now run more than once
+    // (once per pair whose formula type changes), so a pairKey the admin
+    // already downgraded out of suggestedPairKeys via a manual edit (see
+    // handleFieldChange below) must stay downgraded rather than being
+    // re-added by a later, unrelated run that touches other pairs.
+    if (nextSuggestedAdditions.size) {
+      setSuggestedPairKeys((prev) => {
+        const merged = new Set(prev);
+        nextSuggestedAdditions.forEach((pairKey) => merged.add(pairKey));
+        return merged;
+      });
+    }
   }, [categoryOptionsLoaded, departmentOptionsLoaded, overridesLoaded, pairList, persisted, departmentOptions]);
 
   const handleFieldChange = useCallback((pairKey, field, value) => {
@@ -2066,12 +2345,23 @@ function DepartmentSpaceOverridesSection() {
     });
   }, []);
 
-  const isPairDirty = useCallback((pairKey) => {
+  const isPairDirty = useCallback((pairKey, formulaType) => {
     const row = form[pairKey];
     if (!row) return false;
     const saved = persisted[pairKey];
     if (!saved) {
-      return Boolean(String(row.sfPerStationTarget || '').trim() || String(row.targetUtilizationRatePct || '').trim());
+      return formulaType === 'fte'
+        ? Boolean(String(row.sfPerFteTarget || '').trim())
+        : Boolean(String(row.sfPerStationTarget || '').trim() || String(row.targetUtilizationRatePct || '').trim());
+    }
+    // Category's formula type changed since this override was saved (e.g.
+    // "Office" was switched from FTE-based back to enrollment-based in
+    // Space Configuration) -- itself a change worth flagging/resaving, same
+    // reasoning as SpaceConfigSection's isCategoryDirty.
+    if (formulaType !== saved.formulaType) return true;
+    if (formulaType === 'fte') {
+      const sfFte = Number(row.sfPerFteTarget);
+      return sfFte !== saved.sfPerFteTarget;
     }
     const sf = Number(row.sfPerStationTarget);
     const rate = pctToFraction(row.targetUtilizationRatePct);
@@ -2079,7 +2369,7 @@ function DepartmentSpaceOverridesSection() {
   }, [form, persisted]);
 
   const dirtyPairs = useMemo(
-    () => pairList.filter(({ pairKey }) => isPairDirty(pairKey)),
+    () => pairList.filter(({ pairKey, formulaType }) => isPairDirty(pairKey, formulaType)),
     [pairList, isPairDirty]
   );
 
@@ -2090,7 +2380,7 @@ function DepartmentSpaceOverridesSection() {
     setSaveError('');
 
     const invalid = dirtyPairs
-      .map(({ pairKey }) => ({ pairKey, errors: validateSpaceConfigRow(form[pairKey]) }))
+      .map(({ pairKey, formulaType }) => ({ pairKey, errors: validateSpaceConfigRow(form[pairKey], formulaType) }))
       .filter((entry) => entry.errors.length);
     if (invalid.length) {
       setSaveError(invalid.map((entry) => `${entry.pairKey}: ${entry.errors.join('; ')}`).join(' | '));
@@ -2101,16 +2391,24 @@ function DepartmentSpaceOverridesSection() {
     try {
       // Plain overwrite (no {merge: true}), same "full setDoc, no partial
       // update" convention as SpaceConfigSection -- an override always
-      // supplies both fields together.
-      for (const { category, department, pairKey } of dirtyPairs) {
+      // supplies every field for its formula type together, and a formula-
+      // type switch cleanly drops the other formula's stale fields.
+      for (const { category, department, pairKey, formulaType } of dirtyPairs) {
         const row = form[pairKey];
-        const payload = {
-          category,
-          department,
-          sfPerStationTarget: Number(row.sfPerStationTarget),
-          targetUtilizationRate: pctToFraction(row.targetUtilizationRatePct),
-          effectiveDate: serverTimestamp()
-        };
+        const payload = formulaType === 'fte'
+          ? {
+              category,
+              department,
+              sfPerFteTarget: Number(row.sfPerFteTarget),
+              effectiveDate: serverTimestamp()
+            }
+          : {
+              category,
+              department,
+              sfPerStationTarget: Number(row.sfPerStationTarget),
+              targetUtilizationRate: pctToFraction(row.targetUtilizationRatePct),
+              effectiveDate: serverTimestamp()
+            };
         await setDoc(doc(overridesCollection, pairKey), payload);
       }
       // A just-saved pair is real persisted data now, not an unconfirmed
@@ -2140,18 +2438,28 @@ function DepartmentSpaceOverridesSection() {
   // Coverage accounting, per explicit request: which live departments got a
   // real master-plan suggestion vs. which didn't (checked against the same
   // live departmentOptions list every suggestion in this section gates on).
+  // Union of BOTH reference tables -- Classroom/Lab and Office cover the
+  // same 12 real department names today, but this is computed as a proper
+  // union (not just reused from one table) so it stays correct even if the
+  // two tables' department sets ever diverge.
   const departmentsWithReference = useMemo(
-    () => departmentOptions.filter((department) => getMasterPlanSpaceTarget(department, departmentOptions)),
+    () => departmentOptions.filter((department) => (
+      getMasterPlanSpaceTarget(department, departmentOptions)
+      || getMasterPlanOfficeSpaceTarget(department, departmentOptions)
+    )),
     [departmentOptions]
   );
   const departmentsWithoutReference = useMemo(
-    () => departmentOptions.filter((department) => !getMasterPlanSpaceTarget(department, departmentOptions)),
+    () => departmentOptions.filter((department) => (
+      !getMasterPlanSpaceTarget(department, departmentOptions)
+      && !getMasterPlanOfficeSpaceTarget(department, departmentOptions)
+    )),
     [departmentOptions]
   );
 
   const summaryLabel = dirtyPairs.length
-    ? `Department-Specific Space Targets (Classroom/Lab) (${dirtyPairs.length} unsaved)`
-    : 'Department-Specific Space Targets (Classroom/Lab)';
+    ? `Department-Specific Space Targets (${dirtyPairs.length} unsaved)`
+    : 'Department-Specific Space Targets';
 
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
@@ -2172,21 +2480,24 @@ function DepartmentSpaceOverridesSection() {
         </div>
 
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-          Optional, per-department SF/station target and target utilization rate for the "Classroom" and "Lab"
-          categories, overriding Space Configuration's category-wide default for that department only in the "By
-          Department" table below. A department with no override here simply keeps using its category's default,
-          exactly as before this section existed.
+          Optional, per-department target values overriding Space Configuration's category-wide default for that
+          department only in the "By Department" table below -- for whichever of "Classroom", "Lab", "Office"
+          currently exist as space categories. Each category keeps its own formula type from Space Configuration
+          (SF/station + utilization %, or SF/FTE); a department with no override here simply keeps using its
+          category's default, exactly as before this section existed.
         </div>
 
         <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
           The master plan publishes one combined "100 - Classroom / 200 - Class Lab" teaching-space target per
-          department, not separate Classroom and Lab figures -- suggested values below apply that same published
-          number to both category rows for a department, not two independently verified numbers.
+          department, not separate Classroom and Lab figures -- suggested values for those two categories apply
+          that same published number to both rows for a department, not two independently verified numbers.
+          "Office" uses a separate, structurally different SF/FTE table -- times the department's own Total FTE,
+          no utilization-rate division at all.
         </div>
 
         {!availableTargetCategories.length && categoryOptionsLoaded ? (
           <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, fontSize: 11, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8' }}>
-            Add "Classroom" and/or "Lab" as space categories in Space Configuration above to enable department-specific overrides.
+            Add "Classroom", "Lab", and/or "Office" as space categories in Space Configuration above to enable department-specific overrides.
           </div>
         ) : null}
 
@@ -2194,9 +2505,9 @@ function DepartmentSpaceOverridesSection() {
           <div style={{ marginTop: 8, fontSize: 10.5, color: '#1d4ed8', lineHeight: 1.4 }}>
             <strong>{departmentsWithReference.length}</strong> of <strong>{departmentOptions.length}</strong> live
             department{departmentOptions.length === 1 ? '' : 's'} {departmentsWithReference.length === 1 ? 'has' : 'have'} a
-            published master-plan reference -- one shared combined Classroom/Lab teaching-space value, pre-filled
-            below into both category rows (suggested only). Applies only to the "Classroom"/"Lab" categories -- any
-            other space category is never pre-filled from this table.
+            published master-plan reference (suggested only) -- the shared Classroom/Lab teaching-space value, the
+            Office SF/FTE value, or both. Only pre-filled for whichever of "Classroom"/"Lab"/"Office" currently
+            exist as space categories -- any other space category is never pre-filled from either table.
             {departmentsWithoutReference.length ? (
               <div style={{ marginTop: 2, color: '#475467' }}>
                 No published reference for: {departmentsWithoutReference.join(', ')} -- manual entry only.
@@ -2215,15 +2526,26 @@ function DepartmentSpaceOverridesSection() {
           </div>
         ) : (
           <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-            {pairList.map(({ category, department, pairKey }) => {
-              const row = form[pairKey] || { sfPerStationTarget: '', targetUtilizationRatePct: '' };
-              const dirty = isPairDirty(pairKey);
+            {pairList.map(({ category, department, pairKey, formulaType }) => {
+              const row = form[pairKey] || { sfPerStationTarget: '', targetUtilizationRatePct: '', sfPerFteTarget: '' };
+              const dirty = isPairDirty(pairKey, formulaType);
               const isSuggested = suggestedPairKeys.has(pairKey);
               const isUnsaved = !persisted[pairKey];
-              const rowErrors = dirty ? validateSpaceConfigRow(row) : [];
+              const rowErrors = dirty ? validateSpaceConfigRow(row, formulaType) : [];
               const masterPlanLabel = MASTER_PLAN_DEPARTMENT_LABELS[department];
               const rowBackground = isSuggested ? '#eff6ff' : (dirty ? '#fffbeb' : '#f8fafc');
               const rowBorder = isSuggested ? '#bfdbfe' : (dirty ? '#fde68a' : '#e5e7eb');
+              const suggestedTitle = formulaType === 'fte'
+                ? `Suggested from the master plan's Office SF/FTE target for this department — priced against `
+                  + `the department's own Total FTE, no utilization-rate division.`
+                  + (masterPlanLabel ? ` Master plan calls this department "${masterPlanLabel}".` : '')
+                : `Suggested from the master plan's combined Classroom/Lab teaching-space target for this `
+                  + `department — the same published value applies to both categories, not independently `
+                  + `derived per room type.`
+                  + (masterPlanLabel ? ` Master plan calls this department "${masterPlanLabel}".` : '');
+              const suggestedLabel = formulaType === 'fte'
+                ? 'Suggested from master plan (Office SF/FTE target) — not yet saved'
+                : 'Suggested from master plan (combined Classroom/Lab target) — not yet saved';
               return (
                 <div
                   key={pairKey}
@@ -2242,25 +2564,39 @@ function DepartmentSpaceOverridesSection() {
                     {department} <span style={{ fontWeight: 500, color: '#667085' }}>({category})</span>
                     {isUnsaved ? <span style={{ color: '#b45309', fontWeight: 500 }}> (unsaved)</span> : null}
                   </div>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="SF/station"
-                    value={row.sfPerStationTarget}
-                    onChange={(e) => handleFieldChange(pairKey, 'sfPerStationTarget', e.target.value)}
-                    style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    placeholder="Target %"
-                    value={row.targetUtilizationRatePct}
-                    onChange={(e) => handleFieldChange(pairKey, 'targetUtilizationRatePct', e.target.value)}
-                    style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
-                  />
+                  {formulaType === 'fte' ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="SF/FTE"
+                      value={row.sfPerFteTarget}
+                      onChange={(e) => handleFieldChange(pairKey, 'sfPerFteTarget', e.target.value)}
+                      style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                    />
+                  ) : (
+                    <>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="SF/station"
+                        value={row.sfPerStationTarget}
+                        onChange={(e) => handleFieldChange(pairKey, 'sfPerStationTarget', e.target.value)}
+                        style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        placeholder="Target %"
+                        value={row.targetUtilizationRatePct}
+                        onChange={(e) => handleFieldChange(pairKey, 'targetUtilizationRatePct', e.target.value)}
+                        style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '3px 5px' }}
+                      />
+                    </>
+                  )}
                   {isSuggested ? (
                     <span
                       style={{
@@ -2273,14 +2609,9 @@ function DepartmentSpaceOverridesSection() {
                         borderRadius: 4,
                         padding: '1px 5px'
                       }}
-                      title={
-                        `Suggested from the master plan's combined Classroom/Lab teaching-space target for this `
-                        + `department — the same published value applies to both categories, not independently `
-                        + `derived per room type.`
-                        + (masterPlanLabel ? ` Master plan calls this department "${masterPlanLabel}".` : '')
-                      }
+                      title={suggestedTitle}
                     >
-                      Suggested from master plan (combined Classroom/Lab target) — not yet saved
+                      {suggestedLabel}
                     </span>
                   ) : null}
                   {rowErrors.length ? (
@@ -2563,8 +2894,9 @@ function SpaceGrowthSection() {
           <div style={{ fontSize: 11.5, fontWeight: 700, color: '#1d2939' }}>By Department</div>
           <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
             Same calculation as the table above, grouped by (space category, primary department) pair and priced
-            against that department's own enrollment (from Enrollment & FTE Projections) instead of the
-            institution-wide total. Uses the same target year selected above.
+            against that department's own enrollment or Total FTE (from Enrollment & FTE Projections) instead of
+            the institution-wide total -- whichever unit the row's category uses (see "Ideal SF/Unit" below).
+            Uses the same target year selected above.
           </div>
 
           {departmentResult && departmentResult.taggedRoomsMissingDepartment > 0 ? (
@@ -2594,7 +2926,9 @@ function SpaceGrowthSection() {
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
                     <th style={{ padding: '4px 6px' }}>Category</th>
                     <th style={{ padding: '4px 6px' }}>Department</th>
-                    <th style={{ padding: '4px 6px' }}>Ideal NSF/Student</th>
+                    <th style={{ padding: '4px 6px' }} title="Enrollment-based rows: SF/station ÷ utilization %, per student. FTE-based rows (e.g. Office): SF/FTE, per FTE.">
+                      Ideal SF/Unit
+                    </th>
                     <th style={{ padding: '4px 6px' }}>Tagged Rooms</th>
                     <th style={{ padding: '4px 6px' }}>Current SF</th>
                     <th style={{ padding: '4px 6px' }}>Ideal SF ({BASELINE_ENROLLMENT_YEAR})</th>
@@ -2622,7 +2956,12 @@ function SpaceGrowthSection() {
                         <td style={{ padding: '4px 6px' }}>{row.department}</td>
                         <td style={{ padding: '4px 6px' }}>
                           {row.idealNsfPerStudent != null ? (
-                            (Math.round(row.idealNsfPerStudent * 100) / 100).toLocaleString()
+                            <>
+                              {(Math.round(row.idealNsfPerStudent * 100) / 100).toLocaleString()}
+                              <div style={{ fontSize: 9, color: '#98a2b3' }}>
+                                {row.formulaType === 'fte' ? 'SF/FTE' : 'SF/student'}
+                              </div>
+                            </>
                           ) : (
                             <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>not set</span>
                           )}
