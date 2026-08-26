@@ -4904,7 +4904,16 @@ const SARPY_LAND_USE_SOURCE_ID = 'mf-sarpy-land-use-source';
 const SARPY_LAND_USE_FILL_LAYER_ID = 'mf-sarpy-land-use-fill';
 const SARPY_LAND_USE_OUTLINE_LAYER_ID = 'mf-sarpy-land-use-outline';
 const SARPY_LAND_USE_HIGHLIGHT_LAYER_ID = 'mf-sarpy-land-use-highlight';
+// Separate from SARPY_LAND_USE_HIGHLIGHT_LAYER_ID (single-feature map-click
+// selection, keyed on OBJECTID) so legend category highlighting doesn't
+// fight over the same filter -- same cyan style, keyed on LANDUSECODE
+// instead and driven by the legend rows in the Planning Layers panel.
+const SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID = 'mf-sarpy-land-use-category-highlight';
 const SARPY_LAND_USE_GEOJSON_PATH = 'SarpyCounty_Proposed_Land_Use.geojson';
+// Sentinel filter value for "no category selected" -- no real LANDUSECODE/
+// ZONECLASS value will ever equal this, so the highlight layer just renders
+// nothing until a legend row is clicked.
+const SARPY_CATEGORY_HIGHLIGHT_NONE = '__mf_none__';
 const SARPY_LAND_USE_FALLBACK_COLOR = '#CCCCCC';
 
 const SARPY_LAND_USE_LOOKUP = Object.freeze({
@@ -4988,6 +4997,9 @@ const SARPY_ZONING_SOURCE_ID = 'mf-sarpy-zoning-source';
 const SARPY_ZONING_FILL_LAYER_ID = 'mf-sarpy-zoning-fill';
 const SARPY_ZONING_OUTLINE_LAYER_ID = 'mf-sarpy-zoning-outline';
 const SARPY_ZONING_HIGHLIGHT_LAYER_ID = 'mf-sarpy-zoning-highlight';
+// See SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID above -- same reasoning,
+// keyed on ZONECLASS instead of LANDUSECODE.
+const SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID = 'mf-sarpy-zoning-category-highlight';
 const SARPY_ZONING_GEOJSON_PATH = 'SarpyCounty_Zoning_Overlay_Districts.geojson';
 const SARPY_ZONING_FALLBACK_COLOR = '#CCCCCC';
 
@@ -12065,6 +12077,16 @@ const StakeholderMap = ({
   const sarpyLandUseSelectedIdRef = useRef(null);
   const sarpyZoningSelectedIdRef = useRef(null);
   const sarpyTaxParcelsSelectedIdRef = useRef(null);
+  // Legend-driven category highlight (distinct from the *SelectedIdRef single
+  // map-click selection above) -- which LANDUSECODE/ZONECLASS, if any, is
+  // currently highlighted via a Planning Layers legend row click. The refs
+  // mirror the state so the layer-creation effects (which only re-run on
+  // mapLoaded/showX changes, not on every selection click) can re-apply the
+  // current selection's filter after a style reload without going stale.
+  const [sarpyLandUseCategorySelection, setSarpyLandUseCategorySelection] = useState(null);
+  const [sarpyZoningCategorySelection, setSarpyZoningCategorySelection] = useState(null);
+  const sarpyLandUseCategorySelectionRef = useRef(null);
+  const sarpyZoningCategorySelectionRef = useRef(null);
   const [interactionMode, setInteractionMode] = useState('select');
   const [showMarkers, setShowMarkers] = useState(mode === 'admin'); // Paths feature removed
   const [markers, setMarkers] = useState([]); // Paths feature removed
@@ -12418,6 +12440,7 @@ const StakeholderMap = ({
         .sort((a, b) => a.localeCompare(b))
     ];
     return ordered.map((code) => ({
+      code,
       label: getSarpyLandUseLabel(code),
       color: getSarpyLandUseColor(code)
     }));
@@ -12438,6 +12461,7 @@ const StakeholderMap = ({
         .sort((a, b) => a.localeCompare(b))
     ];
     return ordered.map((code) => ({
+      code,
       label: getSarpyZoningLabel(code),
       color: getSarpyZoningColor(code)
     }));
@@ -26059,6 +26083,7 @@ useEffect(() => {
         setMapLayerVisibility(map, SARPY_LAND_USE_FILL_LAYER_ID, false);
         setMapLayerVisibility(map, SARPY_LAND_USE_OUTLINE_LAYER_ID, false);
         setMapLayerVisibility(map, SARPY_LAND_USE_HIGHLIGHT_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID, false);
         return;
       }
       let data;
@@ -26123,6 +26148,26 @@ useEffect(() => {
             filter: ['==', ['get', 'OBJECTID'], -1]
           });
         }
+        if (!map.getLayer(SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID)) {
+          // Legend-driven category highlight -- see the layer ID's own
+          // comment above for why this is a separate layer from
+          // SARPY_LAND_USE_HIGHLIGHT_LAYER_ID. Filter starts at the current
+          // React selection so a style reload (map.on('style.load', ...))
+          // restores an active legend highlight instead of losing it.
+          map.addLayer({
+            id: SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID,
+            type: 'line',
+            source: SARPY_LAND_USE_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: {
+              'line-color': '#00ffff',
+              'line-width': 2,
+              'line-opacity': 1,
+              'line-gap-width': 0
+            },
+            filter: ['==', ['get', 'LANDUSECODE'], sarpyLandUseCategorySelectionRef.current || SARPY_CATEGORY_HIGHLIGHT_NONE]
+          });
+        }
         if (!map.__mf_sarpy_land_use_click_bound) {
           const onSarpyLandUseFillClick = (e) => {
             const f = e.features?.[0];
@@ -26170,6 +26215,7 @@ useEffect(() => {
       setMapLayerVisibility(map, SARPY_LAND_USE_FILL_LAYER_ID, true);
       setMapLayerVisibility(map, SARPY_LAND_USE_OUTLINE_LAYER_ID, true);
       setMapLayerVisibility(map, SARPY_LAND_USE_HIGHLIGHT_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID, true);
     };
 
     applySarpyLandUseLayer();
@@ -26192,6 +26238,7 @@ useEffect(() => {
         setMapLayerVisibility(map, SARPY_ZONING_FILL_LAYER_ID, false);
         setMapLayerVisibility(map, SARPY_ZONING_OUTLINE_LAYER_ID, false);
         setMapLayerVisibility(map, SARPY_ZONING_HIGHLIGHT_LAYER_ID, false);
+        setMapLayerVisibility(map, SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID, false);
         return;
       }
       let data;
@@ -26256,6 +26303,26 @@ useEffect(() => {
             filter: ['==', ['get', 'OBJECTID'], -1]
           });
         }
+        if (!map.getLayer(SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID)) {
+          // Legend-driven category highlight -- see SARPY_ZONING_CATEGORY_
+          // HIGHLIGHT_LAYER_ID's own comment for why this is separate from
+          // SARPY_ZONING_HIGHLIGHT_LAYER_ID. Filter starts at the current
+          // React selection so a style reload restores an active legend
+          // highlight instead of losing it.
+          map.addLayer({
+            id: SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID,
+            type: 'line',
+            source: SARPY_ZONING_SOURCE_ID,
+            layout: { visibility: 'none' },
+            paint: {
+              'line-color': '#00ffff',
+              'line-width': 2,
+              'line-opacity': 1,
+              'line-gap-width': 0
+            },
+            filter: ['==', ['get', 'ZONECLASS'], sarpyZoningCategorySelectionRef.current || SARPY_CATEGORY_HIGHLIGHT_NONE]
+          });
+        }
         if (!map.__mf_sarpy_zoning_click_bound) {
           const onSarpyZoningFillClick = (e) => {
             const f = e.features?.[0];
@@ -26303,6 +26370,7 @@ useEffect(() => {
       setMapLayerVisibility(map, SARPY_ZONING_FILL_LAYER_ID, true);
       setMapLayerVisibility(map, SARPY_ZONING_OUTLINE_LAYER_ID, true);
       setMapLayerVisibility(map, SARPY_ZONING_HIGHLIGHT_LAYER_ID, true);
+      setMapLayerVisibility(map, SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID, true);
     };
 
     applySarpyZoningLayer();
@@ -26313,6 +26381,70 @@ useEffect(() => {
       } catch {}
     };
   }, [mapLoaded, isSarpyCountyInstance, showSarpyZoningLayer]);
+
+  // Legend row click -> highlight every feature sharing that LANDUSECODE.
+  // Clicking the same row again clears it (toggle, single-select per group --
+  // matches the floor legend's onLegendClick/setFloorHighlight UX).
+  const setSarpyLandUseCategoryHighlight = useCallback((code) => {
+    setSarpyLandUseCategorySelection((prev) => {
+      const next = prev === code ? null : code;
+      sarpyLandUseCategorySelectionRef.current = next;
+      const map = mapRef.current;
+      if (map && map.getLayer(SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID)) {
+        try {
+          map.setFilter(
+            SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID,
+            ['==', ['get', 'LANDUSECODE'], next || SARPY_CATEGORY_HIGHLIGHT_NONE]
+          );
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const setSarpyZoningCategoryHighlight = useCallback((code) => {
+    setSarpyZoningCategorySelection((prev) => {
+      const next = prev === code ? null : code;
+      sarpyZoningCategorySelectionRef.current = next;
+      const map = mapRef.current;
+      if (map && map.getLayer(SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID)) {
+        try {
+          map.setFilter(
+            SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID,
+            ['==', ['get', 'ZONECLASS'], next || SARPY_CATEGORY_HIGHLIGHT_NONE]
+          );
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  // Clear the legend selection (state + map filter) when a layer's master
+  // visibility checkbox is turned off, so re-enabling it later doesn't show
+  // a stale highlight for a category the legend no longer marks as selected.
+  useEffect(() => {
+    if (showSarpyLandUseLayer) return;
+    setSarpyLandUseCategorySelection(null);
+    sarpyLandUseCategorySelectionRef.current = null;
+    const map = mapRef.current;
+    if (map && map.getLayer(SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID)) {
+      try {
+        map.setFilter(SARPY_LAND_USE_CATEGORY_HIGHLIGHT_LAYER_ID, ['==', ['get', 'LANDUSECODE'], SARPY_CATEGORY_HIGHLIGHT_NONE]);
+      } catch {}
+    }
+  }, [showSarpyLandUseLayer]);
+
+  useEffect(() => {
+    if (showSarpyZoningLayer) return;
+    setSarpyZoningCategorySelection(null);
+    sarpyZoningCategorySelectionRef.current = null;
+    const map = mapRef.current;
+    if (map && map.getLayer(SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID)) {
+      try {
+        map.setFilter(SARPY_ZONING_CATEGORY_HIGHLIGHT_LAYER_ID, ['==', ['get', 'ZONECLASS'], SARPY_CATEGORY_HIGHLIGHT_NONE]);
+      } catch {}
+    }
+  }, [showSarpyZoningLayer]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !isSarpyCountyInstance) return;
@@ -33419,8 +33551,8 @@ useEffect(() => {
           >
             <h4 style={{ margin: '2px 0 4px 0', fontSize: 12.5 }}>Sarpy County Planning Layers</h4>
             {[
-              { key: 'landUse', title: 'Proposed Land Use', on: showSarpyLandUseLayer, toggle: setShowSarpyLandUseLayer, legend: sarpyLandUseLegend },
-              { key: 'zoning', title: 'Zoning Overlay Districts', on: showSarpyZoningLayer, toggle: setShowSarpyZoningLayer, legend: sarpyZoningLegend }
+              { key: 'landUse', title: 'Proposed Land Use', on: showSarpyLandUseLayer, toggle: setShowSarpyLandUseLayer, legend: sarpyLandUseLegend, selected: sarpyLandUseCategorySelection, onSelect: setSarpyLandUseCategoryHighlight },
+              { key: 'zoning', title: 'Zoning Overlay Districts', on: showSarpyZoningLayer, toggle: setShowSarpyZoningLayer, legend: sarpyZoningLegend, selected: sarpyZoningCategorySelection, onSelect: setSarpyZoningCategoryHighlight }
             ].map((layer) => (
               <div key={layer.key} style={{ marginTop: layer.key === 'zoning' ? 8 : 0 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
@@ -33433,24 +33565,40 @@ useEffect(() => {
                 </label>
                 {layer.on && layer.legend.length > 0 && (
                   <div style={{ display: 'grid', gap: 3, marginTop: 4, marginLeft: 4 }}>
-                    {layer.legend.map((item) => (
-                      <div
-                        key={item.label}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#1f2937' }}
-                      >
-                        <span
+                    {layer.legend.map((item) => {
+                      const isSelected = layer.selected === item.code;
+                      return (
+                        <div
+                          key={item.code}
+                          onClick={() => layer.onSelect(item.code)}
+                          title="Click to highlight matching areas on the map"
                           style={{
-                            display: 'inline-block',
-                            width: 10,
-                            height: 10,
-                            borderRadius: 2,
-                            background: item.color,
-                            flexShrink: 0
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 10,
+                            color: '#1f2937',
+                            cursor: 'pointer',
+                            borderRadius: 3,
+                            padding: '1px 3px',
+                            background: isSelected ? 'rgba(0,229,255,0.25)' : 'transparent',
+                            fontWeight: isSelected ? 700 : 400
                           }}
-                        />
-                        <span>{item.label}</span>
-                      </div>
-                    ))}
+                        >
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: 10,
+                              height: 10,
+                              borderRadius: 2,
+                              background: item.color,
+                              flexShrink: 0
+                            }}
+                          />
+                          <span>{item.label}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
