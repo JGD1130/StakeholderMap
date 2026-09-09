@@ -240,31 +240,101 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
-## Recent Changes (2026-08-26) — `DepartmentSpaceOverridesSection` master-plan suggestion never re-ran after a category's formula type changed post-mount; re-keyed the guard per (pairKey, formulaType)
+## Recent Changes (2026-08-27) — New weekly Hastings/Sarpy Airtable-to-CSV export script, replacing an earlier overwrite-only version
 
-### The bug
+### Summary
 
-The master-plan suggestion effect in `DepartmentSpaceOverridesSection` (`ClassroomUtilizationPanel.jsx`) was gated by a single component-wide `suggestionsAppliedRef.current` boolean that latched `true` after the first qualifying render. If a category's formula type (station-vs-FTE) was corrected in Space Configuration *after* this section had already mounted — e.g. "Office" fixed from SF/Station to SF/FTE — the effect never ran again, so the now-relevant `sfPerFteTarget` field stayed genuinely blank. `isPairDirty` still (correctly) flagged the pair dirty because the saved override's formula type no longer matched the category's current one, so Save validated the blank field and surfaced "SF/FTE must be a positive number" instead of ever re-offering the expected suggestion.
-
-### Confirmed root cause: empty, not stale-invalid
-
-Traced `loadOverrides`' read-back and the suggestion-write branches before concluding anything: a saved override only ever populates the field(s) belonging to *its own* `formulaType` (`detectFormulaType(data)` on the saved doc itself), and every suggestion/manual-edit write always sets a row's *other* field(s) explicitly (to `''`, at the time). So the failing field was `Number('') = 0` (fails the `>0` check) — never a leftover numeric value from a different formula type leaking through. This ruled out "wrong value suggested" and confirmed the actual defect was "suggestion never re-ran," which is what justified fixing the gate rather than adding fallback validation.
-
-### Fix
-
-Replaced the boolean with `suggestionAppliedFormulaTypeRef` (`Map<pairKey, formulaType last evaluated>`) — a pair is now only skipped once it's been evaluated for its *current* formula type; a formula-type change reopens exactly that pair, nothing more. `suggestedPairKeys` updates changed from a replace to an additive merge for the same reason (the effect can now legitimately fire more than once across a session).
-
-### Hardening found and fixed in the same pass
-
-Each suggestion-write branch replaced the whole row object, unconditionally blanking the *other* formula type's field(s). Invisible in the common case, but if an admin edited a field and the category's formula type flipped away and back again before saving, that edit was silently wiped. Both branches now spread the existing row instead of hard-resetting it, so a value in the currently-inactive field survives a flip-flop (it's never read/validated/saved while inactive anyway, so preserving it is free).
-
-### `getMasterPlanSpaceTarget`/`getMasterPlanOfficeSpaceTarget` cross-contamination, checked not assumed
-
-Grepped every call site in `src/` (only `masterPlanSpaceTargets.js` itself and this one component use either function). The only place either result feeds an actual form value is this effect, always called from inside the matching `formulaType` branch, with `formulaType` read fresh from the live `onSnapshot`-sourced `categoryFormulaTypeByCategory` on every run. No path exists for a station-shaped suggestion to land in an FTE row or vice versa, now or after any future formula-type change. (The other call site, `departmentsWithReference`/`departmentsWithoutReference`, is a deliberate union of both tables for a coverage-summary display, not a value write — correct as-is, left untouched.)
+New standalone utility, `scripts/export-airtable-to-network.cjs` — not part of the deployed app — pulls every room record from the Hastings College and Sarpy County Airtable bases and writes a dated CSV snapshot (e.g. `Hastings_Rooms_2026-08-27.csv`) to the firm's network share. Replaces an earlier version that overwrote a single `latest.csv` each run; files now accumulate per run instead, so history is preserved.
 
 ### Status
 
-Uncommitted, isolated-build-verified (`npm run build`, clean — the one prior pass surfaced 3 esbuild "duplicate key in object literal" warnings from the first draft of the preserve-on-write spread, fixed by dropping the redundant default before the override). Scope: `ClassroomUtilizationPanel.jsx` only, inside `DepartmentSpaceOverridesSection`'s suggestion effect and its two write branches. Awaiting Clark's retest before commit/push.
+Committed (`86c6e63`). Script-only change — no app code touched.
+
+**⚠️ `functions/index.js` / `functions/package.json` — still uncommitted, still unreviewed, flagging again so this doesn't get lost.** The same Cloud Functions v1→v2 API migration flagged in every prior HANDOFF update (Node 18→22, `firebase-admin`/`firebase-functions` version bumps, `onCall`/`onRequest` from `firebase-functions/v2/https`, explicit `invoker: "public"`) is still sitting uncommitted in the working tree, still deliberately excluded from every commit in this and prior sessions, still not deployed to Firebase. **Do not commit or deploy this without a deliberate, separate review** — it should not get swept in accidentally by a future broad `git add`.
+
+---
+
+## Recent Changes (2026-08-26) — Legend click-to-highlight for Sarpy Proposed Land Use / Zoning Overlay Districts; React duplicate-key fix
+
+### Summary
+
+Clicking a category row in either Planning Layers legend (Proposed Land Use, Zoning Overlay Districts) now outlines every matching feature on the map in cyan (line-width 2), toggling off on a repeat click and clearing per-group when a different category is picked. Mirrors the existing density-highlight-layer pattern. Each layer gets its own dedicated highlight layer, kept separate from the existing single-feature map-click highlight so the two selection modes don't fight over the same filter. Turning off a layer's master visibility checkbox resets both its selection state and map filter, so re-enabling it later doesn't show a stale highlight.
+
+### React duplicate-key fix — legitimate data variance, not a data bug
+
+Fixed a React duplicate-key warning in the Proposed Land Use legend (harmless while rows were static, a real risk once interactive). `SARPY_LAND_USE_LOOKUP` intentionally normalizes several distinct Sarpy County `LANDUSECODE` values to the same display label — `I`/`IND` → "Industrial", `PRO`/`PO`/`P`/`O` → "Professional Office", `PUBLIC`/`P` → "Public" — all confirmed present as genuinely distinct codes in the real county GIS data, not duplicate/redundant entries. The legend row key was keying on the shared label instead of the underlying (guaranteed-unique) code; switched to code.
+
+### Status
+
+Committed (`5640c00`).
+
+---
+
+## Recent Changes (2026-08-26) — New Capital Phasing & Costs section in Capital Priorities, with real project phasing/cost data from the master plan
+
+### Summary
+
+New `universities/{universityId}/capitalPhasingProjects/{projectId}` collection — one doc per project: `projectName`, `completionDate`, `projectCost2026`, `escalatedCost`, `phases: [{name, durationMonths}]`, `notes: [string]`. Lives inside Capital Priorities (`CapitalPrioritiesPanel.jsx`), **not** Classroom Utilization, per Clark's explicit decision — two separate master-plan-derived features that happen to both read Hastings master plan workbooks. Same admin-only `firestore.rules` posture as every sibling collection (`capitalPriorities`, `enrollmentProjections`, `spaceConfigDepartmentOverrides`).
+
+Display is a chronological project-card list (sorted by `completionDate`), each card showing the project name, phase sequence with computed start/end dates and durations, both cost figures, and any relocation notes — **not** a full Gantt grid, per Clark's explicit decision (left as a future enhancement). Same parse → preview → review → Confirm & Save pattern as Enrollment Projections, same delete-then-write idempotency as Import Schedule/Enrollment: re-uploading a newer workbook version always lands on exactly the new project set.
+
+The parser (`capitalPhasingImport.js`) is structural, not fixed-offset, so a future updated version of the workbook still parses correctly: project blocks are delimited by blank rows (not row-count assumptions), and a phase row is distinguished from a sub-item note by whether its duration column parses as "N month(s)" — not by matching hardcoded phase-name strings. Design/Demolition/Construction/Move In are examples from the real file, not an exhaustive enum. A block that doesn't parse cleanly is reported in an `issues` list and shown as a visible warning in the preview, never silently dropped. Each project's phase timeline is computed purely from `completionDate` + phase durations working backward — the source file's Gantt bars are pure cell-fill-color with no underlying values and are never read.
+
+### Real bug found and fixed: silent column-shift from SheetJS's `!ref` bounding box
+
+First upload of the real file produced 0 of ~20 projects, every row flagged "could not parse completion date." Confirmed by direct cell-address reads (`sheet['B7']`, `sheet['C7']`, etc.) that the workbook's columns are exactly as originally specified (B=name, C=date, D=2026 cost, E=escalated) — nothing about the file's layout was wrong. The actual bug: `XLSX.utils.sheet_to_json(ws, {header:1})` indexes its returned arrays relative to the sheet's own `!ref` bounding box, not always from column A. Column A is entirely blank throughout this sheet, so Excel recorded its used range as starting at column B (`!ref` = `B1:EM151`), silently shifting every column left by one position in the parsed arrays with no error. A first attempted fix (reading column indices shifted left) was itself wrong — it only appeared to work because it happened to cancel out this one file's specific blank-column quirk, and would have silently broken again the moment a future revision put anything in column A. Fixed instead by forcing `sheet_to_json`'s own range to always start at column A (`parseCapitalPhasingFile`), guaranteeing index 1 is always column B regardless of which columns any given version of the file has used.
+
+A separately-plausible failure mode — Date-object/Excel-serial-number cells instead of plain text — was checked directly against the real file and ruled out (SheetJS returns this column as plain strings either way), but `parseCompletionMonthYear` still defensively handles both.
+
+An earlier informal estimate of 28 projects (quoted mid-investigation) didn't match the file's real count. Resolved by independent ground-truth verification: every blank-row-delimited block in the confirmed sheet was enumerated directly (22 total: 20 real projects + 2 harmless non-project rows — the sheet's title row and its column-label row), cross-checked against the workbook's other sheet ("HC MP Phasing", no "-Revised"), which has 21 blocks, not 28 either. 20 is the real, ground-truth count; no source for "28" was found.
+
+### Status
+
+Verified end-to-end by Clark: real file uploads correctly (20 of 20 projects), Fuhr Hall's phase sequence and computed dates confirmed exact against the source workbook, saves and persists correctly. Committed (`1d3640b`). Adds the `firestore.rules` entry for the new collection — **not yet deployed**, flagged for Clark to run `firebase deploy --only firestore:rules`.
+
+---
+
+## Recent Changes (2026-08-26) — FTE-based space-target formula type added for Office/support space, alongside the existing enrollment-based one
+
+### Summary
+
+Space Configuration and Department-Specific Space Targets previously assumed every category uses the same formula: `sfPerStationTarget / targetUtilizationRate × enrollment`. Office/support space doesn't fit that shape — the master plan prices it as `sfPerFteTarget × the department's own Total FTE`, no utilization-rate division. Added `'fte'` as a second formula type alongside the existing `'station'` one, detected by which field a `spaceConfig`/override doc actually has populated (`classroomUtilizationSchema.js`) rather than a separate stored flag, so `SpaceConfigSection`'s toggle, `DepartmentSpaceOverridesSection` (now covering Classroom/Lab/Office), and `computeDepartmentSpaceGrowth`'s new `getDepartmentTotalFte()`-driven branch (`spaceGrowthCalc.js`) all share one `detectFormulaType()` — a category can never validate or price two different ways.
+
+Blocker before Office could be tested at all: Office rooms are never course-scheduled, so `RoomUtilizationMetaSection`'s tagging universe — derived entirely from `courseMeetings` docs — had no path to surface a single Office room, capping tagging at 46 scheduled rooms. Added `deriveOfficeRoomsFromAirtable()` (`roomTypeSuggestion.js`), pulling the ~275 real "Office - *" Room Type Description rooms directly from Airtable inventory, merged with the scheduled-room list into one combined 321-room tagging universe (`roomUtilizationMeta.js` tags the scheduled half with `source: 'scheduled'` so the two stay distinguishable — Office rooms never have Utilization Results/Heat Map/Size Range data, since no `courseMeetings` docs exist for them).
+
+Office's suggested `sfPerFteTarget` values (`masterPlanSpaceTargets.js`'s new `MASTER_PLAN_OFFICE_SPACE_TARGETS`) are transcribed directly from the master plan's own published Office space-standards table, reusing the same already-live-verified department-naming crosswalk the Classroom/Lab table uses.
+
+### Two real bugs found and fixed during testing
+
+**1. Category-blind matching.** The department-override suggestion effect originally called the same lookup for every category regardless of its formula type, so Office pairs would have been offered a station+utilization-rate suggestion instead of an SF/FTE one. Fixed by branching on each pair's live-detected `formulaType` and calling `getMasterPlanOfficeSpaceTarget` vs. `getMasterPlanSpaceTarget` accordingly — confirmed by inspection that no path calls the wrong table for a given formula type, now or after any future formula-type change.
+
+**2. One-shot suggestion ref.** The master-plan suggestion effect in `DepartmentSpaceOverridesSection` was gated by a single component-wide `suggestionsAppliedRef.current` boolean that latched `true` after the first qualifying render. Correcting Office's formula type in Space Configuration *after* this section had already mounted left the now-relevant `sfPerFteTarget` field permanently blank — `isPairDirty` still (correctly) flagged the pair dirty since the saved override's formula type no longer matched the category's current one, so Save validated the empty field and surfaced "SF/FTE must be a positive number" instead of ever re-offering the suggestion. Confirmed via the saved-doc/form-state read-back that the field was genuinely empty (`Number('') = 0`), not a stale value from the other formula type — ruling out "wrong value suggested" and confirming the actual defect was "suggestion never re-ran." Fixed with `suggestionAppliedFormulaTypeRef`, a `Map<pairKey, formulaType>` in place of the single boolean, so only a pair whose formula type actually changed gets re-evaluated; `suggestedPairKeys` updates changed from a replace to an additive merge for the same reason. Hardened the same write path (both suggestion-write branches now spread the existing row instead of replacing it wholesale) so a manual edit sitting in the currently-inactive field survives a formula-type flip-flop instead of being silently blanked by an unrelated suggestion write.
+
+### Status
+
+Verified end-to-end by Clark: formula type correctly detected per category, Music & Theatre's 225 SF/FTE confirmed distinctly different from the 200 default (not a hardcoded fallback), real numbers flowing into the By Department growth table. An apparent regression seen mid-testing (Office reverting to "SF/station", room tagging reverting to 46/46) was chased down and confirmed to be a stale-browser-tab artifact from an earlier local production-build check, not a real code issue. Committed (`854dd63`).
+
+---
+
+## Recent Changes (2026-08-25) — Department-specific SF/Station space targets (Classroom/Lab), sourced from Hastings' real master plan
+
+### Summary
+
+New `universities/hastings/spaceConfigDepartmentOverrides/` collection, keyed `{category}||{department}`: per-(department, category) `sfPerStationTarget` + `targetUtilizationRate`, overriding Space Configuration's category-wide default for that department only. `computeDepartmentSpaceGrowth` checks an override first, falling back to the existing category-level `spaceConfig` value when none exists — purely additive; the pre-existing category-level path is unchanged for every pair with no override.
+
+Pre-populated, review-and-confirm suggestions come from the master plan's own published department-level space standards (`src/utils/masterPlanSpaceTargets.js`, hardcoded — static source document, same pattern as `roomTypeSuggestion.js`/`departmentSuggestion.js`), covering 12 real departments with values verified against the published table. Three department-naming discrepancies between the master plan's labels and `enrollmentProjections`' real department names were verified against `departmentSuggestion.js`'s already-live-tested crosswalk rather than re-guessed — Music & Theatre → Music & Theater, Education & Teacher Education → Education, Physical Education & Human Performance → PHEP — plus a fourth, unrequested discrepancy found the same way: History, Philosophy & Religion → the real "History, Philosophy, & Religion" (comma before the ampersand).
+
+Per Clark's decision — informed by a real tagged-room audit (11 of 12 departments have tagged rooms; History/Philosophy/Religion has zero, ruling out "only suggest into the department's one actual category" as unsafe) — the master plan publishes one combined Classroom/Lab teaching-space value per department, not two independently verified numbers, so the suggestion pre-fills both category rows, with the badge/copy saying so explicitly ("combined Classroom/Lab target") instead of implying independent per-category precision.
+
+New "Department-Specific Space Targets (Classroom/Lab)" section in Space Growth Projections, same suggested/review/confirm/never-auto-save convention as Room Type and primary Department suggestions elsewhere in this module.
+
+### Bug found and fixed: read-back gap left 24 saved overrides invisible
+
+Same arc as the earlier Enrollment Projections read-back gap: this section's load function populated `persisted` (for dirty-checking) but never `form` (what actually renders), so every saved override displayed as blank placeholders after reload — 24 saved docs were invisible until this fix. Now reads back real saved values into `form` on load, merging rather than replacing so it never clobbers an in-progress suggestion or edit for a still-unsaved pair; the real saved value always takes priority over a master-plan suggestion. Incidental fix alongside it: a just-saved pair is now cleared from the "suggested" tracking set so the "not yet saved" badge doesn't linger after Save actually saves it.
+
+### Status
+
+Verified end-to-end by Clark: real published master-plan values persist and redisplay correctly after reload, and the "By Department" growth table correctly prices using the override (Art: 92.86 Ideal NSF/Student, matching the master plan's own published 93 within rounding). Committed (`cdd83a5`). Adds the `firestore.rules` entry for the new collection (`isUniversityAdmin`, same posture as every other Classroom Utilization Planner collection) — already deployed live via `firebase deploy --only firestore:rules` before testing began; this commit brings the repo's tracked `firestore.rules` in sync with what's already live, not a pending deploy step.
 
 ---
 
