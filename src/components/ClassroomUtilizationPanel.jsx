@@ -38,6 +38,7 @@ import {
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
 import {
   computeClassroomUtilization,
+  computeCampusUtilizationByTerm,
   computeDayTimeHeatmapByTerm,
   formatHeatmapHourLabel,
   computeSizeRangeUtilizationByTerm,
@@ -3085,6 +3086,15 @@ function UtilizationResultsSection() {
 
   const unmatchedCount = result?.unmatchedMeetings?.length || 0;
 
+  // Campus-wide rollup, split by term (never blended) -- purely additive
+  // aggregation on top of result.rooms, computed here rather than inside
+  // runCalculation() so it stays a plain derived value, same convention as
+  // every other useMemo in this file.
+  const campusRollups = useMemo(
+    () => (result?.rooms?.length ? computeCampusUtilizationByTerm(result.rooms).campusRollups : []),
+    [result]
+  );
+
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
       <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
@@ -3134,6 +3144,34 @@ function UtilizationResultsSection() {
           >
             {unmatchedCount} meeting{unmatchedCount === 1 ? '' : 's'} couldn't be matched to a term
             (excluded from these results entirely -- no term means no row to belong to) -- see details below.
+          </div>
+        ) : null}
+
+        {campusRollups.length ? (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {campusRollups.map((c) => (
+              <div
+                key={c.termId}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  background: '#f0f9ff',
+                  border: '1px solid #bae6fd',
+                  fontSize: 11.5,
+                  color: '#0c4a6e'
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>Campus-wide — {c.termLabel}:</span>{' '}
+                {formatPct(c.timeUtilizationPct)} time, {formatPct(c.seatUtilizationPct)} seat
+                <span style={{ fontWeight: 400, color: '#0369a1', marginLeft: 6 }}>
+                  ({c.seatComputedRoomCount} of {c.totalRoomTermRows} room{c.totalRoomTermRows === 1 ? '' : 's'} in seat avg
+                  {c.seatExcludedRoomCount ? `; ${c.seatExcludedRoomCount} excluded — ${[
+                    c.seatPendingEnrollmentCount ? `${c.seatPendingEnrollmentCount} pending enrollment` : null,
+                    c.seatCapacityUnknownCount ? `${c.seatCapacityUnknownCount} capacity unknown` : null
+                  ].filter(Boolean).join(', ')}` : ''})
+                </span>
+              </div>
+            ))}
           </div>
         ) : null}
 

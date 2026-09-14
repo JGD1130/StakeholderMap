@@ -427,6 +427,107 @@ export function computeClassroomUtilization({ courseMeetingDocs, termDocs, airta
   return { rooms, buildingSummary, unmatchedMeetings };
 }
 
+// --- Campus-wide Time/Seat Utilization rollup, split by term -------------
+//
+// Board-summary-level aggregation (Recent Changes 2026-09-14 investigation:
+// "campus-wide Classroom Utilization" was identified as the one piece Space
+// Growth/Capital Priorities/Capital Phasing all already have and this module
+// didn't -- no single number anywhere summed Time/Seat Utilization above the
+// per-building level). Purely additive: takes computeClassroomUtilization's
+// already-computed `rooms` array (room+term grain) as input and aggregates
+// it further -- does not call computeClassroomUtilization itself, does not
+// re-derive term matching, and does not touch that function's own return
+// value. Callers that already hold a `result` from computeClassroomUtilization
+// (e.g. UtilizationResultsSection) pass `result.rooms` straight through.
+//
+// Split by term, never blended -- same convention as computeDayTimeHeatmapByTerm
+// and computeSizeRangeUtilizationByTerm: one entry per termId actually present
+// in the input rows, so a room used in both Fall 2026 Block 1 and Block 2
+// contributes to both terms' rollups independently. "Current term" is not a
+// concept this function needs to know about -- a caller that wants just the
+// current term's rollup resolves it separately via resolveCurrentTerm(termDocs)
+// below and looks up that termId in the returned array, same pattern
+// computeBuildingUtilizationForCurrentTerm already established.
+//
+// Time Utilization: hours-weighted average across every room+term row for
+// that term (sum weeklyHoursUsed / sum standardWeeklyHoursAvailable) -- same
+// weighting reasoning as computeClassroomUtilization's own buildingSummary
+// ("a 40-hr/week room and a 5-hr/week room shouldn't count equally"). Every
+// row reaching this function already has a positive standardWeeklyHoursAvailable
+// (guaranteed by computeClassroomUtilization's termMatched gate before a row
+// can exist at all), so Time Utilization has no "excluded" case of its own --
+// totalRoomTermRows below is exactly the room-term row count this average is
+// computed over, not a partial count.
+//
+// Seat Utilization: capacity-weighted average (a 200-seat lecture hall should
+// move the campus number more than a 15-seat seminar room), same weighting
+// computeBuildingUtilizationForCurrentTerm already uses at building level --
+// but ONLY across rows whose own seatUtilizationStatus is 'computed'. Rows
+// with 'pending-enrollment' or 'capacity-unknown' are counted and broken out
+// by reason, never silently treated as 0% or folded into the average --
+// same never-silent, never-a-fabricated-zero philosophy as every other
+// function in this module.
+export function computeCampusUtilizationByTerm(rooms) {
+  const byTerm = new Map(); // termId -> working accumulator
+
+  (Array.isArray(rooms) ? rooms : []).forEach((r) => {
+    if (!byTerm.has(r.termId)) {
+      byTerm.set(r.termId, {
+        termId: r.termId,
+        termLabel: r.termLabel,
+        weeklyHoursUsed: 0,
+        standardWeeklyHoursAvailable: 0,
+        totalRoomTermRows: 0,
+        seatWeightedSum: 0,
+        seatWeightTotal: 0,
+        seatComputedRoomCount: 0,
+        seatPendingEnrollmentCount: 0,
+        seatCapacityUnknownCount: 0
+      });
+    }
+    const acc = byTerm.get(r.termId);
+    acc.totalRoomTermRows += 1;
+    acc.weeklyHoursUsed += Number(r.weeklyHoursUsed) || 0;
+    acc.standardWeeklyHoursAvailable += Number(r.standardWeeklyHoursAvailable) || 0;
+
+    if (r.seatUtilizationStatus === 'computed') {
+      acc.seatComputedRoomCount += 1;
+      // Capacity is guaranteed present/positive whenever status is
+      // 'computed' (see computeClassroomUtilization above) -- the
+      // fallback-to-1 here is a defensive floor, not a real code path.
+      const weight = Number(r.capacity) > 0 ? Number(r.capacity) : 1;
+      acc.seatWeightedSum += r.seatUtilizationPct * weight;
+      acc.seatWeightTotal += weight;
+    } else if (r.seatUtilizationStatus === 'pending-enrollment') {
+      acc.seatPendingEnrollmentCount += 1;
+    } else if (r.seatUtilizationStatus === 'capacity-unknown') {
+      acc.seatCapacityUnknownCount += 1;
+    }
+  });
+
+  const campusRollups = Array.from(byTerm.values())
+    .map(({ seatWeightedSum, seatWeightTotal, ...acc }) => ({
+      termId: acc.termId,
+      termLabel: acc.termLabel,
+      timeUtilizationPct: acc.standardWeeklyHoursAvailable > 0
+        ? (acc.weeklyHoursUsed / acc.standardWeeklyHoursAvailable) * 100
+        : null,
+      seatUtilizationPct: acc.seatComputedRoomCount > 0 && seatWeightTotal > 0
+        ? seatWeightedSum / seatWeightTotal
+        : null,
+      totalRoomTermRows: acc.totalRoomTermRows,
+      seatComputedRoomCount: acc.seatComputedRoomCount,
+      seatPendingEnrollmentCount: acc.seatPendingEnrollmentCount,
+      seatCapacityUnknownCount: acc.seatCapacityUnknownCount,
+      // Convenience sum so a caller/UI doesn't need to re-add the two reason
+      // counts itself just to answer "how many rooms were excluded".
+      seatExcludedRoomCount: acc.seatPendingEnrollmentCount + acc.seatCapacityUnknownCount
+    }))
+    .sort((a, b) => a.termId.localeCompare(b.termId));
+
+  return { campusRollups };
+}
+
 // --- "Current term" resolution -------------------------------------------
 //
 // Building-popup utilization (the replacement for the retired CSV card,
