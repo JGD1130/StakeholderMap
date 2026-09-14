@@ -240,6 +240,34 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-09-14) — Worktree/clutter cleanup; stash preserved as a branch; permissions.defaultMode fix; Hastings-deletion concern on `80fc22e` investigated, still unresolved
+
+### Summary
+
+Session-level repo hygiene, not app code: cleared out ~150 untracked entries that had accumulated in the working tree (leftover git worktrees, scratch files) and fixed the Claude Code permission mode that had been silently auto-approving actions. No `src/`, `ai-server/`, or `functions/` app code was touched.
+
+### Worktree/clutter cleanup complete
+
+35 stale git worktrees removed — 33 confirmed safe (already merged into `origin/main` or `feature/multi-university-refactor`, nothing unique/unpushed), `.deploy-sarpy-main` confirmed superseded (its 2 unique commits and uncommitted edits were all traced forward to later, better versions already on the feature branch), and `_worktrees/sarpy-cherokee-adjust-save` confirmed safe to remove locally since its one commit, `80fc22e`, remains fully intact on `origin/sarpy-cherokee-adjust-save` — removing the local worktree checkout doesn't touch that branch or its commit. Plus 5 redundant scratch/log files removed (a stale investigation script, two DevTools-snippet files, a patch file whose content was already merged, and a script's log output). The repo working tree is now clean of this accumulated clutter.
+
+### Stash preserved as a branch — unfinished, unreviewed, do not build on top of it
+
+A stash (`temp-room-sentiment-broken-ghpages`) was found containing a real, unfinished ~210-line "Room Sentiment" floor-coloring feature (colors rooms by dominant engagement-marker sentiment, with its own legend) that was never committed to any branch — a genuine loss risk, since stashes have no branch backup and are one `git stash clear` away from gone. Preserved by pointing a new branch, `wip/room-sentiment-floor-coloring`, directly at the stash's commit (content verified byte-identical via `git diff` against the stash) — the stash itself was left in place, untouched. **This is purely a safety net, not a green light to continue this work.** It has not been started, reviewed, or tested — treat it as raw, unfinished material if anyone picks it up later, not as a working feature to extend.
+
+### `80fc22e` (Hastings-deletion concern) — investigated, unresolved either way
+
+`_worktrees/sarpy-cherokee-adjust-save`'s one commit, `80fc22e` ("Fix Sarpy Cherokee floor adjust persistence," 2026-08-04), was flagged in standing notes as having silently deleted a Hastings feature. Read the complete diff line by line this session: the change adds a `floorAdjustPersistenceFeedbackEnabled` flag scoped to `isSarpyCountyInstance || isCherokeeMentalHealthInstance` that gates new save-confirmation UI text and console warnings to Sarpy/Cherokee only, and restructures floor-adjust saving through a new `saveFloorAdjustAliases` helper that collapses to the exact original single-label behavior when the flag is off (i.e., for Hastings). The one change that isn't flag-gated — a `savedAt` timestamp fallback added to the "should the DB version override the local one" comparison — is additive, not a removal. **No deletion of Hastings functionality is visible in this diff.** This is flagged as unresolved, not confirmed either way: neither Clark nor this session could recall or reconstruct what the original regression symptom actually was, so it's possible the real issue was in a different commit, in the shared `savedAt` fallback interacting with pre-existing Hastings records in some way not visible from a static diff, or the standing note is simply imprecise. Commit and branch (`origin/sarpy-cherokee-adjust-save`) are both left exactly as they were — nothing merged, nothing discarded. **Worth a proper look if any Hastings floor-adjustment save issue ever surfaces.**
+
+### `.claude/settings.json` now sets `permissions.defaultMode: "default"`
+
+Added `.claude/settings.json` (new file, committed — `9551735`) setting `permissions.defaultMode` to `"default"` (displays as "Manual" mode in the Claude Code UI). This fixes an issue discovered mid-session: the assistant's session had been running in "Auto Mode," which was silently auto-approving actions — including, briefly, some of this same session's own worktree deletions — without prompting for confirmation first. Future sessions should now start in Manual mode and ask before file edits/commands, rather than auto-approving. (The current session's own active mode was separately switched over via `/permissions`, run by Clark — the settings.json change only takes effect for sessions started fresh from here on.)
+
+### Standing flag, unchanged: `functions/index.js` / `functions/package.json` still uncommitted
+
+**⚠️ Still uncommitted, still unreviewed, flagging again so this doesn't get lost** — same Cloud Functions v1→v2 API migration flagged in every prior HANDOFF update, still sitting untouched in the working tree, still not deployed to Firebase. **Do not commit or deploy this without a deliberate, separate review.**
+
+---
+
 ## Recent Changes (2026-08-27) — New weekly Hastings/Sarpy Airtable-to-CSV export script, replacing an earlier overwrite-only version
 
 ### Summary
