@@ -277,8 +277,22 @@ function GaugeRow({ data }) {
 // A 4th "Non-Academic/Office" bucket (current SF only, no gap) was built and
 // shipped for one round, then dropped outright per explicit instruction --
 // this card never renders anything but a division's real signed SF gap (or
-// "No data" if that division has no resolvable rows), no special-cased row.
-function SpaceGapCard({ buckets }) {
+// an empty-state message if that division has no resolvable rows), no
+// special-cased row.
+//
+// airtableFetchFailed (2026-09-15, confirmed root cause of a real board-
+// facing incident): an empty `buckets` array is ambiguous on its own -- it's
+// what a genuine "no divisions resolved" result looks like, but it's ALSO
+// exactly what a failed Airtable fetch produces (computeDepartmentSpaceGrowth
+// can't create a single row without a resolvable per-room Airtable area, see
+// spaceGrowthCalc.js), which is what actually happened on this dashboard's
+// first production load -- a Render cold-start timeout silently emptied this
+// card while every other section rendered normally, and the generic "No
+// division-level gaps available" message read as broken/finished rather than
+// "still loading, try again." ExecutiveDashboardPanel.jsx's runCalculation
+// now threads that distinction through explicitly instead of leaving the UI
+// to guess from an empty array alone.
+function SpaceGapCard({ buckets, airtableFetchFailed }) {
   const width = 520;
   const rowHeight = 34;
   const centerX = width / 2;
@@ -296,7 +310,11 @@ function SpaceGapCard({ buckets }) {
         Space Gap by Division
       </div>
       {!buckets.length ? (
-        <div style={{ fontSize: 11, color: COLORS.muted }}>No division-level gaps available.</div>
+        <div style={{ fontSize: 11, color: COLORS.muted }}>
+          {airtableFetchFailed
+            ? 'Space data is still loading -- click Recalculate to try again.'
+            : 'No division-level gaps available.'}
+        </div>
       ) : (
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto' }}>
           <line x1={centerX} y1={0} x2={centerX} y2={height - 8} stroke={COLORS.border} strokeWidth={1} />
@@ -589,7 +607,7 @@ export default function ExecutiveDashboardModal({ data, loading, loadError, onRe
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-                <SpaceGapCard buckets={data.spaceGapBuckets} />
+                <SpaceGapCard buckets={data.spaceGapBuckets} airtableFetchFailed={data.airtableFetchFailed} />
                 <Tier1ListCard tier1Summary={data.tier1Summary} />
               </div>
               <div style={{ minWidth: 0 }}>

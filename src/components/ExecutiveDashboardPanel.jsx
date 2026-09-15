@@ -132,6 +132,21 @@ export default function ExecutiveDashboardPanel({
     setLoading(true);
     setLoadError('');
     try {
+      // Confirmed root cause, 2026-09-15: on this dashboard's actual first
+      // production load, the Airtable fetch's default 20s timeout
+      // (classroomUtilizationCalc.js's fetchAirtableRoomsForUtilization)
+      // hit a cold start on the AI server's Render free-tier instance
+      // (commonly 30-50s+ to wake from idle) -- the fetch aborted, fell
+      // through the fail-soft .catch below, and every per-room Airtable
+      // area lookup came back unresolvable, which silently emptied the
+      // Space Gap by Division chart (see that card's own comment/
+      // airtableFetchFailed below) while every other section, which
+      // doesn't require per-room Airtable resolution, still rendered
+      // normally -- confirmed by Clark: a manual Recalculate immediately
+      // after (server now warm) fixed it with no code change. 60s gives
+      // real margin over a cold start instead of just hoping the server
+      // happens to already be warm, which board-facing use can't assume.
+      let airtableFetchFailed = false;
       const [
         capitalPrioritiesSnap,
         capitalPhasingSnap,
@@ -154,8 +169,13 @@ export default function ExecutiveDashboardPanel({
         // Airtable is capacity/area-only input for two of the four sections below.
         // A failed fetch shouldn't block the other sections from computing -- same
         // fail-soft convention every other Airtable call site in this codebase uses.
-        fetchAirtableRoomsForUtilization().catch((error) => {
+        // airtableFetchFailed (closure var, safe: this .catch always resolves
+        // before Promise.all does, single-threaded JS, no race) lets the Space
+        // Gap card below distinguish "fetch actually failed" from "genuinely
+        // zero gaps" instead of showing the same generic empty state for both.
+        fetchAirtableRoomsForUtilization({ timeoutMs: 60000 }).catch((error) => {
           console.warn('Airtable rooms fetch failed for Executive Dashboard:', error);
+          airtableFetchFailed = true;
           return [];
         })
       ]);
@@ -229,6 +249,14 @@ export default function ExecutiveDashboardPanel({
         phasingSummary,
         institutionGap,
         spaceGapBuckets,
+        // Surfaced so SpaceGapCard (ExecutiveDashboardModal.jsx) can show a
+        // specific "data didn't load, try Recalculate" message instead of
+        // the generic "no gaps" one when spaceGapBuckets is empty because
+        // the Airtable fetch actually failed (see the fetch's own comment
+        // above) -- a real fetch failure and a genuine zero-division result
+        // both produce an empty spaceGapBuckets array, and only this flag
+        // tells them apart.
+        airtableFetchFailed,
         targetYear: SPACE_GROWTH_TARGET_YEAR,
         campusRollups,
         currentTerm,
