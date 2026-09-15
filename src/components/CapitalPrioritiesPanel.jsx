@@ -29,6 +29,15 @@ import {
 // is 500 ops/batch, kept comfortably under that.
 const CAPITAL_PHASING_BATCH_CHUNK_SIZE = 400;
 
+// Sampled directly from public/Data/Clark_Enersen_Logo.png's ampersand fill
+// (a palette-indexed PNG, decoded pixel-by-pixel rather than eyeballed off
+// the rendered preview -- #f75024 was the dominant exact hex among the
+// logo's orange-ish pixels by a wide margin). Same isolation convention as
+// this file's other small constants -- duplicated identically in
+// ExecutiveDashboardPanel.jsx and ClassroomUtilizationPanel.jsx's header
+// bars, not imported from a shared location.
+const CLARK_ENERSEN_ORANGE = '#f75024';
+
 const SCORE_FIELDS = [
   {
     key: 'criticalCoreService',
@@ -882,7 +891,12 @@ export default function CapitalPrioritiesPanel({
         open={panelOpen}
         onToggle={(event) => setPanelOpen(event.currentTarget.open)}
       >
-        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+        {/* Clark & Enersen orange, sampled directly from
+            public/Data/Clark_Enersen_Logo.png's ampersand fill (a palette-
+            indexed PNG decoded pixel-by-pixel, not eyeballed) -- same exact
+            hex ExecutiveDashboardPanel.jsx/ClassroomUtilizationPanel.jsx use
+            for their own header bars. */}
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#fff', background: CLARK_ENERSEN_ORANGE, padding: '6px 8px', borderRadius: 6 }}>
           {title}
         </summary>
 

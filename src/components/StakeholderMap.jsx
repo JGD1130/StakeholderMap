@@ -22,6 +22,7 @@ import { toKeyDeptList } from './popupUi';
 import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
 import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './ClassroomUtilizationPanel.jsx';
+import ExecutiveDashboardPanel from './ExecutiveDashboardPanel.jsx';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -30899,6 +30900,15 @@ useEffect(() => {
                 selectedMetrics: strategicSelectedYearMetrics,
                 capacityMetrics: strategicCapacityMetrics
               } : null}
+            />
+          </div>
+        )}
+        {isAdminMode && Boolean(config?.enableCapitalPriorities) && Boolean(config?.enableClassroomUtilization) && (
+          <div className="dashboard-box">
+            <ExecutiveDashboardPanel
+              universityId={universityId}
+              enabled={isAdminMode && Boolean(config?.enableCapitalPriorities) && Boolean(config?.enableClassroomUtilization)}
+              getBuildingResourceEntry={getBuildingResourceEntry}
             />
           </div>
         )}

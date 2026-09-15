@@ -58,6 +58,16 @@ import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget, getMasterPlanO
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
 
+// Sampled directly from public/Data/Clark_Enersen_Logo.png's ampersand fill
+// (a palette-indexed PNG, decoded pixel-by-pixel rather than eyeballed off
+// the rendered preview -- #f75024 was the dominant exact hex among the
+// logo's orange-ish pixels by a wide margin). Same isolation convention as
+// this file's other small constants -- duplicated identically in
+// ExecutiveDashboardPanel.jsx and CapitalPrioritiesPanel.jsx's header bars,
+// not imported from a shared location. Used by both panel titles this file
+// exports (ClassroomUtilizationPanel and SpaceGrowthProjectionsPanel).
+const CLARK_ENERSEN_ORANGE = '#f75024';
+
 function summarizeDocs(docs) {
   const rooms = new Set();
   docs.forEach((data) => {
@@ -3762,7 +3772,7 @@ export default function ClassroomUtilizationPanel({
           collapsible sub-section) -- "Import Schedule" itself becomes its
           own collapsible section directly below, same pattern as every
           other section in this panel. */}
-      <h4 style={{ margin: 0, fontSize: 12.5 }}>{title}</h4>
+      <h4 style={{ margin: '0 0 6px 0', padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
 
       <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
         <details open={importSectionOpen} onToggle={(event) => setImportSectionOpen(event.currentTarget.open)}>
@@ -3839,7 +3849,7 @@ export function SpaceGrowthProjectionsPanel({
         height: '100%'
       }}
     >
-      <h4 style={{ margin: 0, fontSize: 12.5 }}>{title}</h4>
+      <h4 style={{ margin: '0 0 6px 0', padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
 
       <SpaceConfigSection />
       <RoomUtilizationMetaSection />
