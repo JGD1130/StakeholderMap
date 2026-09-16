@@ -153,6 +153,22 @@ service cloud.firestore {
         allow read, write: if isUniversityAdmin(universityId);
       }
 
+      // Deferred Maintenance (Capital Priorities sub-section) -- real
+      // per-building deferred maintenance dollar figures parsed from the
+      // master plan's cost estimate workbook, HC_MP_-_Cost_Estimate_Backup
+      // .xlsx's "Summary (Revised)" sheet. Same admin-only posture as
+      // capitalPriorities/capitalPhasingProjects above -- internal planning
+      // tool, not exposed to any public/client route. docId is the matched
+      // real building name (slashes replaced with "__", same convention as
+      // capitalPriorities' buildingId) when the source row's name resolved
+      // to a real building, or "unmapped__" + canon(rawName) when it did
+      // not (e.g. Jack Osborne Track Complex, which has real cost data but
+      // no corresponding building footprint) -- kept in its own id
+      // namespace so it can never collide with a real building id.
+      match /deferredMaintenanceBuildings/{docId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+
       // Classroom Utilization Planner. Admin-only in both directions, same
       // posture as capitalPriorities immediately above — internal planning
       // tool, not exposed to any public/client route. Hastings-only is

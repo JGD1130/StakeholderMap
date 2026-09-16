@@ -23,6 +23,11 @@ import {
   computeCapitalPhasingSchedule,
   formatCapitalPhasingMonthYear
 } from '../utils/capitalPhasingImport';
+import {
+  DEFERRED_MAINTENANCE_SHEET_NAME,
+  parseDeferredMaintenanceFile,
+  toDeferredMaintenanceDocs
+} from '../utils/deferredMaintenanceImport';
 
 // Mirrors the existing writeBatch chunking convention in
 // ClassroomUtilizationPanel.jsx (BATCH_CHUNK_SIZE) -- Firestore's own cap
@@ -586,6 +591,433 @@ function CapitalPhasingSection({ universityId }) {
   );
 }
 
+// Deferred Maintenance -- new section, lives inside Capital Priorities
+// alongside Capital Phasing & Costs (same reasoning as that section: both
+// are building/capital-project data drawn from master-plan workbooks, not
+// classroom data). Real per-building deferred maintenance dollar figures
+// from HC_MP_-_Cost_Estimate_Backup.xlsx's "Summary (Revised)" sheet. Same
+// "parse -> preview -> review -> Confirm & Save" pattern and the same
+// delete-then-write idempotency as Capital Phasing/Enrollment: re-uploading
+// a newer workbook version always lands on exactly the new building set.
+//
+// 0-5yr and 6-10yr deferred maintenance are stored and displayed as
+// distinct figures, never summed into one stored number, matching the
+// source file's own structure -- callers wanting a combined view compute
+// it at display time only.
+//
+// Building names in the source sheet don't always match the real GeoJSON
+// building names used everywhere else in Capital Priorities -- resolved via
+// the confirmed crosswalk in deferredMaintenanceImport.js. Any building the
+// crosswalk can't resolve (e.g. Jack Osborne Track Complex, which has real
+// cost data but no corresponding building footprint) is still imported and
+// still counted in the campus totals below, but flagged visibly as
+// "No mapped location" rather than being silently dropped.
+//
+// Writes ONLY to universities/{universityId}/deferredMaintenanceBuildings/
+// {docId} -- a collection separate from capitalPriorities (the hand-scored
+// prioritization matrix) since these are a different concept with a
+// different doc-id scheme (some ids are "unmapped__..." rather than a real
+// building id) -- no other collection is read or written by this section.
+const DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE = 400;
+
+function formatUsdFull(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
+  const [sectionOpen, setSectionOpen] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState('');
+  const [parsedResult, setParsedResult] = useState(null); // { buildings, issues, sheetWarnings, sheetName, sourceFileName }
+  const [savePhase, setSavePhase] = useState(null); // null | 'clearing' | 'writing'
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [savedBuildings, setSavedBuildings] = useState([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [savedLoadError, setSavedLoadError] = useState('');
+
+  const deferredMaintenanceCollection = useMemo(
+    () => collection(db, 'universities', universityId, 'deferredMaintenanceBuildings'),
+    [universityId]
+  );
+
+  const loadSavedBuildings = useCallback(async () => {
+    if (!universityId) {
+      setSavedBuildings([]);
+      return;
+    }
+    setSavedLoading(true);
+    setSavedLoadError('');
+    try {
+      const snap = await getDocs(deferredMaintenanceCollection);
+      const docs = snap.docs.map((docSnap) => ({ docId: docSnap.id, ...(docSnap.data() || {}) }));
+      docs.sort((a, b) => String(a.rawBuildingName || '').localeCompare(String(b.rawBuildingName || '')));
+      setSavedBuildings(docs);
+    } catch (error) {
+      setSavedLoadError(String(error?.message || 'Failed to load saved deferred maintenance data.'));
+    } finally {
+      setSavedLoading(false);
+    }
+  }, [deferredMaintenanceCollection, universityId]);
+
+  useEffect(() => {
+    void loadSavedBuildings();
+  }, [loadSavedBuildings]);
+
+  const previewDocs = useMemo(
+    () => (parsedResult ? toDeferredMaintenanceDocs(parsedResult) : []),
+    [parsedResult]
+  );
+
+  const handleFileSelected = useCallback(async (event) => {
+    const file = event.target.files?.[0] || null;
+    // Reset the input value immediately so re-selecting the SAME file name
+    // still fires a change event and re-parses, same convention as
+    // CapitalPhasingSection.
+    event.target.value = '';
+    if (!file) return;
+
+    setParsing(true);
+    setParseError('');
+    setParsedResult(null);
+    setSaveMessage('');
+    setSaveError('');
+    try {
+      const result = await parseDeferredMaintenanceFile(file, realBuildingNames);
+      if (!result.buildings.length && !result.issues.length && !result.excludedNoDataRows.length) {
+        throw new Error(
+          'Parsed the workbook but found no recognizable building rows. Check that the sheet still has '
+          + 'a "Summary (Revised)" two-row header (a row with "EXISTING BUILDING" plus "Project Cost"/'
+          + '"Construction Cost"/"Const. Cost/SF" columns, with a Demolition/0-5yr/6-10yr/Renovation '
+          + 'category row directly above it).'
+        );
+      }
+      setParsedResult(result);
+    } catch (error) {
+      setParseError(String(error?.message || 'Failed to parse workbook.'));
+    } finally {
+      setParsing(false);
+    }
+  }, [realBuildingNames]);
+
+  const handleSave = useCallback(async () => {
+    if (savePhase || !previewDocs.length || !universityId) return;
+    let phase = 'clearing';
+    setSavePhase(phase);
+    setSaveMessage('');
+    setSaveError('');
+    try {
+      // Delete-then-write, same idempotency pattern as Capital Phasing/
+      // Import Schedule/Enrollment Projections: always lands on exactly
+      // len(previewDocs) docs instead of merge-only accumulating a stale
+      // building a newer workbook version removed or renamed.
+      const existingSnap = await getDocs(deferredMaintenanceCollection);
+      const existingRefs = existingSnap.docs.map((docSnap) => docSnap.ref);
+      for (let i = 0; i < existingRefs.length; i += DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE) {
+        const chunk = existingRefs.slice(i, i + DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE);
+        if (!chunk.length) continue;
+        const batch = writeBatch(db);
+        chunk.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+      }
+
+      phase = 'writing';
+      setSavePhase(phase);
+      for (let i = 0; i < previewDocs.length; i += DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE) {
+        const chunk = previewDocs.slice(i, i + DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE);
+        if (!chunk.length) continue;
+        const batch = writeBatch(db);
+        chunk.forEach((entry) => {
+          batch.set(doc(deferredMaintenanceCollection, entry.docId), {
+            rawBuildingName: entry.rawBuildingName,
+            matchedBuildingId: entry.matchedBuildingId,
+            matchMethod: entry.matchMethod,
+            demolitionProjectCost: entry.demolitionProjectCost,
+            deferredMaint0to5: entry.deferredMaint0to5,
+            deferredMaint0to5ConstructionCost: entry.deferredMaint0to5ConstructionCost,
+            deferredMaint6to10: entry.deferredMaint6to10,
+            deferredMaint6to10ConstructionCost: entry.deferredMaint6to10ConstructionCost,
+            renovationCostPerSf: entry.renovationCostPerSf,
+            renovationConstructionCost: entry.renovationConstructionCost,
+            sourceFileName: parsedResult?.sourceFileName || null,
+            sourceSheetName: parsedResult?.sheetName || null,
+            importedAt: serverTimestamp()
+          }, { merge: true });
+        });
+        await batch.commit();
+      }
+
+      setSaveMessage(
+        `Cleared ${existingRefs.length.toLocaleString()} old building record${existingRefs.length === 1 ? '' : 's'}, `
+        + `imported ${previewDocs.length.toLocaleString()} building record${previewDocs.length === 1 ? '' : 's'} `
+        + `from "${parsedResult?.sourceFileName || 'the uploaded file'}".`
+      );
+      // Clear the preview after a successful save -- requires a fresh file
+      // selection before Save can be clicked again.
+      setParsedResult(null);
+      await loadSavedBuildings();
+    } catch (error) {
+      const phaseLabel = phase === 'clearing'
+        ? 'Failed while clearing old data (nothing new was written): '
+        : 'Failed while writing new data (old data was already cleared): ';
+      setSaveError(phaseLabel + String(error?.message || 'unknown error.'));
+    } finally {
+      setSavePhase(null);
+    }
+  }, [savePhase, previewDocs, deferredMaintenanceCollection, universityId, parsedResult, loadSavedBuildings]);
+
+  // Headline totals -- computed over whichever data set is currently being
+  // displayed (preview takes priority while one exists, same convention as
+  // the summary label below). 0-5yr and 6-10yr are kept as separate
+  // headline numbers per the explicit "not summed" requirement; a combined
+  // figure is shown alongside for convenience, clearly labeled as combined
+  // rather than replacing the two distinct numbers.
+  const activeBuildings = previewDocs.length ? previewDocs : savedBuildings;
+  const totals = useMemo(() => {
+    let total0to5 = 0;
+    let total6to10 = 0;
+    let unmappedCount = 0;
+    activeBuildings.forEach((b) => {
+      if (Number.isFinite(b.deferredMaint0to5)) total0to5 += b.deferredMaint0to5;
+      if (Number.isFinite(b.deferredMaint6to10)) total6to10 += b.deferredMaint6to10;
+      if (b.matchMethod === 'unmapped') unmappedCount += 1;
+    });
+    return { total0to5, total6to10, unmappedCount };
+  }, [activeBuildings]);
+
+  const summaryLabel = previewDocs.length
+    ? `Deferred Maintenance (previewing ${previewDocs.length} unsaved building${previewDocs.length === 1 ? '' : 's'})`
+    : savedBuildings.length
+      ? `Deferred Maintenance (${savedBuildings.length.toLocaleString()} building${savedBuildings.length === 1 ? '' : 's'} saved)`
+      : 'Deferred Maintenance';
+
+  const renderBuildingCard = (b, key) => {
+    const unmapped = b.matchMethod === 'unmapped' || b.matchMethod === 'blank';
+    return (
+      <div
+        key={key}
+        style={{
+          border: unmapped ? '1px solid #fde68a' : '1px solid #e5e7eb',
+          borderRadius: 6,
+          padding: 8,
+          background: unmapped ? '#fffbeb' : '#f8fafc'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{b.rawBuildingName}</div>
+            {unmapped ? (
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#92400e', marginTop: 2 }}>
+                ⚠ No mapped location — dollars still counted in campus totals below
+              </div>
+            ) : b.matchMethod === 'crosswalk' ? (
+              <div style={{ fontSize: 10, color: '#667085', marginTop: 2 }}>
+                Mapped via crosswalk → {b.matchedBuildingId}
+              </div>
+            ) : (
+              <div style={{ fontSize: 10, color: '#667085', marginTop: 2 }}>
+                {b.matchedBuildingId}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 6, display: 'grid', gap: 3, fontSize: 10.5 }}>
+          <div>
+            0-5yr Deferred Maint. (Project Cost): <strong>{formatUsdFull(b.deferredMaint0to5)}</strong>
+            <span style={{ color: '#94a3b8', fontSize: 9.5 }}> · Construction cost: {formatUsdFull(b.deferredMaint0to5ConstructionCost)}</span>
+          </div>
+          <div>
+            6-10yr Deferred Maint. (Project Cost): <strong>{formatUsdFull(b.deferredMaint6to10)}</strong>
+            <span style={{ color: '#94a3b8', fontSize: 9.5 }}> · Construction cost: {formatUsdFull(b.deferredMaint6to10ConstructionCost)}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 2 }}>
+            <div>Demolition Cost: <strong>{formatUsdFull(b.demolitionProjectCost)}</strong></div>
+            <div>Renovation Cost: <strong>{formatUsdFull(b.renovationConstructionCost)}</strong></div>
+            <div>Renovation $/SF: <strong>{formatUsdFull(b.renovationCostPerSf)}</strong></div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
+      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          {summaryLabel}
+        </summary>
+
+        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
+          Upload the master plan's cost estimate workbook (sheet "{DEFERRED_MAINTENANCE_SHEET_NAME}"),
+          one card per building, 0-5yr and 6-10yr deferred maintenance shown as distinct figures.
+          Selecting a file only parses it and shows a preview below -- nothing is written until you
+          review it and click Confirm & Save.
+        </div>
+
+        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => void handleFileSelected(e)}
+            disabled={parsing || Boolean(savePhase)}
+            style={{ fontSize: 11 }}
+          />
+          {parsing ? <span style={{ fontSize: 11, color: '#667085' }}>Parsing...</span> : null}
+        </div>
+
+        {activeBuildings.length ? (
+          <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+            <PortfolioStat label="Total 0-5yr Deferred Maint." value={formatUsdFull(totals.total0to5)} color="#b45309" />
+            <PortfolioStat label="Total 6-10yr Deferred Maint." value={formatUsdFull(totals.total6to10)} color="#b45309" />
+            <PortfolioStat label="Combined 0-10yr (for reference)" value={formatUsdFull(totals.total0to5 + totals.total6to10)} />
+            <PortfolioStat label="No Mapped Location" value={totals.unmappedCount} color={totals.unmappedCount ? '#b42318' : undefined} />
+          </div>
+        ) : null}
+
+        {savedLoading && !savedBuildings.length ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading saved data...</div>
+        ) : savedBuildings.length && !previewDocs.length ? (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#344054', marginBottom: 4 }}>
+              Currently saved ({savedBuildings.length.toLocaleString()} building{savedBuildings.length === 1 ? '' : 's'})
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {savedBuildings.map((b) => renderBuildingCard(b, b.docId))}
+            </div>
+          </div>
+        ) : !savedLoading && !previewDocs.length ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>No deferred maintenance data saved yet.</div>
+        ) : null}
+
+        {savedLoadError ? (
+          <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{savedLoadError}</div>
+        ) : null}
+
+        {parseError ? (
+          <div style={{ marginTop: 8, fontSize: 10.5, color: '#b42318' }}>{parseError}</div>
+        ) : null}
+
+        {parsedResult ? (
+          <div style={{ marginTop: 10 }}>
+            <div
+              style={{
+                padding: '8px 10px',
+                borderRadius: 6,
+                fontSize: 11.5,
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1e3a8a',
+                lineHeight: 1.5
+              }}
+            >
+              <strong>Preview</strong> — "{parsedResult.sourceFileName}" (sheet "{parsedResult.sheetName}"): {' '}
+              {previewDocs.length} building{previewDocs.length === 1 ? '' : 's'} parsed.
+              {parsedResult.issues.length ? ` ${parsedResult.issues.length} row${parsedResult.issues.length === 1 ? '' : 's'} flagged below -- review before saving.` : ''}
+              {parsedResult.excludedNoDataRows.length ? ` ${parsedResult.excludedNoDataRows.length} row${parsedResult.excludedNoDataRows.length === 1 ? '' : 's'} excluded (no cost data yet) -- see below.` : ''}
+            </div>
+
+            {parsedResult.sheetWarnings.length ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  color: '#7c4a03'
+                }}
+              >
+                <strong>Structure warning:</strong>
+                <div style={{ marginTop: 4, display: 'grid', gap: 3 }}>
+                  {parsedResult.sheetWarnings.map((w, idx) => <div key={idx}>{w}</div>)}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Legitimate building name, every cost cell genuinely blank
+                (not $0) -- an un-costed future line item, not a building
+                with a real deferred-maintenance profile. Excluded from the
+                parsed building set and totals, but shown here rather than
+                silently dropped. */}
+            {parsedResult.excludedNoDataRows.length ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: '#f8fafc',
+                  border: '1px solid #e5e7eb',
+                  color: '#475569'
+                }}
+              >
+                <strong>Excluded -- no cost data yet ({parsedResult.excludedNoDataRows.length}):</strong>
+                <div style={{ marginTop: 4, display: 'grid', gap: 3 }}>
+                  {parsedResult.excludedNoDataRows.map((row, idx) => (
+                    <div key={idx}>Row {row.excelRow} ("{row.rawName}") — no cost figures on this row; not counted as a building.</div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Flagged rows -- same "flag visibly, never silently drop"
+                philosophy as every other suggestion/import path in this
+                codebase. */}
+            {parsedResult.issues.length ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#991b1b'
+                }}
+              >
+                <strong>Could not parse ({parsedResult.issues.length}):</strong>
+                <div style={{ marginTop: 4, display: 'grid', gap: 3 }}>
+                  {parsedResult.issues.map((issue, idx) => (
+                    <div key={idx}>
+                      {issue.excelRow ? `Row ${issue.excelRow}` : 'Sheet'} ("{issue.rawName}") — {issue.reason}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {previewDocs.length ? (
+              <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+                {previewDocs.map((b) => renderBuildingCard(b, b.docId))}
+              </div>
+            ) : null}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={Boolean(savePhase) || !previewDocs.length}
+              >
+                {savePhase === 'clearing' ? 'Clearing old data...'
+                  : savePhase === 'writing' ? 'Saving...'
+                  : `Confirm & Save (${previewDocs.length})`}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
+        {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
+      </details>
+    </div>
+  );
+}
+
 export default function CapitalPrioritiesPanel({
   universityId,
   enabled = false,
@@ -631,6 +1063,14 @@ export default function CapitalPrioritiesPanel({
     });
     return options.sort((a, b) => a.buildingId.localeCompare(b.buildingId));
   }, [buildingFeatures]);
+
+  // Real building names only, for the Deferred Maintenance crosswalk match
+  // (deferredMaintenanceImport.js) -- same source as buildingOptions above,
+  // just the name strings without the docId pairing.
+  const realBuildingNames = useMemo(
+    () => buildingOptions.map((opt) => opt.buildingId),
+    [buildingOptions]
+  );
 
   // Read-only: same building-resources.json data the "Deferred + Condition" modal
   // renders from. No Firestore read, no write, ever, to deferred maintenance or
@@ -1250,6 +1690,7 @@ export default function CapitalPrioritiesPanel({
       </div>
 
       <CapitalPhasingSection universityId={normalizedUniversityId} />
+      <DeferredMaintenanceSection universityId={normalizedUniversityId} realBuildingNames={realBuildingNames} />
       </div>
       </details>
     </div>
