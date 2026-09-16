@@ -43,7 +43,8 @@ import {
   formatHeatmapHourLabel,
   computeSizeRangeUtilizationByTerm,
   fetchAirtableRoomsForUtilization,
-  buildAirtableAreaMap
+  buildAirtableAreaMap,
+  INDUSTRY_TARGET_TIME_UTILIZATION
 } from '../utils/classroomUtilizationCalc';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType, deriveOfficeRoomsFromAirtable } from '../utils/roomTypeSuggestion';
 import {
@@ -3039,6 +3040,40 @@ function formatPct(value) {
   return Number.isFinite(value) ? `${Math.round(value)}%` : '—';
 }
 
+const INDUSTRY_TARGET_TIME_UTILIZATION_PCT = INDUSTRY_TARGET_TIME_UTILIZATION * 100;
+
+// Simple above/at/below read against the static Industry Target -- no new
+// calc logic, just a threshold comparison on the already-computed
+// timeUtilizationPct. +/-1 point counts as "at target" so a room sitting
+// essentially on the line doesn't flip between up/down arrows.
+function compareToIndustryTarget(pct) {
+  if (!Number.isFinite(pct)) return null;
+  const diff = pct - INDUSTRY_TARGET_TIME_UTILIZATION_PCT;
+  if (Math.abs(diff) < 1) return 'at';
+  return diff > 0 ? 'above' : 'below';
+}
+
+const TARGET_TONE_COLOR = { above: '#15803d', below: '#b42318', at: '#667085' };
+const TARGET_TONE_ARROW = { above: '▲', below: '▼', at: '●' };
+
+// Per-room visual indicator -- not a new metric, just a compact read of
+// how that room's already-computed Time Utilization sits against the
+// Industry Target. Tooltip carries the exact "Industry Target: 65%"
+// wording every other display of this benchmark uses; the badge itself is
+// an arrow/dot so it stays legible at table density.
+function TimeUtilizationTargetBadge({ pct }) {
+  const tone = compareToIndustryTarget(pct);
+  if (!tone) return null;
+  return (
+    <span
+      title={`${formatPct(pct)} vs. Industry Target: ${formatPct(INDUSTRY_TARGET_TIME_UTILIZATION_PCT)}`}
+      style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: TARGET_TONE_COLOR[tone] }}
+    >
+      {TARGET_TONE_ARROW[tone]}
+    </span>
+  );
+}
+
 function UtilizationResultsSection() {
   const [result, setResult] = useState(null); // { rooms, buildingSummary, unmatchedMeetings }
   const [loading, setLoading] = useState(false);
@@ -3172,7 +3207,9 @@ function UtilizationResultsSection() {
                 }}
               >
                 <span style={{ fontWeight: 700 }}>Campus-wide — {c.termLabel}:</span>{' '}
-                {formatPct(c.timeUtilizationPct)} time, {formatPct(c.seatUtilizationPct)} seat
+                {formatPct(c.timeUtilizationPct)} time
+                <span style={{ color: '#0369a1' }}> (Industry Target: {formatPct(INDUSTRY_TARGET_TIME_UTILIZATION_PCT)})</span>
+                , {formatPct(c.seatUtilizationPct)} seat
                 <span style={{ fontWeight: 400, color: '#0369a1', marginLeft: 6 }}>
                   ({c.seatComputedRoomCount} of {c.totalRoomTermRows} room{c.totalRoomTermRows === 1 ? '' : 's'} in seat avg
                   {c.seatExcludedRoomCount ? `; ${c.seatExcludedRoomCount} excluded — ${[
@@ -3213,7 +3250,10 @@ function UtilizationResultsSection() {
                       </div>
                     ) : null}
                   </td>
-                  <td style={{ padding: '4px 6px' }}>{formatPct(r.timeUtilizationPct)}</td>
+                  <td style={{ padding: '4px 6px' }}>
+                    {formatPct(r.timeUtilizationPct)}
+                    <TimeUtilizationTargetBadge pct={r.timeUtilizationPct} />
+                  </td>
                   <td style={{ padding: '4px 6px', color: r.seatUtilizationStatus === 'computed' ? 'inherit' : '#94a3b8', fontStyle: r.seatUtilizationStatus === 'computed' ? 'normal' : 'italic' }}>
                     {r.seatUtilizationStatus === 'computed'
                       ? formatPct(r.seatUtilizationPct)
@@ -3298,6 +3338,18 @@ function UtilizationResultsSection() {
 // Utilization" accents -- heavier color = higher occupancy, matching the
 // original plan's visual concept -- plus the actual percentage as text in
 // every cell, per instruction, never color-only.
+//
+// Industry Target: 65% deliberately NOT added here. Two reasons, not just
+// one: (1) this section has no color legend at all to anchor a marker to --
+// every cell already prints its own real percentage as text, so there's no
+// gradient key that a "65% tick" would sit on. (2) even if a legend
+// existed, this grid's percentage is "% of that term's scheduled rooms
+// occupied in a given hour" (a room-count density), a different metric
+// from a single room's own Time Utilization (that room's scheduled hours
+// ÷ its standard weekly hours) -- the two aren't the same axis, so a tick
+// mark here would silently imply a comparison that isn't actually valid.
+// Skipped per this task's own instruction to skip and note why if it
+// doesn't fit cleanly.
 function heatmapCellBackground(pct) {
   const clamped = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
   const alpha = 0.08 + (clamped / 100) * 0.82;

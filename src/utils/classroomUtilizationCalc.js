@@ -28,6 +28,17 @@
 import { canon } from './idUtils';
 import { buildRoomUtilizationMetaKey } from './roomUtilizationMeta';
 
+// Static, hardcoded industry-standard reference for Time Utilization --
+// not fetched from Airtable, Firestore, or anywhere external, per Clark's
+// explicit decision. 0-1 scale (matches every other rate constant in this
+// codebase, e.g. targetUtilizationRate in classroomUtilizationSchema.js),
+// so a display site multiplies by 100 the same way it already does for any
+// other computed *Pct value. Single named constant so every place that
+// shows "Industry Target: 65%" (Utilization Results table, campus-wide
+// summary line, Executive Dashboard gauges) reads from one source instead
+// of duplicating the literal 0.65 across files and risking drift.
+export const INDUSTRY_TARGET_TIME_UTILIZATION = 0.65;
+
 // Airtable's official facilities "Building" field text doesn't always match
 // the canonical building name courseMeetings stores (ai-server's
 // HASTINGS_CLASS_SCHEDULE_BUILDING_ALIASES resolves the registrar's short

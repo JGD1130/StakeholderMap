@@ -25,6 +25,7 @@
 import React from 'react';
 import { formatCapitalPhasingMonthYear } from '../utils/capitalPhasingImport';
 import { formatUsdCompact, formatPct, formatGapSf } from '../utils/executiveDashboardCalc';
+import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationCalc';
 
 // Shared semantic palette -- reuses the exact hexes already in use elsewhere
 // in this codebase for the same meanings (HANDOFF.md's building-progress
@@ -150,10 +151,12 @@ function describeArc(cx, cy, r, startAngle, endAngle) {
 }
 const GAUGE_SEGMENT_DEG = 180 / GAUGE_BAND_COLORS.length;
 
-function Gauge({ label, pct, sublabel }) {
+function Gauge({ label, pct, sublabel, targetPct }) {
   const hasValue = Number.isFinite(pct);
   const value = hasValue ? Math.max(0, Math.min(pct, 100)) / 100 : 0;
   const angle = -90 + value * 180;
+  const hasTarget = Number.isFinite(targetPct);
+  const targetAngle = hasTarget ? -90 + (Math.max(0, Math.min(targetPct, 100)) / 100) * 180 : null;
 
   return (
     // flex: '0 1 190px' (grow: 0) instead of '1 1 220px' (grow: 1) -- a real
@@ -192,6 +195,31 @@ function Gauge({ label, pct, sublabel }) {
             <path key={color} d={describeArc(100, 110, 80, segStart, segEnd)} fill="none" stroke={hasValue ? color : COLORS.track} strokeWidth="16" strokeLinecap="butt" />
           );
         })}
+        {/* Industry Target tick -- a static, hardcoded reference notch
+            (INDUSTRY_TARGET_TIME_UTILIZATION, classroomUtilizationCalc.js),
+            not a live/fetched value. Drawn as a radial line crossing the
+            graduated arc band (band spans radius 72-88; tick runs 70-94, a
+            few units past each edge so it reads as a notch cutting across
+            the ring rather than a segment matching one band's own width).
+            Rendered before the needle so the needle still draws on top at
+            any pct whose angle happens to land near the target's. */}
+        {hasTarget ? (() => {
+          const tickInner = polarToCartesian(100, 110, 70, targetAngle);
+          const tickOuter = polarToCartesian(100, 110, 94, targetAngle);
+          return (
+            <line
+              x1={tickInner.x}
+              y1={tickInner.y}
+              x2={tickOuter.x}
+              y2={tickOuter.y}
+              stroke="#1d2939"
+              strokeWidth="3"
+              strokeLinecap="round"
+            >
+              <title>{`Industry Target: ${Math.round(targetPct)}%`}</title>
+            </line>
+          );
+        })() : null}
         {hasValue ? (
           <g transform={`translate(100 110) rotate(${angle})`}>
             <line x1="0" y1="0" x2="0" y2="-70" stroke="#222" strokeWidth="3" />
@@ -259,6 +287,7 @@ function GaugeRow({ data }) {
           key={c.termId}
           label={`Time Utilization — ${c.termLabel}`}
           pct={c.timeUtilizationPct}
+          targetPct={INDUSTRY_TARGET_TIME_UTILIZATION * 100}
           sublabel={data.currentTerm.termId === c.termId ? 'Current term' : null}
         />
       ))}
