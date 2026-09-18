@@ -23,6 +23,7 @@ import SpaceDashboardPanel from './SpaceDashboardPanel.jsx';
 import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
 import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './ClassroomUtilizationPanel.jsx';
 import ExecutiveDashboardPanel from './ExecutiveDashboardPanel.jsx';
+import ResearchSpaceClassificationPanel from './ResearchSpaceClassificationPanel.jsx';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -30933,6 +30934,13 @@ useEffect(() => {
           <div className="dashboard-box">
             <SpaceGrowthProjectionsPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
+            />
+          </div>
+        )}
+        {isAdminMode && Boolean(config?.enableResearchSpaceClassification) && (
+          <div className="dashboard-box">
+            <ResearchSpaceClassificationPanel
+              enabled={isAdminMode && Boolean(config?.enableResearchSpaceClassification)}
             />
           </div>
         )}

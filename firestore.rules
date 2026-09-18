@@ -206,6 +206,21 @@ service cloud.firestore {
         allow read, write: if isUniversityAdmin(universityId);
       }
 
+      // Research Space Classification (F&A space-survey functional-use
+      // classification, occupant-based). Same admin-only posture as every
+      // other Classroom Utilization Planner / Capital Priorities collection
+      // above -- internal planning tool, not exposed to any public/client
+      // route. researchSpaceOccupants' docId is an auto-generated Firestore
+      // id (a room can have many occupants); researchSpaceRoomStatus' docId
+      // is the roomKey itself (one exclusion status per room, mutually
+      // exclusive with that room having any occupants).
+      match /researchSpaceOccupants/{occupantId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+      match /researchSpaceRoomStatus/{roomKey} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+
       match /floorAdjustments/{docId} {
         allow read: if true;
         allow write: if canWriteFloorAdjustment(universityId);
