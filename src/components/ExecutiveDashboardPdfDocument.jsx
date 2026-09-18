@@ -409,7 +409,7 @@ function Tier1ListCard({ tier1Summary }) {
   return (
     <View style={[styles.card, { backgroundColor: COLORS.neutralTint, marginTop: 8 }]}>
       <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: COLORS.heading, marginBottom: 6 }}>
-        Capital Priorities — Tier 1
+        Capital Compass — Tier 1
       </Text>
       {!tier1Summary.tier1Count ? (
         <Text style={styles.mutedLine}>No Tier 1 buildings currently.</Text>
@@ -451,14 +451,14 @@ export default function ExecutiveDashboardPdfDocument({ data }) {
         </View>
 
         <View style={styles.section} wrap={false}>
-          <Text style={styles.sectionHeading}>Capital Phasing &amp; Priorities</Text>
+          <Text style={styles.sectionHeading}>Capital Compass</Text>
           {!data.hasAnyCapitalPhasing ? (
             <Text style={styles.mutedLine}>No Capital Phasing projects uploaded yet.</Text>
           ) : (
             <PhasingTimelineCard nearTerm={data.phasingSummary.nearTerm} />
           )}
           {!data.hasAnyCapitalPriorities ? (
-            <Text style={[styles.mutedLine, { marginTop: 8 }]}>No buildings have been scored yet in Capital Priorities.</Text>
+            <Text style={[styles.mutedLine, { marginTop: 8 }]}>No buildings have been scored yet in Capital Compass.</Text>
           ) : (
             <Tier1ListCard tier1Summary={data.tier1Summary} />
           )}

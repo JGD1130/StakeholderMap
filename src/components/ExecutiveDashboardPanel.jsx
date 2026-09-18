@@ -77,8 +77,10 @@ const CAPITAL_PHASING_HORIZON_MONTHS = 24;
 // background). Same isolation convention as this file's other small
 // constants -- duplicated identically in CapitalPrioritiesPanel.jsx and
 // ClassroomUtilizationPanel.jsx's header bars, not imported from a shared
-// location.
-const CLARK_ENERSEN_ORANGE = '#f75024';
+// location. Darkened ~18% (uniform RGB scale) from the sampled #f75024 for
+// header-bar contrast -- same darkened value duplicated in
+// CapitalPrioritiesPanel.jsx and ClassroomUtilizationPanel.jsx.
+const CLARK_ENERSEN_ORANGE = '#cb421e';
 
 export default function ExecutiveDashboardPanel({
   universityId,

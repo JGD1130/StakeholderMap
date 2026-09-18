@@ -40,8 +40,11 @@ const CAPITAL_PHASING_BATCH_CHUNK_SIZE = 400;
 // logo's orange-ish pixels by a wide margin). Same isolation convention as
 // this file's other small constants -- duplicated identically in
 // ExecutiveDashboardPanel.jsx and ClassroomUtilizationPanel.jsx's header
-// bars, not imported from a shared location.
-const CLARK_ENERSEN_ORANGE = '#f75024';
+// bars, not imported from a shared location. Darkened ~18% (uniform RGB
+// scale) from the sampled #f75024 for header-bar contrast -- same darkened
+// value duplicated in ExecutiveDashboardPanel.jsx and
+// ClassroomUtilizationPanel.jsx.
+const CLARK_ENERSEN_ORANGE = '#cb421e';
 
 const SCORE_FIELDS = [
   {
@@ -1021,7 +1024,7 @@ function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
 export default function CapitalPrioritiesPanel({
   universityId,
   enabled = false,
-  title = 'Capital Priorities',
+  title = 'Capital Compass',
   buildingFeatures = [],
   getBuildingResourceEntry = null
 }) {

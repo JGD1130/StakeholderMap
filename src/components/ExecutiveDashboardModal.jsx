@@ -507,7 +507,7 @@ function Tier1ListCard({ tier1Summary }) {
   return (
     <div style={cardShellStyle({ background: COLORS.neutralTint })}>
       <div style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.heading, marginBottom: 6 }}>
-        Capital Priorities — Tier 1
+        Capital Compass — Tier 1
       </div>
       {!tier1Summary.tier1Count ? (
         <div style={{ fontSize: 11, color: COLORS.muted }}>No Tier 1 buildings currently.</div>

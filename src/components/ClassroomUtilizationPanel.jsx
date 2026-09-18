@@ -67,7 +67,10 @@ const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking conven
 // ExecutiveDashboardPanel.jsx and CapitalPrioritiesPanel.jsx's header bars,
 // not imported from a shared location. Used by both panel titles this file
 // exports (ClassroomUtilizationPanel and SpaceGrowthProjectionsPanel).
-const CLARK_ENERSEN_ORANGE = '#f75024';
+// Darkened ~18% (uniform RGB scale) from the sampled #f75024 for header-bar
+// contrast -- same darkened value duplicated in ExecutiveDashboardPanel.jsx
+// and CapitalPrioritiesPanel.jsx.
+const CLARK_ENERSEN_ORANGE = '#cb421e';
 
 function summarizeDocs(docs) {
   const rooms = new Set();
