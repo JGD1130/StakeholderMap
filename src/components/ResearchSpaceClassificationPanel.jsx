@@ -132,7 +132,7 @@ function formatSF(value) {
   return `${Math.round(n).toLocaleString()} SF`;
 }
 
-export default function ResearchSpaceClassificationPanel({ enabled = false, title = 'Research Space Classification' }) {
+export default function ResearchSpaceClassificationPanel({ enabled = false, title = 'F&A Compass' }) {
   const [airtableRooms, setAirtableRooms] = useState(null); // null = not loaded yet
   const [airtableError, setAirtableError] = useState('');
   const [occupantDocs, setOccupantDocs] = useState([]); // raw Firestore docs, all rooms
