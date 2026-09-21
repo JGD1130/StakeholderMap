@@ -31,11 +31,14 @@
 // (275 Office + 67 Lab, confirmed 2026-09-17 against live Airtable data,
 // broad "all Laboratory - * / Office - * subtypes" interpretation per
 // Clark's explicit decision).
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { collection, deleteDoc, doc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { fetchAirtableRoomsForUtilization } from '../utils/classroomUtilizationCalc';
-import { deriveResearchSpaceRoomsFromAirtable } from '../utils/researchSpaceRoomScope';
+import {
+  HASTINGS_UNIVERSITY_ID,
+  RESEARCH_SPACE_OCCUPANTS_COLLECTION,
+  RESEARCH_SPACE_ROOM_STATUS_COLLECTION
+} from '../utils/useResearchSpaceData';
 import {
   FUNCTIONAL_CATEGORIES,
   FUNCTIONAL_CATEGORY_LABEL_BY_CODE,
@@ -47,9 +50,6 @@ import {
   computeResearchSpaceRollup
 } from '../utils/researchSpaceClassification';
 
-const HASTINGS_UNIVERSITY_ID = 'hastings';
-const RESEARCH_SPACE_OCCUPANTS_COLLECTION = 'researchSpaceOccupants';
-const RESEARCH_SPACE_ROOM_STATUS_COLLECTION = 'researchSpaceRoomStatus';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase
 
 // Sampled directly from public/Data/Clark_Enersen_Logo.png -- same constant,
@@ -120,6 +120,12 @@ function validateOccupantDraft(occupant) {
   return messages;
 }
 
+// Airtable numeric floor (0 = basement) -> short label.
+function formatFloorLabel(floor) {
+  if (floor == null) return '--';
+  return Number(floor) === 0 ? 'Bsmt' : `L${floor}`;
+}
+
 function formatPct(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '--';
@@ -132,12 +138,30 @@ function formatSF(value) {
   return `${Math.round(n).toLocaleString()} SF`;
 }
 
-export default function ResearchSpaceClassificationPanel({ enabled = false, title = 'F&A Compass' }) {
-  const [airtableRooms, setAirtableRooms] = useState(null); // null = not loaded yet
-  const [airtableError, setAirtableError] = useState('');
-  const [occupantDocs, setOccupantDocs] = useState([]); // raw Firestore docs, all rooms
-  const [roomStatusDocs, setRoomStatusDocs] = useState({}); // roomKey -> {status}
-  const [loadError, setLoadError] = useState('');
+// `data` is the shared useResearchSpaceData() result owned by
+// StakeholderMap.jsx (also read by the floorplan color mode), so the list here
+// and the map coloring can't drift apart.
+//
+// Selection is controlled-optional: pass `selectedRoomKey` +
+// `onSelectedRoomKeyChange` and the map can open a room's editor directly
+// (click-to-classify); omit them and the panel selects internally as before.
+// `onJumpToFloor(room)` (optional) loads the room's floorplan floor.
+export default function ResearchSpaceClassificationPanel({
+  enabled = false,
+  title = 'F&A Compass',
+  data,
+  selectedRoomKey: controlledRoomKey,
+  onSelectedRoomKeyChange,
+  onJumpToFloor
+}) {
+  const {
+    scopeRooms: airtableRooms,
+    airtableError,
+    loadError,
+    occupantsByRoomKey,
+    roomStatusDocs,
+    roomRows
+  } = data;
   const [selectedRoomKey, setSelectedRoomKey] = useState('');
   const [draftOccupants, setDraftOccupants] = useState(null); // null = no room selected / not yet loaded into draft
   const [draftMode, setDraftMode] = useState('occupants'); // 'occupants' | 'vacant_unassigned' | 'ineligible_non_assignable'
@@ -147,6 +171,7 @@ export default function ResearchSpaceClassificationPanel({ enabled = false, titl
   const [filterText, setFilterText] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'classified' | 'remaining'
   const [sectionOpen, setSectionOpen] = useState(true);
+  const rootRef = useRef(null);
 
   const occupantsCollection = useMemo(
     () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, RESEARCH_SPACE_OCCUPANTS_COLLECTION),
@@ -156,79 +181,6 @@ export default function ResearchSpaceClassificationPanel({ enabled = false, titl
     () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, RESEARCH_SPACE_ROOM_STATUS_COLLECTION),
     []
   );
-
-  // Airtable room scope -- fetched once on mount, not live. Room-type
-  // assignment doesn't change moment to moment; a manual page refresh is
-  // enough to pick up a genuinely new Airtable room, same convention as
-  // RoomUtilizationMetaSection's own one-time Airtable fetch.
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    fetchAirtableRoomsForUtilization()
-      .then((rooms) => {
-        if (cancelled) return;
-        setAirtableRooms(deriveResearchSpaceRoomsFromAirtable(rooms));
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setAirtableError(String(error?.message || 'Failed to load Airtable room inventory.'));
-        setAirtableRooms([]);
-      });
-    return () => { cancelled = true; };
-  }, [enabled]);
-
-  // Live listeners -- both collections are small (a few hundred rooms' worth
-  // of occupants at most), so a whole-collection listener is simpler and
-  // cheaper than per-room subscriptions, and keeps the room list/rollup in
-  // sync immediately after any save (including from another admin tab).
-  useEffect(() => {
-    if (!enabled) return;
-    const unsubscribe = onSnapshot(
-      occupantsCollection,
-      (snap) => setOccupantDocs(snap.docs),
-      (error) => setLoadError(String(error?.message || 'Failed to load research space occupants.'))
-    );
-    return () => unsubscribe();
-  }, [enabled, occupantsCollection]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const unsubscribe = onSnapshot(
-      roomStatusCollection,
-      (snap) => {
-        const next = {};
-        snap.docs.forEach((docSnap) => { next[docSnap.id] = docSnap.data()?.status || ''; });
-        setRoomStatusDocs(next);
-      },
-      (error) => setLoadError(String(error?.message || 'Failed to load room exclusion statuses.'))
-    );
-    return () => unsubscribe();
-  }, [enabled, roomStatusCollection]);
-
-  // occupantDocs grouped by roomKey, kept as raw docSnap references so the
-  // detail editor can diff (added/removed/changed) against them on save.
-  const occupantsByRoomKey = useMemo(() => {
-    const map = new Map();
-    occupantDocs.forEach((docSnap) => {
-      const roomKey = docSnap.data()?.roomKey;
-      if (!roomKey) return;
-      if (!map.has(roomKey)) map.set(roomKey, []);
-      map.get(roomKey).push(docSnap);
-    });
-    return map;
-  }, [occupantDocs]);
-
-  const roomRows = useMemo(() => {
-    const rooms = Array.isArray(airtableRooms) ? airtableRooms : [];
-    return rooms.map((room) => {
-      const occupantDocsForRoom = occupantsByRoomKey.get(room.roomKey) || [];
-      const exclusionStatus = roomStatusDocs[room.roomKey] || '';
-      const occupants = occupantDocsForRoom.map((docSnap) => docSnap.data());
-      const isClassified = Boolean(exclusionStatus) || occupants.length > 0;
-      const profile = exclusionStatus ? null : computeRoomFunctionalProfile(occupants);
-      return { ...room, occupantCount: occupantDocsForRoom.length, exclusionStatus, isClassified, profile };
-    });
-  }, [airtableRooms, occupantsByRoomKey, roomStatusDocs]);
 
   const rollup = useMemo(() => {
     const entries = roomRows.map((r) => ({
@@ -254,20 +206,34 @@ export default function ResearchSpaceClassificationPanel({ enabled = false, titl
 
   const openRoom = useCallback((room) => {
     setSelectedRoomKey(room.roomKey);
+    onSelectedRoomKeyChange?.(room.roomKey);
     setSaveMessage('');
     setSaveError('');
     const existingDocs = occupantsByRoomKey.get(room.roomKey) || [];
     const status = roomStatusDocs[room.roomKey] || '';
     setDraftMode(status || 'occupants');
     setDraftOccupants(existingDocs.length ? existingDocs.map(occupantDocToDraft) : [newOccupantDraft()]);
-  }, [occupantsByRoomKey, roomStatusDocs]);
+  }, [occupantsByRoomKey, roomStatusDocs, onSelectedRoomKeyChange]);
 
   const closeRoom = useCallback(() => {
     setSelectedRoomKey('');
+    onSelectedRoomKeyChange?.('');
     setDraftOccupants(null);
     setSaveMessage('');
     setSaveError('');
-  }, []);
+  }, [onSelectedRoomKeyChange]);
+
+  // Parent-driven selection (map click). Only acts when the parent's key
+  // differs from what's already open, so a snapshot-driven openRoom identity
+  // change can never re-open the room and clobber an in-progress draft.
+  useEffect(() => {
+    if (controlledRoomKey === undefined || controlledRoomKey === selectedRoomKey) return;
+    if (!controlledRoomKey) { closeRoom(); return; }
+    const room = roomRows.find((r) => r.roomKey === controlledRoomKey);
+    if (!room) return;
+    openRoom(room);
+    try { rootRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } catch {}
+  }, [controlledRoomKey, selectedRoomKey, roomRows, openRoom, closeRoom]);
 
   const updateOccupant = useCallback((draftId, patch) => {
     setDraftOccupants((prev) => (prev || []).map((o) => (o._draftId === draftId ? { ...o, ...patch } : o)));
@@ -389,6 +355,7 @@ export default function ResearchSpaceClassificationPanel({ enabled = false, titl
 
   return (
     <div
+      ref={rootRef}
       className="control-section"
       style={{
         background: '#fff',
@@ -482,6 +449,7 @@ export default function ResearchSpaceClassificationPanel({ enabled = false, titl
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
                 <th style={{ padding: '4px 6px' }}>Building</th>
                 <th style={{ padding: '4px 6px' }}>Room</th>
+                <th style={{ padding: '4px 6px' }}>Floor</th>
                 <th style={{ padding: '4px 6px' }}>Type</th>
                 <th style={{ padding: '4px 6px' }}>Status</th>
                 <th style={{ padding: '4px 6px' }}></th>
@@ -498,6 +466,19 @@ export default function ResearchSpaceClassificationPanel({ enabled = false, titl
                   <tr key={room.roomKey} style={{ borderBottom: '1px solid #f1f5f9', background: selectedRoomKey === room.roomKey ? '#fff7ed' : undefined }}>
                     <td style={{ padding: '4px 6px' }}>{room.building}</td>
                     <td style={{ padding: '4px 6px' }}>{room.room}</td>
+                    <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>
+                      {formatFloorLabel(room.floor)}
+                      {onJumpToFloor && room.folder && room.floor != null ? (
+                        <button
+                          type="button"
+                          title="Load this floor on the map"
+                          onClick={() => onJumpToFloor(room)}
+                          style={{ marginLeft: 4, fontSize: 10.5, padding: '1px 5px', cursor: 'pointer' }}
+                        >
+                          Map
+                        </button>
+                      ) : null}
+                    </td>
                     <td style={{ padding: '4px 6px', color: '#64748b' }}>{room.source === 'lab' ? 'Lab' : 'Office'}</td>
                     <td style={{ padding: '4px 6px', color: room.isClassified ? '#166534' : '#94a3b8' }}>{statusLabel}</td>
                     <td style={{ padding: '4px 6px' }}>

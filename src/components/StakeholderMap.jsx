@@ -24,6 +24,17 @@ import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
 import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './ClassroomUtilizationPanel.jsx';
 import ExecutiveDashboardPanel from './ExecutiveDashboardPanel.jsx';
 import ResearchSpaceClassificationPanel from './ResearchSpaceClassificationPanel.jsx';
+import { useResearchSpaceData } from '../utils/useResearchSpaceData';
+import {
+  RS_STATUS,
+  RS_STATUS_COLORS,
+  RS_STATUS_LABELS,
+  RS_OUT_OF_SCOPE_COLOR,
+  buildStatusFillExpression,
+  floorIdFromAirtableFloor,
+  groupFloorFeaturesByStatus,
+  resolveFloorFeatureRoomKey
+} from '../utils/researchSpaceStatus';
 import {
   computeSpaceDashboard,
   computeStrategicCapacityMetrics,
@@ -4801,6 +4812,9 @@ console.log('Mapbox token length:', (mapboxgl.accessToken || '').length);
 
 // --- Floor layer IDs (keep consistent) ---
 const FLOOR_SOURCE = 'floor-source';
+// F&A Compass floorplan color mode (Hastings, admin-only, flag-gated): in-scope
+// Office/Lab rooms colored by classification status, everything else neutral.
+const FA_COMPASS_COLOR_MODE = 'fa_compass';
 const FLOOR_FILL_ID = "floor-fill";
 const FLOOR_LINE_ID = "floor-line";
 const FLOOR_DRAWING_LAYER = "floor-drawing";
@@ -13056,8 +13070,14 @@ const StakeholderMap = ({
     TYPE: 'type',
     OCCUPANCY: 'occupancy',
     VACANCY: 'vacancy',
-    PLAIN: 'plain'
+    PLAIN: 'plain',
+    FA_COMPASS: FA_COMPASS_COLOR_MODE
   }), []);
+  // F&A Compass data the floor coloring/click read at call time (kept in refs so
+  // applyFloorColorMode / onFloorClick keep stable identities).
+  const faDataRef = useRef({ scopeIndex: null, statusByRoomKey: new Map() });
+  const faApplyRef = useRef(null);
+  const faClickActiveRef = useRef(false);
   const [floorColorMode, setFloorColorMode] = useState('department');
   const [engagementRoomSentimentOn, setEngagementRoomSentimentOn] = useState(false);
   const [engagementRoomSentimentOnly, setEngagementRoomSentimentOnly] = useState(false);
@@ -13123,6 +13143,10 @@ const StakeholderMap = ({
   }, [applySelectionHighlight]);
 
   const buildLegendForMode = useCallback((mode) => {
+    if (mode === FA_COMPASS_COLOR_MODE) {
+      faApplyRef.current?.();
+      return;
+    }
     const map = mapRef.current;
       const src = getGeojsonSource(map, FLOOR_SOURCE);
     if (!src) return;
@@ -13141,6 +13165,53 @@ const StakeholderMap = ({
     } catch {}
   }, []);
 
+  // F&A Compass fill + legend for the currently loaded floor. Status comes from
+  // the shared derivation (researchSpaceStatus.js) via faDataRef; the floor's
+  // building folder is read from the loaded floor URL, not selection state.
+  const applyFaCompassColors = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
+    const src = getGeojsonSource(map, FLOOR_SOURCE);
+    const fc = toFeatureCollection(src ? (src._data || src.serialize?.().data || null) : null);
+    const features = Array.isArray(fc?.features) ? fc.features : [];
+    const { scopeIndex, statusByRoomKey } = faDataRef.current;
+    const folder = getBuildingFolderFromBasePath(currentFloorUrlRef.current || currentFloorContextRef.current?.url || '');
+    const { idsByStatus, scopedCount, totalRooms } = groupFloorFeaturesByStatus(features, folder, scopeIndex, statusByRoomKey);
+    const fillExpr = buildStatusFillExpression(idsByStatus);
+    try {
+      map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', fillExpr);
+      map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
+      syncScenarioBaselineFillColor(map, fillExpr);
+    } catch {}
+    const normalizeId = (val) => {
+      const asNum = Number(val);
+      return Number.isFinite(asNum) ? asNum : String(val);
+    };
+    const areaById = new Map();
+    features.forEach((f) => {
+      const p = f?.properties || {};
+      const id = f?.id ?? p.RevitId ?? p.id;
+      const area = resolvePatchedArea(p);
+      if (id != null && Number.isFinite(area) && area > 0) areaById.set(String(id), area);
+    });
+    const legend = Object.values(RS_STATUS)
+      .filter((status) => idsByStatus[status].length)
+      .map((status) => ({
+        name: `${RS_STATUS_LABELS[status]} (${idsByStatus[status].length})`,
+        color: RS_STATUS_COLORS[status],
+        areaSf: idsByStatus[status].reduce((sum, id) => sum + (areaById.get(id) || 0), 0),
+        ids: idsByStatus[status].map(normalizeId)
+      }));
+    const outOfScope = Math.max(0, totalRooms - scopedCount);
+    if (outOfScope) {
+      legend.push({ name: `Not in F&A scope (${outOfScope})`, color: RS_OUT_OF_SCOPE_COLOR, areaSf: 0, ids: [] });
+    }
+    setFloorLegendItems(legend);
+    setFloorLegendLookup(new Map(legend.map((item) => [item.name, item.ids || []])));
+    ensureFloorRoomLabelLayer(map, 'department');
+  }, [syncScenarioBaselineFillColor]);
+  faApplyRef.current = applyFaCompassColors;
+
   const applyFloorColorMode = useCallback((mode) => {
     const map = mapRef.current;
     if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
@@ -13150,6 +13221,11 @@ const StakeholderMap = ({
     const requestedMode = mode === FLOOR_COLOR_MODES.VACANCY ? FLOOR_COLOR_MODES.OCCUPANCY : mode;
     const effectiveMode = stakeholderWorkflowActive ? FLOOR_COLOR_MODES.PLAIN : requestedMode;
     if (stakeholderWorkflowActive && engagementRoomSentimentOn) return;
+
+    if (effectiveMode === FLOOR_COLOR_MODES.FA_COMPASS) {
+      applyFaCompassColors();
+      return;
+    }
 
     if (effectiveMode === FLOOR_COLOR_MODES.PLAIN) {
       try {
@@ -13338,7 +13414,7 @@ const StakeholderMap = ({
     ensureFloorRoomLabelLayer(map, effectiveMode);
     buildLegendForMode(effectiveMode);
     setFloorColorMode(effectiveMode);
-  }, [FLOOR_COLOR_MODES.CATEGORY, FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFloorFillExpression, buildLegendForMode, stakeholderWorkflowActive, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
+  }, [FLOOR_COLOR_MODES.CATEGORY, FLOOR_COLOR_MODES.FA_COMPASS, FLOOR_COLOR_MODES.OCCUPANCY, FLOOR_COLOR_MODES.PLAIN, FLOOR_COLOR_MODES.TYPE, FLOOR_COLOR_MODES.VACANCY, applyFaCompassColors, applyFloorFillExpression, buildLegendForMode, stakeholderWorkflowActive, engagementRoomSentimentOn, syncScenarioBaselineFillColor]);
   useEffect(() => {
     roomEditSelectionRef.current = roomEditSelection;
   }, [roomEditSelection]);
@@ -13848,6 +13924,47 @@ const StakeholderMap = ({
     if (BUILDING_FOLDER_SET.has(idOrName)) return idOrName;
     return null;
   }, [configuredFloorplanBuildings]);
+
+  // ---- F&A Compass (Hastings, admin-only, flag-gated) ----
+  // One shared data hook (scope + Firestore listeners + derived status) feeds
+  // both the F&A Compass panel and the floorplan color mode below.
+  const researchSpaceEnabled = isAdminMode && Boolean(config?.enableResearchSpaceClassification);
+  const researchSpaceData = useResearchSpaceData({
+    enabled: researchSpaceEnabled,
+    resolveBuildingFolder: getBuildingFolderKey
+  });
+  const [faSelectedRoomKey, setFaSelectedRoomKey] = useState('');
+  const [faJumpTick, setFaJumpTick] = useState(0);
+  const faPendingJumpRef = useRef(null);
+  const faExtraColorModes = useMemo(
+    () => (researchSpaceEnabled ? [{ key: FA_COMPASS_COLOR_MODE, label: 'F&A Compass' }] : []),
+    [researchSpaceEnabled]
+  );
+  useEffect(() => {
+    faDataRef.current = {
+      scopeIndex: researchSpaceData.scopeIndex,
+      statusByRoomKey: researchSpaceData.statusByRoomKey
+    };
+    faClickActiveRef.current = researchSpaceEnabled && floorColorMode === FA_COMPASS_COLOR_MODE;
+    // Re-color live when a save (or the scope finishing loading) changes status.
+    if (faClickActiveRef.current) applyFaCompassColors();
+  }, [
+    researchSpaceEnabled,
+    researchSpaceData.scopeIndex,
+    researchSpaceData.statusByRoomKey,
+    floorColorMode,
+    applyFaCompassColors
+  ]);
+  // roomKey for a clicked floorplan room, or null when it isn't in the F&A scope.
+  const getFaRoomKeyForFeature = useCallback((feature) => {
+    const folder = getBuildingFolderFromBasePath(currentFloorUrlRef.current || currentFloorContextRef.current?.url || '');
+    const props = feature?.properties || {};
+    return resolveFloorFeatureRoomKey(
+      faDataRef.current.scopeIndex,
+      folder,
+      props.Number ?? props.RoomNumber ?? props.number
+    );
+  }, []);
   const buildFloorUrl = useCallback((buildingKeyOrName, floorId) => {
     if (!floorplansEnabled) return null;
     const normalizedFloorId = normalizeFloorIdValue(floorId);
@@ -22605,6 +22722,51 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setSelectedFloor
   ]);
 
+  // F&A Compass floor jump: select the room's building, load its floor in the
+  // F&A color mode, then highlight the room. Uses the same pending-ref +
+  // selection-state + effect shape as pendingScenarioLoadRef above (selection
+  // state must commit before handleLoadFloorplan reads it).
+  const handleFaJumpToFloor = useCallback(async (room) => {
+    const folder = String(room?.folder || '').trim();
+    const wantedFloor = floorIdFromAirtableFloor(room?.floor);
+    if (!folder || !wantedFloor) return;
+    const buildingName = resolveBuildingNameFromInput(folder) || folder;
+    const available = await ensureFloorsForBuilding(folder);
+    const floorId = resolveAvailableFloorId(wantedFloor, available);
+    if (!floorId) {
+      alert(`No floorplan is available for ${buildingName} (${wantedFloor}).`);
+      return;
+    }
+    faPendingJumpRef.current = { folder, floorId, roomKey: room.roomKey };
+    setFloorColorMode(FA_COMPASS_COLOR_MODE);
+    setSelectedBuildingId(buildingName);
+    setSelectedBuilding(buildingName);
+    setSelectedFloor(floorId);
+    setFaJumpTick((n) => n + 1);
+  }, [ensureFloorsForBuilding]);
+
+  useEffect(() => {
+    const pending = faPendingJumpRef.current;
+    if (!pending) return;
+    if (getBuildingFolderKey(selectedBuildingId) !== pending.folder) return;
+    if (getBuildingFolderKey(selectedBuilding) !== pending.folder) return;
+    faPendingJumpRef.current = null;
+    (async () => {
+      let loaded = false;
+      try { loaded = await handleLoadFloorplan(pending.floorId); } catch {}
+      if (!loaded) return;
+      const map = mapRef.current;
+      const src = map ? getGeojsonSource(map, FLOOR_SOURCE) : null;
+      const fc = toFeatureCollection(src ? (src._data || src.serialize?.().data || null) : null);
+      const ids = (fc?.features || [])
+        .filter((f) => f?.properties?.Element === 'Room' &&
+          resolveFloorFeatureRoomKey(faDataRef.current.scopeIndex, pending.folder, f.properties?.Number) === pending.roomKey)
+        .map((f) => f.id ?? f.properties?.RevitId)
+        .filter((id) => id != null);
+      setFloorHighlight(ids.length ? ids : null);
+    })();
+  }, [faJumpTick, selectedBuilding, selectedBuildingId, getBuildingFolderKey, handleLoadFloorplan, setFloorHighlight]);
+
   const applyAiScenarioToComparison = useCallback((aiResult) => {
     const candidates = aiResult?.recommendedCandidates || [];
     if (!candidates.length) return;
@@ -28797,6 +28959,18 @@ useEffect(() => {
         return;
       }
 
+      // F&A Compass floorplan mode (Hastings admin): a click on an in-scope room
+      // opens its occupant editor in the F&A Compass panel instead of the
+      // utilization popup. Rooms outside the scope fall through to the normal popup.
+      if (faClickActiveRef.current && !moveScenarioMode && !moveMode) {
+        const faRoomKey = getFaRoomKeyForFeature(f);
+        if (faRoomKey) {
+          setFloorHighlight(f.id ?? f.properties?.RevitId ?? null);
+          setFaSelectedRoomKey(faRoomKey);
+          return;
+        }
+      }
+
       if (moveScenarioMode) {
         try {
           const rawProps = f.properties || {};
@@ -30940,7 +31114,11 @@ useEffect(() => {
         {isAdminMode && Boolean(config?.enableResearchSpaceClassification) && (
           <div className="dashboard-box">
             <ResearchSpaceClassificationPanel
-              enabled={isAdminMode && Boolean(config?.enableResearchSpaceClassification)}
+              enabled={researchSpaceEnabled}
+              data={researchSpaceData}
+              selectedRoomKey={faSelectedRoomKey}
+              onSelectedRoomKeyChange={setFaSelectedRoomKey}
+              onJumpToFloor={handleFaJumpToFloor}
             />
           </div>
         )}
@@ -31121,7 +31299,8 @@ useEffect(() => {
                   category: 'Room Categories',
                   type: 'Key Types',
                   occupancy: 'Occupancy',
-                  vacancy: 'Vacancy'
+                  vacancy: 'Vacancy',
+                  [FA_COMPASS_COLOR_MODE]: 'F&A Compass Status'
                 }[floorColorMode] || 'Legend'
               }
               floors={availableFloors}
@@ -31135,6 +31314,7 @@ useEffect(() => {
               onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
               remodelScenariosAvailable={hasRemodelPdfsForActiveBuilding}
               colorMode={floorColorMode}
+              extraColorModes={faExtraColorModes}
               onChangeColorMode={(mode) => {
                 setFloorColorMode(mode);
                 applyFloorColorMode(mode);

@@ -22,6 +22,7 @@ export default function FloorPanel({
   remodelScenariosAvailable = false,
   onOpenProgramTestFit,
   colorMode = 'department',
+  extraColorModes = [], // [{ key, label }] appended to "Highlight By" (e.g. F&A Compass, admin-only)
   onChangeColorMode,
   legendTitle = 'Key Departments',
   legendSelection,
@@ -212,7 +213,8 @@ export default function FloorPanel({
               { key: 'department', label: 'Department' },
               { key: 'category', label: 'Room Category' },
               { key: 'type', label: 'Type' },
-              { key: 'occupancy', label: 'Occupancy' }
+              { key: 'occupancy', label: 'Occupancy' },
+              ...extraColorModes
             ].map((opt) => (
               <label key={opt.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <input

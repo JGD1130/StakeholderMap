@@ -240,6 +240,48 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-09-21) — F&A Compass floorplan mode: room-scope fix, shared status derivation, click-to-classify, floor-jump navigation
+
+### Summary
+
+Adds a per-floor floorplan mode to F&A Compass (Hastings, admin-only, gated by `enableResearchSpaceClassification`, on by default — zero client exposure, since no Hastings staff have admin credentials). In-scope Office/Lab rooms are colored by classification status, a click on one opens its occupant editor, and the panel's room list can jump the map to any room's floor. Confirmed by Clark in a full live walkthrough: floorplan mode, click-to-classify, live repaint, floor-jump navigation, and out-of-scope fallback.
+
+**Module background (not previously logged here):** F&A Compass (`ResearchSpaceClassificationPanel.jsx`, `researchSpaceClassification.js`) is an occupant-based F&A space-survey classification. Occupants live in `universities/hastings/researchSpaceOccupants` (auto-id docs keyed to a room by `roomKey`); `researchSpaceRoomStatus/{roomKey}` holds only the two *exclusion* states (`vacant_unassigned`, `ineligible_non_assignable`), mutually exclusive with occupants. **A room's "status" is never stored** — it is derived (below). An empty `researchSpaceRoomStatus` collection is normal until someone marks a room vacant/ineligible.
+
+### Room-scope fix (`researchSpaceRoomScope.js`)
+
+- **Hayes M. Fuhr Hall of Music excluded** (demolished, confirmed by Clark): 36 rooms dropped, so scope is **306** rooms, not 342. Done as an explicit, commented `DEMOLISHED_BUILDING_KEYS` list. Deliberately *not* `SCENARIO_OFFLINE_BUILDINGS` in `StakeholderMap.jsx` — that is a planning-scenario "low-fit building" heuristic, not a statement that a building is gone. Any occupant docs already saved for Fuhr rooms stay in Firestore but no longer count in the rollup.
+- **Building-name alias mismatch fixed** for Barrett Alumni Center, Batchelder General Services, Daugherty Center For Student Engagement, French Memorial Chapel (Airtable names differ from the floorplan folder names). Each scope entry now carries a `folder`, resolved by a caller-supplied `resolveBuildingFolder` — `StakeholderMap.jsx` passes its own `getBuildingFolderKey`, i.e. the *same* alias table floorplan rendering uses, so there is no second alias list to drift. (All four were already in that table.)
+- **`roomKey` is intentionally unchanged** (still built from the Airtable building name). Saved occupant/status docs are keyed by it; changing it would orphan them. `folder` is a separate field used only for the floorplan join. Each entry also carries `floor` (Airtable numeric, 0 = basement).
+- **Real-data match rate: 306/306 (100%)** — verified against both the Sept 17 Airtable snapshot and a live pull (2,904 records), over all 71 floor files: 17 buildings, 25 building/floor combinations, every room reachable by a simulated map click, out-of-scope rooms resolve to no `roomKey`. One key (`farrell_fleharty||130`) maps to two polygons on the same floor; both get the same status color.
+
+### Shared status derivation (prevents panel/map drift)
+
+- `src/utils/researchSpaceStatus.js` — pure: `deriveRoomStatus` (excluded → classified → not_started), the floorplan join (`buildScopeFloorIndex`, `resolveFloorFeatureRoomKey`, `groupFloorFeaturesByStatus`), `buildStatusFillExpression`, colors/labels.
+- `src/utils/useResearchSpaceData.js` — hook owning the one Airtable fetch and both Firestore `onSnapshot` listeners, returning `roomRows`, `statusByRoomKey`, `scopeIndex`. Called **once** in `StakeholderMap.jsx` and passed to the panel as `data` and read by the map — the panel no longer has its own listeners/derivation.
+
+### Floorplan color mode + click interception (`StakeholderMap.jsx`, shared/live code)
+
+- New color mode `fa_compass` (`FA_COMPASS_COLOR_MODE`) in `FLOOR_COLOR_MODES`; `FloorPanel` gets an optional `extraColorModes` prop (empty for everyone else, so no change for other tenants/modes). Only offered when `isAdminMode && enableResearchSpaceClassification`.
+- `applyFaCompassColors` builds a `match` fill expression on RevitId per status (amber = not started, green = classified, slate = excluded, gray = out of scope) and a status legend. It reads data through `faDataRef`, and the floor's building folder from the *loaded floor URL* (`getBuildingFolderFromBasePath`), not selection state. An effect re-applies it whenever status data changes, so saves repaint live. `buildLegendForMode` routes this mode to it so other legend rebuilds can't clobber it.
+- **Click interception:** `onFloorClick` has an early-return branch (same precedent as `maintenanceWorkflowActive` / `moveScenarioMode`): when the mode is active and the clicked room is in scope, it skips the utilization popup, highlights the room, and sets `faSelectedRoomKey`. Out-of-scope rooms fall through to the normal popup. Reads `faClickActiveRef`/`faDataRef` so the handler's closure stays stable.
+- **Panel:** `ResearchSpaceClassificationPanel` takes an optional controlled `selectedRoomKey` + `onSelectedRoomKeyChange`. The parent-driven open only acts when the key differs from what's open, so a snapshot can never re-open a room and clobber an in-progress draft.
+
+### Floor-jump navigation
+
+The panel's existing room list gained a Floor column and a **Map** button (`handleFaJumpToFloor`): resolves the floor via `ensureFloorsForBuilding`/`resolveAvailableFloorId`, then uses the same pending-ref + selection-state + effect pattern as `pendingScenarioLoadRef` (selection state must commit before `handleLoadFloorplan` reads it), switches to F&A mode, loads the floor, and highlights the room. Floor comes from Airtable's numeric `floor` (0 → `BASEMENT`, n → `LEVEL_n`); all 306 rooms' floors exist in the app's floor manifest.
+
+### Known minor issues
+
+1. **Hurley-McDonald room 108:** Airtable says `floor 0` (basement); the floorplan has it on `LEVEL_1`. It is the only one of 306 that disagrees, so its Map button loads the basement. This is an Airtable data issue; fix the floor value in Airtable.
+2. **Pre-existing latent bug, unrelated and untouched:** near `StakeholderMap.jsx` line ~5843 (about line 5829 before this work's added imports), a module-level function references component-scope variables (`selectedBuildingIdRef`, `selectedBuilding`, `floorStatsByBuildingRef`, `setFloorStatsByBuilding`, `panelBuildingKeyRef`, `setPanelStats`). Found by an eslint `no-undef` pass; the identical set of errors exists on the pre-change file. It predates this work, was not touched, and has not been investigated further.
+
+### Verification
+
+`npm run build` passes, including from an isolated `git archive` of the staged tree. eslint `no-undef` / `no-use-before-define` show no new findings for any identifier added here. Match rate, click reachability, and status-flow were exercised against real Airtable + floorplan data; the browser click-to-classify flow was confirmed live by Clark.
+
+---
+
 ## Recent Changes (2026-09-14) — Worktree/clutter cleanup; stash preserved as a branch; permissions.defaultMode fix; Hastings-deletion concern on `80fc22e` investigated, still unresolved
 
 ### Summary
