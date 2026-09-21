@@ -13,7 +13,7 @@
   "enableMaintenanceWorkflow": false,
   "enableCapitalPriorities": true,
   "enableClassroomUtilization": true,
-  "enableResearchSpaceClassification": false,
+  "enableResearchSpaceClassification": true,
   "enableRoomEdit": true,
   "requireClientAuth": true,
   "clientWorkspaceRoute": "client",
