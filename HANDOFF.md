@@ -1,6 +1,8 @@
 # Stakeholder Map — Handoff Document
 
 > Written for AI assistants and new developers. Read this first. Update it whenever significant changes are made.
+>
+> ⚠️ **Deploys:** a push to `feature/multi-university-refactor` ships **only the GitHub Pages frontend**. The Sarpy ai-server on Render needs a **manual deploy** for every `ai-server/` change (auto-deploy is disabled). See "Deploy Workflow".
 
 ---
 
@@ -1279,7 +1281,7 @@ Root cause was in `ai-server/server.js`: the PATCH `/api/rooms` room-lookup fall
 ### Deployment / verification
 
 - Sarpy's Render AI service is `https://mapfluence-sarpy-ai.onrender.com`.
-- The live Sarpy AI service deploys from `feature/multi-university-refactor`, not `main`.
+- The live Sarpy AI service deploys from `feature/multi-university-refactor`, not `main`. **Correction (2026-09-23): auto-deploy is disabled, so a push does not deploy it. Every ai-server change needs a manual Render deploy. See "Deploy Workflow".**
 - The successful live Render deploy was commit `bf06833` (`Fix Sarpy Airtable room lookup fallback`).
 - The equivalent `main` commit `6568fa2` exists, but it is not what Sarpy Render is serving today.
 - User verification after the Render deploy: edited Sarpy rooms saved through to Airtable successfully.
@@ -1709,6 +1711,12 @@ All assessment saves use `setDoc(ref, data, { merge: true })`. This means a clou
 
 ## Deploy Workflow
 
+> ⚠️ **A push does NOT fully ship everything (confirmed 2026-09-23).** Pushing to `origin/feature/multi-university-refactor` automatically deploys **only the GitHub Pages frontend**. The **Sarpy ai-server on Render (`https://mapfluence-sarpy-ai.onrender.com`) has auto-deploy disabled** and needs a **manual deploy in the Render dashboard every time** `ai-server/` changes. Clark does this; there's no Render API access from these sessions.
+>
+> - **Symptom if forgotten:** the frontend goes live calling routes that don't exist yet. For example, `244e20a`'s `/api/room-type-options` returned 404 until the manual deploy, and three earlier ai-server commits (`1b2c925`, `3f5f71c`, `5d31af0`) sat undeployed from 2026-08-02 until then.
+> - **How to verify:** `GET /health` returns the deployed SHA in its `commit` field. After any ai-server change, confirm it matches the pushed commit before calling the work shipped.
+> - **Order of operations:** a frontend change that depends on a new server route will 404 until Render is deployed, so make the frontend degrade gracefully, or deploy Render promptly after the push.
+
 ```
 airtable-roomid-normalize-hotfix  ←  do all work here
          │
@@ -1773,7 +1781,7 @@ Each tenant that uses Airtable room data needs its own AI server instance on Ren
 | Hastings | `https://github-stakeholder-ai.onrender.com` | `appQbbKh2wTFogpN5` (Hastings) |
 | Sarpy County | `https://mapfluence-sarpy-ai.onrender.com` | Sarpy base (set in Render env vars) |
 
-As of 2026-07-13, the Sarpy Render AI service is configured to deploy from `feature/multi-university-refactor`, not `main`. Confirm the live backend revision via `/health` before assuming a `main` push is active.
+As of 2026-07-13, the Sarpy Render AI service is configured to deploy from `feature/multi-university-refactor`, not `main`. **As of 2026-09-23: auto-deploy is disabled on this service. Pushing to that branch does not deploy it, and every ai-server change needs a manual deploy in the Render dashboard (see "Deploy Workflow").** Confirm the live backend revision via `/health` (`commit` field) after every deploy.
 
 `getAiBaseUrl()` priority order:
 1. `config.aiServerUrl` (set at component mount via `setRuntimeAiBaseUrl()`)
