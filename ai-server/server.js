@@ -7339,6 +7339,43 @@ app.get("/api/departments", async (req, res) => {
   }
 });
 
+// Valid choices for the Rooms table's Room Type select field, read from the
+// Airtable schema. The frontend's global ROOM_TYPES list does not match every
+// base (Sarpy's Room Type is a singleSelect with its own choices), and a value
+// outside the choice list gets dropped by patchAirtableRecord. Returns an empty
+// list for non-select fields (e.g. Hastings' linked Room Type Description) so
+// callers can fall back to their existing options.
+app.get("/api/room-type-options", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
+      return res.status(500).json({ ok: false, error: "Missing Airtable config." });
+    }
+    const table = AIRTABLE_TABLE || "Rooms";
+    // Drop the cached schema so choices added in Airtable show up without a
+    // server restart; this also refreshes the metadata PATCH normalization uses.
+    tablePrimaryFieldCache.delete("__schema__");
+    const { typeFieldName } = await getRoomUpdateFieldNames(table);
+    const fieldMeta = await getTableFieldMeta(table, typeFieldName);
+    const isSelect = ["singleSelect", "multipleSelects"].includes(fieldMeta?.type);
+    const options = isSelect
+      ? uniqueStrings(
+          (fieldMeta?.options?.choices || [])
+            .map((choice) => String(choice?.name ?? "").trim())
+            .filter(Boolean)
+        )
+      : [];
+    return res.json({
+      ok: true,
+      field: typeFieldName || "",
+      fieldType: fieldMeta?.type || "",
+      options
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
 app.get("/class-schedule", async (req, res) => {
   try {
     const payload = await loadClassScheduleData();

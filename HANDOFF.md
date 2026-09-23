@@ -240,6 +240,43 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-09-23) — Sarpy Room Type edits silently not saving: per-tenant dropdown source + dropped-field warning
+
+### Symptom
+Clark confirmed: on Sarpy, only **Room Type** edits failed to persist (they looked saved, then reverted after a refresh). Every other field saved normally.
+
+### Root cause
+Sarpy's Airtable `Rooms.Room Type` is a `singleSelect` with its own 91 choices (county/court/election space names). The room editor's dropdown was fed from the global `ROOM_TYPES` constant (Hastings/NCES names). Checked against the live schema: **only 4 of those 200 values exist in Sarpy's select** (`Office - Department / Suite Circulation`, `Vestibule`, `Single Stall Restroom`, `Private Restroom`). Airtable rejects the rest. `patchAirtableRecord` (`ai-server/server.js`) then retries without the type field, saves everything else, returns 2xx with `droppedFields: ["Room Type"]`, and the frontend never read `droppedFields`, so the save looked like a full success.
+
+### Fix
+1. **New `GET /api/room-type-options`** (`ai-server/server.js`): reads the Room Type field's choices from the Airtable Meta API schema. Returns `options: []` for non-select fields (e.g. Hastings' linked `Room Type Description`) so callers fall back. It clears the cached `__schema__` entry on each call so choices added in Airtable show up without a server restart.
+2. **Frontend (`StakeholderMap.jsx`)**: when the room editor opens, and **only when `isSarpyCountyInstance` is true**, it fetches those options and uses them as the Room Type dropdown (`roomEditTypeOptions`). Hastings and Cherokee still use `typeOptions` exactly as before. If the fetch fails, it falls back to `typeOptions` and logs a console warning.
+3. **Dropped fields are shown to the user**: the save handler now reads `droppedFields` from both PATCH paths (by airtableId and by roomId). If any fields were dropped, it logs the details and shows a dismissible amber alert naming the room and the rejected field(s). The optimistic local edit stays in place, and the alert says it was not saved to Airtable and will revert on refresh. The alert list is cleared at the start of each Save.
+
+### Second bug found in testing: valid Room Type edits also "reverted" (display-only)
+Clark saved a valid value on Administration/Courthouse 201. Airtable kept it (`Office - Department / Suite Circulation`), but after a refresh the map showed the value baked into the floorplan (`NCES_Type: "Open Office - Cubicles"`). **Cause:** `getAirtableRoomPatch` applied Airtable's type only when the static export had no meaningful type label. Every one of Sarpy's 1,188 room features has one, so Airtable's Room Type was never shown after a reload. **Worse:** the editor pre-fills Room Type with that displayed label, and every save sent `type`. So saving *any* field (e.g. only a comment) wrote the baked label back over Airtable's real value.
+
+**Why the export-first rule existed (`947febd`, 2026-05-21, one-line commit message, reconstructed from git):** at that time `SarpyCounty.json` had no `aiServerUrl`, so Sarpy read **Hastings'** Airtable base through the default AI server. The room lookup's number-only fallback could paint Hastings types onto Sarpy rooms. `c9ed4ef` (2026-06-22) gave Sarpy its own server. The label order `Room Type Description → NCES_Type → … → type` is older (`d47884a`, Feb 2026, built for Hastings) and was not what `947febd` changed.
+
+**Fixes (Sarpy-only; Hastings and Cherokee code paths unchanged):**
+- **A.** In `getAirtableRoomPatch`, when called with the Sarpy flag, Airtable's Room Type wins over the export. This applies only on a *strong* match (room GUID or exact building|floor|number, not the building+number / number-only fallbacks), and only for a real value (`(none)` placeholders keep the baked label). It feeds the floor load, the live re-sync effect and the popup/editor.
+- **B.** The Room Type `ComboInput` sets `typeTouched`. On Sarpy, `saveRoomEdits` sends `type` to Airtable and Firestore only when `typeTouched` is true.
+- **C.** When Airtable drops the type field, `type` is removed from the Firestore `setDoc` payload, so rejected values are no longer persisted there.
+
+**Verified (harness running the real bundled functions, old vs new, against live data):** Sarpy: 1,138 of 1,188 rooms unchanged, 50 now show their Airtable value, and none show `(none)`. Room 201 shows its Airtable value even though its Firestore doc still holds the old test value `"Made up"`. Hastings: 2,808 of 2,808 unchanged. Cherokee: 1,632 of 1,632 unchanged.
+
+**Verified in the browser by Clark:** local Vite pointed at a local Sarpy ai-server, with a temporary wrapper that logged every PATCH body. Room 201 showed its Airtable value, and it stayed after a hard refresh. A comment-only save sent **no `type`** in the PATCH body (B). An invalid type showed the amber banner, was returned in `droppedFields`, and was not written to Firestore (C). Airtable kept the valid value throughout. Room 201's Firestore doc no longer has a `type` field.
+
+### Known follow-ups (deliberately NOT fixed in this pass)
+- **Display label override vs Sarpy choices:** `ROOM_TYPE_DISPLAY_LABEL_OVERRIDES` shows `Conference Room` as `Meeting Room`, and the editor pre-fills that label, which is not a Sarpy choice. Harmless now that an untouched type isn't sent (fix B). If a user re-picks it, though, they'll see it in the list only under its real name.
+- **"Grid view not found" log noise** on the Sarpy AI server. Harmless, but noisy.
+- **Typo'd `SARPY_AIRTABLE_BASE_ID` constant** in `server.js` (`appmIFbql4ktdsPxc`, capital I) vs the real base `appmlFbql4ktdsPxc` (lowercase L, per `.env.sarpy`). The equality check never matches, so it is dead code. It was not involved in this bug.
+- **Empty `roomNumber`** on some Sarpy room saves.
+- Sarpy's select contains placeholder-looking choices (`NCES Types`, `Room Type`, `(none)`). They are real Airtable choices, so the dropdown shows them. Clean them up in Airtable if unwanted.
+- If Room Type is the *only* field sent and it's invalid, the server returns 500 (no retry is possible), and the frontend's existing "Airtable did not confirm" error handles it. This was already visible behavior and is unchanged.
+
+---
+
 ## Recent Changes (2026-09-21) — F&A Compass floorplan mode: room-scope fix, shared status derivation, click-to-classify, floor-jump navigation
 
 ### Summary

@@ -10477,6 +10477,9 @@ function mergeAirtableRoomsWithManifest(airtableRooms = [], manifestRooms = []) 
 function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankDepartment = false) {
   if (!lookup) return null;
   let room = null;
+  // True when the match came from the room GUID or the exact building|floor|number
+  // key, as opposed to the looser building+number / number-only fallbacks.
+  let strongMatch = false;
   const guidRaw = (
     props.Revit_UniqueId ??
       props.RevitUniqueId ??
@@ -10489,6 +10492,7 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankD
     if (room) return;
     room = lookup.byGuid.get(key) || null;
   });
+  if (room) strongMatch = true;
   if (!room) {
     const roomIdKey = normalizeRoomLookupKey(
       props.Number ??
@@ -10509,6 +10513,7 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankD
     );
     if (roomIdKey && buildingKey && floorKey) {
       room = lookup.byComposite.get(`${buildingKey}|${floorKey}|${roomIdKey}`) || null;
+      if (room) strongMatch = true;
     }
     if (!room && roomIdKey && buildingKey) {
       room = lookup.byBuildingRoom?.get(`${buildingKey}|${roomIdKey}`) || null;
@@ -10557,7 +10562,14 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankD
   const type = String(room.type ?? '').trim();
   const department = String(room.department ?? '').trim();
   const exportTypeLabel = String(getRoomTypeLabelFromProps(props) ?? '').trim();
-  const shouldPatchType = !hasMeaningfulRoomTypeLabel(exportTypeLabel);
+  // Sarpy (allowBlankDepartment): Airtable is authoritative for Room Type, like
+  // department, but only on a strong match and only for a real value -- "(none)"
+  // is a placeholder choice in Sarpy's select and must not replace the baked label.
+  // Other tenants keep the export-first rule from 947febd, which guarded against
+  // Sarpy reading Hastings' base (fixed in c9ed4ef) and matching by number alone.
+  const shouldPatchType = allowBlankDepartment
+    ? strongMatch && hasMeaningfulRoomTypeLabel(type) && type.toLowerCase() !== '(none)'
+    : !hasMeaningfulRoomTypeLabel(exportTypeLabel);
   if (!occupancyStatus && !occupant && !type && !department && !allowBlankDepartment) return null;
 
   const patch = {};
@@ -12608,6 +12620,10 @@ const StakeholderMap = ({
   const floorAdjustDragRef = useRef(null);
   const [typeOptions, setTypeOptions] = useState(baseTypeOptions);
   const [deptOptions, setDeptOptions] = useState(baseDeptOptions);
+  // Sarpy only: Room Type choices read from its Airtable schema (null until loaded).
+  const [airtableRoomTypeOptions, setAirtableRoomTypeOptions] = useState(null);
+  // Rooms whose save succeeded but where Airtable rejected one or more fields.
+  const [roomSaveDroppedFields, setRoomSaveDroppedFields] = useState([]);
   const roomEditDeptOptions = useMemo(() => ([
     ROOM_EDIT_NO_DEPARTMENT_OPTION,
     ...deptOptions
@@ -18913,6 +18929,39 @@ const StakeholderMap = ({
     return undefined;
   }, [airtableRooms, isSarpyCountyInstance, roomEditOpen, syncAirtableRoomEditOptions]);
 
+  // Sarpy's Room Type is an Airtable singleSelect with its own choices; the
+  // global ROOM_TYPES list (Hastings/NCES names) is almost entirely invalid
+  // there, and Airtable rejects any value outside the choice list. Load the
+  // real choices each time the editor opens. Other tenants keep typeOptions.
+  useEffect(() => {
+    if (!isSarpyCountyInstance || !roomEditOpen) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await guardedAiFetch('/ai/api/room-type-options', { cache: 'no-store', timeoutMs: 15000 });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {}
+        if (cancelled) return;
+        if (res.ok && data?.ok && Array.isArray(data.options) && data.options.length) {
+          setAirtableRoomTypeOptions(buildTypeOptionList(data.options));
+        } else {
+          console.warn('[airtableRoomTypeOptions] Room Type options unavailable; using default list', res.status, data);
+        }
+      } catch (err) {
+        if (!cancelled) console.warn('[airtableRoomTypeOptions] Failed to load Room Type options', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSarpyCountyInstance, roomEditOpen]);
+
+  const roomEditTypeOptions = useMemo(() => (
+    isSarpyCountyInstance && airtableRoomTypeOptions?.length ? airtableRoomTypeOptions : typeOptions
+  ), [isSarpyCountyInstance, airtableRoomTypeOptions, typeOptions]);
+
   const buildRoomsApiPath = useCallback(() => {
     const params = new URLSearchParams();
     const scopeHints = Array.from(new Set(
@@ -19079,7 +19128,11 @@ const StakeholderMap = ({
         );
 
         const typeValue = String(properties.type ?? '').trim();
-        const typeProvided = Object.prototype.hasOwnProperty.call(properties, 'type');
+        // Sarpy: the editor pre-fills Room Type with the displayed label and the
+        // save loop always passes it, so only send it when the user changed it --
+        // otherwise saving e.g. a comment writes that label back over Airtable's value.
+        const typeProvided = Object.prototype.hasOwnProperty.call(properties, 'type') &&
+          (!isSarpyCountyInstance || properties.typeTouched === true);
         const officeTypeLabel = getRoomTypeLabelFromProps(properties) || typeValue;
         const allowOfficeFields = isAllowedOfficeType(officeTypeLabel);
         const occupancyStatusProvided =
@@ -19163,6 +19216,16 @@ const StakeholderMap = ({
         if (seatCountProvided) airtablePayload.seatCount = seatCountValue;
         if (commentsProvided) airtablePayload.comments = commentsValue;
         let didUpdateAirtable = false;
+        // A 2xx can still be a partial save: the server drops fields Airtable
+        // rejects (e.g. a Room Type outside the select's choices) and saves the
+        // rest, listing what it dropped in `droppedFields`.
+        let airtableDroppedFields = [];
+        const readDroppedFields = async (resp) => {
+          const data = await resp.json().catch(() => null);
+          return Array.isArray(data?.droppedFields)
+            ? data.droppedFields.map((field) => String(field || '').trim()).filter(Boolean)
+            : [];
+        };
         if (airtableId && Object.keys(airtablePayload).length) {
           try {
             const resp = await guardedAiFetch(`/ai/api/rooms/${airtableId}`, {
@@ -19175,6 +19238,7 @@ const StakeholderMap = ({
               console.warn('Airtable update failed', resp.status, text);
             } else {
               didUpdateAirtable = true;
+              airtableDroppedFields = await readDroppedFields(resp);
             }
           } catch (err) {
             console.warn('Airtable update failed', err);
@@ -19199,6 +19263,7 @@ const StakeholderMap = ({
                 console.warn('Airtable update by roomId failed', resp.status, text);
               } else {
                 didUpdateAirtable = true;
+                airtableDroppedFields = await readDroppedFields(resp);
               }
             } catch (err) {
               console.warn('Airtable update by roomId failed', err);
@@ -19209,6 +19274,33 @@ const StakeholderMap = ({
         // override if Airtable rejected or could not locate this room.
         if (isSarpyCountyInstance && Object.keys(airtablePayload).length && !didUpdateAirtable) {
           throw new Error('Airtable did not confirm this room update; the map was not changed.');
+        }
+
+        // Keep the optimistic local update, but tell the admin that these
+        // fields did not reach Airtable and will revert on the next refresh.
+        if (airtableDroppedFields.length) {
+          const droppedRoomLabel = String(roomNumberValue || roomLabel || roomId || revitId || '').trim();
+          console.warn('Airtable saved this room but rejected some fields', {
+            room: droppedRoomLabel,
+            building: buildingName || buildingId,
+            airtableId,
+            droppedFields: airtableDroppedFields,
+            sent: airtablePayload
+          });
+          setRoomSaveDroppedFields((prev) => [
+            ...prev,
+            {
+              room: droppedRoomLabel,
+              building: String(buildingName || buildingId || '').trim(),
+              fields: airtableDroppedFields,
+              typeValue: typeProvided ? typeValue : ''
+            }
+          ]);
+          // Don't persist a value Airtable rejected; it would sit in Firestore as
+          // garbage. The server only ever drops the room type field.
+          if (airtableDroppedFields.some((field) => /type/i.test(field))) {
+            delete payload.type;
+          }
         }
 
         await setDoc(roomRef, payload, { merge: true });
@@ -33968,9 +34060,9 @@ useEffect(() => {
             label="Room Type"
             value={roomEditData.properties?.type ?? roomEditData.feature?.properties?.type ?? ''}
             onChange={(val) =>
-              setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, type: val } }) : prev))
+              setRoomEditData((prev) => (prev ? ({ ...prev, properties: { ...prev.properties, type: val, typeTouched: true } }) : prev))
             }
-            options={typeOptions}
+            options={roomEditTypeOptions}
             placeholder="Search or choose a type..."
           />
 
@@ -34096,6 +34188,7 @@ useEffect(() => {
                   ? roomEditTargets.filter((t) => includedKeys.has(t.roomId || String(t.revitId ?? '')))
                   : [];
                 if (!targets.length) return;
+                setRoomSaveDroppedFields([]);
                 let savedCount = 0;
                 const multiEdit = targets.length > 1;
                 const activePopupRoomKey = roomEditData?.roomId || String(roomEditData?.revitId ?? '');
@@ -34250,6 +34343,46 @@ useEffect(() => {
             {roomEditTargets.length > 1 ? `Save ${roomEditTargets.length} Rooms` : 'Save'}
           </button>
         </div>
+        </div>
+      </div>
+    )}
+    {roomSaveDroppedFields.length > 0 && (
+      <div
+        role="alert"
+        style={{
+          position: 'fixed',
+          top: 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10002,
+          width: 'min(560px, calc(100vw - 32px))',
+          padding: '12px 14px',
+          borderRadius: 8,
+          border: '1px solid #d97706',
+          background: '#fffbeb',
+          color: '#78350f',
+          boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
+          fontSize: 13,
+          lineHeight: 1.45
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{ fontWeight: 700 }}>
+            {roomSaveDroppedFields.length === 1 ? 'Room saved, but not every field was updated' : `${roomSaveDroppedFields.length} rooms saved, but not every field was updated`}
+          </div>
+          <button className="btn" onClick={() => setRoomSaveDroppedFields([])}>Dismiss</button>
+        </div>
+        <ul style={{ margin: '6px 0 6px 18px', padding: 0 }}>
+          {roomSaveDroppedFields.slice(0, 8).map((entry, idx) => (
+            <li key={`${entry.building}|${entry.room}|${idx}`}>
+              {[entry.building, entry.room].filter(Boolean).join(' ')}: Airtable did not accept {entry.fields.join(', ')}
+              {entry.typeValue && entry.fields.some((field) => /type/i.test(field)) ? ` ("${entry.typeValue}")` : ''}
+            </li>
+          ))}
+          {roomSaveDroppedFields.length > 8 ? <li>and {roomSaveDroppedFields.length - 8} more (see console)</li> : null}
+        </ul>
+        <div>
+          The map shows your edit for now, but those fields were not saved to Airtable and will revert on the next refresh. Other fields saved normally. Choose a value from the list and try again, or contact support.
         </div>
       </div>
     )}
