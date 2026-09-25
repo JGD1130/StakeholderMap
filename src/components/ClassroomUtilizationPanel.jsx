@@ -44,9 +44,9 @@ import {
   computeSizeRangeUtilizationByTerm,
   fetchAirtableRoomsForUtilization,
   buildAirtableAreaMap,
-  isAbortError,
   INDUSTRY_TARGET_TIME_UTILIZATION
 } from '../utils/classroomUtilizationCalc';
+import { isAbortError } from '../utils/fetchWithTimeout';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType, deriveOfficeRoomsFromAirtable } from '../utils/roomTypeSuggestion';
 import {
   buildAirtableDepartmentMap,
@@ -3349,6 +3349,9 @@ function UtilizationResultsSection() {
 // mark here would silently imply a comparison that isn't actually valid.
 // Skipped per this task's own instruction to skip and note why if it
 // doesn't fit cleanly.
+// Same ramp as mfTokens.utilColor(pct) (src/theme/mfTokens.js), which returns
+// the solid-hex equivalent composited over white. This stays rgba() for now
+// because the grid can sit over a tinted background.
 function heatmapCellBackground(pct) {
   const clamped = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
   const alpha = 0.08 + (clamped / 100) * 0.82;

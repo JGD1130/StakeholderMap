@@ -24,6 +24,7 @@ import CapitalPrioritiesPanel from './CapitalPrioritiesPanel.jsx';
 import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './ClassroomUtilizationPanel.jsx';
 import ExecutiveDashboardPanel from './ExecutiveDashboardPanel.jsx';
 import ResearchSpaceClassificationPanel from './ResearchSpaceClassificationPanel.jsx';
+import TokenSwatches from './dev/TokenSwatches.jsx';
 import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import {
   RS_STATUS,
@@ -31216,6 +31217,9 @@ useEffect(() => {
         )}
       </div>
       )}
+
+    {/* Dev aid: design-token swatch sheet, admin page only, and only with ?tokens=1. */}
+    {isAdminMode && <TokenSwatches />}
 
     {(mode === 'admin' || technicalMode) && (
       <>

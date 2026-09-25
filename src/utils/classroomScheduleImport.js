@@ -15,7 +15,7 @@
 // inline in a component closure, not an exported function, and this build
 // step is scoped to new, isolated files only.
 
-import { fetchWithTimeout } from './classroomUtilizationCalc';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 

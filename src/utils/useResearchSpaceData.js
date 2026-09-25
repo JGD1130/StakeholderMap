@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { fetchAirtableRoomsForUtilization, isAbortError } from './classroomUtilizationCalc';
+import { fetchAirtableRoomsForUtilization } from './classroomUtilizationCalc';
+import { isAbortError } from './fetchWithTimeout';
 import { deriveResearchSpaceRoomsFromAirtable } from './researchSpaceRoomScope';
 import { computeRoomFunctionalProfile } from './researchSpaceClassification';
 import { RS_STATUS, buildScopeFloorIndex, deriveRoomStatus } from './researchSpaceStatus';

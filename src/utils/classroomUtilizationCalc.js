@@ -27,6 +27,7 @@
 
 import { canon } from './idUtils';
 import { buildRoomUtilizationMetaKey } from './roomUtilizationMeta';
+import { fetchWithTimeout, isAbortError } from './fetchWithTimeout';
 
 // Static, hardcoded industry-standard reference for Time Utilization --
 // not fetched from Airtable, Firestore, or anywhere external, per Clark's
@@ -132,31 +133,9 @@ export function resolveRoomsUrl() {
   return '/ai/api/rooms';
 }
 
-// A timeout abort surfaces from fetch() as a DOMException whose message is
-// the browser's raw "signal is aborted without reason" -- never user-facing
-// copy. isAbortError() lets callers recognize it; the fetch helpers below
-// rethrow timeouts as an Error with name 'TimeoutError' and a readable message.
-export function isAbortError(error) {
-  return error?.name === 'AbortError' || error?.name === 'TimeoutError';
-}
-
-export async function fetchWithTimeout(url, init = {}, timeoutMs = 60000) {
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort('timeout'), timeoutMs) : null;
-  try {
-    return await fetch(url, { ...init, signal: controller ? controller.signal : undefined });
-  } catch (error) {
-    if (controller?.signal.aborted) {
-      const timeoutError = new Error(`AI server did not respond within ${Math.round(timeoutMs / 1000)}s (it may be waking up).`);
-      timeoutError.name = 'TimeoutError';
-      timeoutError.cause = error;
-      throw timeoutError;
-    }
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
+// Request helper lives in ./fetchWithTimeout.js; re-exported here so existing
+// imports from this module keep working.
+export { fetchWithTimeout, isAbortError };
 
 // Default timeout is 60s, not 20s: the AI server runs on Render's free tier,
 // which commonly takes 30-50s+ to wake from idle (see ExecutiveDashboardPanel's
