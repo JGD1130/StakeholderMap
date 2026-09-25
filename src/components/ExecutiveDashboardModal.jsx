@@ -25,20 +25,21 @@ import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationC
 import { MF } from '../theme/mfTokens';
 import { WorkspaceShell, MfGrid, MfCol, KpiCard, ChartCard, Gauge } from './mf';
 import { mfOnBarButtonStyle } from './mf/mfStyles';
-import { HBarChart, DivergingBars, DivergingLegend, ScoreTable } from './mf/charts';
+import {
+  HBarChart,
+  DivergingBars,
+  DivergingLegend,
+  ScoreTable,
+  PhasingTimeline,
+  ChartLegend,
+  PROJECT_TYPES,
+  classifyProjectType,
+  splitProjectName
+} from './mf/charts';
 
 // The Executive Dashboard is Hastings-only (gated in StakeholderMap.jsx on
 // Hastings' enableCapitalPriorities + enableClassroomUtilization flags).
 const INSTITUTION_NAME = 'Hastings College';
-
-// Legacy chart palette -- used only by the Capital Phasing timeline below,
-// which Phase 2 Step 3 replaces. Everything else here uses mfTokens.
-const COLORS = {
-  label: '#344054',
-  muted: '#667085',
-  border: '#d0d7e2',
-  blue: '#3b82f6'
-};
 
 const MINUS_SIGN = '−';
 
@@ -204,7 +205,7 @@ function pickSizeRangeTable(data) {
 }
 
 function roomSizeRows(table) {
-  return table.buckets.map((b) => {
+  return table.buckets.filter((b) => b.roomCount > 0).map((b) => {
     const label = `${b.start}–${b.end} seats`;
     const rooms = `${b.roomCount} ${b.roomCount === 1 ? 'room' : 'rooms'}`;
     const tooltipRows = [
@@ -225,19 +226,26 @@ function roomSizeRows(table) {
   });
 }
 
+// Empty size ranges are hidden; say so, along with any rooms left out for
+// having no seat count on file.
+function roomSizeFootnote(table) {
+  const unresolved = table.unresolvedCapacityRoomCount || 0;
+  const parts = [];
+  if (unresolved > 0) parts.push(`${unresolved} ${unresolved === 1 ? 'room' : 'rooms'} with no seat count on file not shown.`);
+  if (table.buckets.some((b) => b.roomCount === 0)) parts.push('Size ranges with no classrooms are hidden.');
+  return parts.length ? parts.join(' ') : null;
+}
+
 function RoomSizeCard({ data }) {
   const table = pickSizeRangeTable(data);
-  const hasBars = Boolean(table?.buckets?.length);
-  const unresolved = table?.unresolvedCapacityRoomCount || 0;
+  const hasBars = Boolean(table?.buckets?.some((b) => b.roomCount > 0));
   return (
     <ChartCard
       title="Utilization by Room Size"
       subtitle={table
         ? `${formatTermSubtitle(table.termLabel)} · classroom time utilization by seat capacity`
         : 'Classroom time utilization by seat capacity'}
-      footnote={hasBars && unresolved > 0
-        ? `${unresolved} ${unresolved === 1 ? 'room' : 'rooms'} with no seat count on file not shown.`
-        : null}
+      footnote={hasBars ? roomSizeFootnote(table) : null}
       autoHeight
     >
       {({ width }) => (hasBars ? (
@@ -312,87 +320,68 @@ function tier1Rows(tier1Summary) {
   });
 }
 
-// --- Row 4: legacy Capital Phasing timeline (Phase 2 Step 3 replaces it) ---
-// Unchanged drawing logic; takes the ChartCard's measured `width` in place of
-// its old hard-coded 520 so it draws 1:1 instead of being scaled.
+// --- Row 4: Capital Phasing timeline ----------------------------------------
+// Axis range is unchanged (executiveDashboardCalc.js getPhasingAxisRange, the
+// same rule the card title reads). Each bar spans next phase start ->
+// completion. Rows sort by start date, then building name. Building, project
+// and SF are split out of the workbook's project name for display only.
+function formatMonthYear(value) {
+  return new Date(value).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
 
-// Capital Phasing timeline: one thin bar per near-term project spanning
-// [next phase start -> completion] on a shared date axis, a dashed "Today"
-// marker, endpoint date labels, and yearly ticks between them.
-function PhasingTimelineChart({ width, nearTerm }) {
-  if (!nearTerm.length) {
-    return <div style={{ fontSize: 12, color: MF.ink.muted }}>No near-term projects.</div>;
-  }
-  const rowHeight = 24;
-  const axisX0 = 6;
-  const axisX1 = width - 6;
-  const axisWidth = axisX1 - axisX0;
-  const edgeClearance = 38;
+function phasingRows(nearTerm) {
+  return nearTerm
+    .map((p) => {
+      const { building, project, sf } = splitProjectName(p.projectName);
+      const typeKey = classifyProjectType(p.projectName);
+      const type = PROJECT_TYPES[typeKey];
+      const sfLabel = Number.isFinite(sf) ? `${sf.toLocaleString('en-US')} SF` : null;
+      const start = new Date(p.nextPhaseStart).getTime();
+      const end = new Date(p.completionDate).getTime();
+      const cost = Number(p.escalatedCost);
+      const tooltipRows = [
+        ['Project', project || '—'],
+        ['Type', type.label],
+        ['Schedule', `${formatMonthYear(p.nextPhaseStart)} – ${formatMonthYear(p.completionDate)}`]
+      ];
+      if (sfLabel) tooltipRows.push(['Size', sfLabel]);
+      if (p.escalatedCost != null && Number.isFinite(cost)) tooltipRows.push(['Est. cost (escalated)', formatUsdCompact(cost)]);
+      return {
+        key: p.projectId,
+        building,
+        start,
+        end,
+        typeKey,
+        line1: building,
+        line2: [project, sfLabel].filter(Boolean).join(' · '),
+        color: type.color,
+        tooltip: { title: building, rows: tooltipRows }
+      };
+    })
+    .sort((x, y) => (x.start - y.start) || x.building.localeCompare(y.building));
+}
 
-  const now = new Date();
-  const { minTime, maxTime } = getPhasingAxisRange(nearTerm, now);
-  const span = maxTime - minTime;
-  const xForTime = (ms) => axisX0 + ((ms - minTime) / span) * axisWidth;
-
-  const barsTop = 22;
-  const axisY = barsTop + nearTerm.length * rowHeight + 8;
-  const height = axisY + 30;
-
-  const todayX = xForTime(now.getTime());
-  const showTodayLabel = todayX - axisX0 > edgeClearance && axisX1 - todayX > edgeClearance;
-
-  const minDate = new Date(minTime);
-  const maxDate = new Date(maxTime);
-  const yearTicks = [];
-  for (let yr = minDate.getUTCFullYear() + 1; yr <= maxDate.getUTCFullYear(); yr += 1) {
-    const t = Date.UTC(yr, 0, 1);
-    if (t > minTime && t < maxTime) yearTicks.push(t);
-  }
-
+function PhasingCard({ nearTerm }) {
+  const rows = nearTerm.length ? phasingRows(nearTerm) : [];
+  const legendItems = Object.entries(PROJECT_TYPES)
+    .filter(([key]) => rows.some((r) => r.typeKey === key))
+    .map(([key, t]) => ({ key, label: t.label, color: t.color }));
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
-      {nearTerm.map((p, i) => {
-        const rowY = barsTop + i * rowHeight;
-        const x0 = xForTime(new Date(p.nextPhaseStart).getTime());
-        const x1 = xForTime(new Date(p.completionDate).getTime());
-        return (
-          <React.Fragment key={p.projectId}>
-            <text x={axisX0} y={rowY - 3} fontSize={9.5} fill={COLORS.label}>{p.projectName}</text>
-            <rect x={Math.min(x0, x1)} y={rowY} width={Math.max(x1 - x0, 5)} height={9} rx={2} fill={COLORS.blue} />
-          </React.Fragment>
-        );
-      })}
-
-      <line x1={axisX0} y1={axisY} x2={axisX1} y2={axisY} stroke={COLORS.border} strokeWidth={1} />
-
-      <line x1={todayX} y1={10} x2={todayX} y2={axisY} stroke={COLORS.muted} strokeWidth={1} strokeDasharray="3,3" />
-      {showTodayLabel ? (
-        <text x={todayX} y={9} fontSize={9} fill={COLORS.muted} textAnchor="middle">Today</text>
-      ) : null}
-
-      {yearTicks.map((t) => {
-        const tx = xForTime(t);
-        const showLabel = tx - axisX0 > edgeClearance && axisX1 - tx > edgeClearance;
-        return (
-          <React.Fragment key={t}>
-            <line x1={tx} y1={axisY - 4} x2={tx} y2={axisY + 4} stroke={COLORS.border} strokeWidth={1} />
-            {showLabel ? (
-              <text x={tx} y={axisY + 15} fontSize={9} fill={COLORS.muted} textAnchor="middle">
-                {new Date(t).getUTCFullYear()}
-              </text>
-            ) : null}
-          </React.Fragment>
-        );
-      })}
-
-      <text x={axisX0} y={axisY + 15} fontSize={9} fill={COLORS.muted}>
-        {new Date(minTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-        {minTime === now.getTime() ? ' (today)' : ''}
-      </text>
-      <text x={axisX1} y={axisY + 15} fontSize={9} fill={COLORS.muted} textAnchor="end">
-        {new Date(maxTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-      </text>
-    </svg>
+    <ChartCard title={formatPhasingTitle(nearTerm)} subtitle="Projects with work starting in the next 2 years" autoHeight>
+      {({ width }) => (rows.length ? (
+        <>
+          <ChartLegend items={legendItems} />
+          <PhasingTimeline
+            width={width}
+            rows={rows}
+            range={getPhasingAxisRange(nearTerm, new Date())}
+            ariaLabel={formatPhasingTitle(nearTerm)}
+          />
+        </>
+      ) : (
+        <div style={{ fontSize: 12, color: MF.ink.muted }}>No near-term projects.</div>
+      ))}
+    </ChartCard>
   );
 }
 
@@ -476,13 +465,7 @@ export default function ExecutiveDashboardModal({ data, loading, loadError, onRe
             </MfCol>
 
             <MfCol span={12}>
-              <ChartCard
-                title={formatPhasingTitle(data.phasingSummary.nearTerm)}
-                subtitle="Projects with work starting in the next 2 years"
-                autoHeight
-              >
-                {({ width }) => <PhasingTimelineChart width={width} nearTerm={data.phasingSummary.nearTerm} />}
-              </ChartCard>
+              <PhasingCard nearTerm={data.phasingSummary.nearTerm} />
             </MfCol>
           </>
         ) : null}

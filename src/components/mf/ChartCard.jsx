@@ -32,8 +32,8 @@ export default function ChartCard({ title, subtitle, footnote, actions, minHeigh
       {title || subtitle || actions ? (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            {title ? <div style={{ fontSize: 14, fontWeight: 600, color: MF.ink.primary }}>{title}</div> : null}
-            {subtitle ? <div style={{ marginTop: 2, fontSize: 12, color: MF.ink.muted }}>{subtitle}</div> : null}
+            {title ? <div style={{ fontSize: 15, fontWeight: 700, color: MF.ink.primary }}>{title}</div> : null}
+            {subtitle ? <div style={{ marginTop: 4, fontSize: 12, color: MF.ink.muted }}>{subtitle}</div> : null}
           </div>
           {actions ? <div style={{ flex: '0 0 auto', display: 'flex', gap: 8 }}>{actions}</div> : null}
         </div>
