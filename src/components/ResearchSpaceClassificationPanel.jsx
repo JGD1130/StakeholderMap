@@ -34,6 +34,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import {
   HASTINGS_UNIVERSITY_ID,
   RESEARCH_SPACE_OCCUPANTS_COLLECTION,
@@ -52,10 +53,9 @@ import {
 
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase
 
-// Sampled directly from public/Data/Clark_Enersen_Logo.png -- same constant,
-// duplicated identically, as every other panel in this codebase (not
-// imported from a shared location, matching existing convention).
-const CLARK_ENERSEN_ORANGE = '#f75024';
+// Shared module header color (src/utils/brandColors.js) -- this panel used
+// the undarkened logo orange (#f75024) while every other module used #cb421e.
+const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 
 const ROLE_OPTIONS = ['PI', 'Postdoc', 'Grad Student', 'Staff', 'Other'];
 

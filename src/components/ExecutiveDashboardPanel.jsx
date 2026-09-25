@@ -56,6 +56,7 @@ import {
 } from '../utils/executiveDashboardCalc';
 import ExecutiveDashboardPdfDocument from './ExecutiveDashboardPdfDocument.jsx';
 import ExecutiveDashboardModal from './ExecutiveDashboardModal.jsx';
+import { CE_ORANGE_HEADER } from '../utils/brandColors';
 
 // Mirrors ClassroomUtilizationPanel.jsx's SpaceGrowthSection constants exactly (not
 // exported from that file, so duplicated here per this codebase's existing isolation
@@ -69,18 +70,8 @@ const SPACE_GROWTH_TARGET_YEAR = 2036;
 // UI copy ("next ~2 years") and the calc call always agree.
 const CAPITAL_PHASING_HORIZON_MONTHS = 24;
 
-// Sampled directly from public/Data/Clark_Enersen_Logo.png's ampersand fill
-// (a palette-indexed PNG, decoded pixel-by-pixel rather than eyeballed off
-// the rendered preview -- #f75024 was the dominant exact hex among the
-// logo's orange-ish pixels by a wide margin, 88 px vs. the next-closest
-// variant's 33, the rest being anti-aliasing blends against the dark
-// background). Same isolation convention as this file's other small
-// constants -- duplicated identically in CapitalPrioritiesPanel.jsx and
-// ClassroomUtilizationPanel.jsx's header bars, not imported from a shared
-// location. Darkened ~18% (uniform RGB scale) from the sampled #f75024 for
-// header-bar contrast -- same darkened value duplicated in
-// CapitalPrioritiesPanel.jsx and ClassroomUtilizationPanel.jsx.
-const CLARK_ENERSEN_ORANGE = '#cb421e';
+// Shared module header color -- see src/utils/brandColors.js.
+const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 
 export default function ExecutiveDashboardPanel({
   universityId,

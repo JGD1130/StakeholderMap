@@ -24,7 +24,15 @@
 
 import React from 'react';
 import { formatCapitalPhasingMonthYear } from '../utils/capitalPhasingImport';
-import { formatUsdCompact, formatPct, formatGapSf, formatTier1CapitalNeed } from '../utils/executiveDashboardCalc';
+import {
+  formatUsdCompact,
+  formatPct,
+  formatGapSf,
+  formatTier1CapitalNeed,
+  formatTermSubtitle,
+  getPhasingAxisRange,
+  formatPhasingTitle
+} from '../utils/executiveDashboardCalc';
 import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationCalc';
 
 // Shared semantic palette -- reuses the exact hexes already in use elsewhere
@@ -153,7 +161,22 @@ function describeArc(cx, cy, r, startAngle, endAngle) {
 }
 const GAUGE_SEGMENT_DEG = 180 / GAUGE_BAND_COLORS.length;
 
-function Gauge({ label, pct, sublabel, targetPct }) {
+// Small "Current" pill after a gauge's term subtitle. Colors come from the
+// gauge's own blue ramp (lightest band fill, heat map base blue for text).
+const CURRENT_PILL_STYLE = {
+  display: 'inline-block',
+  marginLeft: 6,
+  padding: '1px 6px',
+  borderRadius: 999,
+  fontSize: 10,
+  fontWeight: 700,
+  lineHeight: '14px',
+  color: '#2563eb',
+  background: GAUGE_BAND_COLORS[0],
+  verticalAlign: 'middle'
+};
+
+function Gauge({ label, subtitle, isCurrent, pct, targetPct }) {
   const hasValue = Number.isFinite(pct);
   const value = hasValue ? Math.max(0, Math.min(pct, 100)) / 100 : 0;
   const angle = -90 + value * 180;
@@ -184,8 +207,14 @@ function Gauge({ label, pct, sublabel, targetPct }) {
           textTransform: uppercase reproduces .mf-gauge-title's literal
           ALL-CAPS content ("OFFICE OCCUPANCY") as a style rather than
           hardcoding this label's own string uppercase. */}
-      <div style={{ marginBottom: 4, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', color: '#666', textAlign: 'center', textTransform: 'uppercase' }}>{label}</div>
-      <svg width="100%" viewBox="0 0 200 130" style={{ maxWidth: 170 }} aria-label={label}>
+      <div style={{ marginBottom: subtitle ? 2 : 4, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', color: '#666', textAlign: 'center', textTransform: 'uppercase' }}>{label}</div>
+      {subtitle ? (
+        <div style={{ marginBottom: 4, fontSize: 12, color: '#777', textAlign: 'center' }}>
+          {subtitle}
+          {isCurrent ? <span style={CURRENT_PILL_STYLE}>Current</span> : null}
+        </div>
+      ) : null}
+      <svg width="100%" viewBox="0 0 200 130" style={{ maxWidth: 170 }} aria-label={subtitle ? `${label}, ${subtitle}` : label}>
         {/* 8 segments, butt caps (not round) -- round caps on every
             segment boundary would show visible bulges/gaps between
             adjacent stops; butt caps butt cleanly against each other so
@@ -208,18 +237,27 @@ function Gauge({ label, pct, sublabel, targetPct }) {
         {hasTarget ? (() => {
           const tickInner = polarToCartesian(100, 110, 70, targetAngle);
           const tickOuter = polarToCartesian(100, 110, 94, targetAngle);
+          // Label just past the tick's outer end, anchored away from the
+          // arc's center so it never sits on the band.
+          const labelPos = polarToCartesian(100, 110, 100, targetAngle);
+          const labelAnchor = targetAngle > 5 ? 'start' : targetAngle < -5 ? 'end' : 'middle';
           return (
-            <line
-              x1={tickInner.x}
-              y1={tickInner.y}
-              x2={tickOuter.x}
-              y2={tickOuter.y}
-              stroke="#1d2939"
-              strokeWidth="3"
-              strokeLinecap="round"
-            >
-              <title>{`Industry Target: ${Math.round(targetPct)}%`}</title>
-            </line>
+            <>
+              <line
+                x1={tickInner.x}
+                y1={tickInner.y}
+                x2={tickOuter.x}
+                y2={tickOuter.y}
+                stroke="#1d2939"
+                strokeWidth="3"
+                strokeLinecap="round"
+              >
+                <title>{`Industry Target: ${Math.round(targetPct)}%`}</title>
+              </line>
+              <text x={labelPos.x + (labelAnchor === 'start' ? 2 : labelAnchor === 'end' ? -2 : 0)} y={labelPos.y} fontSize="10" fill="#1d2939" textAnchor={labelAnchor}>
+                {`${Math.round(targetPct)}% target`}
+              </text>
+            </>
           );
         })() : null}
         {hasValue ? (
@@ -228,9 +266,8 @@ function Gauge({ label, pct, sublabel, targetPct }) {
             <circle cx="0" cy="0" r="6" fill="#222" />
           </g>
         ) : null}
-        <text x="20" y="125" fontSize="11" fill="#666">low</text>
-        <text x="92" y="20" fontSize="11" fill="#666">mid</text>
-        <text x="168" y="125" fontSize="11" fill="#666">high</text>
+        <text x="20" y="125" fontSize="11" fill="#666" textAnchor="middle">0%</text>
+        <text x="180" y="125" fontSize="11" fill="#666" textAnchor="middle">100%</text>
         {/* Opaque backing plate behind the value readout, drawn AFTER the
             needle so it sits visually in front. Root cause (confirmed by
             actually rendering this gauge headless at several pct values,
@@ -253,11 +290,6 @@ function Gauge({ label, pct, sublabel, targetPct }) {
           {hasValue ? formatPct(pct) : '--'}
         </text>
       </svg>
-      {/* Matches .mf-gauge-meta (margin-top: -6px, pulled tight under the
-          arc) + .muted (12px/#777) exactly -- a prior version used 10.5px/
-          COLORS.muted (#667085) and a positive margin, neither of which
-          was ever actually checked against the reference's real CSS. */}
-      {sublabel ? <div style={{ marginTop: -6, fontSize: 12, color: '#777' }}>{sublabel}</div> : null}
     </div>
   );
 }
@@ -287,10 +319,11 @@ function GaugeRow({ data }) {
       {data.campusRollups.map((c) => (
         <Gauge
           key={c.termId}
-          label={`Time Utilization — ${c.termLabel}`}
+          label="Classroom Time Utilization"
+          subtitle={formatTermSubtitle(c.termLabel)}
+          isCurrent={data.currentTerm.termId === c.termId}
           pct={c.timeUtilizationPct}
           targetPct={INDUSTRY_TARGET_TIME_UTILIZATION * 100}
-          sublabel={data.currentTerm.termId === c.termId ? 'Current term' : null}
         />
       ))}
     </div>
@@ -392,8 +425,11 @@ function SpaceGapCard({ buckets, airtableFetchFailed }) {
 function PhasingTimelineCard({ nearTerm }) {
   return (
     <div style={cardShellStyle({ background: COLORS.neutralTint })}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.heading, marginBottom: 8 }}>
-        Capital Phasing Timeline (Next ~2 Years)
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.heading, marginBottom: 2 }}>
+        {formatPhasingTitle(nearTerm)}
+      </div>
+      <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 8 }}>
+        Projects with work starting in the next 2 years
       </div>
       {!nearTerm.length ? (
         <div style={{ fontSize: 11, color: COLORS.muted }}>No near-term projects.</div>
@@ -407,10 +443,7 @@ function PhasingTimelineCard({ nearTerm }) {
           const edgeClearance = 38;
 
           const now = new Date();
-          const starts = nearTerm.map((p) => new Date(p.nextPhaseStart).getTime());
-          const ends = nearTerm.map((p) => new Date(p.completionDate).getTime());
-          const minTime = Math.min(now.getTime(), ...starts);
-          const maxTime = Math.max(...ends, minTime + 1);
+          const { minTime, maxTime } = getPhasingAxisRange(nearTerm, now);
           const span = maxTime - minTime;
           const xForTime = (ms) => axisX0 + ((ms - minTime) / span) * axisWidth;
 

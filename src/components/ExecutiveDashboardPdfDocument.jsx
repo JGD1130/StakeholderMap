@@ -35,7 +35,16 @@
 
 import React from 'react';
 import { Document, Page, View, Text, Svg, G, Line, Rect, Path, Circle, StyleSheet } from '@react-pdf/renderer';
-import { formatUsdCompact, formatPct, formatGapSf, formatTier1CapitalNeed } from '../utils/executiveDashboardCalc';
+import {
+  formatUsdCompact,
+  formatPct,
+  formatGapSf,
+  formatTier1CapitalNeed,
+  formatTermSubtitle,
+  getPhasingAxisRange,
+  formatPhasingTitle
+} from '../utils/executiveDashboardCalc';
+import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationCalc';
 
 const COLORS = {
   heading: '#1d2939',
@@ -175,18 +184,36 @@ function describeArc(cx, cy, r, startAngle, endAngle) {
 }
 const GAUGE_SEGMENT_DEG = 180 / GAUGE_BAND_COLORS.length;
 
-function Gauge({ label, pct, sublabel, width }) {
+function Gauge({ label, subtitle, isCurrent, pct, targetPct, width }) {
   const svgW = width;
   const svgH = svgW * 0.65; // matches the reference's own 200x130 aspect ratio (130/200 = 0.65)
   const hasValue = Number.isFinite(pct);
   const value = hasValue ? Math.max(0, Math.min(pct, 100)) / 100 : 0;
   const angle = -90 + value * 180;
+  // Industry Target tick + label -- same geometry as ExecutiveDashboardModal.jsx's
+  // live gauge (tick crosses the band at radius 70-94, label just past it).
+  const hasTarget = Number.isFinite(targetPct);
+  const targetAngle = hasTarget ? -90 + (Math.max(0, Math.min(targetPct, 100)) / 100) * 180 : null;
+  const tickInner = hasTarget ? polarToCartesian(100, 110, 70, targetAngle) : null;
+  const tickOuter = hasTarget ? polarToCartesian(100, 110, 94, targetAngle) : null;
+  const labelPos = hasTarget ? polarToCartesian(100, 110, 100, targetAngle) : null;
+  const labelAnchor = !hasTarget ? 'middle' : targetAngle > 5 ? 'start' : targetAngle < -5 ? 'end' : 'middle';
 
   return (
     <View style={[styles.card, { width, alignItems: 'center' }]}>
-      <Text style={{ fontSize: 12, fontFamily: 'Helvetica-Bold', letterSpacing: 0.04, color: '#666666', textAlign: 'center', textTransform: 'uppercase', marginBottom: 4 }}>
+      <Text style={{ fontSize: 12, fontFamily: 'Helvetica-Bold', letterSpacing: 0.04, color: '#666666', textAlign: 'center', textTransform: 'uppercase', marginBottom: subtitle ? 2 : 4 }}>
         {label}
       </Text>
+      {subtitle ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+          <Text style={{ fontSize: 10, color: '#777777' }}>{subtitle}</Text>
+          {isCurrent ? (
+            <Text style={{ marginLeft: 5, paddingVertical: 1, paddingHorizontal: 5, borderRadius: 6, fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#2563eb', backgroundColor: GAUGE_BAND_COLORS[0] }}>
+              Current
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
       <Svg width={svgW} height={svgH} viewBox="0 0 200 130">
         {/* 8 segments, butt caps (not round) -- matches
             ExecutiveDashboardModal.jsx's live gauge: round caps on every
@@ -200,15 +227,22 @@ function Gauge({ label, pct, sublabel, width }) {
             <Path key={color} d={describeArc(100, 110, 80, segStart, segEnd)} stroke={hasValue ? color : COLORS.track} strokeWidth={16} strokeLinecap="butt" fill="none" />
           );
         })}
+        {hasTarget ? (
+          <G>
+            <Line x1={tickInner.x} y1={tickInner.y} x2={tickOuter.x} y2={tickOuter.y} stroke="#1d2939" strokeWidth={3} strokeLinecap="round" />
+            <Text x={labelPos.x + (labelAnchor === 'start' ? 2 : labelAnchor === 'end' ? -2 : 0)} y={labelPos.y} fontSize={10} fill="#1d2939" textAnchor={labelAnchor}>
+              {`${Math.round(targetPct)}% target`}
+            </Text>
+          </G>
+        ) : null}
         {hasValue ? (
           <G transform={`translate(100 110) rotate(${angle})`}>
             <Line x1={0} y1={0} x2={0} y2={-70} stroke="#222222" strokeWidth={3} />
             <Circle cx={0} cy={0} r={6} fill="#222222" />
           </G>
         ) : null}
-        <Text x={20} y={125} fontSize={11} fill="#666666">low</Text>
-        <Text x={92} y={20} fontSize={11} fill="#666666">mid</Text>
-        <Text x={168} y={125} fontSize={11} fill="#666666">high</Text>
+        <Text x={20} y={125} fontSize={11} fill="#666666" textAnchor="middle">0%</Text>
+        <Text x={180} y={125} fontSize={11} fill="#666666" textAnchor="middle">100%</Text>
         {/* Opaque backing plate behind the value readout -- identical fix
             to ExecutiveDashboardModal.jsx's live gauge (see that file's
             Gauge component for the full root-cause explanation: the needle
@@ -221,7 +255,6 @@ function Gauge({ label, pct, sublabel, width }) {
           {hasValue ? formatPct(pct) : '--'}
         </Text>
       </Svg>
-      {sublabel ? <Text style={{ marginTop: -6, fontSize: 12, color: '#777777' }}>{sublabel}</Text> : null}
     </View>
   );
 }
@@ -241,9 +274,11 @@ function GaugeRow({ data }) {
       {data.campusRollups.map((c) => (
         <Gauge
           key={c.termId}
-          label={`Time Utilization — ${c.termLabel}`}
+          label="Classroom Time Utilization"
+          subtitle={formatTermSubtitle(c.termLabel)}
+          isCurrent={data.currentTerm.termId === c.termId}
           pct={c.timeUtilizationPct}
-          sublabel={data.currentTerm.termId === c.termId ? 'Current term' : null}
+          targetPct={INDUSTRY_TARGET_TIME_UTILIZATION * 100}
           width={width}
         />
       ))}
@@ -322,10 +357,7 @@ function PhasingTimelineChart({ nearTerm }) {
   const edgeClearance = 32;
 
   const now = new Date();
-  const starts = nearTerm.map((p) => new Date(p.nextPhaseStart).getTime());
-  const ends = nearTerm.map((p) => new Date(p.completionDate).getTime());
-  const minTime = Math.min(now.getTime(), ...starts);
-  const maxTime = Math.max(...ends, minTime + 1);
+  const { minTime, maxTime } = getPhasingAxisRange(nearTerm, now);
   const span = maxTime - minTime;
   const xForTime = (ms) => axisX0 + ((ms - minTime) / span) * axisWidth;
 
@@ -392,9 +424,10 @@ function PhasingTimelineChart({ nearTerm }) {
 function PhasingTimelineCard({ nearTerm }) {
   return (
     <View style={[styles.card, { backgroundColor: COLORS.neutralTint, marginTop: 8 }]}>
-      <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: COLORS.heading, marginBottom: 6 }}>
-        Capital Phasing Timeline (Next ~2 Years)
+      <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: COLORS.heading, marginBottom: 2 }}>
+        {formatPhasingTitle(nearTerm)}
       </Text>
+      <Text style={[styles.mutedLine, { marginBottom: 6 }]}>Projects with work starting in the next 2 years</Text>
       {!nearTerm.length ? <Text style={styles.mutedLine}>No near-term projects.</Text> : <PhasingTimelineChart nearTerm={nearTerm} />}
     </View>
   );
@@ -443,7 +476,7 @@ export default function ExecutiveDashboardPdfDocument({ data }) {
         </View>
 
         <View style={styles.section} wrap={false}>
-          <Text style={styles.sectionHeading}>Time Utilization</Text>
+          <Text style={styles.sectionHeading}>Classroom Utilization</Text>
           <GaugeRow data={data} />
         </View>
 

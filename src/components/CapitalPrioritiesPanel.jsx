@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import { firstCurrencyValue } from '../utils/currency';
+import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import {
   CAPITAL_PHASING_SHEET_NAME,
   parseCapitalPhasingFile,
@@ -35,17 +36,8 @@ import {
 // is 500 ops/batch, kept comfortably under that.
 const CAPITAL_PHASING_BATCH_CHUNK_SIZE = 400;
 
-// Sampled directly from public/Data/Clark_Enersen_Logo.png's ampersand fill
-// (a palette-indexed PNG, decoded pixel-by-pixel rather than eyeballed off
-// the rendered preview -- #f75024 was the dominant exact hex among the
-// logo's orange-ish pixels by a wide margin). Same isolation convention as
-// this file's other small constants -- duplicated identically in
-// ExecutiveDashboardPanel.jsx and ClassroomUtilizationPanel.jsx's header
-// bars, not imported from a shared location. Darkened ~18% (uniform RGB
-// scale) from the sampled #f75024 for header-bar contrast -- same darkened
-// value duplicated in ExecutiveDashboardPanel.jsx and
-// ClassroomUtilizationPanel.jsx.
-const CLARK_ENERSEN_ORANGE = '#cb421e';
+// Shared module header color -- see src/utils/brandColors.js.
+const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 
 const SCORE_FIELDS = [
   {
@@ -1337,12 +1329,11 @@ export default function CapitalPrioritiesPanel({
         open={panelOpen}
         onToggle={(event) => setPanelOpen(event.currentTarget.open)}
       >
-        {/* Clark & Enersen orange, sampled directly from
-            public/Data/Clark_Enersen_Logo.png's ampersand fill (a palette-
-            indexed PNG decoded pixel-by-pixel, not eyeballed) -- same exact
-            hex ExecutiveDashboardPanel.jsx/ClassroomUtilizationPanel.jsx use
-            for their own header bars. */}
-        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#fff', background: CLARK_ENERSEN_ORANGE, padding: '6px 8px', borderRadius: 6 }}>
+        {/* Shared module header orange (brandColors.js). The native
+            disclosure triangle is hidden (.mf-module-summary in
+            StakeholderMap.css) in favor of an explicit ▸/▾ caret. */}
+        <summary className="mf-module-summary" style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#fff', background: CLARK_ENERSEN_ORANGE, padding: '6px 8px', borderRadius: 6 }}>
+          <span aria-hidden="true" style={{ display: 'inline-block', width: 12, marginRight: 4 }}>{panelOpen ? '▾' : '▸'}</span>
           {title}
         </summary>
 

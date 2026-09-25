@@ -56,22 +56,15 @@ import {
 import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../utils/enrollmentProjectionsImport';
 import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
 import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget, getMasterPlanOfficeSpaceTarget } from '../utils/masterPlanSpaceTargets';
+import { CE_ORANGE_HEADER } from '../utils/brandColors';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
 
-// Sampled directly from public/Data/Clark_Enersen_Logo.png's ampersand fill
-// (a palette-indexed PNG, decoded pixel-by-pixel rather than eyeballed off
-// the rendered preview -- #f75024 was the dominant exact hex among the
-// logo's orange-ish pixels by a wide margin). Same isolation convention as
-// this file's other small constants -- duplicated identically in
-// ExecutiveDashboardPanel.jsx and CapitalPrioritiesPanel.jsx's header bars,
-// not imported from a shared location. Used by both panel titles this file
-// exports (ClassroomUtilizationPanel and SpaceGrowthProjectionsPanel).
-// Darkened ~18% (uniform RGB scale) from the sampled #f75024 for header-bar
-// contrast -- same darkened value duplicated in ExecutiveDashboardPanel.jsx
-// and CapitalPrioritiesPanel.jsx.
-const CLARK_ENERSEN_ORANGE = '#cb421e';
+// Shared module header color (src/utils/brandColors.js). Used by both panel
+// titles this file exports (ClassroomUtilizationPanel and
+// SpaceGrowthProjectionsPanel).
+const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 
 function summarizeDocs(docs) {
   const rooms = new Set();

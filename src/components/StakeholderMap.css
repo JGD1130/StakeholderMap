@@ -1006,3 +1006,8 @@
 }
 .map-controls-panel button:not(.btn):active { transform: translateY(1px); }
 
+/* Admin module header <summary>: hide the native disclosure triangle; the
+   component renders its own ▸/▾ caret. Only applies where this class is set. */
+.mf-module-summary { list-style: none; }
+.mf-module-summary::-webkit-details-marker { display: none; }
+

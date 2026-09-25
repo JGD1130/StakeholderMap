@@ -42,6 +42,36 @@ export function formatPct(value) {
   return Number.isFinite(value) ? `${Math.round(value)}%` : '—';
 }
 
+// Gauge subtitle from a term label: "Fall 2026 Block 1" / "Fall 2026 - Block 1"
+// -> "Fall 2026 · Block 1". Labels without a "Block N" part pass through as-is.
+export function formatTermSubtitle(termLabel) {
+  const label = String(termLabel || '').trim();
+  return label.replace(/\s*[-–—:·]?\s*(block\s*\d+)\s*$/i, ' · $1');
+}
+
+// Date axis shared by the Capital Phasing timeline on screen and in the PDF:
+// earliest of today and every project's next phase start, to the latest
+// completion. The card title reads its years from this same range, so the
+// title and the axis can't disagree.
+export function getPhasingAxisRange(nearTerm, now = new Date()) {
+  const starts = nearTerm.map((p) => new Date(p.nextPhaseStart).getTime());
+  const ends = nearTerm.map((p) => new Date(p.completionDate).getTime());
+  const minTime = Math.min(now.getTime(), ...starts);
+  const maxTime = Math.max(...ends, minTime + 1);
+  return { minTime, maxTime };
+}
+
+// "Capital Phasing, 2026–2031" (en dash); a single year when the range stays
+// within one year; plain "Capital Phasing" when there's nothing to plot.
+export function formatPhasingTitle(nearTerm, now = new Date()) {
+  if (!Array.isArray(nearTerm) || !nearTerm.length) return 'Capital Phasing';
+  const { minTime, maxTime } = getPhasingAxisRange(nearTerm, now);
+  const startYear = new Date(minTime).getUTCFullYear();
+  const endYear = new Date(maxTime).getUTCFullYear();
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) return 'Capital Phasing';
+  return startYear === endYear ? `Capital Phasing, ${startYear}` : `Capital Phasing, ${startYear}–${endYear}`;
+}
+
 export function formatGapSf(value) {
   if (!Number.isFinite(value)) return '—';
   const rounded = Math.round(value);
