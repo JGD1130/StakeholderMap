@@ -27,6 +27,7 @@
 
 import { computeCapitalPhasingSchedule } from './capitalPhasingImport';
 import { firstCurrencyValue } from './currency';
+import { bucketRangeForCapacity } from './classroomUtilizationCalc';
 
 export function formatUsdCompact(value) {
   // null/'' must not become "$0" -- Number(null) is 0.
@@ -253,14 +254,22 @@ export function computeDivisionSpaceGapSummary({
     divisionByDepartment.set(department, division);
   });
 
-  const divisionAgg = new Map(); // division -> { gapSum, categoriesIncluded, categoriesExcluded }
+  // currentSF / needSF sum over exactly the rows that feed gapSum, so
+  // currentSF - needSF === gapTarget for every division (display-only
+  // additions for the dashboard tooltip; gapTarget itself is unchanged).
+  const divisionAgg = new Map(); // division -> { gapSum, currentSfSum, needSfSum, categoriesIncluded, categoriesExcluded }
   (Array.isArray(departmentRows) ? departmentRows : []).forEach((row) => {
     const division = divisionByDepartment.get(row.department);
     if (!division) return; // no known division for this department -- defensive only, see header comment
-    if (!divisionAgg.has(division)) divisionAgg.set(division, { division, gapSum: 0, categoriesIncluded: 0, categoriesExcluded: 0 });
+    if (!divisionAgg.has(division)) {
+      divisionAgg.set(division, { division, gapSum: 0, currentSfSum: 0, needSfSum: 0, categoriesIncluded: 0, categoriesExcluded: 0 });
+    }
     const agg = divisionAgg.get(division);
     if (row.gapTarget != null) {
+      const currentSF = Number(row.currentSF) || 0;
       agg.gapSum += row.gapTarget;
+      agg.currentSfSum += currentSF;
+      agg.needSfSum += currentSF - row.gapTarget;
       agg.categoriesIncluded += 1;
     } else {
       agg.categoriesExcluded += 1;
@@ -271,6 +280,8 @@ export function computeDivisionSpaceGapSummary({
     .map((d) => ({
       label: d.division,
       gapTarget: d.categoriesIncluded > 0 ? d.gapSum : null,
+      currentSF: d.categoriesIncluded > 0 ? d.currentSfSum : null,
+      needSF: d.categoriesIncluded > 0 ? d.needSfSum : null,
       categoriesIncluded: d.categoriesIncluded,
       categoriesExcluded: d.categoriesExcluded
     }))
@@ -297,4 +308,40 @@ export function computeInstitutionWideSpaceGapTotal(institutionRows) {
     categoriesIncluded: withGap.length,
     categoriesExcluded: rows.length - withGap.length
   };
+}
+
+// Time utilization per classroom size range, for the dashboard's "Utilization
+// by Room Size" chart. Additive only: takes the size-range tables exactly as
+// classroomUtilizationCalc.js's computeSizeRangeUtilizationByTerm returns them
+// (same 10-seat buckets, room counts, seat utilization -- none of it
+// re-derived) and adds each bucket's hours-weighted Time Utilization:
+// sum weeklyHoursUsed / sum standardWeeklyHoursAvailable over that bucket's
+// rooms -- the same weighting the campus rollup (the dashboard gauges) uses.
+//
+// rooms: computeClassroomUtilization(...).rooms -- the same room+term rows
+// computeSizeRangeUtilizationByTerm buckets internally. Rooms with unknown
+// capacity are skipped here too (that function counts them separately as
+// unresolvedCapacityRoomCount). A bucket with no rooms gets null.
+export function addTimeUtilizationToSizeRanges({ sizeRangeTables, rooms }) {
+  const hoursByKey = new Map(); // `${termId}||${bucketStart}` -> { used, available }
+  (Array.isArray(rooms) ? rooms : []).forEach((r) => {
+    if (r?.capacity == null) return;
+    const { start } = bucketRangeForCapacity(r.capacity);
+    const key = `${r.termId}||${start}`;
+    if (!hoursByKey.has(key)) hoursByKey.set(key, { used: 0, available: 0 });
+    const acc = hoursByKey.get(key);
+    acc.used += Number(r.weeklyHoursUsed) || 0;
+    acc.available += Number(r.standardWeeklyHoursAvailable) || 0;
+  });
+
+  return (Array.isArray(sizeRangeTables) ? sizeRangeTables : []).map((table) => ({
+    ...table,
+    buckets: table.buckets.map((bucket) => {
+      const acc = bucket.roomCount > 0 ? hoursByKey.get(`${table.termId}||${bucket.start}`) : null;
+      return {
+        ...bucket,
+        timeUtilizationPct: acc && acc.available > 0 ? (acc.used / acc.available) * 100 : null
+      };
+    })
+  }));
 }

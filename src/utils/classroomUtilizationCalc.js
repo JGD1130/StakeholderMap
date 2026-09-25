@@ -936,7 +936,7 @@ export function computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs }) {
 // Kiewit's SPC, which has no Airtable counterpart by design) are excluded
 // from every bucket rather than guessed into one, and counted separately
 // per term so the exclusion is visible, not silent.
-function bucketRangeForCapacity(capacity) {
+export function bucketRangeForCapacity(capacity) {
   const index = Math.floor((capacity - 1) / 10);
   const start = (index * 10) + 1;
   const end = start + 9;

@@ -16,7 +16,6 @@
 import React from 'react';
 import {
   formatUsdCompact,
-  formatGapSf,
   formatTier1CapitalNeed,
   formatTermSubtitle,
   getPhasingAxisRange,
@@ -26,23 +25,19 @@ import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationC
 import { MF } from '../theme/mfTokens';
 import { WorkspaceShell, MfGrid, MfCol, KpiCard, ChartCard, Gauge } from './mf';
 import { mfOnBarButtonStyle } from './mf/mfStyles';
+import { HBarChart, DivergingBars, DivergingLegend, ScoreTable } from './mf/charts';
 
 // The Executive Dashboard is Hastings-only (gated in StakeholderMap.jsx on
 // Hastings' enableCapitalPriorities + enableClassroomUtilization flags).
 const INSTITUTION_NAME = 'Hastings College';
 
-// Legacy chart palette -- used only by the three charts below that Phase 2
-// Step 2 replaces. The KPI area no longer uses any of it.
+// Legacy chart palette -- used only by the Capital Phasing timeline below,
+// which Phase 2 Step 3 replaces. Everything else here uses mfTokens.
 const COLORS = {
-  heading: '#1d2939',
   label: '#344054',
   muted: '#667085',
   border: '#d0d7e2',
-  cardBorder: '#edf2f7',
-  blue: '#3b82f6',
-  red: '#dc2626',
-  amber: '#d97706',
-  green: '#15803d'
+  blue: '#3b82f6'
 };
 
 const MINUS_SIGN = '−';
@@ -56,6 +51,15 @@ function formatSignedSf(value) {
   const rounded = Math.round(value);
   if (rounded === 0) return '0 SF';
   return `${rounded < 0 ? MINUS_SIGN : '+'}${Math.abs(rounded).toLocaleString('en-US')} SF`;
+}
+
+// Unsigned square feet: "43,120 SF".
+function formatSf(value) {
+  return `${Math.round(value).toLocaleString('en-US')} SF`;
+}
+
+function formatPctValue(pct) {
+  return `${Math.round(pct)}%`;
 }
 
 // "A, B, C +2 more"
@@ -190,70 +194,127 @@ function GaugeRow({ data }) {
   );
 }
 
-// --- Rows 3-4: legacy charts (Phase 2 Step 2 replaces these) ---------------
-// Unchanged drawing logic; each now takes the ChartCard's measured `width`
-// in place of its old hard-coded 520 so it draws 1:1 instead of being scaled
-// (at the new full width, scaling would have blown the text up ~2x).
+// --- Row 2 (right): utilization by room size --------------------------------
+// The Classroom Size Range section's own 10-seat buckets for the current term
+// (falling back to the first term), smallest at top, with time utilization
+// added by executiveDashboardCalc.js's addTimeUtilizationToSizeRanges.
+function pickSizeRangeTable(data) {
+  const tables = Array.isArray(data.sizeRangeByTerm) ? data.sizeRangeByTerm : [];
+  return tables.find((t) => t.termId === data.currentTerm?.termId) || tables[0] || null;
+}
 
-// Space Gap by Division: diverging (signed) bars -- gapTarget's sign is
-// load-bearing (shortage vs. surplus, see spaceGrowthCalc.js). Exactly the 3
-// real academic divisions.
-//
-// airtableFetchFailed: an empty `buckets` array is ambiguous on its own --
-// it's also what a failed Airtable fetch produces (a Render cold start once
-// emptied this card on a board-facing load), so runCalculation threads the
-// distinction through explicitly.
-function SpaceGapChart({ width, buckets, airtableFetchFailed }) {
-  if (!buckets.length) {
-    return (
-      <div style={{ fontSize: 12, color: MF.ink.muted }}>
-        {airtableFetchFailed
-          ? 'Space data is still loading -- click Recalculate to try again.'
-          : 'No division-level gaps available.'}
-      </div>
-    );
-  }
-  const rowHeight = 34;
-  const centerX = width / 2;
-  const halfWidth = width / 2 - 70;
-  const barHeight = 14;
-  const maxAbsGap = Math.max(...buckets.filter((b) => b.gapTarget != null).map((b) => Math.abs(b.gapTarget)), 1);
-  const height = rowHeight * buckets.length;
+function roomSizeRows(table) {
+  return table.buckets.map((b) => {
+    const label = `${b.start}–${b.end} seats`;
+    const rooms = `${b.roomCount} ${b.roomCount === 1 ? 'room' : 'rooms'}`;
+    const tooltipRows = [
+      ['Rooms', String(b.roomCount)],
+      ['Time utilization', Number.isFinite(b.timeUtilizationPct) ? formatPctValue(b.timeUtilizationPct) : '—']
+    ];
+    if (Number.isFinite(b.seatUtilizationPct)) {
+      tooltipRows.push(['Seat utilization', formatPctValue(b.seatUtilizationPct)]);
+    }
+    return {
+      key: b.label,
+      label,
+      value: Number.isFinite(b.timeUtilizationPct) ? b.timeUtilizationPct : null,
+      valueLabel: Number.isFinite(b.timeUtilizationPct) ? formatPctValue(b.timeUtilizationPct) : '—',
+      countLabel: rooms,
+      tooltip: { title: label, rows: tooltipRows }
+    };
+  });
+}
 
+function RoomSizeCard({ data }) {
+  const table = pickSizeRangeTable(data);
+  const hasBars = Boolean(table?.buckets?.length);
+  const unresolved = table?.unresolvedCapacityRoomCount || 0;
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
-      <line x1={centerX} y1={0} x2={centerX} y2={height - 8} stroke={COLORS.border} strokeWidth={1} />
-      {buckets.map((b, i) => {
-        const rowY = i * rowHeight;
-        const barY = rowY + 12;
-        return (
-          <React.Fragment key={b.label}>
-            <text x={4} y={rowY + 9} fontSize={10.5} fill={COLORS.label}>{b.label}</text>
-            {b.gapTarget == null ? (
-              <text x={width - 4} y={barY + barHeight - 3} fontSize={10.5} fill={COLORS.muted} textAnchor="end">No data</text>
-            ) : (
-              (() => {
-                const isShortage = b.gapTarget < 0;
-                const magnitude = (Math.abs(b.gapTarget) / maxAbsGap) * halfWidth;
-                const barX = isShortage ? centerX - magnitude : centerX;
-                const barWidth = Math.max(magnitude, 3);
-                const valueX = isShortage ? centerX - magnitude - 6 : centerX + magnitude + 6;
-                return (
-                  <>
-                    <rect x={barX} y={barY} width={barWidth} height={barHeight} rx={2} fill={isShortage ? COLORS.red : COLORS.green} />
-                    <text x={valueX} y={barY + barHeight - 3} fontSize={10.5} fontWeight={700} fill={COLORS.heading} textAnchor={isShortage ? 'end' : 'start'}>
-                      {formatGapSf(b.gapTarget)}
-                    </text>
-                  </>
-                );
-              })()
-            )}
-          </React.Fragment>
-        );
-      })}
-    </svg>
+    <ChartCard
+      title="Utilization by Room Size"
+      subtitle={table
+        ? `${formatTermSubtitle(table.termLabel)} · classroom time utilization by seat capacity`
+        : 'Classroom time utilization by seat capacity'}
+      footnote={hasBars && unresolved > 0
+        ? `${unresolved} ${unresolved === 1 ? 'room' : 'rooms'} with no seat count on file not shown.`
+        : null}
+      autoHeight
+    >
+      {({ width }) => (hasBars ? (
+        <HBarChart
+          width={width}
+          rows={roomSizeRows(table)}
+          target={INDUSTRY_TARGET_TIME_UTILIZATION}
+          color={MF.util.base}
+          ariaLabel={`Classroom time utilization by seat capacity, ${formatTermSubtitle(table.termLabel)}`}
+        />
+      ) : (
+        <div style={{ fontSize: 12, color: MF.ink.muted }}>No classrooms with a known seat count were scheduled this term.</div>
+      ))}
+    </ChartCard>
   );
 }
+
+// --- Row 3 (left): space gap by division -----------------------------------
+// Largest deficit first; divisions with no resolvable gap sort last.
+function spaceGapRows(buckets, targetYear) {
+  return [...buckets]
+    .sort((a, b) => {
+      const av = Number.isFinite(a.gapTarget) ? a.gapTarget : Infinity;
+      const bv = Number.isFinite(b.gapTarget) ? b.gapTarget : Infinity;
+      return av - bv;
+    })
+    .map((b) => {
+      const rows = [
+        ['Existing', Number.isFinite(b.currentSF) ? formatSf(b.currentSF) : '—'],
+        [`${targetYear} need`, Number.isFinite(b.needSF) ? formatSf(b.needSF) : '—'],
+        ['Gap', Number.isFinite(b.gapTarget) ? formatSignedSf(b.gapTarget) : 'No data']
+      ];
+      if (b.categoriesExcluded > 0) {
+        rows.push(['Not included', `${b.categoriesExcluded} ${b.categoriesExcluded === 1 ? 'category' : 'categories'} without data`]);
+      }
+      return { key: b.label, label: b.label, value: Number.isFinite(b.gapTarget) ? b.gapTarget : null, tooltip: { title: b.label, rows } };
+    });
+}
+
+// The KPI's institution-wide gap and the division bars come from two
+// different calculations (spaceGrowthCalc.js computeSpaceGrowth vs.
+// computeDepartmentSpaceGrowth), so they don't have to add up. Say so, with
+// the actual numbers, whenever they differ.
+function spaceGapFootnote(data) {
+  const kpi = data.institutionGap?.totalGapTarget;
+  const withGap = data.spaceGapBuckets.filter((b) => Number.isFinite(b.gapTarget));
+  if (!Number.isFinite(kpi) || !withGap.length) return null;
+  const divisionsTotal = withGap.reduce((sum, b) => sum + b.gapTarget, 0);
+  if (Math.round(divisionsTotal) === Math.round(kpi)) return null;
+  return `Divisions total ${formatSignedSf(divisionsTotal)}; the ${formatSignedSf(kpi)} campus figure above also counts space `
+    + 'not assigned to an academic department and uses campus-wide enrollment rather than each department’s own.';
+}
+
+// --- Row 3 (right): Tier 1 ranked table ------------------------------------
+function tier1Rows(tier1Summary) {
+  return tier1Summary.tier1Buildings.map((b, i) => {
+    const cost = b.resolvedCost != null ? formatUsdCompact(b.resolvedCost) : '—';
+    return {
+      key: b.buildingId,
+      rank: i + 1,
+      name: b.originalId,
+      score: b.total,
+      costLabel: cost,
+      tooltip: {
+        title: b.originalId,
+        rows: [
+          ['Priority score', `${b.total} / 100`],
+          ['Est. cost', b.resolvedCost != null ? `${cost} (deferred maintenance estimate)` : 'Not entered']
+        ]
+      }
+    };
+  });
+}
+
+// --- Row 4: legacy Capital Phasing timeline (Phase 2 Step 3 replaces it) ---
+// Unchanged drawing logic; takes the ChartCard's measured `width` in place of
+// its old hard-coded 520 so it draws 1:1 instead of being scaled.
 
 // Capital Phasing timeline: one thin bar per near-term project spanning
 // [next phase start -> completion] on a shared date axis, a dashed "Today"
@@ -335,45 +396,6 @@ function PhasingTimelineChart({ width, nearTerm }) {
   );
 }
 
-// Tier 1 list: wrapping chips (dot / name / score / cost). Dot color is a
-// score-based urgency within Tier 1 (80-100).
-function urgencyColor(total) {
-  if (total >= 94) return COLORS.red;
-  if (total >= 87) return COLORS.amber;
-  return COLORS.green;
-}
-
-function Tier1Chips({ tier1Summary }) {
-  if (!tier1Summary.tier1Count) {
-    return <div style={{ fontSize: 12, color: MF.ink.muted }}>No Tier 1 buildings currently.</div>;
-  }
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-      {tier1Summary.tier1Buildings.map((b) => (
-        <div
-          key={b.buildingId}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '4px 8px',
-            borderRadius: 999,
-            background: MF.surface.page,
-            border: `1px solid ${COLORS.cardBorder}`
-          }}
-        >
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: urgencyColor(b.total), flexShrink: 0 }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.heading, whiteSpace: 'nowrap' }}>{b.originalId}</span>
-          <span style={{ fontSize: 10, color: COLORS.muted }}>{b.total}</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.heading, whiteSpace: 'nowrap' }}>
-            {b.resolvedCost != null ? formatUsdCompact(b.resolvedCost) : '—'}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // --- Shell --------------------------------------------------------------
 export default function ExecutiveDashboardModal({ data, loading, loadError, onRecalculate, onExportPdf, onClose }) {
   const actions = (
@@ -400,7 +422,7 @@ export default function ExecutiveDashboardModal({ data, loading, loadError, onRe
 
         {data ? (
           <>
-            <MfCol span={12}>
+            <MfCol span={6}>
               <ChartCard
                 title="Classroom Time Utilization"
                 subtitle={`Share of available weekly hours classrooms are scheduled · Industry target ${TARGET_PCT}%`}
@@ -409,17 +431,47 @@ export default function ExecutiveDashboardModal({ data, loading, loadError, onRe
                 {() => <GaugeRow data={data} />}
               </ChartCard>
             </MfCol>
+            <MfCol span={6}>
+              <RoomSizeCard data={data} />
+            </MfCol>
 
             <MfCol span={7}>
-              <ChartCard title="Space Gap by Division" autoHeight>
-                {({ width }) => (
-                  <SpaceGapChart width={width} buckets={data.spaceGapBuckets} airtableFetchFailed={data.airtableFetchFailed} />
-                )}
+              <ChartCard
+                title="Space Gap by Division"
+                subtitle={`Current vs. ${data.targetYear} need, academic divisions`}
+                footnote={data.spaceGapBuckets.length ? spaceGapFootnote(data) : null}
+                autoHeight
+              >
+                {({ width }) => (data.spaceGapBuckets.length ? (
+                  <>
+                    <DivergingLegend negativeLabel="Deficit" positiveLabel="Surplus" />
+                    <DivergingBars
+                      width={width}
+                      rows={spaceGapRows(data.spaceGapBuckets, data.targetYear)}
+                      formatValue={formatSignedSf}
+                      ariaLabel={`Space gap by academic division versus ${data.targetYear} need`}
+                    />
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: MF.ink.muted }}>
+                    {data.airtableFetchFailed
+                      ? 'Space data is still loading — click Recalculate to try again.'
+                      : 'No division-level gaps available.'}
+                  </div>
+                ))}
               </ChartCard>
             </MfCol>
             <MfCol span={5}>
-              <ChartCard title="Capital Compass — Tier 1" autoHeight>
-                {() => <Tier1Chips tier1Summary={data.tier1Summary} />}
+              <ChartCard
+                title="Capital Compass — Tier 1"
+                footnote={data.tier1Summary.tier1Count ? 'Score: Capital Compass priority score (0–100)' : null}
+                autoHeight
+              >
+                {() => (data.tier1Summary.tier1Count ? (
+                  <ScoreTable rows={tier1Rows(data.tier1Summary)} />
+                ) : (
+                  <div style={{ fontSize: 12, color: MF.ink.muted }}>No Tier 1 buildings currently.</div>
+                ))}
               </ChartCard>
             </MfCol>
 

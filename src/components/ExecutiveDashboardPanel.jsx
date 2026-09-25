@@ -40,6 +40,7 @@ import {
 } from '../utils/classroomUtilizationSchema';
 import {
   computeClassroomUtilization,
+  computeSizeRangeUtilizationByTerm,
   computeCampusUtilizationByTerm,
   resolveCurrentTerm,
   fetchAirtableRoomsForUtilization,
@@ -51,6 +52,7 @@ import {
   computeNearTermCapitalPhasing,
   computeDivisionSpaceGapSummary,
   computeInstitutionWideSpaceGapTotal,
+  addTimeUtilizationToSizeRanges,
   formatTier1CapitalNeed,
   formatGapSf
 } from '../utils/executiveDashboardCalc';
@@ -264,6 +266,10 @@ export default function ExecutiveDashboardPanel({
       });
 
       const classroomResult = computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms });
+      // Room-size breakdown for the dashboard's Utilization by Room Size chart:
+      // the Classroom Size Range section's own buckets, plus time utilization.
+      const { sizeRangeTables } = computeSizeRangeUtilizationByTerm({ courseMeetingDocs, termDocs, airtableRooms });
+      const sizeRangeByTerm = addTimeUtilizationToSizeRanges({ sizeRangeTables, rooms: classroomResult.rooms });
       const campusRollups = computeCampusUtilizationByTerm(classroomResult.rooms).campusRollups;
       const currentTerm = resolveCurrentTerm(termDocs);
 
@@ -282,6 +288,7 @@ export default function ExecutiveDashboardPanel({
         airtableFetchFailed,
         targetYear: SPACE_GROWTH_TARGET_YEAR,
         campusRollups,
+        sizeRangeByTerm,
         currentTerm,
         hasAnyCapitalPriorities: capitalPriorityDocs.length > 0,
         hasAnyCapitalPhasing: capitalPhasingDocs.length > 0,
