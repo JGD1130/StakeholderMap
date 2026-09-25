@@ -242,6 +242,60 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-09-25) — Executive Dashboard redesign, Phases 0–2: shared `mf/` design system, new charts, two-page landscape PDF
+
+### Summary
+
+Seven commits (`2fdbda9` → `9790a05`), all pushed to `feature/multi-university-refactor`. They rebuild the Executive Dashboard (Hastings-only, admin-only, gated in `StakeholderMap.jsx` on `enableCapitalPriorities` + `enableClassroomUtilization`) on a new shared component and token layer. The goal: the screen, the PDF and the side-panel card always show the same numbers, labels and colors. **Frontend only.** No `ai-server/` changes, so no Render deploy is needed.
+
+### Phase 0 — bug fixes (`2fdbda9`, `c66061d`)
+
+- **Tier 1 capital need no longer shows a false `$0`.** New `src/utils/currency.js` (`parseCurrency`, `firstCurrencyValue`) returns `null` for a missing cost, not `0`, and accepts `"$1.2M"`, `"450K"` and `"(1,000)"`. `computeTier1CapitalSummary.totalKnownCost` is `null` when no Tier 1 building has a cost. `formatTier1CapitalNeed()` is the one display rule, shared by the modal, the side card and the PDF: `—` + "Costs not entered".
+- **Race fix in `ExecutiveDashboardPanel.runCalculation`:** a `runIdRef` guard means only the newest run writes state. The first run started before `building-resources.json` loaded and could finish last, overwriting the correct costs. There's also a `console.debug` trace of every Tier 1 cost input; turn on the Verbose log level to see it.
+- **Cold-start timeouts:** the AI-server fetch default went from 20s to **60s**, because the Render free tier takes 30–50s+ to wake. Timeouts now throw a readable `TimeoutError` instead of the browser's "signal is aborted without reason". F&A Compass (`useResearchSpaceData`) retries a timed-out Airtable fetch once and exposes `reload()` for a Retry button. Raw error text is logged to the console and never shown to users.
+- Gauge subtitles read "Fall 2026 · Block 1" (`formatTermSubtitle`). The phasing card title comes from the same axis range as the chart (`getPhasingAxisRange` / `formatPhasingTitle`). All admin module header bars share `CE_ORANGE_HEADER` (`#cb421e`) from `src/utils/brandColors.js`.
+
+### Phase 1 — tokens (`74667d7`)
+
+- **`src/theme/mfTokens.js`**: plain-JS design tokens (`MF.ink`, `line`, `surface`, `diverging`, `tier`, `project`, `status`, `util`, `type`). There are no CSS variables, so the same module works in DOM and `@react-pdf/renderer`. `utilColor(pct)` / `utilBands(n)` / `utilTextColor` reproduce the Day/Time heat-map ramp. `utilBands(8)` exactly equals the gauge's old 8 hard-coded stops.
+- `npm run check:tokens` (`scripts/check-mf-tokens.mjs`) asserts those equalities.
+- `fetchWithTimeout` / `isAbortError` moved to `src/utils/fetchWithTimeout.js`. `classroomUtilizationCalc.js` re-exports them, so the old imports still work.
+- Dev aids, admin page only: `?tokens=1` shows a token swatch sheet (`dev/TokenSwatches.jsx`). `?components=1` shows every `mf/` component in isolation (`dev/ComponentGallery.jsx`, added in 2.1). Both render nothing without the query param.
+
+### Phase 2 — dashboard rebuild (`39b6de5`, `0a15c13`, `65b74df`, `9790a05`)
+
+- **`src/components/mf/`** (shared, reusable by other admin modules):
+  - `WorkspaceShell`: a portal over the map. Esc closes; a backdrop click does *not*. It traps focus while open, returns focus to the opener, and locks page scroll. Also exports the `MfGrid`/`MfCol` 12-column grid, which becomes one column when narrower than 900px.
+  - `KpiCard`: `null` or `missing` shows `—`, never 0. It has a `compact` size for the side card.
+  - `Gauge`: geometry lives in `gaugeGeometry.js`, which the PDF gauge shares.
+  - `ChartCard`: measures its body and gives charts real pixel sizes. Charts draw 1:1 and are never viewBox-scaled, because scaling is what shrank text to ~6px.
+- **`mf/charts/`**:
+  - `DivergingBars` (Space Gap by Division: deficit left, surplus right)
+  - `HBarChart` (Utilization by Room Size, with a 65% target line)
+  - `ScoreTable` (Tier 1 ranked table)
+  - `PhasingTimeline` (bars colored by project type)
+  - `ChartTooltip`, `ChartLegend`
+  - `projectTypes.js`: the one rule for a project's type, from its name, first match wins: New Construction → Demolition → Renovation → Site/Parking → fallback renovation.
+- **Calc additions (display-only, existing numbers unchanged):** `computeDivisionSpaceGapSummary` now also returns `currentSF` / `needSF` per division for tooltips. New `addTimeUtilizationToSizeRanges` adds hours-weighted Time Utilization to each 10-seat bucket. `bucketRangeForCapacity` is now exported. Empty size ranges are hidden.
+- **`src/components/executiveDashboardView.js`** (2.4): pure view-model builders shared by the modal, the PDF and the side card. They cover every value, label, sort order and footnote. There is no aggregation here; all numbers still come from `executiveDashboardCalc.js`. **Put display logic here, not in one of the three surfaces**, or they will drift apart.
+- **PDF rewrite (`ExecutiveDashboardPdfDocument.jsx` + `mf/pdf/*`):**
+  - US Letter landscape, two pages. Page 1: KPIs, gauges, room-size bars, Space Gap and the Tier 1 table. Page 2: the phasing timeline at full width.
+  - Each page has an orange header band and a "Prepared by Clark & Enersen · Mapfluence / Page N of M" footer.
+  - Text is at least 9pt; only the footer uses 8pt.
+  - react-pdf's built-in Helvetica can't draw U+2212 (true minus), so the PDF swaps it for an en dash. The screen keeps U+2212.
+- **Side-panel card (`ExecutiveDashboardPanel.jsx`)** now uses the tokens and compact `KpiCard`s.
+
+### Verification
+
+Clark reported tests passing before the 2.4 commit. `npm run check:tokens` covers the token math. There are no automated UI tests for the dashboard or the PDF.
+
+### Local-only files — deliberately not committed
+
+- `scripts/_extensionless-esm-loader.mjs`: an untracked local Node loader helper, excluded from the 2.4 commit on purpose.
+- `functions/index.js` / `functions/package.json`: the Cloud Functions v1→v2 migration is **still uncommitted, unreviewed and undeployed** (see earlier entries). Do not sweep it into a broad `git add`.
+
+---
+
 ## Recent Changes (2026-09-23) — Sarpy Room Type edits silently not saving: per-tenant dropdown source + dropped-field warning
 
 ### Symptom
