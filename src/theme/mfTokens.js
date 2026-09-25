@@ -53,9 +53,12 @@ export function utilTextColor(pct) {
   return Number(pct) > 55 ? '#fff' : MF.ink.secondary;
 }
 
-// n solid stops, each utilColor at its band's midpoint. utilBands(8) is the
-// Executive Dashboard gauge arc.
-export function utilBands(n = 8) {
+// n solid stops, each utilColor at its band's midpoint across [from, to]
+// (percent). The default range 0-100 gives the Executive Dashboard's current
+// gauge arc; a narrower range (e.g. from: 30) skips the palest blues so the
+// first band stays visible against a light track.
+export function utilBands(n = 8, { from = 0, to = 100 } = {}) {
   const count = Math.max(1, Math.floor(n));
-  return Array.from({ length: count }, (_, i) => utilColor(((i + 0.5) * 100) / count));
+  const span = to - from;
+  return Array.from({ length: count }, (_, i) => utilColor(from + ((i + 0.5) * span) / count));
 }

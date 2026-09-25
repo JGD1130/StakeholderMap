@@ -24,6 +24,22 @@ register(
 
 const { MF, utilColor, utilTextColor, utilBands } = await import('../src/theme/mfTokens.js');
 
+// WCAG relative luminance and contrast ratio for #rrggbb colors.
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// The shared Gauge's real arc colors (gaugeGeometry.js is plain JS, no React).
+const { GAUGE_BANDS, GAUGE_TRACK } = await import('../src/components/mf/gaugeGeometry.js');
+const MIN_FIRST_BAND_CONTRAST = 1.25;
+const firstBandContrast = contrast(GAUGE_BANDS[0], GAUGE_TRACK);
+
 // Hard-coded in ExecutiveDashboardModal.jsx / ExecutiveDashboardPdfDocument.jsx
 // before Phase 1 Step 2 replaced them with utilBands(8).
 const OLD_GAUGE_BANDS = ['#e2ebfc', '#ccdbfa', '#b6cbf8', '#9fbbf6', '#89abf4', '#739bf2', '#5c8bf0', '#467bee'];
@@ -38,6 +54,11 @@ const checks = [
     assert.equal(utilColor(NaN), utilColor(0));
   }],
   ['utilBands(8) equals the old gauge array', () => assert.deepEqual(utilBands(8), OLD_GAUGE_BANDS)],
+  ['utilBands(8, { from: 0, to: 100 }) equals the default', () => assert.deepEqual(utilBands(8, { from: 0, to: 100 }), utilBands(8))],
+  [
+    `Gauge first band ${GAUGE_BANDS[0]} vs track ${GAUGE_TRACK}: contrast ${firstBandContrast.toFixed(2)}:1 (>= ${MIN_FIRST_BAND_CONTRAST}:1)`,
+    () => assert.ok(firstBandContrast >= MIN_FIRST_BAND_CONTRAST, `contrast ${firstBandContrast.toFixed(3)}:1 is below ${MIN_FIRST_BAND_CONTRAST}:1`)
+  ],
   ['utilTextColor switches above 55', () => {
     assert.equal(utilTextColor(55), MF.ink.secondary);
     assert.equal(utilTextColor(56), '#fff');

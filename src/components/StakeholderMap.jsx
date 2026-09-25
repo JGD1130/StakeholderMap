@@ -25,6 +25,7 @@ import ClassroomUtilizationPanel, { SpaceGrowthProjectionsPanel } from './Classr
 import ExecutiveDashboardPanel from './ExecutiveDashboardPanel.jsx';
 import ResearchSpaceClassificationPanel from './ResearchSpaceClassificationPanel.jsx';
 import TokenSwatches from './dev/TokenSwatches.jsx';
+import ComponentGallery from './dev/ComponentGallery.jsx';
 import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import {
   RS_STATUS,
@@ -31218,8 +31219,10 @@ useEffect(() => {
       </div>
       )}
 
-    {/* Dev aid: design-token swatch sheet, admin page only, and only with ?tokens=1. */}
+    {/* Dev aids, admin page only: design-token swatches (?tokens=1) and the
+        shared-component gallery (?components=1). Each renders nothing without its param. */}
     {isAdminMode && <TokenSwatches />}
+    {isAdminMode && <ComponentGallery />}
 
     {(mode === 'admin' || technicalMode) && (
       <>
