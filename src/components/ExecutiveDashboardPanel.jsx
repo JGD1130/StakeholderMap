@@ -26,7 +26,7 @@
 // phasing uploaded yet, etc.) renders a clear, specific message instead of an empty or
 // silently-wrong area.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
@@ -51,7 +51,7 @@ import {
   computeNearTermCapitalPhasing,
   computeDivisionSpaceGapSummary,
   computeInstitutionWideSpaceGapTotal,
-  formatUsdCompact,
+  formatTier1CapitalNeed,
   formatGapSf
 } from '../utils/executiveDashboardCalc';
 import ExecutiveDashboardPdfDocument from './ExecutiveDashboardPdfDocument.jsx';
@@ -126,7 +126,17 @@ export default function ExecutiveDashboardPanel({
     [normalizedUniversityId]
   );
 
+  // Latest-run-wins guard. runCalculation re-runs whenever
+  // getBuildingResourceEntry changes -- notably when building-resources.json
+  // finishes loading, a moment after the first run already started against an
+  // empty catalog (every Tier 1 cost unresolved). Both runs await the same slow
+  // Airtable fetch, so the stale first run could finish last and overwrite the
+  // correct result. Only the newest run may write state.
+  const runIdRef = useRef(0);
+
   const runCalculation = useCallback(async () => {
+    const runId = ++runIdRef.current;
+    const isStale = () => runId !== runIdRef.current;
     if (!enabled || !normalizedUniversityId) {
       setData(null);
       return;
@@ -212,7 +222,27 @@ export default function ExecutiveDashboardPanel({
 
       const airtableAreaByRoomKey = buildAirtableAreaMap(airtableRooms);
 
+      if (isStale()) return;
+
       const tier1Summary = computeTier1CapitalSummary({ capitalPriorityDocs, getBuildingResourceEntry });
+      // Diagnostic trace of every Tier 1 cost input (Chrome: enable "Verbose"
+      // to see console.debug). Read-only.
+      console.debug('Executive Dashboard: Tier 1 cost inputs', tier1Summary.tier1Buildings.map((b) => {
+        const deferred = typeof getBuildingResourceEntry === 'function'
+          ? getBuildingResourceEntry(b.originalId)?.deferredMaintenance
+          : undefined;
+        return {
+          buildingId: b.buildingId,
+          originalId: b.originalId,
+          score: b.total,
+          catalogEntryFound: deferred !== undefined,
+          totalCost: deferred?.totalCost,
+          totalCostType: typeof deferred?.totalCost,
+          totalHigh: deferred?.totalHigh,
+          totalLow: deferred?.totalLow,
+          resolvedCost: b.resolvedCost
+        };
+      }));
       const phasingSummary = computeNearTermCapitalPhasing({
         capitalPhasingDocs,
         now: new Date(),
@@ -267,9 +297,11 @@ export default function ExecutiveDashboardPanel({
         hasAnySpaceConfig: spaceConfigDocs.length > 0
       });
     } catch (error) {
-      setLoadError(String(error?.message || 'Failed to compute Executive Dashboard.'));
+      if (isStale()) return;
+      console.error('Executive Dashboard: calculation failed.', error);
+      setLoadError("Couldn't load dashboard data — try Recalculate.");
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [
     enabled,
@@ -322,6 +354,7 @@ export default function ExecutiveDashboardPanel({
   // ExecutiveDashboardModal.jsx's header comment).
   const gapValue = data?.institutionGap?.totalGapTarget;
   const gapIsDeficit = gapValue != null && gapValue < 0;
+  const tier1Need = formatTier1CapitalNeed(data?.tier1Summary);
 
   return (
     <div
@@ -354,8 +387,9 @@ export default function ExecutiveDashboardPanel({
       ) : data ? (
         <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0, padding: '6px 8px', borderRadius: 6, background: '#f8fafc', border: '1px solid #d0d7e2' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#1d2939' }}>{formatUsdCompact(data.tier1Summary.totalKnownCost)}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#1d2939' }}>{tier1Need.value}</div>
             <div style={{ fontSize: 9.5, color: '#667085', textTransform: 'uppercase' }}>Tier 1 Need</div>
+            {tier1Need.note ? <div style={{ fontSize: 9.5, color: '#667085' }}>{tier1Need.note}</div> : null}
           </div>
           <div
             style={{

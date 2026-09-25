@@ -44,6 +44,7 @@ import {
   computeSizeRangeUtilizationByTerm,
   fetchAirtableRoomsForUtilization,
   buildAirtableAreaMap,
+  isAbortError,
   INDUSTRY_TARGET_TIME_UTILIZATION
 } from '../utils/classroomUtilizationCalc';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType, deriveOfficeRoomsFromAirtable } from '../utils/roomTypeSuggestion';
@@ -1120,7 +1121,9 @@ function RoomUtilizationMetaSection() {
         // fetchAirtableRoomsForUtilization call site in this module.
         fetchAirtableRoomsForUtilization().catch((error) => {
           console.warn('Airtable rooms fetch failed for room tagging:', error);
-          setAirtableSuggestionsError(String(error?.message || 'Failed to load Airtable room-type suggestions.'));
+          setAirtableSuggestionsError(isAbortError(error)
+            ? "Couldn't load Airtable room-type suggestions (AI server timed out) — try again shortly."
+            : String(error?.message || 'Failed to load Airtable room-type suggestions.'));
           return [];
         })
       ]);
@@ -3793,7 +3796,10 @@ export default function ClassroomUtilizationPanel({
         : phase === 'writing'
           ? 'Failed while writing new data (old data was already cleared): '
           : 'Failed to fetch schedule: ';
-      setImportError(phaseLabel + String(error?.message || 'unknown error.'));
+      if (isAbortError(error)) console.error('Class schedule import timed out.', error);
+      setImportError(phaseLabel + (isAbortError(error)
+        ? 'the AI server timed out (it may be waking up) — try again.'
+        : String(error?.message || 'unknown error.')));
     } finally {
       setImportPhase(null);
     }

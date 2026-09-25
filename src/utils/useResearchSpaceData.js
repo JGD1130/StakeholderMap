@@ -6,10 +6,10 @@
 // in StakeholderMap.jsx and handed to both ResearchSpaceClassificationPanel
 // (list/rollup/editor) and the floorplan color mode, so they read one
 // derivation and one set of listeners.
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { fetchAirtableRoomsForUtilization } from './classroomUtilizationCalc';
+import { fetchAirtableRoomsForUtilization, isAbortError } from './classroomUtilizationCalc';
 import { deriveResearchSpaceRoomsFromAirtable } from './researchSpaceRoomScope';
 import { computeRoomFunctionalProfile } from './researchSpaceClassification';
 import { RS_STATUS, buildScopeFloorIndex, deriveRoomStatus } from './researchSpaceStatus';
@@ -17,6 +17,9 @@ import { RS_STATUS, buildScopeFloorIndex, deriveRoomStatus } from './researchSpa
 export const HASTINGS_UNIVERSITY_ID = 'hastings';
 export const RESEARCH_SPACE_OCCUPANTS_COLLECTION = 'researchSpaceOccupants';
 export const RESEARCH_SPACE_ROOM_STATUS_COLLECTION = 'researchSpaceRoomStatus';
+
+const AIRTABLE_LOAD_ERROR_MESSAGE = "Couldn't load research space data.";
+const FIRESTORE_LOAD_ERROR_MESSAGE = "Couldn't load saved classifications — refresh the page to retry.";
 
 export function useResearchSpaceData({ enabled = false, resolveBuildingFolder } = {}) {
   const [airtableRoomsRaw, setAirtableRoomsRaw] = useState(null); // null = not loaded yet
@@ -38,21 +41,38 @@ export function useResearchSpaceData({ enabled = false, resolveBuildingFolder } 
   // doesn't change moment to moment; a manual page refresh is enough to pick
   // up a genuinely new Airtable room, same convention as
   // RoomUtilizationMetaSection's own one-time Airtable fetch.
+  //
+  // A timeout (cold AI server) retries once automatically -- by then the
+  // server is usually awake. `reloadNonce` lets the panel's Retry re-run it.
+  // Raw error text is logged, never rendered.
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const reload = useCallback(() => setReloadNonce((n) => n + 1), []);
   useEffect(() => {
     if (!enabled) return undefined;
     let cancelled = false;
-    fetchAirtableRoomsForUtilization()
+    setAirtableError('');
+    const load = async () => {
+      try {
+        return await fetchAirtableRoomsForUtilization();
+      } catch (error) {
+        if (cancelled || !isAbortError(error)) throw error;
+        console.warn('F&A Compass: Airtable rooms fetch timed out, retrying once.', error);
+        return fetchAirtableRoomsForUtilization();
+      }
+    };
+    load()
       .then((rooms) => {
         if (cancelled) return;
         setAirtableRoomsRaw(Array.isArray(rooms) ? rooms : []);
       })
       .catch((error) => {
         if (cancelled) return;
-        setAirtableError(String(error?.message || 'Failed to load Airtable room inventory.'));
-        setAirtableRoomsRaw([]);
+        console.error('F&A Compass: failed to load Airtable room inventory.', error);
+        setAirtableError(AIRTABLE_LOAD_ERROR_MESSAGE);
+        setAirtableRoomsRaw((prev) => prev ?? []);
       });
     return () => { cancelled = true; };
-  }, [enabled]);
+  }, [enabled, reloadNonce]);
 
   // Live listeners -- both collections are small (a few hundred rooms' worth
   // of occupants at most), so a whole-collection listener is simpler and
@@ -63,7 +83,10 @@ export function useResearchSpaceData({ enabled = false, resolveBuildingFolder } 
     const unsubscribe = onSnapshot(
       occupantsCollection,
       (snap) => setOccupantDocs(snap.docs),
-      (error) => setLoadError(String(error?.message || 'Failed to load research space occupants.'))
+      (error) => {
+        console.error('F&A Compass: occupants listener failed.', error);
+        setLoadError(FIRESTORE_LOAD_ERROR_MESSAGE);
+      }
     );
     return () => unsubscribe();
   }, [enabled, occupantsCollection]);
@@ -77,7 +100,10 @@ export function useResearchSpaceData({ enabled = false, resolveBuildingFolder } 
         snap.docs.forEach((docSnap) => { next[docSnap.id] = docSnap.data()?.status || ''; });
         setRoomStatusDocs(next);
       },
-      (error) => setLoadError(String(error?.message || 'Failed to load room exclusion statuses.'))
+      (error) => {
+        console.error('F&A Compass: room status listener failed.', error);
+        setLoadError(FIRESTORE_LOAD_ERROR_MESSAGE);
+      }
     );
     return () => unsubscribe();
   }, [enabled, roomStatusCollection]);
@@ -135,6 +161,7 @@ export function useResearchSpaceData({ enabled = false, resolveBuildingFolder } 
     scopeRooms,
     airtableError,
     loadError,
+    reload,
     occupantsByRoomKey,
     roomStatusDocs,
     roomRows,

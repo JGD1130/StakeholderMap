@@ -24,7 +24,7 @@
 
 import React from 'react';
 import { formatCapitalPhasingMonthYear } from '../utils/capitalPhasingImport';
-import { formatUsdCompact, formatPct, formatGapSf } from '../utils/executiveDashboardCalc';
+import { formatUsdCompact, formatPct, formatGapSf, formatTier1CapitalNeed } from '../utils/executiveDashboardCalc';
 import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationCalc';
 
 // Shared semantic palette -- reuses the exact hexes already in use elsewhere
@@ -61,7 +61,7 @@ function cardShellStyle(extra) {
 }
 
 // --- KPI card ---------------------------------------------------------
-function KpiCard({ label, value, tint, textColor }) {
+function KpiCard({ label, value, note, tint, textColor }) {
   return (
     <div
       style={cardShellStyle({
@@ -79,6 +79,7 @@ function KpiCard({ label, value, tint, textColor }) {
       <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.muted, textTransform: 'uppercase', letterSpacing: 0.3 }}>
         {label}
       </div>
+      {note ? <div style={{ fontSize: 11, color: COLORS.muted }}>{note}</div> : null}
     </div>
   );
 }
@@ -87,9 +88,10 @@ function KpiRow({ data }) {
   const gapValue = data.institutionGap.totalGapTarget;
   const gapIsDeficit = gapValue != null && gapValue < 0;
   const gapIsSurplus = gapValue != null && gapValue >= 0;
+  const tier1Need = formatTier1CapitalNeed(data.tier1Summary);
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-      <KpiCard label="Total Capital Need (Tier 1)" value={formatUsdCompact(data.tier1Summary.totalKnownCost)} />
+      <KpiCard label="Total Capital Need (Tier 1)" value={tier1Need.value} note={tier1Need.note} />
       <KpiCard label="Tier 1 Buildings" value={data.tier1Summary.tier1Count} />
       <KpiCard label="Near-Term Projects" value={data.phasingSummary.nearTerm.length} />
       <KpiCard

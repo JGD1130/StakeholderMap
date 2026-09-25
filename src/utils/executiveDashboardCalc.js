@@ -26,8 +26,11 @@
 // unrelated modules, so a single shared source is the safer choice.
 
 import { computeCapitalPhasingSchedule } from './capitalPhasingImport';
+import { firstCurrencyValue } from './currency';
 
 export function formatUsdCompact(value) {
+  // null/'' must not become "$0" -- Number(null) is 0.
+  if (value == null || value === '') return '';
   const n = Number(value);
   if (!Number.isFinite(n)) return '';
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
@@ -74,13 +77,13 @@ export function computeTier1CapitalSummary({ capitalPriorityDocs, getBuildingRes
         : null;
       const deferred = entry?.deferredMaintenance;
       const resolvedCost = deferred
-        ? [deferred.totalCost, deferred.totalHigh, deferred.totalLow].map(Number).find((n) => Number.isFinite(n))
-        : undefined;
+        ? firstCurrencyValue([deferred.totalCost, deferred.totalHigh, deferred.totalLow])
+        : null;
       return {
         buildingId: d.buildingId,
         originalId: d.originalId || d.buildingId,
         total: d.total,
-        resolvedCost: Number.isFinite(resolvedCost) ? resolvedCost : null
+        resolvedCost
       };
     })
     .sort((a, b) => (b.total - a.total) || String(a.originalId).localeCompare(String(b.originalId)));
@@ -90,10 +93,24 @@ export function computeTier1CapitalSummary({ capitalPriorityDocs, getBuildingRes
   return {
     tier1Buildings,
     tier1Count: tier1Buildings.length,
-    totalKnownCost: withCost.reduce((sum, b) => sum + b.resolvedCost, 0),
+    // null (not 0) when no Tier 1 building has cost data, so the KPI can show
+    // "—" instead of a misleading $0.
+    totalKnownCost: withCost.length ? withCost.reduce((sum, b) => sum + b.resolvedCost, 0) : null,
     knownCostCount: withCost.length,
     unresolvedCostCount: tier1Buildings.length - withCost.length
   };
+}
+
+// One display rule for the Tier 1 capital need KPI, shared by the modal, the
+// side-panel card, and the PDF so the three can't disagree. A real sum
+// (including a true $0) shows as a dollar amount; no cost data at all shows
+// "—" with a "Costs not entered" note.
+export function formatTier1CapitalNeed(tier1Summary) {
+  const total = tier1Summary?.totalKnownCost;
+  if (total == null || !Number.isFinite(Number(total))) {
+    return { value: '—', note: 'Costs not entered' };
+  }
+  return { value: formatUsdCompact(total), note: '' };
 }
 
 // capitalPhasingDocs: [{projectId, projectName, completionDate, escalatedCost, phases, ...}]

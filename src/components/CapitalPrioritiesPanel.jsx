@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
+import { firstCurrencyValue } from '../utils/currency';
 import {
   CAPITAL_PHASING_SHEET_NAME,
   parseCapitalPhasingFile,
@@ -1206,10 +1207,12 @@ export default function CapitalPrioritiesPanel({
       ? getBuildingResourceEntry(row.originalId || row.buildingId)
       : null;
     const deferred = entry?.deferredMaintenance;
+    // firstCurrencyValue skips null/'' -- Number(null) is 0, which used to
+    // resolve a missing totalCost as a real $0 before totalHigh/totalLow.
     const auto = deferred
-      ? [deferred.totalCost, deferred.totalHigh, deferred.totalLow].map(Number).find((n) => Number.isFinite(n))
-      : undefined;
-    if (Number.isFinite(auto)) return { cost: auto, source: 'auto' };
+      ? firstCurrencyValue([deferred.totalCost, deferred.totalHigh, deferred.totalLow])
+      : null;
+    if (auto != null) return { cost: auto, source: 'auto' };
     const manual = Number(manualCosts[row.buildingId]);
     if (Number.isFinite(manual) && manual > 0) return { cost: manual, source: 'manual' };
     return { cost: null, source: null };

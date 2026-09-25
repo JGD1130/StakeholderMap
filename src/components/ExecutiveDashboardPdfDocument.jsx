@@ -35,7 +35,7 @@
 
 import React from 'react';
 import { Document, Page, View, Text, Svg, G, Line, Rect, Path, Circle, StyleSheet } from '@react-pdf/renderer';
-import { formatUsdCompact, formatPct, formatGapSf } from '../utils/executiveDashboardCalc';
+import { formatUsdCompact, formatPct, formatGapSf, formatTier1CapitalNeed } from '../utils/executiveDashboardCalc';
 
 const COLORS = {
   heading: '#1d2939',
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
 });
 
 // --- KPI card row -----------------------------------------------------
-function KpiCard({ label, value, tint, textColor, width }) {
+function KpiCard({ label, value, note, tint, textColor, width }) {
   return (
     <View
       style={[
@@ -101,6 +101,7 @@ function KpiCard({ label, value, tint, textColor, width }) {
     >
       <Text style={{ fontSize: 19, fontFamily: 'Helvetica-Bold', color: textColor || COLORS.heading }}>{value}</Text>
       <Text style={{ fontSize: 8, color: COLORS.muted, marginTop: 3, textTransform: 'uppercase' }}>{label}</Text>
+      {note ? <Text style={{ fontSize: 8, color: COLORS.muted, marginTop: 2 }}>{note}</Text> : null}
     </View>
   );
 }
@@ -110,9 +111,10 @@ function KpiRow({ data }) {
   const gapIsDeficit = gapValue != null && gapValue < 0;
   const gapIsSurplus = gapValue != null && gapValue >= 0;
   const cardWidth = (CONTENT_WIDTH - 3 * 8) / 4;
+  const tier1Need = formatTier1CapitalNeed(data.tier1Summary);
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <KpiCard label="Total Capital Need (Tier 1)" value={formatUsdCompact(data.tier1Summary.totalKnownCost)} width={cardWidth} />
+      <KpiCard label="Total Capital Need (Tier 1)" value={tier1Need.value} note={tier1Need.note} width={cardWidth} />
       <KpiCard label="Tier 1 Buildings" value={String(data.tier1Summary.tier1Count)} width={cardWidth} />
       <KpiCard label="Near-Term Projects" value={String(data.phasingSummary.nearTerm.length)} width={cardWidth} />
       <KpiCard

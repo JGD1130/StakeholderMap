@@ -132,18 +132,37 @@ export function resolveRoomsUrl() {
   return '/ai/api/rooms';
 }
 
-export async function fetchAirtableRoomsForUtilization({ timeoutMs = 20000 } = {}) {
+// A timeout abort surfaces from fetch() as a DOMException whose message is
+// the browser's raw "signal is aborted without reason" -- never user-facing
+// copy. isAbortError() lets callers recognize it; the fetch helpers below
+// rethrow timeouts as an Error with name 'TimeoutError' and a readable message.
+export function isAbortError(error) {
+  return error?.name === 'AbortError' || error?.name === 'TimeoutError';
+}
+
+export async function fetchWithTimeout(url, init = {}, timeoutMs = 60000) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  let res;
+  const timer = controller ? setTimeout(() => controller.abort('timeout'), timeoutMs) : null;
   try {
-    res = await fetch(resolveRoomsUrl(), {
-      cache: 'no-store',
-      signal: controller ? controller.signal : undefined
-    });
+    return await fetch(url, { ...init, signal: controller ? controller.signal : undefined });
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      const timeoutError = new Error(`AI server did not respond within ${Math.round(timeoutMs / 1000)}s (it may be waking up).`);
+      timeoutError.name = 'TimeoutError';
+      timeoutError.cause = error;
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+// Default timeout is 60s, not 20s: the AI server runs on Render's free tier,
+// which commonly takes 30-50s+ to wake from idle (see ExecutiveDashboardPanel's
+// note on its own 60s override). 20s aborted every cold-start page load.
+export async function fetchAirtableRoomsForUtilization({ timeoutMs = 60000 } = {}) {
+  const res = await fetchWithTimeout(resolveRoomsUrl(), { cache: 'no-store' }, timeoutMs);
   const raw = await res.text();
   let json = null;
   try { json = JSON.parse(raw); } catch {}

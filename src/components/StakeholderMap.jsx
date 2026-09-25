@@ -25296,7 +25296,7 @@ useEffect(() => {
         const [meetingsSnap, termsSnap, airtableRoomsForUtilization] = await Promise.all([
           getDocs(collection(db, 'universities', universityId, COURSE_MEETINGS_COLLECTION)),
           getDocs(collection(db, 'universities', universityId, TERMS_COLLECTION)),
-          fetchAirtableRoomsForUtilization().catch((err) => {
+          fetchAirtableRoomsForUtilization({ timeoutMs: 20000 }).catch((err) => {
             // Same fallback reasoning as ClassroomUtilizationPanel.jsx's own
             // calc: Airtable is capacity-only input (Seat Utilization). A
             // failed fetch shouldn't block Time Utilization from computing

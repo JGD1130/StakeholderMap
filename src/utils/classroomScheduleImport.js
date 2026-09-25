@@ -15,6 +15,8 @@
 // inline in a component closure, not an exported function, and this build
 // step is scoped to new, isolated files only.
 
+import { fetchWithTimeout } from './classroomUtilizationCalc';
+
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 
 // Mirrors StakeholderMap.jsx's getAiBaseUrl()/resolveAiUrl() resolution order
@@ -29,18 +31,8 @@ export function resolveClassScheduleUrl() {
   return '/ai/class-schedule';
 }
 
-export async function fetchClassScheduleRows({ timeoutMs = 20000 } = {}) {
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  let res;
-  try {
-    res = await fetch(resolveClassScheduleUrl(), {
-      cache: 'no-store',
-      signal: controller ? controller.signal : undefined
-    });
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+export async function fetchClassScheduleRows({ timeoutMs = 60000 } = {}) {
+  const res = await fetchWithTimeout(resolveClassScheduleUrl(), { cache: 'no-store' }, timeoutMs);
   const raw = await res.text();
   let json = null;
   try { json = JSON.parse(raw); } catch {}

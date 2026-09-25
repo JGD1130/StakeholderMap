@@ -158,6 +158,7 @@ export default function ResearchSpaceClassificationPanel({
     scopeRooms: airtableRooms,
     airtableError,
     loadError,
+    reload,
     occupantsByRoomKey,
     roomStatusDocs,
     roomRows
@@ -373,7 +374,14 @@ export default function ResearchSpaceClassificationPanel({
       </h4>
 
       {loadError && <div style={{ color: '#b42318', fontSize: 12, marginBottom: 6 }}>{loadError}</div>}
-      {airtableError && <div style={{ color: '#b42318', fontSize: 12, marginBottom: 6 }}>{airtableError}</div>}
+      {airtableError && (
+        <div style={{ color: '#b42318', fontSize: 12, marginBottom: 6 }}>
+          {airtableError}{' '}
+          {typeof reload === 'function' && (
+            <button type="button" onClick={reload} style={{ fontSize: 12, padding: '0 6px' }}>Retry</button>
+          )}
+        </div>
+      )}
 
       {/* Rollup summary -- always visible, this is the headline F&A figure. */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
