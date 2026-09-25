@@ -52,13 +52,14 @@ import {
   computeNearTermCapitalPhasing,
   computeDivisionSpaceGapSummary,
   computeInstitutionWideSpaceGapTotal,
-  addTimeUtilizationToSizeRanges,
-  formatTier1CapitalNeed,
-  formatGapSf
+  addTimeUtilizationToSizeRanges
 } from '../utils/executiveDashboardCalc';
 import ExecutiveDashboardPdfDocument from './ExecutiveDashboardPdfDocument.jsx';
 import ExecutiveDashboardModal from './ExecutiveDashboardModal.jsx';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
+import { MF } from '../theme/mfTokens';
+import { KpiCard } from './mf';
+import { tier1NeedKpi, spaceGapKpi } from './executiveDashboardView';
 
 // Mirrors ClassroomUtilizationPanel.jsx's SpaceGrowthSection constants exactly (not
 // exported from that file, so duplicated here per this codebase's existing isolation
@@ -350,9 +351,9 @@ export default function ExecutiveDashboardPanel({
   // lives in ExecutiveDashboardModal.jsx, which needs more horizontal room
   // than this rail slot can offer (see the layout-feasibility note in
   // ExecutiveDashboardModal.jsx's header comment).
-  const gapValue = data?.institutionGap?.totalGapTarget;
-  const gapIsDeficit = gapValue != null && gapValue < 0;
-  const tier1Need = formatTier1CapitalNeed(data?.tier1Summary);
+  // Same values as the dashboard's KPI row (executiveDashboardView.js).
+  const tier1Need = data ? tier1NeedKpi(data) : null;
+  const spaceGap = data ? spaceGapKpi(data) : null;
 
   return (
     <div
@@ -384,37 +385,34 @@ export default function ExecutiveDashboardPanel({
         <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating…</div>
       ) : data ? (
         <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0, padding: '6px 8px', borderRadius: 6, background: '#f8fafc', border: '1px solid #d0d7e2' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#1d2939' }}>{tier1Need.value}</div>
-            <div style={{ fontSize: 9.5, color: '#667085', textTransform: 'uppercase' }}>Tier 1 Need</div>
-            {tier1Need.note ? <div style={{ fontSize: 9.5, color: '#667085' }}>{tier1Need.note}</div> : null}
-          </div>
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: '6px 8px',
-              borderRadius: 6,
-              background: gapValue == null ? '#f8fafc' : gapIsDeficit ? '#fef3f2' : '#f0fdf4',
-              border: `1px solid ${gapValue == null ? '#d0d7e2' : gapIsDeficit ? '#fda29b' : '#86efac'}`
-            }}
-          >
-            <div style={{ fontSize: 15, fontWeight: 800, color: gapValue == null ? '#1d2939' : gapIsDeficit ? '#dc2626' : '#15803d' }}>
-              {gapValue != null ? formatGapSf(gapValue) : 'N/A'}
+          {[tier1Need, spaceGap].map(({ key, ...props }) => (
+            <div key={key} style={{ flex: 1, minWidth: 0 }}>
+              <KpiCard {...props} compact />
             </div>
-            <div style={{ fontSize: 9.5, color: '#667085', textTransform: 'uppercase' }}>Space Gap</div>
-          </div>
+          ))}
         </div>
       ) : null}
 
       <button
-        className="btn primary"
         type="button"
         onClick={() => setModalOpen(true)}
         disabled={!data}
-        style={{ marginTop: 8 }}
+        style={{
+          marginTop: 8,
+          width: '100%',
+          padding: '8px 12px',
+          border: 'none',
+          borderRadius: 6,
+          background: MF.ink.primary,
+          color: MF.surface.page,
+          fontFamily: 'inherit',
+          fontSize: 12.5,
+          fontWeight: 600,
+          cursor: data ? 'pointer' : 'default',
+          opacity: data ? 1 : 0.55
+        }}
       >
-        Open Dashboard
+        Open Executive Dashboard
       </button>
 
       {modalOpen && data ? (
