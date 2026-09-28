@@ -23,7 +23,7 @@ export const RS_STATUS = {
 export const RS_STATUS_LABELS = {
   [RS_STATUS.NOT_STARTED]: 'Not started',
   [RS_STATUS.CLASSIFIED]: 'Classified',
-  [RS_STATUS.EXCLUDED]: 'Excluded (vacant / ineligible)'
+  [RS_STATUS.EXCLUDED]: 'Excluded'
 };
 
 // Floorplan fills. Out-of-scope rooms use RS_OUT_OF_SCOPE_COLOR.

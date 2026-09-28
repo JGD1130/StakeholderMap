@@ -36,9 +36,20 @@
 // panel reads the rollup, and reads/writes the draft through
 // useResearchSpaceDraft(data), so unmounting the panel keeps unsaved edits.
 // Reads and writes go to data.universityId.
+//
+// Phase 6.3: the panel opens with a compact summary (classification progress,
+// Organized Research SF) and the button that opens the F&A Compass workspace
+// (FaCompassWorkspace.jsx: Overview, Rooms, Method). The room list and the
+// occupant editor stay here for now, inside a "Classify rooms" disclosure
+// that opens by itself when a room is picked (list or map click).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
+import { MF } from '../theme/mfTokens';
 import { useResearchSpaceDraft } from '../utils/useResearchSpaceData';
+import { RS_STATUS } from '../utils/researchSpaceStatus';
+import { KpiCard } from './mf';
+import FaCompassWorkspace from './FaCompassWorkspace.jsx';
+import { sideCardKpis, statusLabel } from './faCompassView';
 import {
   FUNCTIONAL_CATEGORIES,
   FUNCTIONAL_CATEGORY_LABEL_BY_CODE,
@@ -84,21 +95,24 @@ function formatSF(value) {
 // `onSelectedRoomKeyChange` and the map can open a room's editor directly
 // (click-to-classify); omit them and the panel selects internally as before.
 // `onJumpToFloor(room)` (optional) loads the room's floorplan floor.
+// `resolveRoomFloor(room)` (optional) -> Promise<floor id | null>, used by the
+// workspace to show "No floorplan" instead of a failing Show on map.
 export default function ResearchSpaceClassificationPanel({
   enabled = false,
   title = 'F&A Compass',
+  universityName = '',
   data,
   selectedRoomKey: controlledRoomKey,
   onSelectedRoomKeyChange,
-  onJumpToFloor
+  onJumpToFloor,
+  resolveRoomFloor
 }) {
   const {
     scopeRooms: airtableRooms,
     airtableError,
     loadError,
     reload,
-    roomRows,
-    rollup
+    roomRows
   } = data;
   // The open room's draft lives in the hook (survives this panel unmounting).
   const { draft, openDraft, setDraft, discardDraft, saveDraft } = useResearchSpaceDraft(data);
@@ -111,8 +125,16 @@ export default function ResearchSpaceClassificationPanel({
   const [saveError, setSaveError] = useState('');
   const [filterText, setFilterText] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'classified' | 'remaining'
-  const [sectionOpen, setSectionOpen] = useState(true);
+  // "Classify rooms" disclosure (room list + editor).
+  const [classifyOpen, setClassifyOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const rootRef = useRef(null);
+
+  // Picking a room (list or map click) opens the disclosure so the editor
+  // is visible; closing it by hand afterwards is left alone.
+  useEffect(() => {
+    if (selectedRoomKey) setClassifyOpen(true);
+  }, [selectedRoomKey]);
 
   const filteredRoomRows = useMemo(() => {
     const text = filterText.trim().toLowerCase();
@@ -277,54 +299,47 @@ export default function ResearchSpaceClassificationPanel({
         </div>
       )}
 
-      {/* Rollup summary -- always visible, this is the headline F&A figure. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-        <div style={{ flex: '1 1 160px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: 8 }}>
-          <div style={{ fontSize: 10.5, color: '#9a3412', fontWeight: 700, textTransform: 'uppercase' }}>Total Organized Research SF</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#7c2d12' }}>{formatSF(rollup.totalOrganizedResearchSF)}</div>
-        </div>
-        <div style={{ flex: '1 1 120px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: 8 }}>
-          <div style={{ fontSize: 10.5, color: '#075985', fontWeight: 700, textTransform: 'uppercase' }}>Rooms in scope</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#0c4a6e' }}>{rollup.roomCountInScope}</div>
-        </div>
-        <div style={{ flex: '1 1 120px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: 8 }}>
-          <div style={{ fontSize: 10.5, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Classified</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#14532d' }}>{rollup.roomCountClassified}</div>
-        </div>
-        <div style={{ flex: '1 1 120px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 8 }}>
-          <div style={{ fontSize: 10.5, color: '#991b1b', fontWeight: 700, textTransform: 'uppercase' }}>Remaining</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#7f1d1d' }}>{rollup.roomCountRemaining}</div>
-        </div>
+      {/* Summary: the two headline figures + the workspace. */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {sideCardKpis(data).map(({ key, ...props }) => (
+          <div key={key} style={{ flex: 1, minWidth: 0 }}>
+            <KpiCard {...props} compact />
+          </div>
+        ))}
       </div>
+      <button
+        type="button"
+        onClick={() => setWorkspaceOpen(true)}
+        style={{
+          marginTop: 8,
+          width: '100%',
+          padding: '8px 12px',
+          border: 'none',
+          borderRadius: 6,
+          background: MF.ink.primary,
+          color: MF.surface.page,
+          fontFamily: 'inherit',
+          fontSize: 12.5,
+          fontWeight: 600,
+          cursor: 'pointer'
+        }}
+      >
+        Open F&amp;A Compass
+      </button>
+      {workspaceOpen ? (
+        <FaCompassWorkspace
+          data={data}
+          universityName={universityName}
+          onJumpToFloor={onJumpToFloor}
+          resolveRoomFloor={resolveRoomFloor}
+          onClose={() => setWorkspaceOpen(false)}
+        />
+      ) : null}
 
-      <details open={sectionOpen} onToggle={(e) => setSectionOpen(e.currentTarget.open)}>
-        <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
-          Category breakdown ({Object.keys(rollup.categoryTotalsSF).length} categor{Object.keys(rollup.categoryTotalsSF).length === 1 ? 'y' : 'ies'} in use, {formatSF(rollup.knownAreaSF)} known area)
+      <details open={classifyOpen} onToggle={(e) => setClassifyOpen(e.currentTarget.open)} style={{ marginTop: 10 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: MF.ink.primary, marginBottom: 6 }}>
+          Classify rooms
         </summary>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginBottom: 10 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
-              <th style={{ padding: '3px 6px' }}>Category</th>
-              <th style={{ padding: '3px 6px' }}>SF</th>
-              <th style={{ padding: '3px 6px' }}>% of known area</th>
-            </tr>
-          </thead>
-          <tbody>
-            {FUNCTIONAL_CATEGORIES.map((cat) => {
-              const sf = rollup.categoryTotalsSF[cat.code] || 0;
-              const pctOfKnown = rollup.knownAreaSF > 0 ? (sf / rollup.knownAreaSF) * 100 : 0;
-              if (!sf) return null;
-              return (
-                <tr key={cat.code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '3px 6px' }}>{cat.label}</td>
-                  <td style={{ padding: '3px 6px' }}>{formatSF(sf)}</td>
-                  <td style={{ padding: '3px 6px' }}>{formatPct(pctOfKnown)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </details>
 
       {/* Room list */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -359,11 +374,7 @@ export default function ResearchSpaceClassificationPanel({
             </thead>
             <tbody>
               {filteredRoomRows.map((room) => {
-                const statusLabel = room.exclusionStatus
-                  ? ROOM_EXCLUSION_STATUSES.find((s) => s.code === room.exclusionStatus)?.label
-                  : room.occupantCount > 0
-                    ? `${room.occupantCount} occupant${room.occupantCount === 1 ? '' : 's'}`
-                    : 'Not started';
+                const roomStatusLabel = statusLabel(room.status);
                 return (
                   <tr key={room.roomKey} style={{ borderBottom: '1px solid #f1f5f9', background: selectedRoomKey === room.roomKey ? '#fff7ed' : undefined }}>
                     <td style={{ padding: '4px 6px' }}>{room.building}</td>
@@ -382,7 +393,7 @@ export default function ResearchSpaceClassificationPanel({
                       ) : null}
                     </td>
                     <td style={{ padding: '4px 6px', color: '#64748b' }}>{room.source === 'lab' ? 'Lab' : 'Office'}</td>
-                    <td style={{ padding: '4px 6px', color: room.isClassified ? '#166534' : '#94a3b8' }}>{statusLabel}</td>
+                    <td style={{ padding: '4px 6px', color: room.status === RS_STATUS.NOT_STARTED ? MF.ink.muted : MF.ink.primary }}>{roomStatusLabel}</td>
                     <td style={{ padding: '4px 6px' }}>
                       <button type="button" onClick={() => openRoom(room)} style={{ fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
                         {room.isClassified ? 'Edit' : 'Classify'}
@@ -549,6 +560,7 @@ export default function ResearchSpaceClassificationPanel({
           {saveError && <span style={{ marginLeft: 10, fontSize: 11.5, color: '#b42318' }}>{saveError}</span>}
         </div>
       )}
+      </details>
     </div>
   );
 }

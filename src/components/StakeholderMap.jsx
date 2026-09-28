@@ -22889,13 +22889,23 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
   // F&A color mode, then highlight the room. Uses the same pending-ref +
   // selection-state + effect shape as pendingScenarioLoadRef above (selection
   // state must commit before handleLoadFloorplan reads it).
+  // The floorplan floor id for an F&A room, or null when its building has no
+  // floorplan for that floor. Shared by the jump below and the F&A Compass
+  // workspace (which shows "No floorplan" instead of a failing Show on map).
+  const resolveFaRoomFloor = useCallback(async (room) => {
+    const folder = String(room?.folder || '').trim();
+    const wantedFloor = floorIdFromAirtableFloor(room?.floor);
+    if (!folder || !wantedFloor) return null;
+    const available = await ensureFloorsForBuilding(folder);
+    return resolveAvailableFloorId(wantedFloor, available) || null;
+  }, [ensureFloorsForBuilding]);
+
   const handleFaJumpToFloor = useCallback(async (room) => {
     const folder = String(room?.folder || '').trim();
     const wantedFloor = floorIdFromAirtableFloor(room?.floor);
     if (!folder || !wantedFloor) return;
     const buildingName = resolveBuildingNameFromInput(folder) || folder;
-    const available = await ensureFloorsForBuilding(folder);
-    const floorId = resolveAvailableFloorId(wantedFloor, available);
+    const floorId = await resolveFaRoomFloor(room);
     if (!floorId) {
       alert(`No floorplan is available for ${buildingName} (${wantedFloor}).`);
       return;
@@ -22906,7 +22916,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setSelectedBuilding(buildingName);
     setSelectedFloor(floorId);
     setFaJumpTick((n) => n + 1);
-  }, [ensureFloorsForBuilding]);
+  }, [resolveFaRoomFloor]);
 
   useEffect(() => {
     const pending = faPendingJumpRef.current;
@@ -31313,10 +31323,12 @@ useEffect(() => {
           <div className="dashboard-box">
             <ResearchSpaceClassificationPanel
               enabled={researchSpaceEnabled}
+              universityName={activeUniversityName}
               data={researchSpaceData}
               selectedRoomKey={faSelectedRoomKey}
               onSelectedRoomKeyChange={setFaSelectedRoomKey}
               onJumpToFloor={handleFaJumpToFloor}
+              resolveRoomFloor={resolveFaRoomFloor}
             />
           </div>
         )}
