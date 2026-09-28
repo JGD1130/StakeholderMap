@@ -34,6 +34,61 @@ export const mfOnBarButtonStyle = {
   '--mf-focus-color': MF.surface.page
 };
 
+// Buttons on a white/card surface: primary (dark, like "Open Executive
+// Dashboard") and secondary (outline).
+export const mfPrimaryButtonStyle = {
+  padding: '6px 14px',
+  borderRadius: 6,
+  border: `1px solid ${MF.ink.primary}`,
+  background: MF.ink.primary,
+  color: MF.surface.page,
+  fontFamily: 'inherit',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap'
+};
+
+export const mfSecondaryButtonStyle = {
+  ...mfPrimaryButtonStyle,
+  border: `1px solid ${MF.line.border}`,
+  background: MF.surface.page,
+  color: MF.ink.primary
+};
+
+// Text input / select / date input.
+export const mfInputStyle = {
+  boxSizing: 'border-box',
+  fontFamily: 'inherit',
+  fontSize: 12,
+  color: MF.ink.primary,
+  background: MF.surface.page,
+  border: `1px solid ${MF.line.border}`,
+  borderRadius: 6,
+  padding: '4px 8px'
+};
+
+// Data table cells (header / body), as ScoreTable draws them.
+export const mfTableHeaderCell = {
+  padding: '6px 8px',
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  color: MF.ink.muted,
+  borderBottom: `1px solid ${MF.line.hairline}`,
+  textAlign: 'left',
+  whiteSpace: 'nowrap'
+};
+
+export const mfTableBodyCell = {
+  padding: '8px',
+  fontSize: 12,
+  color: MF.ink.primary,
+  borderBottom: `1px solid ${MF.line.hairline}`,
+  verticalAlign: 'middle'
+};
+
 // Small rounded label, e.g. the Gauge's "Current" pill.
 export const mfPillStyle = {
   display: 'inline-block',

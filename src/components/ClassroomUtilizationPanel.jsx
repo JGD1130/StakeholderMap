@@ -7,41 +7,24 @@
 // gated by the same enableClassroomUtilization flag (no second flag) -- see
 // the split comment directly above each export for the full reasoning:
 //   - `ClassroomUtilizationPanel` (default export, title "Classroom
-//     Utilization"): Import Schedule, Terms, Utilization Results.
+//     Utilization"): a summary card plus the button that opens the
+//     Classroom Utilization workspace (ClassroomUtilizationWorkspace.jsx),
+//     where Import Schedule, Terms and all results now live.
 //   - `SpaceGrowthProjectionsPanel` (named export, title "Space Growth
 //     Projections"): Space Configuration, Room Utilization Tagging,
 //     Enrollment & FTE Projections, Space Growth / Right-Sizing.
-// Every section function in between is unchanged from before the split --
-// only which of the two exported components renders which sections moved.
-//
-// "Import Schedule" fetches the existing, read-only /class-schedule endpoint
-// and writes the deduped result into universities/hastings/courseMeetings --
-// the only collection either panel ever writes to via that action. Nothing
-// here touches server.js or any other panel.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Timestamp, collection, doc, getDocs, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import {
   COURSE_MEETINGS_COLLECTION,
   ENROLLMENT_PROJECTIONS_COLLECTION,
   ROOM_UTILIZATION_META_COLLECTION,
   SPACE_CONFIG_COLLECTION,
-  SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION,
-  TERMS_COLLECTION
+  SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION
 } from '../utils/classroomUtilizationSchema';
-import {
-  buildCourseMeetingId,
-  dedupeCrossTalliedScheduleRows,
-  fetchClassScheduleRows,
-  mapScheduleEntryToCourseMeetingDoc
-} from '../utils/classroomScheduleImport';
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
-import {
-  formatHeatmapHourLabel,
-  fetchAirtableRoomsForUtilization,
-  buildAirtableAreaMap,
-  INDUSTRY_TARGET_TIME_UTILIZATION
-} from '../utils/classroomUtilizationCalc';
+import { fetchAirtableRoomsForUtilization, buildAirtableAreaMap } from '../utils/classroomUtilizationCalc';
 import { isAbortError } from '../utils/fetchWithTimeout';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType, deriveOfficeRoomsFromAirtable } from '../utils/roomTypeSuggestion';
 import {
@@ -54,7 +37,9 @@ import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/space
 import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget, getMasterPlanOfficeSpaceTarget } from '../utils/masterPlanSpaceTargets';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import { MF } from '../theme/mfTokens';
+import { KpiCard } from './mf';
 import ClassroomUtilizationWorkspace from './ClassroomUtilizationWorkspace.jsx';
+import { summaryKpis, termDisplayLabel } from './classroomUtilizationView';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -63,16 +48,6 @@ const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking conven
 // titles this file exports (ClassroomUtilizationPanel and
 // SpaceGrowthProjectionsPanel).
 const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
-
-function summarizeDocs(docs) {
-  const rooms = new Set();
-  docs.forEach((data) => {
-    const building = String(data?.building || '').trim().toLowerCase();
-    const room = String(data?.room || '').trim().toLowerCase();
-    if (building || room) rooms.add(`${building}||${room}`);
-  });
-  return { meetingCount: docs.length, roomCount: rooms.size };
-}
 
 // Space Configuration -- one row per space category (universities/hastings/
 // spaceConfig/{spaceCategory}), sfPerStationTarget + targetUtilizationRate.
@@ -454,403 +429,6 @@ function SpaceConfigSection() {
         <button className="btn" type="button" onClick={handleAddCategory} disabled={!newCategoryName.trim()}>
           Add
         </button>
-      </div>
-
-      {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
-      {saveMessage ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{saveMessage}</div> : null}
-      {saveError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{saveError}</div> : null}
-      </details>
-    </div>
-  );
-}
-
-// Terms -- one row per academic term/session (universities/hastings/terms/
-// {termId}), per-session grain per Clark's decision: each doc is one
-// academicYear + term + sessionNumber combination with its own
-// standardWeeklyHours. Mirrors SpaceConfigSection's structure/conventions
-// (dirty-tracking against a persisted snapshot, single "Save" button for
-// whichever rows changed, validate-before-write, plain setDoc overwrite --
-// no {merge: true}, same reasoning as spaceConfig: no partial-update case
-// to preserve, and a full overwrite can't hide a field that silently failed
-// to reach the form). Same data-driven "Add" flow, no hardcoded term list,
-// for the same future-clients reason spaceConfig has no hardcoded category
-// list.
-//
-// termId is deterministic (year-term-session, e.g. "2026-fall-1") rather
-// than a random Firestore auto-id, both so it's recognizable in the
-// Firestore console and so re-adding the same year/term/session can't
-// silently create a duplicate doc -- it's caught before it's even added
-// to the local unsaved-row list, let alone written.
-function buildTermId({ academicYear, term, sessionNumber }) {
-  const yearPart = String(academicYear ?? '').trim() || 'x';
-  const termPart = String(term ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
-  const sessionPart = String(sessionNumber ?? '').trim() || 'x';
-  return `${yearPart}-${termPart}-${sessionPart}`;
-}
-
-function dateInputToTimestamp(dateStr) {
-  if (!dateStr) return null;
-  const [y, m, d] = String(dateStr).split('-').map(Number);
-  if (!y || !m || !d) return null;
-  // Constructed at UTC midnight (not local midnight) so the round trip back
-  // through timestampToDateInput below can't drift a day depending on the
-  // browser's timezone -- these are calendar dates, not moments in time.
-  return Timestamp.fromDate(new Date(Date.UTC(y, m - 1, d)));
-}
-
-function timestampToDateInput(ts) {
-  if (!ts?.toDate) return '';
-  const d = ts.toDate();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function validateTermRow(row) {
-  const errors = [];
-  const hours = Number(row.standardWeeklyHours);
-  if (!Number.isFinite(hours) || hours <= 0) errors.push('Standard weekly hours must be a positive number');
-  const session = Number(row.sessionNumber);
-  if (!Number.isInteger(session) || session <= 0) errors.push('Session number must be a positive integer');
-  if (!row.startDate) errors.push('Start date is required');
-  if (!row.endDate) errors.push('End date is required');
-  // ISO "YYYY-MM-DD" strings sort correctly with plain string comparison.
-  if (row.startDate && row.endDate && !(row.endDate > row.startDate)) errors.push('End date must be after start date');
-  return errors;
-}
-
-// onSaved: called after a successful save so the shared utilization results
-// (useClassroomUtilizationData) re-read terms and recompute.
-function TermsSection({ onSaved }) {
-  const [form, setForm] = useState({});
-  const [persisted, setPersisted] = useState({});
-  const [termOrder, setTermOrder] = useState([]);
-  const [newTermInputs, setNewTermInputs] = useState({ academicYear: '', term: '', sessionNumber: '' });
-  const [addError, setAddError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState('');
-  const [saveError, setSaveError] = useState('');
-  // Collapsed by default -- same disclosure pattern as RoomUtilizationMetaSection
-  // (layout-only addition; loadTerms()'s useEffect below still runs
-  // unconditionally on mount regardless of open/collapsed state).
-  const [sectionOpen, setSectionOpen] = useState(false);
-
-  const termsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
-    []
-  );
-
-  const loadTerms = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const snap = await getDocs(termsCollection);
-      const nextPersisted = {};
-      const nextForm = {};
-      const order = [];
-      snap.docs.forEach((docSnap) => {
-        const termId = docSnap.id;
-        const data = docSnap.data() || {};
-        const rowValues = {
-          academicYear: data.academicYear ?? '',
-          term: String(data.term || ''),
-          sessionNumber: data.sessionNumber ?? '',
-          startDate: timestampToDateInput(data.startDate),
-          endDate: timestampToDateInput(data.endDate),
-          standardWeeklyHours: Number.isFinite(Number(data.standardWeeklyHours)) ? String(data.standardWeeklyHours) : '',
-          isHistorical: Boolean(data.isHistorical)
-        };
-        order.push(termId);
-        nextPersisted[termId] = rowValues;
-        nextForm[termId] = rowValues;
-      });
-      order.sort((a, b) => a.localeCompare(b));
-      setTermOrder(order);
-      setPersisted(nextPersisted);
-      setForm(nextForm);
-    } catch (error) {
-      setLoadError(String(error?.message || 'Failed to load terms.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [termsCollection]);
-
-  useEffect(() => {
-    void loadTerms();
-  }, [loadTerms]);
-
-  const handleFieldChange = useCallback((termId, field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [termId]: { ...prev[termId], [field]: value }
-    }));
-  }, []);
-
-  const handleQuickFill = useCallback((sessionNumber) => {
-    setNewTermInputs({ academicYear: '2026', term: 'FALL', sessionNumber: String(sessionNumber) });
-    setAddError('');
-  }, []);
-
-  const handleAddTerm = useCallback(() => {
-    setAddError('');
-    const academicYear = Number(newTermInputs.academicYear);
-    const term = newTermInputs.term.trim();
-    const sessionNumber = Number(newTermInputs.sessionNumber);
-    if (!Number.isFinite(academicYear) || academicYear <= 0) { setAddError('Enter a valid academic year.'); return; }
-    if (!term) { setAddError('Enter a term (e.g. FALL).'); return; }
-    if (!Number.isInteger(sessionNumber) || sessionNumber <= 0) { setAddError('Enter a valid session number.'); return; }
-
-    const termId = buildTermId({ academicYear, term, sessionNumber });
-    if (termOrder.includes(termId)) { setAddError(`Term already exists: ${termId}`); return; }
-
-    setTermOrder((prev) => [...prev, termId].sort((a, b) => a.localeCompare(b)));
-    setForm((prev) => ({
-      ...prev,
-      [termId]: {
-        academicYear,
-        term: term.toUpperCase(),
-        sessionNumber,
-        startDate: '',
-        endDate: '',
-        standardWeeklyHours: '',
-        // New terms are never historical by default -- this flag is for a
-        // future backfill of old Excel-era terms, not needed today.
-        isHistorical: false
-      }
-    }));
-    setNewTermInputs({ academicYear: '', term: '', sessionNumber: '' });
-  }, [newTermInputs, termOrder]);
-
-  const handleRemoveUnsavedTerm = useCallback((termId) => {
-    setTermOrder((prev) => prev.filter((t) => t !== termId));
-    setForm((prev) => {
-      const next = { ...prev };
-      delete next[termId];
-      return next;
-    });
-  }, []);
-
-  const isTermDirty = useCallback((termId) => {
-    const row = form[termId];
-    const saved = persisted[termId];
-    if (!row) return false;
-    if (!saved) {
-      return Boolean(row.startDate || row.endDate || String(row.standardWeeklyHours || '').trim() || row.isHistorical);
-    }
-    return (
-      row.startDate !== saved.startDate
-      || row.endDate !== saved.endDate
-      || String(row.standardWeeklyHours) !== String(saved.standardWeeklyHours)
-      || Boolean(row.isHistorical) !== Boolean(saved.isHistorical)
-    );
-  }, [form, persisted]);
-
-  const dirtyTermIds = useMemo(
-    () => termOrder.filter((termId) => isTermDirty(termId)),
-    [termOrder, isTermDirty]
-  );
-
-  const handleSave = useCallback(async () => {
-    if (saving || !dirtyTermIds.length) return;
-    setSaving(true);
-    setSaveMessage('');
-    setSaveError('');
-
-    const invalid = dirtyTermIds
-      .map((termId) => ({ termId, errors: validateTermRow(form[termId]) }))
-      .filter((entry) => entry.errors.length);
-    if (invalid.length) {
-      setSaveError(invalid.map((entry) => `${entry.termId}: ${entry.errors.join('; ')}`).join(' | '));
-      setSaving(false);
-      return;
-    }
-
-    try {
-      for (const termId of dirtyTermIds) {
-        const row = form[termId];
-        const payload = {
-          academicYear: Number(row.academicYear),
-          term: String(row.term).trim().toUpperCase(),
-          sessionNumber: Number(row.sessionNumber),
-          startDate: dateInputToTimestamp(row.startDate),
-          endDate: dateInputToTimestamp(row.endDate),
-          standardWeeklyHours: Number(row.standardWeeklyHours),
-          isHistorical: Boolean(row.isHistorical)
-        };
-        // Plain overwrite (no {merge: true}) -- mirrors spaceConfig's save:
-        // the form supplies every field together, so there's no partial
-        // update to preserve.
-        await setDoc(doc(termsCollection, termId), payload);
-      }
-      setSaveMessage(`Saved ${dirtyTermIds.length.toLocaleString()} term${dirtyTermIds.length === 1 ? '' : 's'}.`);
-      await loadTerms();
-      void onSaved?.();
-    } catch (error) {
-      setSaveError(String(error?.message || 'Failed to save terms.'));
-    } finally {
-      setSaving(false);
-    }
-  }, [saving, dirtyTermIds, form, termsCollection, loadTerms, onSaved]);
-
-  // Term count visible in the summary label without expanding, same
-  // convention as SpaceConfigSection above.
-  const summaryLabel = termOrder.length
-    ? `Terms (${termOrder.length} term${termOrder.length === 1 ? '' : 's'})`
-    : 'Terms';
-
-  return (
-    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
-      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
-        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
-          {summaryLabel}
-        </summary>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={saving || !dirtyTermIds.length}
-          >
-            {saving ? 'Saving...' : `Save Terms${dirtyTermIds.length ? ` (${dirtyTermIds.length})` : ''}`}
-          </button>
-        </div>
-
-        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-          One row per academic year + term + session. Changed rows are highlighted and saved together with the button above.
-        </div>
-
-        {loading && !termOrder.length ? (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Loading terms...</div>
-      ) : (
-        <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-          {termOrder.map((termId) => {
-            const row = form[termId] || {};
-            const dirty = isTermDirty(termId);
-            const isUnsaved = !persisted[termId];
-            const rowErrors = dirty ? validateTermRow(row) : [];
-            return (
-              <div
-                key={termId}
-                style={{
-                  padding: 6,
-                  background: dirty ? '#fffbeb' : '#f8fafc',
-                  border: `1px solid ${dirty ? '#fde68a' : '#e5e7eb'}`,
-                  borderRadius: 6
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, overflowWrap: 'anywhere' }}>
-                    {termId}
-                    {isUnsaved ? <span style={{ color: '#b45309', fontWeight: 500 }}> (unsaved)</span> : null}
-                  </div>
-                  {isUnsaved ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveUnsavedTerm(termId)}
-                      style={{ background: 'none', border: 'none', color: '#b42318', fontSize: 10.5, cursor: 'pointer', padding: 0 }}
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-
-                {/* flex-wrap (was a fixed "1fr 1fr 1fr" grid) -- date
-                    inputs have a real intrinsic minimum width (the native
-                    picker UI), so three equal grid columns could get
-                    squeezed narrower than that and force the row wider than
-                    the column instead of wrapping. Each field gets a
-                    minWidth and wraps to its own line if there isn't room. */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                  <label style={{ flex: '1 1 100px', minWidth: 100, fontSize: 10, color: '#667085' }}>
-                    Start date
-                    <input
-                      type="date"
-                      value={row.startDate || ''}
-                      onChange={(e) => handleFieldChange(termId, 'startDate', e.target.value)}
-                      style={{ display: 'block', width: '100%', fontSize: 11, padding: '3px 5px', marginTop: 2 }}
-                    />
-                  </label>
-                  <label style={{ flex: '1 1 100px', minWidth: 100, fontSize: 10, color: '#667085' }}>
-                    End date
-                    <input
-                      type="date"
-                      value={row.endDate || ''}
-                      onChange={(e) => handleFieldChange(termId, 'endDate', e.target.value)}
-                      style={{ display: 'block', width: '100%', fontSize: 11, padding: '3px 5px', marginTop: 2 }}
-                    />
-                  </label>
-                  <label style={{ flex: '1 1 100px', minWidth: 100, fontSize: 10, color: '#667085' }}>
-                    Weekly hours
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={row.standardWeeklyHours || ''}
-                      onChange={(e) => handleFieldChange(termId, 'standardWeeklyHours', e.target.value)}
-                      style={{ display: 'block', width: '100%', fontSize: 11, padding: '3px 5px', marginTop: 2 }}
-                    />
-                  </label>
-                </div>
-
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 10.5 }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(row.isHistorical)}
-                    onChange={(e) => handleFieldChange(termId, 'isHistorical', e.target.checked)}
-                  />
-                  Historical (backfilled from old Excel-era terms, not current/upcoming)
-                </label>
-
-                {rowErrors.length ? (
-                  <div style={{ marginTop: 4, fontSize: 10, color: '#b42318' }}>{rowErrors.join('; ')}</div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ marginTop: 8, padding: 6, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 6 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 600, color: '#344054', marginBottom: 4 }}>Add Term</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-          <button type="button" className="btn" onClick={() => handleQuickFill(1)}>Fall 2026 Block 1</button>
-          <button type="button" className="btn" onClick={() => handleQuickFill(2)}>Fall 2026 Block 2</button>
-        </div>
-        {/* flex-wrap (was a fixed "80px 1fr 90px auto" grid) -- this is the
-            row that was actually reported overflowing: four fields plus a
-            button had no way to reflow at the column's width. Each field
-            gets a minWidth and wraps instead of forcing the row wider. */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          <input
-            type="number"
-            placeholder="Year"
-            value={newTermInputs.academicYear}
-            onChange={(e) => setNewTermInputs((prev) => ({ ...prev, academicYear: e.target.value }))}
-            style={{ flex: '0 1 70px', minWidth: 60, fontSize: 11, padding: '4px 6px' }}
-          />
-          <input
-            type="text"
-            placeholder="Term (e.g. FALL)"
-            value={newTermInputs.term}
-            onChange={(e) => setNewTermInputs((prev) => ({ ...prev, term: e.target.value }))}
-            style={{ flex: '1 1 110px', minWidth: 100, fontSize: 11, padding: '4px 6px' }}
-          />
-          <input
-            type="number"
-            placeholder="Session #"
-            value={newTermInputs.sessionNumber}
-            onChange={(e) => setNewTermInputs((prev) => ({ ...prev, sessionNumber: e.target.value }))}
-            style={{ flex: '0 1 90px', minWidth: 80, fontSize: 11, padding: '4px 6px' }}
-          />
-          <button className="btn" type="button" onClick={handleAddTerm} style={{ flex: '0 0 auto' }}>
-            Add
-          </button>
-        </div>
-        {addError ? <div style={{ marginTop: 4, fontSize: 10, color: '#b42318' }}>{addError}</div> : null}
       </div>
 
       {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
@@ -3010,563 +2588,20 @@ function SpaceGrowthSection() {
   );
 }
 
-// Utilization Calc Engine (roadmap item 6/6) -- the first real output of
-// this module. Strictly read-only against courseMeetings/terms/Airtable;
-// nothing here writes anything, unlike every section above. Does NOT depend
-// on roomUtilizationMeta tagging -- Time/Seat Utilization are computed from
-// courseMeetings+terms+Airtable capacity alone, per Clark's confirmation
-// this session that space-category tagging only matters for the future
-// growth/right-sizing module, not this one.
+// Structural split (2026-08-19): two separate dashboard boxes in
+// StakeholderMap.jsx, both gated by the one enableClassroomUtilization flag --
+// ClassroomUtilizationPanel (this component) and SpaceGrowthProjectionsPanel
+// (below: Space Configuration, Room Utilization Tagging, Enrollment & FTE
+// Projections, Space Growth / Right-Sizing). Kept as two exports from this
+// one file because the Space Growth sections share the constants/helpers at
+// the top.
 //
-// Per Clark's decision, results are room+term grain, not room-level: a room
-// used in both Fall 2026 Block 1 and Block 2 produces two separate rows,
-// each scored only against that term's own meetings and standardWeeklyHours
-// -- never blended. See classroomUtilizationCalc.js's computeClassroomUtilization
-// header comment for the full reasoning, including why a term-unmatched
-// meeting has no row to belong to at all (not just no Time Utilization).
-//
-// Live Firestore verification of courseMeetings/terms field shapes was
-// attempted via a browser-console snippet this session but blocked by a
-// DevTools paste/autoclose issue unrelated to the snippet itself (confirmed
-// clean via node -c, no BOM, no non-ASCII, no CRLF). This section is built
-// defensively against the two conditions that couldn't be pre-verified --
-// see classroomUtilizationCalc.js's header comment for the full reasoning:
-// a courseMeetings doc whose sessionRaw doesn't resolve to any terms doc is
-// excluded from Time Utilization and counted in the visible banner below,
-// never silently dropped or defaulted; enrollment/capacity being null/absent
-// per meeting or room shows as an explicit "pending enrollment data" /
-// "capacity unknown" label, never a blank cell or a fabricated 0%.
-function formatPct(value) {
-  return Number.isFinite(value) ? `${Math.round(value)}%` : '—';
-}
-
-const INDUSTRY_TARGET_TIME_UTILIZATION_PCT = INDUSTRY_TARGET_TIME_UTILIZATION * 100;
-
-// Simple above/at/below read against the static Industry Target -- no new
-// calc logic, just a threshold comparison on the already-computed
-// timeUtilizationPct. +/-1 point counts as "at target" so a room sitting
-// essentially on the line doesn't flip between up/down arrows.
-function compareToIndustryTarget(pct) {
-  if (!Number.isFinite(pct)) return null;
-  const diff = pct - INDUSTRY_TARGET_TIME_UTILIZATION_PCT;
-  if (Math.abs(diff) < 1) return 'at';
-  return diff > 0 ? 'above' : 'below';
-}
-
-const TARGET_TONE_COLOR = { above: '#15803d', below: '#b42318', at: '#667085' };
-const TARGET_TONE_ARROW = { above: '▲', below: '▼', at: '●' };
-
-// Per-room visual indicator -- not a new metric, just a compact read of
-// how that room's already-computed Time Utilization sits against the
-// Industry Target. Tooltip carries the exact "Industry Target: 65%"
-// wording every other display of this benchmark uses; the badge itself is
-// an arrow/dot so it stays legible at table density.
-function TimeUtilizationTargetBadge({ pct }) {
-  const tone = compareToIndustryTarget(pct);
-  if (!tone) return null;
-  return (
-    <span
-      title={`${formatPct(pct)} vs. Industry Target: ${formatPct(INDUSTRY_TARGET_TIME_UTILIZATION_PCT)}`}
-      style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: TARGET_TONE_COLOR[tone] }}
-    >
-      {TARGET_TONE_ARROW[tone]}
-    </span>
-  );
-}
-
-// The three results sections below (Utilization Results, Heat Map, Size
-// Range) no longer fetch on their own -- they read the one shared result
-// from useClassroomUtilizationData (mounted once in StakeholderMap.jsx and
-// passed down as `data`). "Loading" covers the pre-first-load 'idle' state
-// too, so the first paint still says "Calculating..." rather than "no data".
-function sharedLoadState(data) {
-  const status = data?.status || 'idle';
-  return {
-    loading: status === 'loading' || status === 'idle',
-    loadError: status === 'error' ? String(data?.error || '') : ''
-  };
-}
-
-function UtilizationResultsSection({ data }) {
-  const result = data?.results || null; // { rooms, buildingSummary, unmatchedMeetings, campusRollups, ... }
-  const { loading, loadError } = sharedLoadState(data);
-  // Collapsed by default -- same disclosure pattern as RoomUtilizationMetaSection.
-  // No count in the summary label -- this section's content is a full
-  // calculation result table, not a simple count, same reasoning Space
-  // Growth below follows.
-  const [sectionOpen, setSectionOpen] = useState(false);
-
-  const unmatchedCount = result?.unmatchedMeetings?.length || 0;
-
-  // Campus-wide rollup, split by term (never blended) -- computed once in
-  // the shared hook from the same result.rooms this table renders.
-  const campusRollups = result?.rooms?.length ? (result.campusRollups || []) : [];
-
-  return (
-    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
-      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
-        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
-          Utilization Results
-        </summary>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button className="btn" type="button" onClick={() => void data?.recalculate?.()} disabled={loading}>
-            {loading ? 'Calculating...' : 'Recalculate'}
-          </button>
-        </div>
-
-        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-          One row per room per term -- a room used in both Fall 2026 Block 1 and Block 2 shows as two rows.
-          Read-only -- does not require room tagging above.
-        </div>
-
-        <div style={{ marginTop: 6, fontSize: 10.5, color: '#667085', lineHeight: 1.4 }}>
-          <strong style={{ color: '#475467' }}>Time Utilization</strong> compares scheduled class hours against that
-          term's Standard Weekly Hours -- the baseline you set in the Terms section above for what counts as a
-          fully-booked week (e.g., an 8-hour teaching day × 5 days). A room scheduled beyond that baseline (over 100%)
-          means it's booked more than your defined standard, which may indicate a scheduling conflict worth checking.
-          Each row's actual standard is shown next to its term below.
-          (Formula: that term's weekly hours scheduled ÷ that term's standard weekly hours.)
-        </div>
-
-        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.4 }}>
-          <strong style={{ color: '#475467' }}>Seat Utilization</strong> shows how full a room's classes run on
-          average relative to how many seats it has -- a room at 100% is filling every seat, on average, across
-          its scheduled classes. Only shown once both enrollment and capacity are known.
-          (Formula: average enrollment ÷ Airtable seat capacity.)
-        </div>
-
-        {unmatchedCount > 0 ? (
-          <div
-            style={{
-              marginTop: 8,
-              padding: '8px 10px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              background: '#fffbeb',
-              border: '1px solid #fde68a',
-              color: '#92400e'
-            }}
-          >
-            {unmatchedCount} meeting{unmatchedCount === 1 ? '' : 's'} couldn't be matched to a term
-            (excluded from these results entirely -- no term means no row to belong to) -- see details below.
-          </div>
-        ) : null}
-
-        {campusRollups.length ? (
-          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {campusRollups.map((c) => (
-              <div
-                key={c.termId}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  background: '#f0f9ff',
-                  border: '1px solid #bae6fd',
-                  fontSize: 11.5,
-                  color: '#0c4a6e'
-                }}
-              >
-                <span style={{ fontWeight: 700 }}>Campus-wide — {c.termLabel}:</span>{' '}
-                {formatPct(c.timeUtilizationPct)} time
-                <span style={{ color: '#0369a1' }}> (Industry Target: {formatPct(INDUSTRY_TARGET_TIME_UTILIZATION_PCT)})</span>
-                , {formatPct(c.seatUtilizationPct)} seat
-                <span style={{ fontWeight: 400, color: '#0369a1', marginLeft: 6 }}>
-                  ({c.seatComputedRoomCount} of {c.totalRoomTermRows} room{c.totalRoomTermRows === 1 ? '' : 's'} in seat avg
-                  {c.seatExcludedRoomCount ? `; ${c.seatExcludedRoomCount} excluded — ${[
-                    c.seatPendingEnrollmentCount ? `${c.seatPendingEnrollmentCount} pending enrollment` : null,
-                    c.seatCapacityUnknownCount ? `${c.seatCapacityUnknownCount} capacity unknown` : null
-                  ].filter(Boolean).join(', ')}` : ''})
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-      {loading && !result ? (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating utilization...</div>
-      ) : result && result.rooms.length ? (
-        <div style={{ marginTop: 8, overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
-                <th style={{ padding: '4px 6px' }}>Building</th>
-                <th style={{ padding: '4px 6px' }}>Room</th>
-                <th style={{ padding: '4px 6px' }}>Term</th>
-                <th style={{ padding: '4px 6px' }}>Time Util.</th>
-                <th style={{ padding: '4px 6px' }}>Seat Util.</th>
-                <th style={{ padding: '4px 6px' }}>Meetings</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.rooms.map((r) => (
-                <tr key={r.rowKey} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '4px 6px' }}>{r.building}</td>
-                  <td style={{ padding: '4px 6px' }}>{r.room}</td>
-                  <td style={{ padding: '4px 6px' }}>
-                    {r.termLabel}
-                    {r.standardWeeklyHoursAvailable > 0 ? (
-                      <div style={{ fontSize: 9.5, color: '#98a2b3' }}>
-                        ({r.standardWeeklyHoursAvailable} hrs/wk standard)
-                      </div>
-                    ) : null}
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    {formatPct(r.timeUtilizationPct)}
-                    <TimeUtilizationTargetBadge pct={r.timeUtilizationPct} />
-                  </td>
-                  <td style={{ padding: '4px 6px', color: r.seatUtilizationStatus === 'computed' ? 'inherit' : '#94a3b8', fontStyle: r.seatUtilizationStatus === 'computed' ? 'normal' : 'italic' }}>
-                    {r.seatUtilizationStatus === 'computed'
-                      ? formatPct(r.seatUtilizationPct)
-                      : r.seatUtilizationStatus === 'capacity-unknown'
-                        ? 'capacity unknown'
-                        : 'pending enrollment data'}
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>{r.meetingCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {result.buildingSummary.length ? (
-            <>
-              <div style={{ marginTop: 10, fontSize: 11, fontWeight: 600, color: '#344054' }}>By building</div>
-              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11, marginTop: 4 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
-                    <th style={{ padding: '4px 6px' }}>Building</th>
-                    <th style={{ padding: '4px 6px' }}>Time Util.</th>
-                    <th style={{ padding: '4px 6px' }}>Rooms</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.buildingSummary.map((b) => (
-                    <tr key={b.building} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '4px 6px' }}>{b.building}</td>
-                      <td style={{ padding: '4px 6px' }}>{formatPct(b.timeUtilizationPct)}</td>
-                      <td style={{ padding: '4px 6px' }}>{b.roomCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : null}
-
-          {unmatchedCount > 0 ? (
-            <details style={{ marginTop: 10, fontSize: 10.5 }}>
-              <summary style={{ cursor: 'pointer', color: '#92400e', fontWeight: 600 }}>
-                Unmatched meetings ({unmatchedCount})
-              </summary>
-              <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
-                {result.unmatchedMeetings.map((m, i) => (
-                  <div key={i} style={{ padding: 6, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4 }}>
-                    {m.building} — {m.room} — {m.courseCode || '(no course code)'} — sessionRaw: "{m.sessionRaw}"
-                    {m.sessionLabel ? ` (${m.sessionLabel})` : ''} — {m.reason}
-                    {m.derivedTermId ? ` (looked for term "${m.derivedTermId}")` : ''}
-                  </div>
-                ))}
-              </div>
-            </details>
-          ) : null}
-        </div>
-      ) : (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
-          No courseMeetings data to compute against yet -- run Import Schedule above first.
-        </div>
-      )}
-
-        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
-      </details>
-    </div>
-  );
-}
-
-// --- Day/Time occupancy heat map ------------------------------------------
-//
-// Visual grid version of the original Master Facilities Plan's hourly
-// Day/Time utilization concept (hour rows, weekday columns, % of
-// classrooms occupied per cell) -- present in the original CE Calc spec but
-// never built until now. See classroomUtilizationCalc.js's
-// computeDayTimeHeatmapByTerm for the full aggregation reasoning (room
-// universe = every room with a scheduled meeting that term, independent of
-// Room Utilization Tagging; split by term, never blended). Reads the shared
-// useClassroomUtilizationData result, same as UtilizationResultsSection
-// immediately above -- a pure scheduling-density view that uses no Airtable
-// capacity.
-//
-// Color intensity is a fixed blue-alpha ramp (0.08 - 0.90) over the same
-// #2563eb family the rest of this module already uses for its "Time
-// Utilization" accents -- heavier color = higher occupancy, matching the
-// original plan's visual concept -- plus the actual percentage as text in
-// every cell, per instruction, never color-only.
-//
-// Industry Target: 65% deliberately NOT added here. Two reasons, not just
-// one: (1) this section has no color legend at all to anchor a marker to --
-// every cell already prints its own real percentage as text, so there's no
-// gradient key that a "65% tick" would sit on. (2) even if a legend
-// existed, this grid's percentage is "% of that term's scheduled rooms
-// occupied in a given hour" (a room-count density), a different metric
-// from a single room's own Time Utilization (that room's scheduled hours
-// ÷ its standard weekly hours) -- the two aren't the same axis, so a tick
-// mark here would silently imply a comparison that isn't actually valid.
-// Skipped per this task's own instruction to skip and note why if it
-// doesn't fit cleanly.
-// Same ramp as mfTokens.utilColor(pct) (src/theme/mfTokens.js), which returns
-// the solid-hex equivalent composited over white. This stays rgba() for now
-// because the grid can sit over a tinted background.
-function heatmapCellBackground(pct) {
-  const clamped = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
-  const alpha = 0.08 + (clamped / 100) * 0.82;
-  return `rgba(37, 99, 235, ${alpha.toFixed(2)})`;
-}
-
-function DayTimeHeatmapSection({ data }) {
-  const heatmaps = data?.results?.heatmaps || null; // Array<{ termId, termLabel, roomCount, days, dayLabels, hours, grid }> | null
-  const { loading, loadError } = sharedLoadState(data);
-  // Collapsed by default -- same disclosure pattern as every other section
-  // in this panel.
-  const [sectionOpen, setSectionOpen] = useState(false);
-
-  return (
-    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
-      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
-        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
-          Day/Time Occupancy Heat Map
-        </summary>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button className="btn" type="button" onClick={() => void data?.recalculate?.()} disabled={loading}>
-            {loading ? 'Calculating...' : 'Recalculate'}
-          </button>
-        </div>
-
-        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-          One grid per term -- percent of that term's scheduled classrooms occupied in each hour, Mon-Fri, 7 AM-9 PM.
-          Independent of Room Utilization Tagging above -- every room with a scheduled class counts toward the total,
-          tagged or not, same room universe Utilization Results above uses.
-        </div>
-
-        {loading && !heatmaps ? (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating the heat map...</div>
-        ) : heatmaps && heatmaps.length ? (
-          <div style={{ marginTop: 10, display: 'grid', gap: 18 }}>
-            {heatmaps.map((hm) => (
-              <div key={hm.termId}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#344054' }}>
-                  {hm.termLabel}
-                  <span style={{ fontWeight: 400, color: '#98a2b3', marginLeft: 6 }}>
-                    ({hm.roomCount} scheduled room{hm.roomCount === 1 ? '' : 's'})
-                  </span>
-                </div>
-                <div style={{ marginTop: 6, overflowX: 'auto' }}>
-                  <table style={{ borderCollapse: 'collapse', fontSize: 10 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ padding: '2px 6px' }} />
-                        {hm.days.map((day) => (
-                          <th key={day} style={{ padding: '2px 6px', fontWeight: 600, color: '#475467', minWidth: 44 }}>
-                            {hm.dayLabels[day]}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hm.hours.map((hour, hourIndex) => (
-                        <tr key={hour}>
-                          <td style={{ padding: '2px 6px', textAlign: 'right', color: '#667085', whiteSpace: 'nowrap' }}>
-                            {formatHeatmapHourLabel(hour)}
-                          </td>
-                          {hm.grid.map((dayCol) => {
-                            const cell = dayCol.hours[hourIndex];
-                            return (
-                              <td
-                                key={dayCol.day}
-                                title={`${dayCol.dayLabel} ${formatHeatmapHourLabel(hour)}: ${cell.occupiedRoomCount} of ${hm.roomCount} rooms occupied`}
-                                style={{
-                                  padding: '4px 6px',
-                                  textAlign: 'center',
-                                  background: heatmapCellBackground(cell.pct),
-                                  color: cell.pct > 55 ? '#fff' : '#334155',
-                                  fontWeight: 600,
-                                  minWidth: 44
-                                }}
-                              >
-                                {Math.round(cell.pct)}%
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
-            No term has any scheduled classes matched to a configured term yet -- import a schedule and configure
-            Terms above, then Recalculate.
-          </div>
-        )}
-
-        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
-      </details>
-    </div>
-  );
-}
-
-// --- Classroom Size Range Utilization table -------------------------------
-//
-// From the original Master Facilities Plan spec's classroom-size-range
-// table (rooms bucketed by capacity, with count/times-used/enrollment/
-// capacity/seat-utilization per bucket) -- data table only, per Clark's
-// decision, no "ideal arrangement" recommendation. See
-// classroomUtilizationCalc.js's computeSizeRangeUtilizationByTerm for the
-// full bucketing/aggregation reasoning (reuses computeClassroomUtilization's
-// rows wholesale -- same Airtable capacity join, same room universe as
-// Utilization Results and the heat map above, independent of Room
-// Utilization Tagging). Reads the shared useClassroomUtilizationData result,
-// same as UtilizationResultsSection.
-function SizeRangeUtilizationSection({ data }) {
-  const sizeRangeTables = data?.results?.sizeRangeTables || null; // Array | null
-  const { loading, loadError } = sharedLoadState(data);
-  const [sectionOpen, setSectionOpen] = useState(false);
-
-  return (
-    <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
-      <details open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
-        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
-          Classroom Size Range Utilization
-        </summary>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button className="btn" type="button" onClick={() => void data?.recalculate?.()} disabled={loading}>
-            {loading ? 'Calculating...' : 'Recalculate'}
-          </button>
-        </div>
-
-        <div style={{ marginTop: 4, fontSize: 10.5, color: '#667085', lineHeight: 1.35 }}>
-          One table per term -- rooms bucketed into 10-seat capacity ranges, computed from whatever capacities
-          actually appear in the data. "Times Used" counts scheduled meeting-rows, not hours. Independent of Room
-          Utilization Tagging above -- same room universe Utilization Results and the heat map use.
-        </div>
-
-        {loading && !sizeRangeTables ? (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>Calculating the size range table...</div>
-        ) : sizeRangeTables && sizeRangeTables.length ? (
-          <div style={{ marginTop: 10, display: 'grid', gap: 18 }}>
-            {sizeRangeTables.map((t) => (
-              <div key={t.termId}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#344054' }}>{t.termLabel}</div>
-
-                {t.unresolvedCapacityRoomCount > 0 ? (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      padding: '6px 8px',
-                      borderRadius: 6,
-                      fontSize: 10.5,
-                      fontWeight: 600,
-                      background: '#fffbeb',
-                      border: '1px solid #fde68a',
-                      color: '#92400e'
-                    }}
-                  >
-                    {t.unresolvedCapacityRoomCount} room{t.unresolvedCapacityRoomCount === 1 ? '' : 's'} excluded --
-                    capacity unknown (no Airtable Seat Count on file, or no matching Airtable room at all).
-                  </div>
-                ) : null}
-
-                {t.buckets.length ? (
-                  <div style={{ marginTop: 6, overflowX: 'auto' }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #d0d7e2' }}>
-                          <th style={{ padding: '4px 6px' }}>Size Range</th>
-                          <th style={{ padding: '4px 6px' }}>Rooms</th>
-                          <th style={{ padding: '4px 6px' }}>Times Used</th>
-                          <th style={{ padding: '4px 6px' }}>Aggregated Enrollment</th>
-                          <th style={{ padding: '4px 6px' }}>Total Official Capacity</th>
-                          <th style={{ padding: '4px 6px' }}>Seat Utilization</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {t.buckets.map((b) => (
-                          <tr key={b.label} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '4px 6px' }}>{b.label}</td>
-                            <td style={{ padding: '4px 6px' }}>{b.roomCount}</td>
-                            <td style={{ padding: '4px 6px' }}>{b.roomCount ? b.timesUsed : '—'}</td>
-                            <td style={{ padding: '4px 6px' }}>
-                              {b.aggregatedEnrollment != null ? Math.round(b.aggregatedEnrollment) : (
-                                <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
-                                  {b.seatUtilizationStatus === 'no-rooms' ? '—' : 'pending enrollment data'}
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '4px 6px' }}>{b.roomCount ? b.totalCapacity.toLocaleString() : '—'}</td>
-                            <td style={{ padding: '4px 6px' }}>
-                              {b.seatUtilizationStatus === 'computed' || b.seatUtilizationStatus === 'partial' ? (
-                                <>
-                                  {formatPct(b.seatUtilizationPct)}
-                                  {b.seatUtilizationStatus === 'partial' ? (
-                                    <div style={{ fontSize: 9.5, color: '#98a2b3' }}>
-                                      ({b.seatComputedRoomCount} of {b.roomCount} room(s) with known enrollment)
-                                    </div>
-                                  ) : null}
-                                </>
-                              ) : (
-                                <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
-                                  {b.seatUtilizationStatus === 'no-rooms' ? '—' : 'pending enrollment data'}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 6, fontSize: 11, color: '#667085' }}>
-                    No rooms with a resolvable capacity this term.
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#667085' }}>
-            No term has any scheduled classes matched to a configured term yet -- import a schedule and configure
-            Terms above, then Recalculate.
-          </div>
-        )}
-
-        {loadError ? <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{loadError}</div> : null}
-      </details>
-    </div>
-  );
-}
-
-// Structural split (2026-08-19), per Clark's decision: what used to be one
-// combined panel mounting all six sections below is now two separate
-// dashboard boxes in StakeholderMap.jsx -- ClassroomUtilizationPanel (this
-// component: Import Schedule, Terms, Utilization Results) and
-// SpaceGrowthProjectionsPanel (below: Space Configuration, Room Utilization
-// Tagging, Enrollment & FTE Projections, Space Growth / Right-Sizing).
-// Deliberately kept as two exports from this ONE file rather than two
-// files: every section function above (SpaceConfigSection, TermsSection,
-// etc.) and the shared constants/helpers at the top (HASTINGS_UNIVERSITY_ID,
-// BATCH_CHUNK_SIZE, summarizeDocs) are used by whichever of the two panels
-// needs them -- splitting into separate files would force either duplicating
-// those or introducing a third shared-helpers file, neither of which this
-// reorganization needs. Both panels are still gated by the exact same
-// enableClassroomUtilization flag -- no second flag introduced, per
-// explicit instruction; StakeholderMap.jsx now mounts both as separate
-// .dashboard-box elements under that one existing condition. Pure layout
-// reorganization -- no section's internal state, effects, Firestore reads/
-// writes, or calculation logic changed; each section still fetches on
-// mount exactly as before, just now as a child of a different parent.
+// Phase 3.4: this panel is now a compact summary card -- two KPIs for the
+// default term (the current term, or the most recent term with classes) and
+// the button that opens the Classroom Utilization workspace. The old
+// Import Schedule / Terms / Utilization Results / Heat Map / Size Range
+// sections moved into the workspace (ClassroomUtilizationWorkspace.jsx; admin
+// tools on its Setup tab).
 export default function ClassroomUtilizationPanel({
   enabled = false,
   // Deliberately distinct from SpaceDashboardPanel's pre-existing, unrelated
@@ -3574,166 +2609,58 @@ export default function ClassroomUtilizationPanel({
   // non-Sarpy tenants) so the two aren't mistaken for one another in the UI.
   title = 'Classroom Utilization',
   // Return value of useClassroomUtilizationData (mounted once in
-  // StakeholderMap.jsx): the one shared courseMeetings/terms/Airtable read
-  // and computed results every results section below renders from.
+  // StakeholderMap.jsx): the one shared schedule/terms/Airtable load.
   utilizationData = null
 }) {
-  const reloadUtilization = utilizationData?.reload;
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const canOpenWorkspace = Boolean(utilizationData?.results);
-  const [summary, setSummary] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryError, setSummaryError] = useState('');
-  // Collapsed by default -- same disclosure pattern as every section below.
-  // Layout-only: refreshSummary()'s useEffect further down still runs
-  // unconditionally on mount regardless of open/collapsed state.
-  const [importSectionOpen, setImportSectionOpen] = useState(false);
-
-  // null | 'fetching' | 'clearing' | 'writing' -- distinct phases so the
-  // button/status text never looks like a silent pause, especially during
-  // 'clearing' (the new delete-then-write step, see handleImportSchedule).
-  const [importPhase, setImportPhase] = useState(null);
-  const [importMessage, setImportMessage] = useState('');
-  const [importError, setImportError] = useState('');
-
-  const refreshSummary = useCallback(async () => {
-    if (!enabled) return;
-    setSummaryLoading(true);
-    setSummaryError('');
-    try {
-      const snap = await getDocs(
-        collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION)
-      );
-      setSummary(summarizeDocs(snap.docs.map((docSnap) => docSnap.data())));
-    } catch (error) {
-      setSummaryError(String(error?.message || 'Failed to load imported schedule summary.'));
-    } finally {
-      setSummaryLoading(false);
-    }
-  }, [enabled]);
-
-  useEffect(() => {
-    void refreshSummary();
-  }, [refreshSummary]);
-
-  const handleImportSchedule = useCallback(async () => {
-    if (!enabled || importPhase) return;
-    // Local mirror of importPhase (not just the React state) so the catch
-    // block below can name exactly which phase failed without depending on
-    // a state update having flushed yet.
-    let phase = 'fetching';
-    setImportPhase(phase);
-    setImportMessage('');
-    setImportError('');
-    try {
-      const rawRows = await fetchClassScheduleRows();
-      const dedupedRows = dedupeCrossTalliedScheduleRows(rawRows);
-
-      const meetingsCollection = collection(
-        db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION
-      );
-
-      // Clear existing docs first so stale docs written under a since-changed
-      // meetingId scheme (or just stale data in general) can never coexist
-      // with the fresh batch below -- makes re-running the import idempotent
-      // (always lands on exactly len(dedupedRows) docs) instead of merge-only
-      // accumulating orphans. If this fails partway, we stop here and never
-      // reach the write step below, rather than writing fresh data on top of
-      // a partially-cleared collection.
-      phase = 'clearing';
-      setImportPhase(phase);
-      const existingSnap = await getDocs(meetingsCollection);
-      const existingRefs = existingSnap.docs.map((docSnap) => docSnap.ref);
-      for (let i = 0; i < existingRefs.length; i += BATCH_CHUNK_SIZE) {
-        const chunk = existingRefs.slice(i, i + BATCH_CHUNK_SIZE);
-        if (!chunk.length) continue;
-        const batch = writeBatch(db);
-        chunk.forEach((ref) => batch.delete(ref));
-        await batch.commit();
-      }
-
-      phase = 'writing';
-      setImportPhase(phase);
-      for (let i = 0; i < dedupedRows.length; i += BATCH_CHUNK_SIZE) {
-        const chunk = dedupedRows.slice(i, i + BATCH_CHUNK_SIZE);
-        if (!chunk.length) continue;
-        const batch = writeBatch(db);
-        chunk.forEach((entry) => {
-          const meetingId = buildCourseMeetingId(entry);
-          batch.set(doc(meetingsCollection, meetingId), {
-            ...mapScheduleEntryToCourseMeetingDoc(entry),
-            importedAt: serverTimestamp()
-          }, { merge: true });
-        });
-        await batch.commit();
-      }
-
-      const roomKeys = new Set(
-        dedupedRows.map((entry) => (
-          `${String(entry?.building || '').trim().toLowerCase()}||${String(entry?.room || '').trim().toLowerCase()}`
-        ))
-      );
-      setImportMessage(
-        `Cleared ${existingRefs.length.toLocaleString()} old record${existingRefs.length === 1 ? '' : 's'}, `
-        + `imported ${dedupedRows.length.toLocaleString()} course meeting${dedupedRows.length === 1 ? '' : 's'} `
-        + `across ${roomKeys.size.toLocaleString()} room${roomKeys.size === 1 ? '' : 's'} `
-        + `(${rawRows.length.toLocaleString()} raw rows deduped).`
-      );
-      await refreshSummary();
-      void reloadUtilization?.();
-    } catch (error) {
-      const phaseLabel = phase === 'clearing'
-        ? 'Failed while clearing old data (nothing new was written): '
-        : phase === 'writing'
-          ? 'Failed while writing new data (old data was already cleared): '
-          : 'Failed to fetch schedule: ';
-      if (isAbortError(error)) console.error('Class schedule import timed out.', error);
-      setImportError(phaseLabel + (isAbortError(error)
-        ? 'the AI server timed out (it may be waking up) — try again.'
-        : String(error?.message || 'unknown error.')));
-    } finally {
-      setImportPhase(null);
-    }
-  }, [enabled, importPhase, refreshSummary, reloadUtilization]);
 
   if (!enabled) return null;
 
-  const hasImportedData = Boolean(summary && summary.meetingCount > 0);
-
-  // Meeting/room count visible in the summary label without expanding, same
-  // convention as SpaceConfigSection/TermsSection above.
-  const importSummaryLabel = hasImportedData
-    ? `Import Schedule (${summary.meetingCount.toLocaleString()} meeting${summary.meetingCount === 1 ? '' : 's'}, ${summary.roomCount.toLocaleString()} room${summary.roomCount === 1 ? '' : 's'})`
-    : 'Import Schedule';
+  const status = utilizationData?.status || 'idle';
+  const results = utilizationData?.results || null;
+  // Open once the first load has settled -- after an error too, so Setup
+  // (import, terms) is still reachable when there's nothing to show yet.
+  const canOpenWorkspace = Boolean(results) || status === 'error';
+  const termLabel = results ? termDisplayLabel(utilizationData, utilizationData.defaultTermId) : '';
 
   return (
     <div
       className="control-section"
       style={{
-        background: '#fff',
+        background: MF.surface.page,
         padding: 8,
-        border: '1px solid #d8e0ea',
+        border: `1px solid ${MF.line.border}`,
         borderRadius: 6,
         marginTop: 6,
         display: 'flex',
-        flexDirection: 'column',
-        height: '100%'
+        flexDirection: 'column'
       }}
     >
-      {/* Panel title stays always-visible (it names the whole module, not a
-          collapsible sub-section) -- "Import Schedule" itself becomes its
-          own collapsible section directly below, same pattern as every
-          other section in this panel. */}
-      <h4 style={{ margin: '0 0 6px 0', padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
+      <h4 style={{ margin: 0, padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: MF.surface.page, background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
 
-      {/* Opens the Classroom Utilization workspace -- same dark button as
-          "Open Executive Dashboard". Reads the shared hook result, so it's
-          ready as soon as the results sections below are. */}
+      {!results ? (
+        <div style={{ marginTop: 8, fontSize: 11, color: MF.ink.muted }}>
+          {status === 'error' ? "Couldn't load classroom utilization — open it to check Setup." : 'Calculating…'}
+        </div>
+      ) : (
+        <>
+          {termLabel ? <div style={{ marginTop: 8, fontSize: 11, color: MF.ink.muted }}>{termLabel}</div> : null}
+          <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
+            {summaryKpis(utilizationData).map(({ key, ...props }) => (
+              <div key={key} style={{ flex: 1, minWidth: 0 }}>
+                <KpiCard {...props} compact />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <button
         type="button"
         onClick={() => setWorkspaceOpen(true)}
         disabled={!canOpenWorkspace}
         style={{
+          marginTop: 8,
           width: '100%',
           padding: '8px 12px',
           border: 'none',
@@ -3753,54 +2680,6 @@ export default function ClassroomUtilizationPanel({
       {workspaceOpen && canOpenWorkspace ? (
         <ClassroomUtilizationWorkspace data={utilizationData} onClose={() => setWorkspaceOpen(false)} />
       ) : null}
-
-      <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
-        <details open={importSectionOpen} onToggle={(event) => setImportSectionOpen(event.currentTarget.open)}>
-          <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
-            {importSummaryLabel}
-          </summary>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => void handleImportSchedule()}
-              disabled={Boolean(importPhase)}
-            >
-              {importPhase === 'fetching' ? 'Fetching schedule...'
-                : importPhase === 'clearing' ? 'Clearing old data...'
-                : importPhase === 'writing' ? 'Importing...'
-                : 'Import Schedule'}
-            </button>
-          </div>
-
-          <div style={{ marginTop: 4, fontSize: 11, color: '#667085', lineHeight: 1.35 }}>
-            {summaryLoading && !summary ? (
-              'Loading imported schedule summary...'
-            ) : hasImportedData ? (
-              `${summary.meetingCount.toLocaleString()} course meeting${summary.meetingCount === 1 ? '' : 's'} imported, `
-              + `covering ${summary.roomCount.toLocaleString()} room${summary.roomCount === 1 ? '' : 's'}.`
-            ) : (
-              'No schedule data imported yet.'
-            )}
-          </div>
-
-          {summaryError ? (
-            <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{summaryError}</div>
-          ) : null}
-          {importMessage ? (
-            <div style={{ marginTop: 6, fontSize: 10.5, color: '#15803d' }}>{importMessage}</div>
-          ) : null}
-          {importError ? (
-            <div style={{ marginTop: 6, fontSize: 10.5, color: '#b42318' }}>{importError}</div>
-          ) : null}
-        </details>
-      </div>
-
-      <TermsSection onSaved={reloadUtilization} />
-      <UtilizationResultsSection data={utilizationData} />
-      <DayTimeHeatmapSection data={utilizationData} />
-      <SizeRangeUtilizationSection data={utilizationData} />
     </div>
   );
 }

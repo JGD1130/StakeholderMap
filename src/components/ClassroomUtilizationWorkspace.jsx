@@ -1,9 +1,11 @@
 // src/components/ClassroomUtilizationWorkspace.jsx
 //
 // The Classroom Utilization workspace, on the shared mf/ components: a
-// workspace-size WorkspaceShell (Recalculate in the title bar), Overview and
-// Heat Map tabs, and a Term picker at the right end of the tab row. Every tab
-// shows the selected term only.
+// workspace-size WorkspaceShell (Recalculate in the title bar), Overview /
+// Heat Map / Rooms / Setup tabs, and a Term picker at the right end of the tab
+// row. Every tab but Setup shows the selected term only; Setup (admin tools:
+// schedule import, terms, data quality) lives in ClassroomUtilizationSetupTab.jsx
+// and hides the picker.
 //
 // Pure presentation over the useClassroomUtilizationData result (`data`,
 // mounted once in StakeholderMap.jsx) -- no fetching here, so opening and
@@ -14,7 +16,7 @@
 import React, { useMemo, useState } from 'react';
 import { MF } from '../theme/mfTokens';
 import { WorkspaceShell, MfGrid, MfCol, KpiCard, ChartCard, Gauge } from './mf';
-import { mfOnBarButtonStyle } from './mf/mfStyles';
+import { mfOnBarButtonStyle, mfInputStyle, mfTableHeaderCell, mfTableBodyCell } from './mf/mfStyles';
 import { HBarChart, UtilBar, HeatmapGrid, HeatmapLegend } from './mf/charts';
 import {
   ROOM_SIZE_TITLE,
@@ -47,10 +49,14 @@ import {
   heatmapFootnote,
   heatmapModel
 } from './classroomUtilizationView';
+import ClassroomUtilizationRoomsTab from './ClassroomUtilizationRoomsTab.jsx';
+import ClassroomUtilizationSetupTab from './ClassroomUtilizationSetupTab.jsx';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'heatmap', label: 'Heat Map' }
+  { id: 'heatmap', label: 'Heat Map' },
+  { id: 'rooms', label: 'Rooms' },
+  { id: 'setup', label: 'Setup' }
 ];
 
 const emptyStyle = { fontSize: 12, color: MF.ink.muted };
@@ -79,15 +85,7 @@ function TermPicker({ data }) {
       <select
         value={data.selectedTermId || ''}
         onChange={(e) => data.setSelectedTermId(e.target.value)}
-        style={{
-          fontFamily: 'inherit',
-          fontSize: 12,
-          color: MF.ink.primary,
-          background: MF.surface.page,
-          border: `1px solid ${MF.line.border}`,
-          borderRadius: 6,
-          padding: '4px 8px'
-        }}
+        style={mfInputStyle}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -96,24 +94,8 @@ function TermPicker({ data }) {
 }
 
 // --- Overview -------------------------------------------------------------------
-const headerCell = {
-  padding: '6px 8px',
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: '0.04em',
-  textTransform: 'uppercase',
-  color: MF.ink.muted,
-  borderBottom: `1px solid ${MF.line.hairline}`,
-  textAlign: 'left',
-  whiteSpace: 'nowrap'
-};
-const bodyCell = {
-  padding: '8px',
-  fontSize: 12,
-  color: MF.ink.primary,
-  borderBottom: `1px solid ${MF.line.hairline}`,
-  verticalAlign: 'middle'
-};
+const headerCell = mfTableHeaderCell;
+const bodyCell = mfTableBodyCell;
 const numCell = { ...bodyCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 
 function BuildingTable({ rows, showSeat }) {
@@ -244,12 +226,16 @@ export default function ClassroomUtilizationWorkspace({ data, onClose }) {
   );
 
   let body;
-  if (!data.results) {
+  if (activeTab === 'setup') {
+    body = <ClassroomUtilizationSetupTab data={data} />;
+  } else if (!data.results) {
     body = <div style={emptyStyle}>{loading ? 'Calculating…' : 'No utilization data loaded.'}</div>;
   } else if (!entry) {
     body = <div style={emptyStyle}>{noTermDataMessage(data)}</div>;
   } else if (activeTab === 'heatmap') {
     body = <HeatmapTab entry={entry} />;
+  } else if (activeTab === 'rooms') {
+    body = <ClassroomUtilizationRoomsTab data={data} entry={entry} />;
   } else {
     body = <OverviewTab data={data} entry={entry} />;
   }
@@ -263,7 +249,7 @@ export default function ClassroomUtilizationWorkspace({ data, onClose }) {
       tabs={TABS}
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      tabsEnd={<TermPicker data={data} />}
+      tabsEnd={activeTab === 'setup' ? null : <TermPicker data={data} />}
       onClose={onClose}
     >
       {data.status === 'error' && data.error ? (

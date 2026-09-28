@@ -51,6 +51,19 @@ function computeAll({ courseMeetingDocs, termDocs, airtableRooms }) {
   };
 }
 
+// Imported meeting count and distinct building+room count, for Setup's
+// Class schedule card (moved here from the panel's old Import Schedule
+// section, which read courseMeetings a second time just for this).
+function summarizeMeetings(docs) {
+  const rooms = new Set();
+  docs.forEach((data) => {
+    const building = String(data?.building || '').trim().toLowerCase();
+    const room = String(data?.room || '').trim().toLowerCase();
+    if (building || room) rooms.add(`${building}||${room}`);
+  });
+  return { meetingCount: docs.length, roomCount: rooms.size };
+}
+
 // termId -> { rooms, campusRollup, heatmap, sizeRangeTable, outsideHeatmapCount } -- the same
 // all-terms results above, just regrouped. buildingSummary and
 // unmatchedMeetings aren't per-term (the first sums across terms, the
@@ -116,25 +129,31 @@ export function useClassroomUtilizationData({ enabled = false, universityId } = 
     setError('');
     try {
       const needAirtable = refetchAirtable || airtableRoomsRef.current == null;
-      const [meetingsSnap, termsSnap, airtableRooms] = await Promise.all([
+      const [meetingsSnap, termsSnap, airtable] = await Promise.all([
         getDocs(collection(db, 'universities', resolvedUniversityId, COURSE_MEETINGS_COLLECTION)),
         getDocs(collection(db, 'universities', resolvedUniversityId, TERMS_COLLECTION)),
         needAirtable
-          ? fetchAirtableRoomsForUtilization({ timeoutMs: AIRTABLE_TIMEOUT_MS }).catch((fetchError) => {
-            // Airtable is capacity-only input (Seat Utilization). A failed
-            // fetch shouldn't block Time Utilization -- rooms fall back to
-            // "capacity unknown", same as every section did on its own.
-            console.warn('Airtable rooms fetch failed for classroom utilization:', fetchError);
-            return [];
-          })
+          ? fetchAirtableRoomsForUtilization({ timeoutMs: AIRTABLE_TIMEOUT_MS })
+            .then((rooms) => ({ rooms, failed: false }))
+            .catch((fetchError) => {
+              // Airtable is capacity-only input (Seat Utilization). A failed
+              // fetch shouldn't block Time Utilization -- rooms fall back to
+              // "capacity unknown", and Setup's Data quality card says why.
+              console.warn('Airtable rooms fetch failed for classroom utilization:', fetchError);
+              return { rooms: [], failed: true };
+            })
           : Promise.resolve(airtableRoomsRef.current)
       ]);
       if (requestId !== requestIdRef.current) return;
-      airtableRoomsRef.current = airtableRooms;
+      airtableRoomsRef.current = airtable;
       const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
       const nextTermDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
       setTermDocs(nextTermDocs);
-      setResults(computeAll({ courseMeetingDocs, termDocs: nextTermDocs, airtableRooms }));
+      setResults({
+        ...computeAll({ courseMeetingDocs, termDocs: nextTermDocs, airtableRooms: airtable.rooms }),
+        scheduleSummary: summarizeMeetings(courseMeetingDocs),
+        capacityFetchFailed: airtable.failed
+      });
       setStatus('ready');
     } catch (loadError) {
       if (requestId !== requestIdRef.current) return;
@@ -171,8 +190,10 @@ export function useClassroomUtilizationData({ enabled = false, universityId } = 
   return {
     status,
     error,
+    universityId: resolvedUniversityId,
     terms: termDocs,
     currentTermId: currentTermId ?? null,
+    defaultTermId: defaultTermId ?? null,
     selectedTermId: effectiveSelectedTermId,
     setSelectedTermId,
     results,

@@ -27,6 +27,14 @@ function termLabelFromDoc(termDoc) {
   return parts.filter(Boolean).join(' · ') || String(termDoc?.id || '');
 }
 
+// "2026-fall-1" -> "Fall 2026 · Block 1" (the termId shape Setup's Terms
+// editor creates). Anything else is returned as-is.
+export function formatTermId(termId) {
+  const match = String(termId || '').match(/^(\d{4})-([a-z0-9-]+)-(\d+)$/i);
+  if (!match) return String(termId || '');
+  return termLabelFromDoc({ data: { academicYear: match[1], term: match[2].replace(/-/g, ' '), sessionNumber: match[3] } });
+}
+
 // "Fall 2026 · Block 1" for a termId: the imported schedule's own label when
 // the term has meetings, else built from the terms doc.
 export function termDisplayLabel(data, termId) {
@@ -35,7 +43,7 @@ export function termDisplayLabel(data, termId) {
   const scheduleLabel = entry?.campusRollup?.termLabel || entry?.rooms?.[0]?.termLabel;
   if (scheduleLabel) return formatTermSubtitle(scheduleLabel);
   const doc = (data?.terms || []).find((t) => t.id === termId);
-  return doc ? termLabelFromDoc(doc) : termId;
+  return doc ? termLabelFromDoc(doc) : formatTermId(termId);
 }
 
 // Every configured term, in termId order; the current one reads "(current)".
@@ -66,7 +74,7 @@ export function selectedTermEntry(data) {
 }
 
 export function noTermDataMessage(data) {
-  if (!data?.terms?.length) return 'No terms configured — add one in the Terms section.';
+  if (!data?.terms?.length) return 'No terms configured — add one on the Setup tab.';
   return `No scheduled classes matched ${termDisplayLabel(data, data.selectedTermId) || 'this term'}.`;
 }
 
@@ -231,4 +239,114 @@ export function heatmapModel(heatmap) {
     };
   });
   return { columns, rows, ariaLabel: `${HEATMAP_TITLE}: ${HEATMAP_SUBTITLE}` };
+}
+
+// --- Rooms tab --------------------------------------------------------------------
+// One row per classroom for the selected term, straight from
+// computeClassroomUtilization's room+term rows.
+export const LOW_TIME_UTIL_PCT = 25;
+
+export function roomRows(entry) {
+  return (entry?.rooms || []).map((r) => ({
+    key: r.rowKey,
+    building: r.building,
+    room: r.room,
+    capacity: Number.isFinite(r.capacity) ? r.capacity : null,
+    hours: Number(r.weeklyHoursUsed) || 0,
+    hoursLabel: formatHours(Number(r.weeklyHoursUsed) || 0),
+    timePct: Number.isFinite(r.timeUtilizationPct) ? r.timeUtilizationPct : null,
+    seatPct: r.seatUtilizationStatus === 'computed' && Number.isFinite(r.seatUtilizationPct) ? r.seatUtilizationPct : null,
+    meetings: r.meetingCount
+  }));
+}
+
+export function roomBuildingOptions(rows) {
+  return [...new Set(rows.map((r) => r.building))].sort((a, b) => a.localeCompare(b));
+}
+
+// building: '' = all. query: case-insensitive match on building or room.
+export function filterRoomRows(rows, { building, query }) {
+  const q = String(query || '').trim().toLowerCase();
+  return rows.filter((r) => (
+    (!building || r.building === building)
+    && (!q || r.room.toLowerCase().includes(q) || r.building.toLowerCase().includes(q))
+  ));
+}
+
+// Blanks ("—") always sort last, whichever direction.
+export function sortRoomRows(rows, key, dir) {
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    const aBlank = av === null || av === undefined;
+    const bBlank = bv === null || bv === undefined;
+    if (aBlank || bBlank) return aBlank === bBlank ? 0 : aBlank ? 1 : -1;
+    const cmp = typeof av === 'string'
+      ? av.localeCompare(bv, undefined, { numeric: true })
+      : av - bv;
+    return (cmp * sign)
+      || a.building.localeCompare(b.building)
+      || a.room.localeCompare(b.room, undefined, { numeric: true });
+  });
+}
+
+// "42 classrooms · 9 under 25% time utilization"
+export function roomsSummaryLine(rows) {
+  const low = rows.filter((r) => Number.isFinite(r.timePct) && r.timePct < LOW_TIME_UTIL_PCT).length;
+  return `${rows.length} ${rows.length === 1 ? 'classroom' : 'classrooms'} · ${low} under ${LOW_TIME_UTIL_PCT}% time utilization`;
+}
+
+// --- Setup tab ----------------------------------------------------------------------
+export function scheduleSummaryLine(results) {
+  const s = results?.scheduleSummary;
+  if (!s || !s.meetingCount) return 'No class schedule imported yet.';
+  return `${s.meetingCount.toLocaleString('en-US')} class ${s.meetingCount === 1 ? 'meeting' : 'meetings'} imported, `
+    + `covering ${s.roomCount.toLocaleString('en-US')} ${s.roomCount === 1 ? 'room' : 'rooms'}.`;
+}
+
+export function importConfirmMessage(results) {
+  const n = results?.scheduleSummary?.meetingCount || 0;
+  return `This replaces all ${n.toLocaleString('en-US')} imported class meetings for ${INSTITUTION_NAME}. Continue?`;
+}
+
+// Meetings whose term label couldn't be matched to a configured term; they're
+// left out of every result.
+export function unmatchedMeetingRows(results) {
+  return (results?.unmatchedMeetings || []).map((m, i) => {
+    const course = m.courseCode || 'No course code';
+    const scheduleLabel = m.sessionLabel || m.sessionRaw || 'blank';
+    const reason = m.derivedTermId
+      ? `No term set up for ${formatTermId(m.derivedTermId)}`
+      : 'The term label in the schedule couldn’t be read';
+    return { key: `${i}`, course, place: `${m.building} ${m.room}`, scheduleLabel, reason };
+  });
+}
+
+// Distinct classrooms (any term) with no seat count on file.
+export function unknownCapacityRooms(results) {
+  const seen = new Map();
+  (results?.rooms || []).forEach((r) => {
+    if (r.capacity == null && !seen.has(r.roomKey)) seen.set(r.roomKey, `${r.building} ${r.room}`);
+  });
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+// --- Side-panel summary card ----------------------------------------------------------
+// Two compact KPIs for the default term (the current term, or the most recent
+// term with classes when the current one has none): Time utilization, then
+// Seat utilization -- or Peak hour when the term has no seat data.
+export function summaryKpis(data) {
+  const entry = data?.defaultTermId ? data.resultsByTerm?.[data.defaultTermId] : null;
+  if (!entry) {
+    return [
+      { key: 'time', label: 'Time utilization', value: null, missing: { reason: 'No classes scheduled' } },
+      { key: 'seat', label: 'Seat utilization', value: null, missing: { reason: 'No classes scheduled' } }
+    ];
+  }
+  const [time, second] = overviewKpis(entry, null);
+  return [
+    { ...time, context: time.value ? `vs. ${TARGET_PCT}% target` : time.context },
+    second
+  ];
 }
