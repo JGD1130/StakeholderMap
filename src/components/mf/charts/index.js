@@ -7,4 +7,6 @@ export { default as PhasingTimeline } from './PhasingTimeline.jsx';
 export { default as ChartLegend } from './ChartLegend.jsx';
 export { default as UtilBar } from './UtilBar.jsx';
 export { default as HeatmapGrid, HeatmapLegend } from './HeatmapGrid.jsx';
+export { default as CategoryBars } from './CategoryBars.jsx';
+export { default as FundingLine } from './FundingLine.jsx';
 export { PROJECT_TYPES, classifyProjectType, splitProjectName } from './projectTypes';

@@ -14,6 +14,8 @@
 // tiers are always computed live from each building's total.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
+import { MF } from '../theme/mfTokens';
+import CapitalCompassWorkspace from './CapitalCompassWorkspace.jsx';
 import {
   SCORE_FIELDS,
   TIERS,
@@ -739,6 +741,8 @@ export default function CapitalPrioritiesPanel({
   // Collapsed by default -- this only gates the <details> disclosure below;
   // the shared hook loads regardless of open/collapsed state.
   const [panelOpen, setPanelOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const canOpenWorkspace = capitalData?.status === 'ready' || capitalData?.status === 'error';
   const loading = capitalData?.status === 'loading' || capitalData?.status === 'idle';
   const dataReady = capitalData?.status === 'ready';
   const errorMessage = capitalData?.status === 'error' ? capitalData.error : '';
@@ -911,21 +915,49 @@ export default function CapitalPrioritiesPanel({
         height: '100%'
       }}
     >
-      {/* Collapsed by default -- same native <details>/<summary> disclosure
-          pattern SpaceDashboardPanel's CollapsibleSection already uses
-          elsewhere in this codebase (title text as the summary, everything
-          else as children), replicated locally here since this file doesn't
-          import from SpaceDashboardPanel.jsx. */}
+      {/* Shared module header orange (brandColors.js), always visible, then
+          the button that opens the Capital Compass workspace. */}
+      <h4 style={{ margin: 0, padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: MF.surface.page, background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
+
+      <button
+        type="button"
+        onClick={() => setWorkspaceOpen(true)}
+        disabled={!canOpenWorkspace}
+        style={{
+          marginTop: 8,
+          width: '100%',
+          padding: '8px 12px',
+          border: 'none',
+          borderRadius: 6,
+          background: MF.ink.primary,
+          color: MF.surface.page,
+          fontFamily: 'inherit',
+          fontSize: 12.5,
+          fontWeight: 600,
+          cursor: canOpenWorkspace ? 'pointer' : 'default',
+          opacity: canOpenWorkspace ? 1 : 0.55
+        }}
+      >
+        Open Capital Compass
+      </button>
+
+      {workspaceOpen && canOpenWorkspace ? (
+        <CapitalCompassWorkspace
+          data={capitalData}
+          mapBuildingCount={buildingOptions.length}
+          onClose={() => setWorkspaceOpen(false)}
+        />
+      ) : null}
+
+      {/* The original scoring / portfolio / upload sections, unchanged, in a
+          collapsed disclosure until they move into the workspace. */}
       <details
         open={panelOpen}
         onToggle={(event) => setPanelOpen(event.currentTarget.open)}
+        style={{ marginTop: 8 }}
       >
-        {/* Shared module header orange (brandColors.js). The native
-            disclosure triangle is hidden (.mf-module-summary in
-            StakeholderMap.css) in favor of an explicit ▸/▾ caret. */}
-        <summary className="mf-module-summary" style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#fff', background: CLARK_ENERSEN_ORANGE, padding: '6px 8px', borderRadius: 6 }}>
-          <span aria-hidden="true" style={{ display: 'inline-block', width: 12, marginRight: 4 }}>{panelOpen ? '▾' : '▸'}</span>
-          {title}
+        <summary style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer', color: '#1d2939' }}>
+          Scoring &amp; data tools
         </summary>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>

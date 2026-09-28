@@ -148,6 +148,29 @@ export const COST_SOURCE_LABELS = {
   static: 'deferred maint. estimate'
 };
 
+// Short source tags for tables and mixed-source text.
+export const COST_SOURCE_TAGS = {
+  'dm-0-5': '0–5 yr DM',
+  manual: 'manual',
+  static: 'static'
+};
+
+// KPI context for a set of buildings' costs, e.g.
+// "0–5 yr deferred maintenance · 3 of 4 costed", or, when the costed ones
+// use more than one source, "0–5 yr DM + manual · 3 of 4 costed".
+// items: [{ amount, source }]. Shared by the Capital Compass workspace and the
+// Executive Dashboard's Tier 1 capital need card (screen and PDF).
+export function costCoverageContext(items) {
+  const list = Array.isArray(items) ? items : [];
+  const costed = list.filter((c) => c.amount != null);
+  const sources = Object.keys(COST_SOURCE_TAGS).filter((s) => costed.some((c) => c.source === s));
+  let sourceText;
+  if (!sources.length) sourceText = 'No costs entered';
+  else if (sources.length === 1 && sources[0] === 'dm-0-5') sourceText = '0–5 yr deferred maintenance';
+  else sourceText = sources.map((s) => COST_SOURCE_TAGS[s]).join(' + ');
+  return `${sourceText} · ${costed.length} of ${list.length} costed`;
+}
+
 // A building's estimated capital cost, first match wins:
 //   1. saved manual cost (capitalCompassSettings/budget.manualCosts)
 //   2. uploaded deferred maintenance, 0-5 yr project cost

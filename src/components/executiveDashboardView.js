@@ -7,7 +7,7 @@
 // `data` object runCalculation() produces -- no React, no aggregation of its
 // own; every number still comes from executiveDashboardCalc.js.
 
-import { formatUsdCompact, COST_SOURCE_LABELS } from '../utils/capitalCompassCalc';
+import { formatUsdCompact, COST_SOURCE_LABELS, costCoverageContext } from '../utils/capitalCompassCalc';
 import {
   formatTier1CapitalNeed,
   formatTermSubtitle,
@@ -73,7 +73,11 @@ export function tier1NeedKpi(data) {
   const need = formatTier1CapitalNeed(summary);
   // No Tier 1 building has cost data -- "—" / "Costs not entered".
   if (need.note) return { ...base, value: null, missing: { reason: need.note } };
-  return { ...base, value: need.value, context: `${summary.knownCostCount} of ${summary.tier1Count} buildings costed` };
+  return {
+    ...base,
+    value: need.value,
+    context: costCoverageContext(summary.tier1Buildings.map((b) => ({ amount: b.resolvedCost, source: b.costSource })))
+  };
 }
 
 function tier1CountKpi(data) {
