@@ -15,6 +15,7 @@
 import React from 'react';
 import { MF } from '../../../theme/mfTokens';
 import { ChartTooltip, useChartTooltip } from './ChartTooltip';
+import { niceTicks } from './chartUtils';
 
 const ROW_MIN_HEIGHT = 36;
 const BAR_HEIGHT = 14;
@@ -47,8 +48,9 @@ const cellStyle = {
   minWidth: 0
 };
 
-export default function FundingLine({ rows, axisMax, budgetCap, budgetLabel, formatAmount, renderActions, ariaLabel }) {
+export default function FundingLine({ rows, axisMax, budgetCap, budgetLabel, formatAmount, formatTick = formatAmount, renderActions, ariaLabel }) {
   const tip = useChartTooltip();
+  const ticks = niceTicks(axisMax).filter((t) => t <= axisMax);
   const capLeft = pct(budgetCap, axisMax);
   const budgetLine = (
     <span
@@ -139,6 +141,38 @@ export default function FundingLine({ rows, axisMax, budgetCap, budgetLabel, for
             </div>
           );
         })}
+
+        {/* Dollar axis under the bar column: hairline ticks, 11px muted labels. */}
+        <div aria-hidden="true" style={{ display: 'contents' }}>
+          <span />
+          <span />
+          <span />
+          <span style={{ position: 'relative', height: 22 }}>
+            {ticks.map((t, i) => {
+              const edge = i === 0 ? 'start' : t / axisMax > 0.94 ? 'end' : 'middle';
+              return (
+                <span key={t} style={{ position: 'absolute', top: 0, left: pct(t, axisMax) }}>
+                  <span style={{ position: 'absolute', top: 0, left: 0, height: 4, borderLeft: `1px solid ${MF.line.border}` }} />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 6,
+                      transform: edge === 'start' ? 'none' : edge === 'end' ? 'translateX(-100%)' : 'translateX(-50%)',
+                      fontSize: 11,
+                      color: MF.ink.muted,
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums'
+                    }}
+                  >
+                    {formatTick(t)}
+                  </span>
+                </span>
+              );
+            })}
+          </span>
+          <span />
+          <span />
+        </div>
       </div>
       <ChartTooltip tip={tip.state} />
     </div>

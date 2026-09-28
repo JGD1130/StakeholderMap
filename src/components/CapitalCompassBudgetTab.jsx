@@ -13,7 +13,7 @@ import { MfGrid, MfCol, KpiCard, ChartCard } from './mf';
 import { mfInputStyle } from './mf/mfStyles';
 import { FundingLine } from './mf/charts';
 import { formatUsdCompact } from '../utils/capitalCompassCalc';
-import { fundingModel, budgetKpis, FUNDING_SUBTITLE, FUNDING_FOOTNOTE } from './capitalCompassView';
+import { fundingModel, budgetKpis, formatUsdAxis, FUNDING_SUBTITLE, FUNDING_FOOTNOTE } from './capitalCompassView';
 
 const linkStyle = {
   padding: 0,
@@ -139,6 +139,7 @@ export default function CapitalCompassBudgetTab({ data }) {
               budgetCap={model.budgetCap}
               budgetLabel={`Budget ${formatUsdCompact(model.budgetCap)}`}
               formatAmount={formatUsdCompact}
+              formatTick={formatUsdAxis}
               renderActions={renderActions}
               ariaLabel="Funding line: scored buildings in priority order against the budget cap"
             />

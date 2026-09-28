@@ -1,8 +1,8 @@
 // src/components/CapitalCompassWorkspace.jsx
 //
 // The Capital Compass workspace, on the shared mf/ components: a
-// workspace-size WorkspaceShell (Refresh in the title bar) with Overview and
-// Budget tabs. Pure presentation over the useCapitalCompassData result
+// workspace-size WorkspaceShell (Refresh in the title bar) with Overview,
+// Budget, Phasing, Deferred Maintenance and Setup tabs. Pure presentation over the useCapitalCompassData result
 // (`data`, mounted once in StakeholderMap.jsx) -- no fetching here; Refresh
 // calls the hook's reload(). Values, labels and orderings come from
 // capitalCompassView.js; tiers are always MF.tier[1-4].
@@ -22,10 +22,16 @@ import {
   RANKING_FOOTNOTE
 } from './capitalCompassView';
 import CapitalCompassBudgetTab from './CapitalCompassBudgetTab.jsx';
+import CapitalCompassPhasingTab from './CapitalCompassPhasingTab.jsx';
+import CapitalCompassDeferredTab from './CapitalCompassDeferredTab.jsx';
+import CapitalCompassSetupTab from './CapitalCompassSetupTab.jsx';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'budget', label: 'Budget' }
+  { id: 'budget', label: 'Budget' },
+  { id: 'phasing', label: 'Phasing' },
+  { id: 'deferred', label: 'Deferred Maintenance' },
+  { id: 'setup', label: 'Setup' }
 ];
 
 const emptyStyle = { fontSize: 12, color: MF.ink.muted };
@@ -178,7 +184,11 @@ function OverviewTab({ data, mapBuildingCount }) {
   );
 }
 
-export default function CapitalCompassWorkspace({ data, mapBuildingCount, onClose }) {
+// buildingNames: every building on the map (for scoring and the deferred
+// maintenance name match). getBuildingResourceEntry: building-resources.json
+// lookup, for the scoring suggestions.
+export default function CapitalCompassWorkspace({ data, buildingNames = [], getBuildingResourceEntry = null, onClose }) {
+  const mapBuildingCount = buildingNames.length;
   const [activeTab, setActiveTab] = useState('overview');
   const loading = data.status === 'loading';
 
@@ -200,9 +210,13 @@ export default function CapitalCompassWorkspace({ data, mapBuildingCount, onClos
       {data.status === 'error' && data.error ? (
         <div role="alert" style={{ marginBottom: 12, fontSize: 12, color: MF.status.error }}>{data.error}</div>
       ) : null}
-      {activeTab === 'budget'
-        ? <CapitalCompassBudgetTab data={data} />
-        : <OverviewTab data={data} mapBuildingCount={mapBuildingCount} />}
+      {activeTab === 'budget' ? <CapitalCompassBudgetTab data={data} /> : null}
+      {activeTab === 'phasing' ? <CapitalCompassPhasingTab data={data} /> : null}
+      {activeTab === 'deferred' ? <CapitalCompassDeferredTab data={data} /> : null}
+      {activeTab === 'setup' ? (
+        <CapitalCompassSetupTab data={data} buildingNames={buildingNames} getBuildingResourceEntry={getBuildingResourceEntry} />
+      ) : null}
+      {activeTab === 'overview' ? <OverviewTab data={data} mapBuildingCount={mapBuildingCount} /> : null}
     </WorkspaceShell>
   );
 }

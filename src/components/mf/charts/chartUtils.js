@@ -28,6 +28,18 @@ export function wrapText(text, maxWidth, fontSize) {
   return lines.length ? lines : [''];
 }
 
+// Round tick values from 0 up to `max`: a 1/2/2.5/5 × 10^n step giving
+// about `target` intervals, e.g. max 4.5M -> 0, 1M, 2M, 3M, 4M.
+export function niceTicks(max, target = 5) {
+  if (!Number.isFinite(max) || max <= 0) return [0];
+  const rough = max / target;
+  const pow = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= rough) || 10 * pow;
+  const ticks = [];
+  for (let v = 0; v <= max + step * 1e-9; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
+  return ticks;
+}
+
 // Horizontal bar with only its outer end rounded ('left' or 'right').
 export function barPath(x, y, width, height, radius, roundedSide) {
   const w = Math.max(0, width);
