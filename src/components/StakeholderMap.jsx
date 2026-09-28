@@ -29,6 +29,7 @@ import ComponentGallery from './dev/ComponentGallery.jsx';
 import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import { useClassroomUtilizationData } from '../utils/useClassroomUtilizationData';
 import { useCapitalCompassData } from '../utils/useCapitalCompassData';
+import { useSpaceGrowthData } from '../utils/useSpaceGrowthData';
 import { mapTierColorEntries, mapPopupLineHtml, MAP_UNSCORED_COLOR } from './capitalCompassView';
 import { getSharedAirtableRooms, airtableRoomsCacheKey, AIRTABLE_BUSY_MESSAGE, isAirtableRateLimitError } from '../utils/airtableRoomsCache';
 import CapitalTiersMapLegend from './CapitalTiersMapLegend.jsx';
@@ -13972,6 +13973,16 @@ const StakeholderMap = ({
   // Dashboard and building/room popups still compute on their own for now.
   const classroomUtilizationEnabled = isAdminMode && Boolean(config?.enableClassroomUtilization);
   const classroomUtilizationData = useClassroomUtilizationData({
+    enabled: classroomUtilizationEnabled,
+    universityId
+  });
+
+  // ---- Space Growth (admin-only, flag-gated) ----
+  // One shared load of spaceConfig, enrollment projections, room tags and
+  // department targets (plus the shared Airtable rooms cache) and one
+  // calculation -- handed to SpaceGrowthProjectionsPanel and the Executive
+  // Dashboard below.
+  const spaceGrowthData = useSpaceGrowthData({
     enabled: classroomUtilizationEnabled,
     universityId
   });
@@ -31266,6 +31277,7 @@ useEffect(() => {
               universityId={universityId}
               enabled={isAdminMode && Boolean(config?.enableCapitalPriorities) && Boolean(config?.enableClassroomUtilization)}
               capitalData={capitalCompassData}
+              spaceGrowthData={spaceGrowthData}
             />
           </div>
         )}
@@ -31292,6 +31304,7 @@ useEffect(() => {
           <div className="dashboard-box">
             <SpaceGrowthProjectionsPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
+              spaceGrowthData={spaceGrowthData}
             />
           </div>
         )}

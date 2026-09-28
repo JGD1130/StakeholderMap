@@ -14,17 +14,11 @@
 //     Projections"): Space Configuration, Room Utilization Tagging,
 //     Enrollment & FTE Projections, Space Growth / Right-Sizing.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import {
-  COURSE_MEETINGS_COLLECTION,
-  ENROLLMENT_PROJECTIONS_COLLECTION,
-  ROOM_UTILIZATION_META_COLLECTION,
-  SPACE_CONFIG_COLLECTION,
-  SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION
-} from '../utils/classroomUtilizationSchema';
+import { COURSE_MEETINGS_COLLECTION } from '../utils/classroomUtilizationSchema';
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
-import { fetchAirtableRoomsForUtilization, buildAirtableAreaMap } from '../utils/classroomUtilizationCalc';
+import { asSnapshot } from '../utils/useSpaceGrowthData';
 import { isAbortError } from '../utils/fetchWithTimeout';
 import { buildAirtableRoomTypeMap, suggestSpaceCategoryFromRoomType, deriveOfficeRoomsFromAirtable } from '../utils/roomTypeSuggestion';
 import {
@@ -33,7 +27,6 @@ import {
   AIRTABLE_DEPARTMENT_TO_ENROLLMENT_DEPARTMENT
 } from '../utils/departmentSuggestion';
 import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../utils/enrollmentProjectionsImport';
-import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
 import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget, getMasterPlanOfficeSpaceTarget } from '../utils/masterPlanSpaceTargets';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import { MF } from '../theme/mfTokens';
@@ -41,7 +34,6 @@ import { KpiCard } from './mf';
 import ClassroomUtilizationWorkspace from './ClassroomUtilizationWorkspace.jsx';
 import { summaryKpis, termDisplayLabel } from './classroomUtilizationView';
 
-const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
 
 // Shared module header color (src/utils/brandColors.js). Used by both panel
@@ -102,7 +94,9 @@ function detectFormulaType(data) {
   return Number.isFinite(sfPerFte) && sfPerFte > 0 ? 'fte' : 'station';
 }
 
-function SpaceConfigSection() {
+// data: useSpaceGrowthData's result -- reads come from it, writes go to its
+// universityId, and each save reloads the collection it changed.
+function SpaceConfigSection({ data }) {
   // form: current editable text-field values, keyed by category name.
   // persisted: last known Firestore-saved values for the same categories
   // (numeric, not text) -- diffing form against persisted is how "changed
@@ -122,16 +116,19 @@ function SpaceConfigSection() {
   // unconditionally on mount regardless of open/collapsed state).
   const [sectionOpen, setSectionOpen] = useState(false);
 
-  const spaceConfigCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_COLLECTION),
-    []
-  );
+  const spaceConfigCollection = useMemo(() => data.collectionRef('spaceConfig'), [data]);
+  const spaceConfigRaw = data.raw.spaceConfig;
+  const firstLoadPending = data.status === 'idle' || data.status === 'loading';
+  const hookError = data.status === 'error' ? data.error : '';
 
+  // Builds form/persisted from the hook's spaceConfig docs -- runs when they
+  // load and after every save (reloadCollection), same as the old getDocs load.
   const loadSpaceConfig = useCallback(async () => {
     setLoading(true);
-    setLoadError('');
+    setLoadError(hookError);
+    if (firstLoadPending) return;
     try {
-      const snap = await getDocs(spaceConfigCollection);
+      const snap = asSnapshot(spaceConfigRaw);
       const nextPersisted = {};
       const nextForm = {};
       const order = [];
@@ -165,7 +162,7 @@ function SpaceConfigSection() {
     } finally {
       setLoading(false);
     }
-  }, [spaceConfigCollection]);
+  }, [spaceConfigRaw, firstLoadPending, hookError]);
 
   useEffect(() => {
     void loadSpaceConfig();
@@ -275,13 +272,13 @@ function SpaceConfigSection() {
       setSaveMessage(
         `Saved ${dirtyCategories.length.toLocaleString()} space categor${dirtyCategories.length === 1 ? 'y' : 'ies'}.`
       );
-      await loadSpaceConfig();
+      await data.reloadCollection('spaceConfig');
     } catch (error) {
       setSaveError(String(error?.message || 'Failed to save space configuration.'));
     } finally {
       setSaving(false);
     }
-  }, [saving, dirtyCategories, form, spaceConfigCollection, loadSpaceConfig]);
+  }, [saving, dirtyCategories, form, spaceConfigCollection, data]);
 
   // Category count visible in the summary label without expanding, same
   // "state visible collapsed" convention RoomUtilizationMetaSection's
@@ -455,7 +452,9 @@ function SpaceConfigSection() {
 // Mirrors SpaceConfigSection/TermsSection's conventions: dirty-tracking
 // against a persisted snapshot, single "Save" button for whichever rows
 // changed, validate-before-write, plain setDoc overwrite (no {merge: true}).
-function RoomUtilizationMetaSection() {
+// data: useSpaceGrowthData's result (tags, categories, departments, Airtable
+// rooms); this section still reads courseMeetings itself for its room list.
+function RoomUtilizationMetaSection({ data }) {
   // Collapsed by default -- one-time setup task, not something checked
   // repeatedly, and the panel has grown crowded (Import Schedule, Space
   // Config, Terms, Room Tagging, Utilization Results all stacked). Same
@@ -530,79 +529,36 @@ function RoomUtilizationMetaSection() {
   // after a Save reloads roomList.
   const suggestionsAppliedRef = useRef(false);
 
-  const roomUtilizationMetaCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ROOM_UTILIZATION_META_COLLECTION),
-    []
-  );
-  const spaceConfigCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_COLLECTION),
-    []
-  );
+  const roomUtilizationMetaCollection = useMemo(() => data.collectionRef('roomUtilizationMeta'), [data]);
   const courseMeetingsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
-    []
+    () => collection(db, 'universities', data.universityId, COURSE_MEETINGS_COLLECTION),
+    [data.universityId]
   );
-  const enrollmentProjectionsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
-    []
-  );
+  const dataReady = data.status === 'ready' || data.status === 'error';
 
-  // Live, not a one-time load -- per Clark's requirement that the category
-  // dropdown reflect whatever spaceConfig categories exist right now
-  // (currently just "Classroom"), not a list hardcoded into this component.
-  // Read-only listener; this section never writes to spaceConfig.
+  // Category dropdown: whatever spaceConfig categories exist right now, from
+  // the shared hook (reloaded after Space Configuration saves). "Loaded"
+  // once the hook's first load settles, even on error, so the suggestion
+  // effect below can't stall.
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      spaceConfigCollection,
-      (snap) => {
-        setCategoryOptions(snap.docs.map((docSnap) => docSnap.id).sort((a, b) => a.localeCompare(b)));
-        setCategoryOptionsLoaded(true);
-      },
-      (error) => {
-        setLoadError(String(error?.message || 'Failed to load space categories.'));
-        // A listener error still counts as "loaded" (with zero options) --
-        // otherwise categoryOptionsLoaded would stay false forever and the
-        // suggestion effect below, which requires it, would silently never
-        // run again for the rest of this mount. Surfaced separately via
-        // loadError above, not hidden by this.
-        setCategoryOptionsLoaded(true);
-      }
-    );
-    return () => unsubscribe();
-  }, [spaceConfigCollection]);
+    if (!dataReady) return;
+    setCategoryOptions(data.raw.spaceConfig.map((d) => d.id).sort((a, b) => a.localeCompare(b)));
+    setCategoryOptionsLoaded(true);
+  }, [dataReady, data.raw.spaceConfig]);
 
-  // Live, same reasoning as categoryOptions above -- read-only listener,
-  // this section never writes to enrollmentProjections. Excludes the
-  // division: "Overall" institution-wide record and dedupes by department
-  // name (a department name is unique per division in the source workbook,
-  // but dedup defensively rather than assume that holds forever).
+  // Department dropdown: enrollmentProjections departments (excluding the
+  // institution-wide "Overall" record, deduped), from the shared hook.
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      enrollmentProjectionsCollection,
-      (snap) => {
-        const names = new Set();
-        snap.docs.forEach((docSnap) => {
-          const data = docSnap.data() || {};
-          if (String(data.division || '').trim().toLowerCase() === 'overall') return;
-          const department = String(data.department || '').trim();
-          if (department) names.add(department);
-        });
-        setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
-        setDepartmentOptionsLoaded(true);
-      },
-      (error) => {
-        setLoadError(String(error?.message || 'Failed to load departments.'));
-        // Same "error still counts as loaded" reasoning as categoryOptions'
-        // listener above -- and more load-bearing here, since the one-time
-        // suggestion effect now gates BOTH spaceCategory and
-        // primaryDepartment suggestions on departmentOptionsLoaded. Without
-        // this, a single failed enrollmentProjections read would silently
-        // stall spaceCategory suggestions too, not just department ones.
-        setDepartmentOptionsLoaded(true);
-      }
-    );
-    return () => unsubscribe();
-  }, [enrollmentProjectionsCollection]);
+    if (!dataReady) return;
+    const names = new Set();
+    data.raw.enrollmentProjections.forEach((d) => {
+      if (String(d.data.division || '').trim().toLowerCase() === 'overall') return;
+      const department = String(d.data.department || '').trim();
+      if (department) names.add(department);
+    });
+    setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
+    setDepartmentOptionsLoaded(true);
+  }, [dataReady, data.raw.enrollmentProjections]);
 
   // Airtable is now fetched inside loadRooms() above (folded in 2026-08-25
   // alongside the Office room source), which sets airtableRoomTypeByKey/
@@ -680,25 +636,32 @@ function RoomUtilizationMetaSection() {
   // (not just courseMeetings), that fetch has to land before roomList/
   // persisted/form can be built correctly, so it's one Promise.all instead
   // of two uncoordinated ones.
+  // Tags (roomUtilizationMeta) and Airtable rooms come from the shared hook;
+  // courseMeetings is still read here. Re-runs when the hook's tags change
+  // (after Save Room Tagging reloads them), like the old post-save reload.
+  // Airtable is read through a ref: a forced Airtable refresh elsewhere (Space
+  // Growth's Recalculate) must not rebuild this form and drop unsaved edits.
+  const metaRaw = data.raw.roomUtilizationMeta;
+  const airtableRef = useRef({ rooms: [], error: null });
+  airtableRef.current = { rooms: data.airtableRooms, error: data.airtableError };
   const loadRooms = useCallback(async () => {
+    if (!dataReady || !data.airtableLoaded) return;
+    const { rooms: airtableRooms, error: airtableError } = airtableRef.current;
     setLoading(true);
     setLoadError('');
     try {
-      const [meetingsSnap, metaSnap, airtableRooms] = await Promise.all([
-        getDocs(courseMeetingsCollection),
-        getDocs(roomUtilizationMetaCollection),
-        // Fail-soft: a failed Airtable fetch degrades to "no Office rooms,
-        // no suggestions offered" rather than blocking the course-scheduled
-        // half of this section -- same convention as every other
-        // fetchAirtableRoomsForUtilization call site in this module.
-        fetchAirtableRoomsForUtilization().catch((error) => {
-          console.warn('Airtable rooms fetch failed for room tagging:', error);
-          setAirtableSuggestionsError(isAbortError(error)
-            ? "Couldn't load Airtable room-type suggestions (AI server timed out) — try again shortly."
-            : String(error?.message || 'Failed to load Airtable room-type suggestions.'));
-          return [];
-        })
-      ]);
+      const meetingsSnap = await getDocs(courseMeetingsCollection);
+      const metaSnap = asSnapshot(metaRaw);
+      // Fail-soft: a failed Airtable fetch degrades to "no Office rooms,
+      // no suggestions offered" rather than blocking the course-scheduled
+      // half of this section.
+      if (airtableError) {
+        setAirtableSuggestionsError(isAbortError(airtableError)
+          ? "Couldn't load Airtable room-type suggestions (AI server timed out) — try again shortly."
+          : String(airtableError?.message || 'Failed to load Airtable room-type suggestions.'));
+      } else {
+        setAirtableSuggestionsError('');
+      }
 
       const scheduledRooms = deriveDistinctRoomsFromCourseMeetings(
         meetingsSnap.docs.map((docSnap) => docSnap.data())
@@ -756,7 +719,7 @@ function RoomUtilizationMetaSection() {
       setLoading(false);
       setAirtableSuggestionsLoaded(true);
     }
-  }, [courseMeetingsCollection, roomUtilizationMetaCollection]);
+  }, [dataReady, data.airtableLoaded, courseMeetingsCollection, metaRaw]);
 
   useEffect(() => {
     void loadRooms();
@@ -924,13 +887,13 @@ function RoomUtilizationMetaSection() {
       setSaveMessage(
         `Saved ${dirtyRoomKeys.length.toLocaleString()} room${dirtyRoomKeys.length === 1 ? '' : 's'}.`
       );
-      await loadRooms();
+      await data.reloadCollection('roomUtilizationMeta');
     } catch (error) {
       setSaveError(String(error?.message || 'Failed to save room tagging.'));
     } finally {
       setSaving(false);
     }
-  }, [saving, dirtyRoomKeys, form, roomList, roomUtilizationMetaCollection, loadRooms, validateRoomRow]);
+  }, [saving, dirtyRoomKeys, form, roomList, roomUtilizationMetaCollection, data, validateRoomRow]);
 
   // Edge case: spaceConfig has zero categories defined. Shouldn't happen
   // today ("Classroom" already exists), but show a clear message and
@@ -1247,7 +1210,9 @@ function formatEnrollmentValue(value) {
   return Number.isFinite(value) ? (Math.round(value * 100) / 100).toLocaleString() : '—';
 }
 
-function EnrollmentProjectionsSection() {
+// data: useSpaceGrowthData's result -- saved projections come from it; the
+// upload writes to its universityId and then reloads enrollmentProjections.
+function EnrollmentProjectionsSection({ data }) {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState('');
@@ -1265,16 +1230,17 @@ function EnrollmentProjectionsSection() {
   const [savedLoading, setSavedLoading] = useState(false);
   const [savedLoadError, setSavedLoadError] = useState('');
 
-  const enrollmentProjectionsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
-    []
-  );
+  const enrollmentProjectionsCollection = useMemo(() => data.collectionRef('enrollmentProjections'), [data]);
+  const enrollmentRaw = data.raw.enrollmentProjections;
+  const firstLoadPending = data.status === 'idle' || data.status === 'loading';
+  const hookError = data.status === 'error' ? data.error : '';
 
   const loadSavedProjections = useCallback(async () => {
     setSavedLoading(true);
-    setSavedLoadError('');
+    setSavedLoadError(hookError);
+    if (firstLoadPending) return;
     try {
-      const snap = await getDocs(enrollmentProjectionsCollection);
+      const snap = asSnapshot(enrollmentRaw);
       const docs = snap.docs.map((docSnap) => {
         const data = docSnap.data() || {};
         return {
@@ -1301,7 +1267,7 @@ function EnrollmentProjectionsSection() {
     } finally {
       setSavedLoading(false);
     }
-  }, [enrollmentProjectionsCollection]);
+  }, [enrollmentRaw, firstLoadPending, hookError]);
 
   useEffect(() => {
     void loadSavedProjections();
@@ -1407,16 +1373,17 @@ function EnrollmentProjectionsSection() {
       // below reflect the actual new Firestore state, not a locally-guessed
       // count -- same source of truth the initial mount load uses, so a
       // reload of the page afterward shows exactly the same thing.
-      await loadSavedProjections();
+      await data.reloadCollection('enrollmentProjections');
     } catch (error) {
       const phaseLabel = phase === 'clearing'
         ? 'Failed while clearing old data (nothing new was written): '
         : 'Failed while writing new data (old data was already cleared): ';
       setSaveError(phaseLabel + String(error?.message || 'unknown error.'));
+      void data.reloadCollection('enrollmentProjections');
     } finally {
       setSavePhase(null);
     }
-  }, [savePhase, previewDocs, enrollmentProjectionsCollection, parsedResult, loadSavedProjections]);
+  }, [savePhase, previewDocs, enrollmentProjectionsCollection, parsedResult, data]);
 
   const yearRangeLabel = parsedResult?.years?.length
     ? (parsedResult.years.length === 1
@@ -1606,7 +1573,9 @@ function EnrollmentProjectionsSection() {
 // editable field in this module.
 const DEPARTMENT_OVERRIDE_TARGET_CATEGORIES = ['Classroom', 'Lab', 'Office'];
 
-function DepartmentSpaceOverridesSection() {
+// data: useSpaceGrowthData's result -- overrides, categories and departments
+// come from it; saves write to its universityId and reload the overrides.
+function DepartmentSpaceOverridesSection({ data }) {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [categoryOptions, setCategoryOptions] = useState([]);
   const [categoryOptionsLoaded, setCategoryOptionsLoaded] = useState(false);
@@ -1637,64 +1606,34 @@ function DepartmentSpaceOverridesSection() {
   // once -> treated as a deliberate admin choice" rule.
   const [suggestedPairKeys, setSuggestedPairKeys] = useState(() => new Set());
 
-  const overridesCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION),
-    []
-  );
-  const spaceConfigCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_COLLECTION),
-    []
-  );
-  const enrollmentProjectionsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
-    []
-  );
+  const overridesCollection = useMemo(() => data.collectionRef('departmentOverrides'), [data]);
+  const overridesRaw = data.raw.departmentOverrides;
+  const dataReady = data.status === 'ready' || data.status === 'error';
 
-  // Live, same reasoning/pattern as RoomUtilizationMetaSection's identical
-  // listener -- this section never writes to spaceConfig, only reads which
-  // of "Classroom"/"Lab"/"Office" currently exist (and each one's formula
-  // type) so overrides are never offered for a category that doesn't exist
-  // yet, and each row shows the right fields for its category.
+  // Which of "Classroom"/"Lab"/"Office" exist (and each one's formula type),
+  // from the shared hook's spaceConfig -- so overrides are never offered for
+  // a category that doesn't exist yet.
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      spaceConfigCollection,
-      (snap) => {
-        setCategoryOptions(snap.docs.map((docSnap) => docSnap.id).sort((a, b) => a.localeCompare(b)));
-        setCategoryFormulaTypeByCategory(new Map(snap.docs.map((docSnap) => [docSnap.id, detectFormulaType(docSnap.data())])));
-        setCategoryOptionsLoaded(true);
-      },
-      (error) => {
-        setLoadError(String(error?.message || 'Failed to load space categories.'));
-        setCategoryOptionsLoaded(true);
-      }
-    );
-    return () => unsubscribe();
-  }, [spaceConfigCollection]);
+    if (!dataReady) return;
+    const docs = data.raw.spaceConfig;
+    setCategoryOptions(docs.map((d) => d.id).sort((a, b) => a.localeCompare(b)));
+    setCategoryFormulaTypeByCategory(new Map(docs.map((d) => [d.id, detectFormulaType(d.data)])));
+    setCategoryOptionsLoaded(true);
+  }, [dataReady, data.raw.spaceConfig]);
 
-  // Live, same reasoning/pattern as RoomUtilizationMetaSection's identical
-  // listener -- excludes the "Overall" institution-wide record, dedupes by
-  // department name.
+  // Departments from the shared hook's enrollmentProjections (excluding the
+  // "Overall" record, deduped).
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      enrollmentProjectionsCollection,
-      (snap) => {
-        const names = new Set();
-        snap.docs.forEach((docSnap) => {
-          const data = docSnap.data() || {};
-          if (String(data.division || '').trim().toLowerCase() === 'overall') return;
-          const department = String(data.department || '').trim();
-          if (department) names.add(department);
-        });
-        setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
-        setDepartmentOptionsLoaded(true);
-      },
-      (error) => {
-        setLoadError(String(error?.message || 'Failed to load departments.'));
-        setDepartmentOptionsLoaded(true);
-      }
-    );
-    return () => unsubscribe();
-  }, [enrollmentProjectionsCollection]);
+    if (!dataReady) return;
+    const names = new Set();
+    data.raw.enrollmentProjections.forEach((d) => {
+      if (String(d.data.division || '').trim().toLowerCase() === 'overall') return;
+      const department = String(d.data.department || '').trim();
+      if (department) names.add(department);
+    });
+    setDepartmentOptions(Array.from(names).sort((a, b) => a.localeCompare(b)));
+    setDepartmentOptionsLoaded(true);
+  }, [dataReady, data.raw.enrollmentProjections]);
 
   // Pairs this section can ever show a row for: every live department x
   // "Classroom"/"Lab", restricted to whichever of those two categories
@@ -1721,10 +1660,11 @@ function DepartmentSpaceOverridesSection() {
   }, [departmentOptions, availableTargetCategories, categoryFormulaTypeByCategory]);
 
   const loadOverrides = useCallback(async () => {
+    if (!dataReady) return;
     setLoading(true);
     setLoadError('');
     try {
-      const snap = await getDocs(overridesCollection);
+      const snap = asSnapshot(overridesRaw);
       const nextPersisted = {};
       // Read-back: pre-fill the form with the REAL saved value for every
       // persisted pair, same convention SpaceConfigSection/TermsSection/
@@ -1786,7 +1726,7 @@ function DepartmentSpaceOverridesSection() {
     } finally {
       setLoading(false);
     }
-  }, [overridesCollection]);
+  }, [dataReady, overridesRaw]);
 
   useEffect(() => {
     void loadOverrides();
@@ -2017,13 +1957,13 @@ function DepartmentSpaceOverridesSection() {
       setSaveMessage(
         `Saved ${dirtyPairs.length.toLocaleString()} department override${dirtyPairs.length === 1 ? '' : 's'}.`
       );
-      await loadOverrides();
+      await data.reloadCollection('departmentOverrides');
     } catch (error) {
       setSaveError(String(error?.message || 'Failed to save department space overrides.'));
     } finally {
       setSaving(false);
     }
-  }, [saving, dirtyPairs, form, overridesCollection, loadOverrides]);
+  }, [saving, dirtyPairs, form, overridesCollection, data]);
 
   // Coverage accounting, per explicit request: which live departments got a
   // real master-plan suggestion vs. which didn't (checked against the same
@@ -2243,114 +2183,20 @@ function formatGrowthGap(value) {
   return `${rounded >= 0 ? '+' : ''}${rounded.toLocaleString()} SF`;
 }
 
-function SpaceGrowthSection() {
+// data: useSpaceGrowthData's result -- the one shared load and calculation
+// (the same one the Executive Dashboard reads). The target year selector is
+// the hook's targetYear; Recalculate re-reads everything, Airtable forced.
+function SpaceGrowthSection({ data }) {
   const [sectionOpen, setSectionOpen] = useState(false);
-  const [targetYear, setTargetYear] = useState(TARGET_YEAR_OPTIONS[TARGET_YEAR_OPTIONS.length - 1]);
-  const [result, setResult] = useState(null);
+  const { targetYear, setTargetYear } = data;
+  const result = data.results?.institution || null;
   // Department-level breakdown (computeDepartmentSpaceGrowth), rendered as a
   // "By Department" detail view below the institution-wide table above.
-  // Shares this section's targetYear selector -- deliberately not a second,
-  // independent selector -- and is computed from the exact same fetched
-  // Firestore/Airtable snapshot as `result` in runCalculation below (one
-  // fetch, two computations), not a separate fetch.
-  const [departmentResult, setDepartmentResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
-
-  const spaceConfigCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_COLLECTION),
-    []
-  );
-  const roomUtilizationMetaCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ROOM_UTILIZATION_META_COLLECTION),
-    []
-  );
-  const enrollmentProjectionsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, ENROLLMENT_PROJECTIONS_COLLECTION),
-    []
-  );
-  // Department-specific overrides, read-only here -- DepartmentSpaceOverridesSection
-  // above owns all writes to this collection. Additive: an empty/missing
-  // collection just means computeDepartmentSpaceGrowth falls back to the
-  // category-level spaceConfig default for every pair, exactly as before
-  // this collection existed.
-  const departmentOverridesCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION),
-    []
-  );
-
-  // forceAirtable (the Recalculate button): fetch Airtable rooms again instead
-  // of reusing the page-wide shared copy.
-  const runCalculation = useCallback(async ({ forceAirtable = false } = {}) => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const [spaceConfigSnap, roomMetaSnap, enrollmentSnap, departmentOverridesSnap, airtableRooms] = await Promise.all([
-        getDocs(spaceConfigCollection),
-        getDocs(roomUtilizationMetaCollection),
-        getDocs(enrollmentProjectionsCollection),
-        getDocs(departmentOverridesCollection),
-        // Airtable is area-only input here (Current SF). A failed fetch
-        // shouldn't block the rest of the table from computing -- every
-        // category just falls back to 0 tagged/resolved SF instead of the
-        // whole section erroring out, same fail-soft convention
-        // UtilizationResultsSection already uses for this endpoint.
-        fetchAirtableRoomsForUtilization({ force: forceAirtable }).catch((error) => {
-          console.warn('Airtable rooms fetch failed for space growth calc:', error);
-          return [];
-        })
-      ]);
-
-      const spaceConfigDocs = spaceConfigSnap.docs.map((docSnap) => ({
-        category: docSnap.id,
-        sfPerStationTarget: docSnap.data()?.sfPerStationTarget,
-        targetUtilizationRate: docSnap.data()?.targetUtilizationRate
-      }));
-      const roomUtilizationMetaDocs = roomMetaSnap.docs.map((docSnap) => ({
-        roomKey: docSnap.id,
-        ...docSnap.data()
-      }));
-      const enrollmentProjectionDocs = enrollmentSnap.docs.map((docSnap) => docSnap.data());
-      const departmentOverrideDocs = departmentOverridesSnap.docs.map((docSnap) => docSnap.data());
-      const airtableAreaByRoomKey = buildAirtableAreaMap(airtableRooms);
-
-      setResult(computeSpaceGrowth({
-        spaceConfigDocs,
-        roomUtilizationMetaDocs,
-        airtableAreaByRoomKey,
-        baselineYear: BASELINE_ENROLLMENT_YEAR,
-        targetYear,
-        enrollmentProjectionDocs
-      }));
-      // Additive -- computeSpaceGrowth above is untouched and drives the
-      // existing institution-wide table exactly as before. This groups the
-      // same roomUtilizationMetaDocs/airtableAreaByRoomKey by (category,
-      // department) pair instead, now also checking departmentOverrideDocs
-      // first for each pair (see computeDepartmentSpaceGrowth's header
-      // comment) before falling back to the category-level spaceConfig
-      // default -- unchanged for any pair with no override doc.
-      setDepartmentResult(computeDepartmentSpaceGrowth({
-        spaceConfigDocs,
-        roomUtilizationMetaDocs,
-        airtableAreaByRoomKey,
-        baselineYear: BASELINE_ENROLLMENT_YEAR,
-        targetYear,
-        enrollmentProjectionDocs,
-        departmentOverrideDocs
-      }));
-    } catch (error) {
-      setLoadError(String(error?.message || 'Failed to compute space growth.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [spaceConfigCollection, roomUtilizationMetaCollection, enrollmentProjectionsCollection, departmentOverridesCollection, targetYear]);
-
-  // Re-runs whenever targetYear changes (it's a dependency of runCalculation
-  // above), not just on mount -- picking a new target year in the selector
-  // below recalculates automatically, no separate "apply" step needed.
-  useEffect(() => {
-    void runCalculation();
-  }, [runCalculation]);
+  // Same target year and same load as `result`.
+  const departmentResult = data.results?.department || null;
+  const loading = data.status === 'loading' || data.refreshing;
+  const loadError = data.error;
+  const runCalculation = useCallback((options) => data.reload(options), [data]);
 
   const missingBaselineEnrollment = result && !Number.isFinite(result.baselineEnrollment);
   const missingTargetEnrollment = result && !Number.isFinite(result.targetEnrollment);
@@ -2442,7 +2288,9 @@ function SpaceGrowthSection() {
                           <>
                             {(Math.round(row.idealNsfPerStudent * 100) / 100).toLocaleString()}
                             <div style={{ fontSize: 9, color: '#98a2b3' }}>
-                              ({row.sfPerStationTarget.toLocaleString()} SF/station ÷ {Math.round(row.targetUtilizationRate * 100)}%)
+                              {row.formulaType === 'fte'
+                                ? 'SF/FTE × campus Total FTE'
+                                : `(${row.sfPerStationTarget.toLocaleString()} SF/station ÷ ${Math.round(row.targetUtilizationRate * 100)}%)`}
                             </div>
                           </>
                         ) : (
@@ -2692,9 +2540,12 @@ export default function ClassroomUtilizationPanel({
 // `enabled` props, no second flag exists anywhere.
 export function SpaceGrowthProjectionsPanel({
   enabled = false,
-  title = 'Space Growth Projections'
+  title = 'Space Growth Projections',
+  // Return value of useSpaceGrowthData (mounted once in StakeholderMap.jsx):
+  // the one shared Space Growth load and calculation.
+  spaceGrowthData = null
 }) {
-  if (!enabled) return null;
+  if (!enabled || !spaceGrowthData) return null;
 
   return (
     <div
@@ -2712,11 +2563,11 @@ export function SpaceGrowthProjectionsPanel({
     >
       <h4 style={{ margin: '0 0 6px 0', padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
 
-      <SpaceConfigSection />
-      <RoomUtilizationMetaSection />
-      <EnrollmentProjectionsSection />
-      <DepartmentSpaceOverridesSection />
-      <SpaceGrowthSection />
+      <SpaceConfigSection data={spaceGrowthData} />
+      <RoomUtilizationMetaSection data={spaceGrowthData} />
+      <EnrollmentProjectionsSection data={spaceGrowthData} />
+      <DepartmentSpaceOverridesSection data={spaceGrowthData} />
+      <SpaceGrowthSection data={spaceGrowthData} />
     </div>
   );
 }

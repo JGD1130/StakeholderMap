@@ -10,10 +10,11 @@
 // READ-ONLY, always: this panel never writes to Firestore. Capital Compass data (Tier 1
 // buildings with live tiers and costs from the one cost rule, and capital phasing) comes
 // from the shared useCapitalCompassData hook (`capitalData`, the same object
-// CapitalPrioritiesPanel.jsx reads), so saved manual costs show here too. Space and
-// classroom data are still re-fetched here, and run through the exact same calc
-// functions those panels use (computeSpaceGrowth, computeDepartmentSpaceGrowth,
-// computeClassroomUtilization, computeCampusUtilizationByTerm, resolveCurrentTerm) --
+// CapitalPrioritiesPanel.jsx reads), so saved manual costs show here too. Space Gap
+// figures come from the shared useSpaceGrowthData hook (`spaceGrowthData`, the same
+// load and 2036 calculation the Space Growth sections read). Classroom data is still
+// re-fetched here, and run through the exact same calc functions that panel uses
+// (computeClassroomUtilization, computeCampusUtilizationByTerm, resolveCurrentTerm) --
 // nothing in this file modifies any of those functions or any other panel's logic.
 // executiveDashboardCalc.js adds only new, additive aggregation on top of their output.
 //
@@ -31,28 +32,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { pdf } from '@react-pdf/renderer';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import {
-  SPACE_CONFIG_COLLECTION,
-  TERMS_COLLECTION,
-  ROOM_UTILIZATION_META_COLLECTION,
-  COURSE_MEETINGS_COLLECTION,
-  ENROLLMENT_PROJECTIONS_COLLECTION,
-  SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION
-} from '../utils/classroomUtilizationSchema';
+import { TERMS_COLLECTION, COURSE_MEETINGS_COLLECTION } from '../utils/classroomUtilizationSchema';
 import {
   computeClassroomUtilization,
   computeSizeRangeUtilizationByTerm,
   computeCampusUtilizationByTerm,
   resolveCurrentTerm,
-  fetchAirtableRoomsForUtilization,
-  buildAirtableAreaMap
+  fetchAirtableRoomsForUtilization
 } from '../utils/classroomUtilizationCalc';
-import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
+import { SPACE_GROWTH_DASHBOARD_YEAR } from '../utils/useSpaceGrowthData';
 import { computeTier1Summary } from '../utils/capitalCompassCalc';
 import {
   computeNearTermCapitalPhasing,
-  computeDivisionSpaceGapSummary,
-  computeInstitutionWideSpaceGapTotal,
   addTimeUtilizationToSizeRanges
 } from '../utils/executiveDashboardCalc';
 import ExecutiveDashboardPdfDocument from './ExecutiveDashboardPdfDocument.jsx';
@@ -61,14 +52,6 @@ import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import { MF } from '../theme/mfTokens';
 import { KpiCard } from './mf';
 import { tier1NeedKpi, spaceGapKpi } from './executiveDashboardView';
-
-// Mirrors ClassroomUtilizationPanel.jsx's SpaceGrowthSection constants exactly (not
-// exported from that file, so duplicated here per this codebase's existing isolation
-// convention -- see classroomUtilizationCalc.js's header comment for the same pattern).
-// SPACE_GROWTH_TARGET_YEAR uses that section's own default (the last of its 10
-// selectable target years) rather than inventing a different one for this dashboard.
-const BASELINE_ENROLLMENT_YEAR = 2026;
-const SPACE_GROWTH_TARGET_YEAR = 2036;
 
 // Same near-term window computeNearTermCapitalPhasing defaults to -- named here so the
 // UI copy ("next ~2 years") and the calc call always agree.
@@ -81,31 +64,18 @@ export default function ExecutiveDashboardPanel({
   universityId,
   enabled = false,
   // useCapitalCompassData's result (mounted once in StakeholderMap.jsx).
-  capitalData = null
+  capitalData = null,
+  // useSpaceGrowthData's result (mounted once in StakeholderMap.jsx): the
+  // Space Gap figures, always for SPACE_GROWTH_DASHBOARD_YEAR (2036).
+  spaceGrowthData = null
 }) {
   const normalizedUniversityId = String(universityId || '').trim();
   const [baseLoading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
-  // Space + classroom results; Capital Compass parts are merged in below.
+  // Classroom results; Space Growth and Capital Compass parts are merged in below.
   const [baseData, setData] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const spaceConfigCollection = useMemo(
-    () => collection(db, 'universities', normalizedUniversityId, SPACE_CONFIG_COLLECTION),
-    [normalizedUniversityId]
-  );
-  const roomUtilizationMetaCollection = useMemo(
-    () => collection(db, 'universities', normalizedUniversityId, ROOM_UTILIZATION_META_COLLECTION),
-    [normalizedUniversityId]
-  );
-  const enrollmentProjectionsCollection = useMemo(
-    () => collection(db, 'universities', normalizedUniversityId, ENROLLMENT_PROJECTIONS_COLLECTION),
-    [normalizedUniversityId]
-  );
-  const departmentOverridesCollection = useMemo(
-    () => collection(db, 'universities', normalizedUniversityId, SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION),
-    [normalizedUniversityId]
-  );
   const courseMeetingsCollection = useMemo(
     () => collection(db, 'universities', normalizedUniversityId, COURSE_MEETINGS_COLLECTION),
     [normalizedUniversityId]
@@ -148,18 +118,10 @@ export default function ExecutiveDashboardPanel({
       // happens to already be warm, which board-facing use can't assume.
       let airtableFetchFailed = false;
       const [
-        spaceConfigSnap,
-        roomMetaSnap,
-        enrollmentSnap,
-        departmentOverridesSnap,
         courseMeetingsSnap,
         termsSnap,
         airtableRooms
       ] = await Promise.all([
-        getDocs(spaceConfigCollection),
-        getDocs(roomUtilizationMetaCollection),
-        getDocs(enrollmentProjectionsCollection),
-        getDocs(departmentOverridesCollection),
         getDocs(courseMeetingsCollection),
         getDocs(termsCollection),
         // Airtable is capacity/area-only input for two of the four sections below.
@@ -176,59 +138,13 @@ export default function ExecutiveDashboardPanel({
         })
       ]);
 
-      // Deliberately mirrors ClassroomUtilizationPanel.jsx's own spaceConfigDocs
-      // mapping EXACTLY (no sfPerFteTarget field) -- an earlier version of this
-      // mapping included it and broke the Space Gap chart below. Root cause:
-      // SpaceConfigSection preserves a category's inactive-formula field across
-      // formula-type flips (never clears it, by design -- see the 2026-08-26
-      // "suggestionAppliedFormulaTypeRef" fix in HANDOFF.md), so a
-      // Classroom/Lab category can carry a stale, never-actually-used
-      // sfPerFteTarget value from earlier testing. computeDepartmentSpaceGrowth
-      // checks sfPerFteTarget FIRST as a category-level fallback (for any
-      // department pair with no override doc) -- a stray positive value there
-      // silently forces those rows onto the FTE formula branch, which needs a
-      // totalFte figure teaching departments never have, producing
-      // gapTarget: null for every such row and emptying this dashboard's Space
-      // Gap chart. The proven-working "By Department" table never reads this
-      // field into spaceConfigDocs at all, so it never hits this path.
-      const spaceConfigDocs = spaceConfigSnap.docs.map((d) => ({
-        category: d.id,
-        sfPerStationTarget: d.data()?.sfPerStationTarget,
-        targetUtilizationRate: d.data()?.targetUtilizationRate
-      }));
-      const roomUtilizationMetaDocs = roomMetaSnap.docs.map((d) => ({ roomKey: d.id, ...(d.data() || {}) }));
-      const enrollmentProjectionDocs = enrollmentSnap.docs.map((d) => d.data());
-      const departmentOverrideDocs = departmentOverridesSnap.docs.map((d) => d.data());
+      // Space Growth inputs (spaceConfig, room tags, enrollment, department
+      // targets) and the Space Gap figures now come from useSpaceGrowthData --
+      // see spaceSummary below. This run covers classroom utilization only.
       const courseMeetingDocs = courseMeetingsSnap.docs.map((d) => d.data());
       const termDocs = termsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
 
-      const airtableAreaByRoomKey = buildAirtableAreaMap(airtableRooms);
-
       if (isStale()) return;
-
-
-      const institutionSpace = computeSpaceGrowth({
-        spaceConfigDocs,
-        roomUtilizationMetaDocs,
-        airtableAreaByRoomKey,
-        baselineYear: BASELINE_ENROLLMENT_YEAR,
-        targetYear: SPACE_GROWTH_TARGET_YEAR,
-        enrollmentProjectionDocs
-      });
-      const departmentSpace = computeDepartmentSpaceGrowth({
-        spaceConfigDocs,
-        roomUtilizationMetaDocs,
-        airtableAreaByRoomKey,
-        baselineYear: BASELINE_ENROLLMENT_YEAR,
-        targetYear: SPACE_GROWTH_TARGET_YEAR,
-        enrollmentProjectionDocs,
-        departmentOverrideDocs
-      });
-      const institutionGap = computeInstitutionWideSpaceGapTotal(institutionSpace.rows);
-      const spaceGapBuckets = computeDivisionSpaceGapSummary({
-        departmentRows: departmentSpace.rows,
-        enrollmentProjectionDocs
-      });
 
       const classroomResult = computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms });
       // Room-size breakdown for the dashboard's Utilization by Room Size chart:
@@ -239,8 +155,6 @@ export default function ExecutiveDashboardPanel({
       const currentTerm = resolveCurrentTerm(termDocs);
 
       setData({
-        institutionGap,
-        spaceGapBuckets,
         // Surfaced so SpaceGapCard (ExecutiveDashboardModal.jsx) can show a
         // specific "data didn't load, try Recalculate" message instead of
         // the generic "no gaps" one when spaceGapBuckets is empty because
@@ -249,11 +163,9 @@ export default function ExecutiveDashboardPanel({
         // both produce an empty spaceGapBuckets array, and only this flag
         // tells them apart.
         airtableFetchFailed,
-        targetYear: SPACE_GROWTH_TARGET_YEAR,
         campusRollups,
         sizeRangeByTerm,
-        currentTerm,
-        hasAnySpaceConfig: spaceConfigDocs.length > 0
+        currentTerm
       });
     } catch (error) {
       if (isStale()) return;
@@ -265,10 +177,6 @@ export default function ExecutiveDashboardPanel({
   }, [
     enabled,
     normalizedUniversityId,
-    spaceConfigCollection,
-    roomUtilizationMetaCollection,
-    enrollmentProjectionsCollection,
-    departmentOverridesCollection,
     courseMeetingsCollection,
     termsCollection
   ]);
@@ -297,16 +205,43 @@ export default function ExecutiveDashboardPanel({
     };
   }, [capitalReady, capitalData?.buildings, capitalData?.phasingDocs]);
 
-  const data = useMemo(
-    () => (baseData && capitalSummary ? { ...baseData, ...capitalSummary } : null),
-    [baseData, capitalSummary]
-  );
-  const loading = baseLoading || capitalData?.status === 'loading';
+  // Space Growth parts, from the shared hook's 2036 results (the same
+  // calculation the Space Growth / Right-Sizing section shows) -- no
+  // Firestore read here. The campus gap includes Office priced from its
+  // SF/FTE target (see useSpaceGrowthData.js).
+  const spaceResults = spaceGrowthData?.dashboardResults || null;
+  const spaceSettled = Boolean(spaceResults) || spaceGrowthData?.status === 'error';
+  const spaceSummary = useMemo(() => {
+    if (!spaceSettled) return null;
+    return {
+      institutionGap: spaceResults ? spaceResults.institutionGap : null,
+      spaceGapBuckets: spaceResults ? spaceResults.divisions : [],
+      targetYear: SPACE_GROWTH_DASHBOARD_YEAR,
+      hasAnySpaceConfig: (spaceGrowthData?.raw?.spaceConfig || []).length > 0,
+      spaceAirtableFailed: Boolean(spaceGrowthData?.airtableError)
+    };
+  }, [spaceSettled, spaceResults, spaceGrowthData?.raw?.spaceConfig, spaceGrowthData?.airtableError]);
+
+  const data = useMemo(() => {
+    if (!baseData || !capitalSummary || !spaceSummary) return null;
+    const { spaceAirtableFailed, ...space } = spaceSummary;
+    return {
+      ...baseData,
+      ...space,
+      ...capitalSummary,
+      airtableFetchFailed: baseData.airtableFetchFailed || spaceAirtableFailed
+    };
+  }, [baseData, capitalSummary, spaceSummary]);
+  const loading = baseLoading
+    || capitalData?.status === 'loading'
+    || spaceGrowthData?.status === 'loading'
+    || Boolean(spaceGrowthData?.refreshing);
 
   const handleRecalculate = useCallback(() => {
     void runCalculation({ forceAirtable: true });
     void capitalData?.reload?.();
-  }, [runCalculation, capitalData]);
+    void spaceGrowthData?.reload?.({ forceAirtable: true });
+  }, [runCalculation, capitalData, spaceGrowthData]);
 
   const handleExportPdf = useCallback(async () => {
     if (!data) return;

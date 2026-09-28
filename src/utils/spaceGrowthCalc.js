@@ -50,20 +50,36 @@ export function getInstitutionWideEnrollment(enrollmentProjectionDocs, year) {
   return Number.isFinite(headcount) ? headcount : null;
 }
 
+// Institution-wide Total FTE for a given year -- same "Overall" record as
+// getInstitutionWideEnrollment, reading `totalFte` instead of headcount.
+export function getInstitutionWideTotalFte(enrollmentProjectionDocs, year) {
+  const overall = (Array.isArray(enrollmentProjectionDocs) ? enrollmentProjectionDocs : [])
+    .find((d) => String(d?.division || '').trim().toLowerCase() === 'overall');
+  if (!overall) return null;
+  const totalFte = Number(overall.years?.[String(year)]?.totalFte);
+  return Number.isFinite(totalFte) ? totalFte : null;
+}
+
+// Office fix switch (Phase 5.2). false: FTE-based categories (Office) are NOT
+// priced in the campus figure -- they read "not set" and add nothing to the
+// campus gap or the dashboard, exactly as before the fix. true: priced as
+// SF/FTE x institution-wide Total FTE (see below). Held at false until Clark
+// confirms which FTE should drive Office. The dev reconciliation printout
+// passes priceFteCategories explicitly to show both.
+export const PRICE_OFFICE_IN_CAMPUS_GAP = false;
+
 // spaceConfigDocs: [{category, sfPerStationTarget, targetUtilizationRate,
 // sfPerFteTarget}] (category = spaceConfig doc id, same convention
 // RoomUtilizationMetaSection's categoryOptions use; targetUtilizationRate is
 // a 0-1 fraction, same as SpaceConfigSection stores it).
 //
-// sfPerFteTarget (added 2026-08-25, FTE-based categories e.g. "Office") is
-// DELIBERATELY NOT HANDLED HERE -- this institution-wide table stays
-// enrollment-only, per Clark's explicit decision not to extend it; an
-// FTE-based category's row below falls through the same
-// hasSfPerStation/hasUtilizationRate checks as any category with no
-// sfPerStationTarget set at all and renders "not set", exactly like any
-// other incomplete spaceConfig doc -- not a crash, not a silently-wrong
-// number, just gracefully absent from this specific table. The FTE branch
-// only exists in computeDepartmentSpaceGrowth below.
+// FTE-based categories (e.g. "Office", sfPerFteTarget): Ideal SF =
+// sfPerFteTarget x institution-wide Total FTE (the "Overall" record), no
+// utilization division -- the campus counterpart of
+// computeDepartmentSpaceGrowth's FTE branch. (Phase 5.2 fix: callers used to
+// drop sfPerFteTarget when building spaceConfigDocs, so Office always read
+// "not set" here.) Callers pass sfPerFteTarget only for categories that are
+// genuinely FTE-based -- see useSpaceGrowthData.js campusSpaceConfigDocs.
 //
 // roomUtilizationMetaDocs: [{roomKey, spaceCategory}] -- only rows with a
 // non-blank spaceCategory are ever considered; an untagged room (blank
@@ -81,10 +97,13 @@ export function computeSpaceGrowth({
   airtableAreaByRoomKey,
   baselineYear,
   targetYear,
-  enrollmentProjectionDocs
+  enrollmentProjectionDocs,
+  priceFteCategories = PRICE_OFFICE_IN_CAMPUS_GAP
 }) {
   const baselineEnrollment = getInstitutionWideEnrollment(enrollmentProjectionDocs, baselineYear);
   const targetEnrollment = getInstitutionWideEnrollment(enrollmentProjectionDocs, targetYear);
+  const baselineFte = getInstitutionWideTotalFte(enrollmentProjectionDocs, baselineYear);
+  const targetFte = getInstitutionWideTotalFte(enrollmentProjectionDocs, targetYear);
 
   const taggedByCategory = new Map(); // category -> { currentSF, roomCount }
   (Array.isArray(roomUtilizationMetaDocs) ? roomUtilizationMetaDocs : []).forEach((docEntry) => {
@@ -100,7 +119,29 @@ export function computeSpaceGrowth({
     agg.roomCount += 1;
   });
 
-  const rows = (Array.isArray(spaceConfigDocs) ? spaceConfigDocs : []).map(({ category, sfPerStationTarget, targetUtilizationRate }) => {
+  const rows = (Array.isArray(spaceConfigDocs) ? spaceConfigDocs : []).map(({ category, sfPerStationTarget, targetUtilizationRate, sfPerFteTarget }) => {
+    const sfPerFte = Number(sfPerFteTarget);
+    if (priceFteCategories && Number.isFinite(sfPerFte) && sfPerFte > 0) {
+      // FTE-based: Ideal SF = SF/FTE x institution-wide Total FTE.
+      const taggedFte = taggedByCategory.get(category) || { currentSF: 0, roomCount: 0 };
+      const idealSfNowFte = Number.isFinite(baselineFte) ? sfPerFte * baselineFte : null;
+      const idealSfTargetFte = Number.isFinite(targetFte) ? sfPerFte * targetFte : null;
+      return {
+        category,
+        formulaType: 'fte',
+        sfPerStationTarget: null,
+        targetUtilizationRate: null,
+        sfPerFteTarget: sfPerFte,
+        idealNsfPerStudent: sfPerFte, // per FTE for this row; see formulaType
+        currentSF: taggedFte.currentSF,
+        taggedRoomCount: taggedFte.roomCount,
+        idealSfNow: idealSfNowFte,
+        gapNow: idealSfNowFte != null ? taggedFte.currentSF - idealSfNowFte : null,
+        idealSfTarget: idealSfTargetFte,
+        gapTarget: idealSfTargetFte != null ? taggedFte.currentSF - idealSfTargetFte : null
+      };
+    }
+
     const sfPerStation = Number(sfPerStationTarget);
     const hasSfPerStation = Number.isFinite(sfPerStation) && sfPerStation > 0;
     const utilizationRate = Number(targetUtilizationRate);
@@ -125,6 +166,8 @@ export function computeSpaceGrowth({
 
     return {
       category,
+      formulaType: 'enrollment',
+      sfPerFteTarget: null,
       // Raw inputs passed through (independently of whether both are
       // present) so the UI can show exactly which one is missing/zero
       // rather than a single opaque "not set" -- see the header comment.
@@ -145,7 +188,9 @@ export function computeSpaceGrowth({
     baselineYear,
     targetYear,
     baselineEnrollment,
-    targetEnrollment
+    targetEnrollment,
+    baselineFte,
+    targetFte
   };
 }
 

@@ -102,11 +102,10 @@ export function spaceGapKpi(data) {
   const gap = data.institutionGap?.totalGapTarget;
   if (gap == null || !Number.isFinite(gap)) return { ...base, value: null, missing: { reason: 'Space data unavailable' } };
   const rounded = Math.round(gap);
-  const context = rounded < 0
-    ? `Deficit vs. ${data.targetYear} need`
-    : rounded > 0
-      ? `Surplus vs. ${data.targetYear} need`
-      : `Matches ${data.targetYear} need`;
+  // What the figure covers, not its sign (the signed value and the indicator
+  // accent already say deficit/surplus). Revisit "office not yet priced" if
+  // spaceGrowthCalc.js's PRICE_OFFICE_IN_CAMPUS_GAP is turned on.
+  const context = 'Classroom and lab, headcount method · office not yet priced';
   const indicator = rounded < 0 ? 'deficit' : rounded > 0 ? 'surplus' : undefined;
   return { ...base, value: formatSignedSf(gap), context, indicator };
 }
