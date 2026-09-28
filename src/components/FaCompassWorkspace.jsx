@@ -6,9 +6,9 @@
 // Pure presentation over the useResearchSpaceData result (`data`, mounted once
 // in StakeholderMap.jsx) -- no fetching or writing here. Values, labels and
 // orderings come from faCompassView.js. "Show on map" closes the workspace
-// and uses StakeholderMap's floor jump; each room's floorplan is checked up
-// front (resolveRoomFloor), so a room without one shows "No floorplan"
-// instead of a button that would fail.
+// and opens the room in the docked Classifier (StakeholderMap loads its floor);
+// each room's floorplan is checked up front (resolveRoomFloor), so a room
+// without one shows "No floorplan" instead of a button that would fail.
 import React, { useEffect, useMemo, useState } from 'react';
 import { MF } from '../theme/mfTokens';
 import { WorkspaceShell, MfGrid, MfCol, KpiCard, ChartCard } from './mf';
@@ -220,7 +220,7 @@ function RoomsTab({ data, resolveRoomFloor, onShowOnMap }) {
                         <td style={{ ...bodyCell, color: MF.ink.secondary }}>{row.roomType}</td>
                         <td style={numCell}>{row.sfLabel}</td>
                         <td style={bodyCell}><span style={statusPillStyle(row.status)}>{row.statusLabel}</span></td>
-                        <td style={numCell}>{row.occupants || '—'}</td>
+                        <td style={numCell}>{row.occupants ? row.occupants : '—'}</td>
                         <td style={numCell}>{row.orLabel}</td>
                         <td style={{ ...bodyCell, whiteSpace: 'nowrap' }}>
                           <button
@@ -228,7 +228,7 @@ function RoomsTab({ data, resolveRoomFloor, onShowOnMap }) {
                             className="mf-shell-button"
                             onClick={() => onShowOnMap(row.room)}
                             disabled={!canShow}
-                            title={canShow ? 'Close the workspace and load this floor' : undefined}
+                            title={canShow ? 'Close the workspace and classify this room on the map' : undefined}
                             style={{
                               ...mfSecondaryButtonStyle,
                               padding: '3px 10px',
@@ -312,15 +312,16 @@ function MethodTab() {
 }
 
 // --- Shell --------------------------------------------------------------------
-// onJumpToFloor(room): StakeholderMap's floor jump. resolveRoomFloor(room) ->
-// Promise<floor id | null>: whether that room's floor has a floorplan.
-export default function FaCompassWorkspace({ data, universityName, onJumpToFloor, resolveRoomFloor, onClose }) {
+// onShowRoomOnMap(room): open the room in the docked Classifier on its floor.
+// resolveRoomFloor(room) -> Promise<floor id | null>: whether that room's floor
+// has a floorplan.
+export default function FaCompassWorkspace({ data, universityName, onShowRoomOnMap, resolveRoomFloor, onClose }) {
   const [activeTab, setActiveTab] = useState('overview');
   const loading = data.scopeRooms === null;
 
   const handleShowOnMap = (room) => {
     onClose();
-    onJumpToFloor?.(room);
+    onShowRoomOnMap?.(room);
   };
 
   let body;

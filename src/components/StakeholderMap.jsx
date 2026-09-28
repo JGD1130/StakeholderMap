@@ -30,6 +30,8 @@ import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import { useClassroomUtilizationData } from '../utils/useClassroomUtilizationData';
 import { useCapitalCompassData } from '../utils/useCapitalCompassData';
 import { useSpaceGrowthData } from '../utils/useSpaceGrowthData';
+import { MF } from '../theme/mfTokens';
+import FaClassifier from './FaClassifier.jsx';
 import { mapTierColorEntries, mapPopupLineHtml, MAP_UNSCORED_COLOR } from './capitalCompassView';
 import { getSharedAirtableRooms, airtableRoomsCacheKey, AIRTABLE_BUSY_MESSAGE, isAirtableRateLimitError } from '../utils/airtableRoomsCache';
 import CapitalTiersMapLegend from './CapitalTiersMapLegend.jsx';
@@ -13216,6 +13218,11 @@ const StakeholderMap = ({
       map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', fillExpr);
       map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
       syncScenarioBaselineFillColor(map, fillExpr);
+      // Selected room: an ink outline instead of the usual cyan.
+      if (map.getLayer(FLOOR_HL_BORDER_ID)) {
+        map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-color', MF.ink.primary);
+        map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-width', 3);
+      }
     } catch {}
     const normalizeId = (val) => {
       const asNum = Number(val);
@@ -13245,6 +13252,17 @@ const StakeholderMap = ({
     ensureFloorRoomLabelLayer(map, 'department');
   }, [syncScenarioBaselineFillColor]);
   faApplyRef.current = applyFaCompassColors;
+
+  // Back to the app-wide selected-room style (ensureFloorHighlightLayer's
+  // cyan 6px border) when the F&A colors are off.
+  const restoreFloorHighlightStyle = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(FLOOR_HL_BORDER_ID)) return;
+    try {
+      map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-color', '#00ffff');
+      map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-width', 6);
+    } catch {}
+  }, []);
 
   const applyFloorColorMode = useCallback((mode) => {
     const map = mapRef.current;
@@ -14010,6 +14028,10 @@ const StakeholderMap = ({
   const showCapitalTiersOnMap = useCallback(() => setMapView(MAP_VIEWS.CAPITAL_TIERS), []);
 
   const [faSelectedRoomKey, setFaSelectedRoomKey] = useState('');
+  // "Classify on map": the docked F&A Classifier replaces the right rail's
+  // panels, the floors use the F&A colors, and room clicks go to it.
+  const [faClassifyActive, setFaClassifyActive] = useState(false);
+  const faClassifierDocked = researchSpaceEnabled && faClassifyActive;
   const [faJumpTick, setFaJumpTick] = useState(0);
   const faPendingJumpRef = useRef(null);
   const faExtraColorModes = useMemo(
@@ -14021,15 +14043,20 @@ const StakeholderMap = ({
       scopeIndex: researchSpaceData.scopeIndex,
       statusByRoomKey: researchSpaceData.statusByRoomKey
     };
-    faClickActiveRef.current = researchSpaceEnabled && floorColorMode === FA_COMPASS_COLOR_MODE;
+    const faColorsOn = researchSpaceEnabled && floorColorMode === FA_COMPASS_COLOR_MODE;
+    // Room clicks go to F&A in the F&A color mode, and always while classifying.
+    faClickActiveRef.current = faColorsOn || (researchSpaceEnabled && faClassifyActive);
     // Re-color live when a save (or the scope finishing loading) changes status.
-    if (faClickActiveRef.current) applyFaCompassColors();
+    if (faColorsOn) applyFaCompassColors();
+    else restoreFloorHighlightStyle();
   }, [
     researchSpaceEnabled,
     researchSpaceData.scopeIndex,
     researchSpaceData.statusByRoomKey,
     floorColorMode,
-    applyFaCompassColors
+    faClassifyActive,
+    applyFaCompassColors,
+    restoreFloorHighlightStyle
   ]);
   // roomKey for a clicked floorplan room, or null when it isn't in the F&A scope.
   const getFaRoomKeyForFeature = useCallback((feature) => {
@@ -22900,15 +22927,16 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     return resolveAvailableFloorId(wantedFloor, available) || null;
   }, [ensureFloorsForBuilding]);
 
+  // -> true once the jump is under way, false when the room has no floorplan
+  // (callers check first with resolveFaRoomFloor; no browser alert).
   const handleFaJumpToFloor = useCallback(async (room) => {
     const folder = String(room?.folder || '').trim();
-    const wantedFloor = floorIdFromAirtableFloor(room?.floor);
-    if (!folder || !wantedFloor) return;
+    if (!folder) return false;
     const buildingName = resolveBuildingNameFromInput(folder) || folder;
     const floorId = await resolveFaRoomFloor(room);
     if (!floorId) {
-      alert(`No floorplan is available for ${buildingName} (${wantedFloor}).`);
-      return;
+      console.warn(`F&A Compass: no floorplan for ${buildingName} (${floorIdFromAirtableFloor(room?.floor) || 'unknown floor'}).`);
+      return false;
     }
     faPendingJumpRef.current = { folder, floorId, roomKey: room.roomKey };
     setFloorColorMode(FA_COMPASS_COLOR_MODE);
@@ -22916,6 +22944,7 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     setSelectedBuilding(buildingName);
     setSelectedFloor(floorId);
     setFaJumpTick((n) => n + 1);
+    return true;
   }, [resolveFaRoomFloor]);
 
   useEffect(() => {
@@ -22939,6 +22968,42 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
       setFloorHighlight(ids.length ? ids : null);
     })();
   }, [faJumpTick, selectedBuilding, selectedBuildingId, getBuildingFolderKey, handleLoadFloorplan, setFloorHighlight]);
+
+  // --- F&A "Classify on map" ---
+  // Select an F&A room: highlight it on the loaded floor when it's there,
+  // otherwise load its floor first (same jump as above).
+  const selectFaRoom = useCallback((roomKey) => {
+    setFaSelectedRoomKey(roomKey || '');
+    if (!roomKey) { setFloorHighlight(null); return; }
+    const map = mapRef.current;
+    const src = map ? getGeojsonSource(map, FLOOR_SOURCE) : null;
+    const fc = toFeatureCollection(src ? (src._data || src.serialize?.().data || null) : null);
+    const folder = getBuildingFolderFromBasePath(currentFloorUrlRef.current || currentFloorContextRef.current?.url || '');
+    const ids = (fc?.features || [])
+      .filter((f) => f?.properties?.Element === 'Room' &&
+        resolveFloorFeatureRoomKey(faDataRef.current.scopeIndex, folder, f.properties?.Number) === roomKey)
+      .map((f) => f.id ?? f.properties?.RevitId)
+      .filter((id) => id != null);
+    if (ids.length) { setFloorHighlight(ids); return; }
+    const room = researchSpaceData.roomRows.find((r) => r.roomKey === roomKey);
+    if (room) void handleFaJumpToFloor(room);
+  }, [setFloorHighlight, researchSpaceData.roomRows, handleFaJumpToFloor]);
+
+  // room (optional): open it in the Classifier on its floor.
+  const startFaClassify = useCallback((room) => {
+    setFloorColorMode(FA_COMPASS_COLOR_MODE);
+    setFaClassifyActive(true);
+    if (room?.roomKey) {
+      setFaSelectedRoomKey(room.roomKey);
+      void handleFaJumpToFloor(room);
+    }
+  }, [handleFaJumpToFloor]);
+
+  const endFaClassify = useCallback(() => {
+    setFaClassifyActive(false);
+    setFaSelectedRoomKey('');
+    setFloorHighlight(null);
+  }, [setFloorHighlight]);
 
   const applyAiScenarioToComparison = useCallback((aiResult) => {
     const candidates = aiResult?.recommendedCandidates || [];
@@ -29165,6 +29230,8 @@ useEffect(() => {
         if (faRoomKey) {
           setFloorHighlight(f.id ?? f.properties?.RevitId ?? null);
           setFaSelectedRoomKey(faRoomKey);
+          // Opens the docked Classifier if it isn't open already.
+          setFaClassifyActive(true);
           return;
         }
       }
@@ -31247,7 +31314,19 @@ useEffect(() => {
             />
           </div>
         </div>
-        {!stakeholderWorkflowActive && !technicalMode && (
+        {/* F&A "Classify on map": the docked Classifier replaces the panels
+            below until Done (the map stays usable). */}
+        {faClassifierDocked && (
+          <div className="dashboard-box">
+            <FaClassifier
+              data={researchSpaceData}
+              selectedRoomKey={faSelectedRoomKey}
+              onSelectRoom={selectFaRoom}
+              onDone={endFaClassify}
+            />
+          </div>
+        )}
+        {!faClassifierDocked && !stakeholderWorkflowActive && !technicalMode && (
           <div className="dashboard-box">
             <SpaceDashboardPanel
               title={dashboardTitle}
@@ -31282,7 +31361,7 @@ useEffect(() => {
             />
           </div>
         )}
-        {isAdminMode && Boolean(config?.enableCapitalPriorities) && Boolean(config?.enableClassroomUtilization) && (
+        {!faClassifierDocked && isAdminMode && Boolean(config?.enableCapitalPriorities) && Boolean(config?.enableClassroomUtilization) && (
           <div className="dashboard-box">
             <ExecutiveDashboardPanel
               universityId={universityId}
@@ -31292,7 +31371,7 @@ useEffect(() => {
             />
           </div>
         )}
-        {isAdminMode && Boolean(config?.enableCapitalPriorities) && (
+        {!faClassifierDocked && isAdminMode && Boolean(config?.enableCapitalPriorities) && (
           <div className="dashboard-box">
             <CapitalPrioritiesPanel
               enabled={isAdminMode && Boolean(config?.enableCapitalPriorities)}
@@ -31303,7 +31382,7 @@ useEffect(() => {
             />
           </div>
         )}
-        {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
+        {!faClassifierDocked && isAdminMode && Boolean(config?.enableClassroomUtilization) && (
           <div className="dashboard-box">
             <ClassroomUtilizationPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
@@ -31311,7 +31390,7 @@ useEffect(() => {
             />
           </div>
         )}
-        {isAdminMode && Boolean(config?.enableClassroomUtilization) && (
+        {!faClassifierDocked && isAdminMode && Boolean(config?.enableClassroomUtilization) && (
           <div className="dashboard-box">
             <SpaceGrowthProjectionsPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
@@ -31319,15 +31398,14 @@ useEffect(() => {
             />
           </div>
         )}
-        {isAdminMode && Boolean(config?.enableResearchSpaceClassification) && (
+        {!faClassifierDocked && isAdminMode && Boolean(config?.enableResearchSpaceClassification) && (
           <div className="dashboard-box">
             <ResearchSpaceClassificationPanel
               enabled={researchSpaceEnabled}
               universityName={activeUniversityName}
               data={researchSpaceData}
-              selectedRoomKey={faSelectedRoomKey}
-              onSelectedRoomKeyChange={setFaSelectedRoomKey}
-              onJumpToFloor={handleFaJumpToFloor}
+              onStartClassify={() => startFaClassify()}
+              onShowRoomOnMap={startFaClassify}
               resolveRoomFloor={resolveFaRoomFloor}
             />
           </div>

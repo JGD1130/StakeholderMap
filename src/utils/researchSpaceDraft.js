@@ -12,7 +12,7 @@
 //
 // draft: null, or {
 //   roomKey,
-//   mode: 'occupants' | 'vacant_unassigned' | 'ineligible_non_assignable',
+//   mode: 'occupants' | 'class_lab' | 'vacant_unassigned' | 'ineligible_non_assignable',
 //   occupants: [{ _draftId, id, occupantName, role, footprintWeight,
 //                 fundingSources: [{ source, percentage, category }] }],
 //   baseline  // draftFingerprint() at open / last save -- drives isDirty
@@ -22,7 +22,30 @@ import {
   validateInstructionDefaultRule
 } from './researchSpaceClassification';
 
-export const ROLE_OPTIONS = ['PI', 'Postdoc', 'Grad Student', 'Staff', 'Other'];
+export const ROLE_OPTIONS = ['Faculty', 'Staff', 'Student', 'PI', 'Postdoc', 'Grad Student', 'Other'];
+
+// "Class lab (instruction)": a teaching lab saved as 100% Instruction &
+// Departmental Research without listing occupants. Stored as ONE marked
+// occupant doc (kind: 'class_lab', footprint 100%, funding 100% IDR), so the
+// status, rollup and validation rules need no special case: the room reads
+// Classified and its SF lands in IDR.
+export const CLASS_LAB_MODE = 'class_lab';
+export const CLASS_LAB_KIND = 'class_lab';
+
+export function classLabOccupantFields(roomKey) {
+  return {
+    roomKey,
+    kind: CLASS_LAB_KIND,
+    occupantName: 'Class lab (instruction)',
+    role: 'Other',
+    footprintWeight: 100,
+    fundingSources: [{ source: 'Institutional', percentage: 100, category: 'IDR' }]
+  };
+}
+
+export function isClassLabOccupantDocs(docs) {
+  return Array.isArray(docs) && docs.length === 1 && docs[0].data()?.kind === CLASS_LAB_KIND;
+}
 
 export function newFundingSourceRow() {
   return { source: '', percentage: '', category: '' };
@@ -45,7 +68,7 @@ export function occupantDocToDraft(docSnap) {
     _draftId: docSnap.id,
     id: docSnap.id,
     occupantName: data.occupantName || '',
-    role: data.role || ROLE_OPTIONS[0],
+    role: data.role || 'Other',
     footprintWeight: data.footprintWeight != null ? String(data.footprintWeight) : '',
     fundingSources: Array.isArray(data.fundingSources) && data.fundingSources.length
       ? data.fundingSources.map((row) => ({
@@ -71,15 +94,15 @@ export function validateOccupantDraft(occupant) {
   const messages = [];
   if (!String(occupant.occupantName || '').trim()) messages.push('Occupant name is required.');
   const weight = Number(occupant.footprintWeight);
-  if (!Number.isFinite(weight) || weight <= 0 || weight > 100) messages.push('Footprint weight must be a number between 0 and 100.');
+  if (!Number.isFinite(weight) || weight <= 0 || weight > 100) messages.push('Share of room must be more than 0% and at most 100%.');
   const rows = draftToFundingSourcesForValidation(occupant);
-  if (!rows.length) messages.push('At least one funding source row is required.');
+  if (!rows.length) messages.push('Add at least one funding row.');
   rows.forEach((row, idx) => {
-    if (!row.category) messages.push(`Row ${idx + 1}: a functional category must be selected.`);
-    if (!Number.isFinite(row.percentage) || row.percentage < 0) messages.push(`Row ${idx + 1}: percentage must be a non-negative number.`);
+    if (!row.category) messages.push(`Funding row ${idx + 1}: choose a function.`);
+    if (!Number.isFinite(row.percentage) || row.percentage < 0) messages.push(`Funding row ${idx + 1}: enter a percentage of 0 or more.`);
   });
   const sumCheck = validateFundingSourcesSumTo100(rows);
-  if (!sumCheck.valid) messages.push(`Funding source percentages must sum to exactly 100% (currently ${sumCheck.total}%).`);
+  if (!sumCheck.valid) messages.push(`Funding must add up to 100% (now ${Math.round(sumCheck.total * 100) / 100}%).`);
   const instructionDefault = validateInstructionDefaultRule(rows);
   if (!instructionDefault.valid) instructionDefault.errors.forEach((e) => messages.push(e.message));
   return messages;

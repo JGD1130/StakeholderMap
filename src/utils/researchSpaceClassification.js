@@ -48,10 +48,11 @@ export const ROOM_EXCLUSION_STATUSES = [
 export const ROOM_EXCLUSION_STATUS_CODES = ROOM_EXCLUSION_STATUSES.map((s) => s.code);
 
 // Instruction Default rule (guardrail, enforced here -- not just a UI
-// suggestion): the two categories that represent real external grant
-// funding require a real, named grant/sponsor in the source field. A blank
-// source or the literal word "Institutional" can never be filed under
-// Organized Research or Other Sponsored Activities.
+// suggestion): Organized Research and Other Sponsored Activities need a named
+// source -- an external sponsor or grant, or a named internal research
+// account (separately budgeted university research counts as Organized
+// Research under 2 CFR 200 Appendix III). A blank source or the plain word
+// "Institutional" can never be filed under either.
 const GRANT_REQUIRING_CATEGORY_CODES = new Set(['OR', 'OSA']);
 
 function isBlankOrInstitutional(source) {
@@ -96,7 +97,7 @@ export function validateInstructionDefaultRule(fundingSources) {
       const label = FUNCTIONAL_CATEGORY_LABEL_BY_CODE[row.category] || row.category;
       errors.push({
         index,
-        message: `Row ${index + 1}: "${label}" requires a real grant/sponsor name in the source field -- it cannot be blank or "Institutional".`
+        message: `Funding row ${index + 1}: ${label} needs a named sponsor or grant, or a named internal research account — not blank or "Institutional".`
       });
     }
   });

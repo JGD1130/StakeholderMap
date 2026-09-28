@@ -28,8 +28,11 @@ import {
 } from './researchSpaceClassification';
 import { RS_STATUS, buildScopeFloorIndex, deriveRoomStatus } from './researchSpaceStatus';
 import {
+  CLASS_LAB_MODE,
+  classLabOccupantFields,
   createResearchSpaceDraftStore,
   draftFingerprint,
+  isClassLabOccupantDocs,
   isDraftDirty,
   newOccupantDraft,
   occupantDocToDraft,
@@ -166,6 +169,7 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
       return {
         ...room,
         occupantCount: occupantDocsForRoom.length,
+        isClassLab: !exclusionStatus && isClassLabOccupantDocs(occupantDocsForRoom),
         exclusionStatus,
         status,
         isClassified: status !== RS_STATUS.NOT_STARTED,
@@ -203,10 +207,13 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
     if (!roomKey) { draftStore.set(null); return; }
     const { occupantsByRoomKey: byRoom, roomStatusDocs: statuses } = latestRef.current;
     const existingDocs = byRoom.get(roomKey) || [];
+    // A saved class lab opens in that mode; its placeholder occupant is not
+    // shown for editing (switching to Occupants starts a fresh list).
+    const classLab = !statuses[roomKey] && isClassLabOccupantDocs(existingDocs);
     const next = {
       roomKey,
-      mode: statuses[roomKey] || 'occupants',
-      occupants: existingDocs.length ? existingDocs.map(occupantDocToDraft) : [newOccupantDraft()]
+      mode: statuses[roomKey] || (classLab ? CLASS_LAB_MODE : 'occupants'),
+      occupants: existingDocs.length && !classLab ? existingDocs.map(occupantDocToDraft) : [newOccupantDraft()]
     };
     draftStore.set({ ...next, baseline: draftFingerprint(next) });
   }, [draftStore]);
@@ -223,9 +230,13 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
   const discardDraft = useCallback(() => draftStore.set(null), [draftStore]);
 
   // Saves the open draft; resolves to a confirmation message, throws on a
-  // validation or Firestore error. Same writes as before: an exclusion state
-  // writes the status doc and deletes the room's occupants; occupants clear
-  // any status doc, then set / delete occupant docs in one batch.
+  // validation or Firestore error.
+  //   - Vacant / Ineligible: write the status doc, delete the room's occupants.
+  //   - Class lab: clear any status doc, write the one class-lab occupant
+  //     (reusing its doc id), delete any other occupants.
+  //   - Occupants: clear any status doc, then set / delete occupant docs in
+  //     one batch. New occupants' Firestore ids go back into the draft, so the
+  //     next save updates them instead of deleting and rewriting.
   const saveDraft = useCallback(async () => {
     const draft = draftStore.getSnapshot();
     if (!draft) throw new Error('No room is open.');
@@ -235,7 +246,20 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
     const existingDocs = byRoom.get(roomKey) || [];
 
     let message;
-    if (mode !== 'occupants') {
+    let savedIds = null; // _draftId -> Firestore id, after an occupants save
+    if (mode === CLASS_LAB_MODE) {
+      await deleteDoc(roomStatusDoc).catch(() => {}); // no-op if none exists
+      const reuse = existingDocs.find((d) => d.data()?.kind === classLabOccupantFields(roomKey).kind);
+      const batch = writeBatch(db);
+      batch.set(reuse ? reuse.ref : doc(occRef), {
+        ...classLabOccupantFields(roomKey),
+        updatedAt: serverTimestamp(),
+        ...(reuse ? {} : { createdAt: serverTimestamp() })
+      }, { merge: true });
+      existingDocs.filter((d) => d !== reuse).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      message = 'Saved as a class lab (100% Instruction and Departmental Research).';
+    } else if (mode !== 'occupants') {
       await setDoc(roomStatusDoc, { status: mode, updatedAt: serverTimestamp() });
       for (let i = 0; i < existingDocs.length; i += BATCH_CHUNK_SIZE) {
         const chunk = existingDocs.slice(i, i + BATCH_CHUNK_SIZE);
@@ -248,16 +272,18 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
       const valid = occupants.length > 0
         && occupants.every((o) => validateOccupantDraft(o).length === 0)
         && validateFootprintWeightsSumTo100(occupants.map((o) => ({ footprintWeight: Number(o.footprintWeight) }))).valid;
-      if (!valid) throw new Error('Fix the validation errors above before saving.');
+      if (!valid) throw new Error('Fix the highlighted fields before saving.');
       await deleteDoc(roomStatusDoc).catch(() => {}); // clears any prior exclusion status; no-op if none exists
 
       const existingIds = new Set(existingDocs.map((d) => d.id));
       const keptIds = new Set(occupants.filter((o) => o.id).map((o) => o.id));
       const removedIds = [...existingIds].filter((id) => !keptIds.has(id));
 
+      savedIds = new Map();
       const batch = writeBatch(db);
       occupants.forEach((o) => {
         const ref = o.id ? doc(occRef, o.id) : doc(occRef);
+        savedIds.set(o._draftId, ref.id);
         batch.set(ref, {
           roomKey,
           occupantName: o.occupantName.trim(),
@@ -276,8 +302,19 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
       await batch.commit();
       message = `Saved ${occupants.length} occupant${occupants.length === 1 ? '' : 's'}.`;
     }
+
     // What was just saved is the new clean state (if this room is still open).
-    draftStore.set((prev) => (prev && prev.roomKey === roomKey ? { ...prev, baseline: draftFingerprint(prev) } : prev));
+    // After an occupants save the draft carries the Firestore ids; after any
+    // other mode the listed occupants were deleted, so their ids are dropped.
+    draftStore.set((prev) => {
+      if (!prev || prev.roomKey !== roomKey) return prev;
+      const nextOccupants = (prev.occupants || []).map((o) => (
+        savedIds ? (savedIds.has(o._draftId) ? { ...o, id: savedIds.get(o._draftId) } : o) : { ...o, id: null }
+      ));
+      // Baseline = what was saved (ids aren't part of it), so an edit typed
+      // while the save was in flight still counts as unsaved.
+      return { ...prev, occupants: nextOccupants, baseline: draftFingerprint(draft) };
+    });
     return message;
   }, [draftStore]);
 
@@ -306,7 +343,7 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
 // re-render as the draft changes.
 export function useResearchSpaceDraft(data) {
   const { draftStore } = data;
-  const draft = useSyncExternalStore(draftStore.subscribe, draftStore.getSnapshot);
+  const draft = useSyncExternalStore(draftStore.subscribe, draftStore.getSnapshot, draftStore.getSnapshot);
   return {
     draft,
     isDirty: isDraftDirty(draft),

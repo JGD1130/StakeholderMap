@@ -13,6 +13,7 @@
 // (researchSpaceRoomStatus only ever holds the two exclusion states, so an
 // empty collection is expected until a room is marked vacant/ineligible.)
 import { buildRoomUtilizationMetaKey } from './roomUtilizationMeta';
+import { MF } from '../theme/mfTokens';
 
 export const RS_STATUS = {
   NOT_STARTED: 'not_started',
@@ -26,13 +27,15 @@ export const RS_STATUS_LABELS = {
   [RS_STATUS.EXCLUDED]: 'Excluded'
 };
 
-// Floorplan fills. Out-of-scope rooms use RS_OUT_OF_SCOPE_COLOR.
+// Status colors (mf tokens), shared by the floorplan fill, its legend and the
+// F&A Compass workspace's Progress by Building chart. Out-of-scope rooms use
+// RS_OUT_OF_SCOPE_COLOR.
 export const RS_STATUS_COLORS = {
-  [RS_STATUS.NOT_STARTED]: '#f59e0b',
-  [RS_STATUS.CLASSIFIED]: '#22c55e',
-  [RS_STATUS.EXCLUDED]: '#94a3b8'
+  [RS_STATUS.NOT_STARTED]: MF.status.warningBorder,
+  [RS_STATUS.CLASSIFIED]: MF.util.base,
+  [RS_STATUS.EXCLUDED]: MF.ink.subtle
 };
-export const RS_OUT_OF_SCOPE_COLOR = '#e6e6e6';
+export const RS_OUT_OF_SCOPE_COLOR = MF.line.hairline;
 
 export function deriveRoomStatus({ occupantCount = 0, exclusionStatus = '' } = {}) {
   if (exclusionStatus) return RS_STATUS.EXCLUDED;

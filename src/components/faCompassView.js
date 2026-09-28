@@ -9,7 +9,7 @@
 
 import { MF } from '../theme/mfTokens';
 import { FUNCTIONAL_CATEGORIES } from '../utils/researchSpaceClassification';
-import { RS_STATUS, RS_STATUS_LABELS } from '../utils/researchSpaceStatus';
+import { RS_STATUS, RS_STATUS_COLORS, RS_STATUS_LABELS } from '../utils/researchSpaceStatus';
 
 export const WORKSPACE_TITLE = 'F&A Compass';
 
@@ -69,7 +69,7 @@ export function organizedResearchKpi(data) {
     key: 'or',
     label: 'Organized Research SF',
     value: rollup ? formatSf(rollup.totalOrganizedResearchSF) : null,
-    context: 'Requires a named sponsor or grant',
+    context: 'Named sponsor, grant or research account',
     ...(rollup ? null : { missing: { reason: 'Not loaded yet' } })
   };
 }
@@ -140,11 +140,8 @@ export function functionChartRows(data) {
 export const BUILDING_CHART_TITLE = 'Progress by Building';
 export const BUILDING_CHART_SUBTITLE = 'Rooms in scope, by classification status';
 
-const STATUS_COLORS = {
-  [RS_STATUS.CLASSIFIED]: MF.util.base,
-  [RS_STATUS.EXCLUDED]: MF.ink.subtle,
-  [RS_STATUS.NOT_STARTED]: MF.status.warningBorder
-};
+// The map's own status colors, so the chart and the floorplan always match.
+const STATUS_COLORS = RS_STATUS_COLORS;
 const STATUS_ORDER = [RS_STATUS.CLASSIFIED, RS_STATUS.EXCLUDED, RS_STATUS.NOT_STARTED];
 
 export const BUILDING_LEGEND = STATUS_ORDER.map((status) => ({ key: status, label: statusLabel(status), color: STATUS_COLORS[status] }));
@@ -193,7 +190,8 @@ export function roomTableRows(data) {
       sfLabel: Number.isFinite(r.areaSF) ? formatSf(r.areaSF) : '—',
       status: r.status,
       statusLabel: statusLabel(r.status),
-      occupants: r.occupantCount,
+      // A class lab (instruction) has one stored placeholder, not people.
+      occupants: r.isClassLab ? null : r.occupantCount,
       orLabel: orPct == null ? '—' : formatPct(orPct, orPct > 0 && orPct < 1 ? 1 : 0)
     };
   });
@@ -228,14 +226,14 @@ export const METHOD_INTRO = 'F&A Compass classifies space the way a federal faci
   + 'by who uses each room and how their work is paid for, not by what the room is called.';
 
 export const METHOD_STEPS = [
-  { title: 'List who uses the room', text: 'For each room, record the people or groups who occupy it — a faculty member, a lab group, an office.' },
-  { title: 'Split the room among them', text: 'Give each occupant a footprint weight: the share of the room they use. The weights in a room add up to 100%.' },
+  { title: 'List who uses the room', text: 'For each room, record the people or groups who occupy it — a faculty member, a lab group, an office. A teaching lab can instead be marked "Class lab (instruction)": 100% Instruction and Departmental Research, no occupants needed.' },
+  { title: 'Split the room among them', text: 'Give each occupant a share of the room: how much of it they use. The shares in a room add up to 100%.' },
   { title: 'Say how each occupant is funded', text: 'For each occupant, split their activity by funding source (a named grant, a sponsor, or institutional funds) and assign each part to an F&A function. Each occupant adds up to 100%.' },
   { title: 'Add it up', text: "Each room's square feet are divided among the functions by those shares, then totaled across campus. Vacant or ineligible rooms are marked excluded instead." }
 ];
 
 export const FUNCTION_DEFINITIONS = {
-  OR: 'Research funded by an outside sponsor under a grant or contract.',
+  OR: 'Research and development that is separately budgeted and accounted for — sponsored research under a grant or contract, and university research the institution budgets separately (2 CFR 200, Appendix III).',
   IDR: "Teaching, plus departmental research that isn't separately budgeted.",
   OSA: 'Sponsored projects that are neither research nor instruction, such as health or community service programs.',
   OIA: 'Other institutional activities, such as residence halls, dining and athletics.',
@@ -260,9 +258,9 @@ export function methodFunctionGroups() {
 
 export const METHOD_RULES = [
   "Each occupant's funding adds up to 100%.",
-  'The footprint weights of everyone in a room add up to 100%.',
-  'Organized Research and Other Sponsored Activities need a named sponsor or grant; blank or "Institutional" funding can\'t be filed there.',
-  'A room is either split among occupants or excluded as vacant or ineligible, never both.'
+  'The shares of everyone in a room add up to 100%.',
+  'Organized Research and Other Sponsored Activities need a named source: an outside sponsor or grant, or a named internal research account for separately budgeted university research. Blank or plain "Institutional" funding can\'t be filed there.',
+  'A room is split among occupants, marked a class lab (100% instruction), or excluded as vacant or ineligible — only one of these.'
 ];
 
 export const METHOD_SCOPE = 'Rooms in scope are every office and laboratory in the room inventory — every office and lab subtype, including '
