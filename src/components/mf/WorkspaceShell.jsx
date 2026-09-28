@@ -63,6 +63,7 @@ export default function WorkspaceShell({
   tabs,
   activeTab,
   onTabChange,
+  tabsEnd,
   actions,
   onClose,
   size = 'workspace',
@@ -187,31 +188,37 @@ export default function WorkspaceShell({
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs, plus optional controls (e.g. a term picker) at the row's
+            right end -- kept outside the tablist so it holds only tabs. */}
         {hasTabs ? (
           <div
-            role="tablist"
-            aria-label={typeof title === 'string' ? `${title} sections` : undefined}
-            style={{ flex: '0 0 auto', display: 'flex', padding: '0 16px', borderBottom: `1px solid ${MF.line.hairline}`, overflowX: 'auto' }}
+            style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 16, padding: '0 16px', borderBottom: `1px solid ${MF.line.hairline}` }}
           >
-            {tabs.map((tab, index) => {
-              const active = tab.id === activeTab;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  tabIndex={active ? 0 : -1}
-                  className="mf-shell-tab"
-                  style={tabStyle(active)}
-                  onClick={() => onTabChange?.(tab.id)}
-                  onKeyDown={(event) => handleTabKeyDown(event, index)}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+            <div
+              role="tablist"
+              aria-label={typeof title === 'string' ? `${title} sections` : undefined}
+              style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', overflowX: 'auto' }}
+            >
+              {tabs.map((tab, index) => {
+                const active = tab.id === activeTab;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    tabIndex={active ? 0 : -1}
+                    className="mf-shell-tab"
+                    style={tabStyle(active)}
+                    onClick={() => onTabChange?.(tab.id)}
+                    onKeyDown={(event) => handleTabKeyDown(event, index)}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            {tabsEnd ? <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8 }}>{tabsEnd}</div> : null}
           </div>
         ) : null}
 

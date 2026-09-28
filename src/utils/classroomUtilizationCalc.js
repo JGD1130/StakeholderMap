@@ -902,6 +902,44 @@ export function computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs }) {
   return { heatmaps };
 }
 
+// Per term, how many meetings fall at least partly outside the heat map's
+// Mon-Fri 7 AM-9 PM window (a weekend day token, a start before 7 AM, or an
+// end after 9 PM). Those hours still count toward Time Utilization
+// (computeMeetingWeeklyHours has no window), so the heat map's footnote says
+// how many meetings it can't show. Same room guard and termMatched gate as
+// computeDayTimeHeatmapByTerm; meetings with unusable times count in neither.
+// Returns { [termId]: count }.
+export function countMeetingsOutsideHeatmapByTerm({ courseMeetingDocs, termDocs }) {
+  const termsById = new Map(
+    (Array.isArray(termDocs) ? termDocs : []).map((t) => [String(t?.id ?? ''), t?.data || {}])
+  );
+  const weekdayTokens = new Set(HEATMAP_DAY_DEFS.flatMap((d) => d.tokens));
+  const windowStart = HEATMAP_HOURS[0] * 60;
+  const windowEnd = (HEATMAP_HOURS[HEATMAP_HOURS.length - 1] + 1) * 60;
+  const counts = {};
+
+  (Array.isArray(courseMeetingDocs) ? courseMeetingDocs : []).forEach((meeting) => {
+    const building = String(meeting?.building || '').trim();
+    const room = String(meeting?.room || '').trim();
+    if (!building || !room || !buildRoomUtilizationMetaKey(building, room)) return;
+
+    const termId = deriveTermIdFromSessionRaw(meeting?.sessionRaw);
+    const standardWeeklyHours = termId != null ? termsById.get(termId)?.standardWeeklyHours : undefined;
+    if (termId == null || !(Number(standardWeeklyHours) > 0)) return;
+
+    const start = Number(meeting?.startMinutes);
+    const end = Number(meeting?.endMinutes);
+    const dayTokens = Array.isArray(meeting?.dayTokens) ? meeting.dayTokens.filter(Boolean) : [];
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !dayTokens.length) return;
+
+    const outsideDays = dayTokens.some((token) => !weekdayTokens.has(token));
+    const outsideHours = start < windowStart || end > windowEnd;
+    if (outsideDays || outsideHours) counts[termId] = (counts[termId] || 0) + 1;
+  });
+
+  return counts;
+}
+
 // --- Classroom Size Range Utilization table, split by term ---------------
 //
 // From the original Master Facilities Plan spec's classroom-size-range

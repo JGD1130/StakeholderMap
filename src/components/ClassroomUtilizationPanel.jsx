@@ -53,6 +53,8 @@ import { parseEnrollmentProjectionsFile, toEnrollmentProjectionDocs } from '../u
 import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
 import { MASTER_PLAN_DEPARTMENT_LABELS, getMasterPlanSpaceTarget, getMasterPlanOfficeSpaceTarget } from '../utils/masterPlanSpaceTargets';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
+import { MF } from '../theme/mfTokens';
+import ClassroomUtilizationWorkspace from './ClassroomUtilizationWorkspace.jsx';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -3577,6 +3579,8 @@ export default function ClassroomUtilizationPanel({
   utilizationData = null
 }) {
   const reloadUtilization = utilizationData?.reload;
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const canOpenWorkspace = Boolean(utilizationData?.results);
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
@@ -3721,6 +3725,34 @@ export default function ClassroomUtilizationPanel({
           own collapsible section directly below, same pattern as every
           other section in this panel. */}
       <h4 style={{ margin: '0 0 6px 0', padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
+
+      {/* Opens the Classroom Utilization workspace -- same dark button as
+          "Open Executive Dashboard". Reads the shared hook result, so it's
+          ready as soon as the results sections below are. */}
+      <button
+        type="button"
+        onClick={() => setWorkspaceOpen(true)}
+        disabled={!canOpenWorkspace}
+        style={{
+          width: '100%',
+          padding: '8px 12px',
+          border: 'none',
+          borderRadius: 6,
+          background: MF.ink.primary,
+          color: MF.surface.page,
+          fontFamily: 'inherit',
+          fontSize: 12.5,
+          fontWeight: 600,
+          cursor: canOpenWorkspace ? 'pointer' : 'default',
+          opacity: canOpenWorkspace ? 1 : 0.55
+        }}
+      >
+        Open Classroom Utilization
+      </button>
+
+      {workspaceOpen && canOpenWorkspace ? (
+        <ClassroomUtilizationWorkspace data={utilizationData} onClose={() => setWorkspaceOpen(false)} />
+      ) : null}
 
       <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
         <details open={importSectionOpen} onToggle={(event) => setImportSectionOpen(event.currentTarget.open)}>

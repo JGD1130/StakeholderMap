@@ -26,6 +26,7 @@ import {
   computeCampusUtilizationByTerm,
   computeDayTimeHeatmapByTerm,
   computeSizeRangeUtilizationByTerm,
+  countMeetingsOutsideHeatmapByTerm,
   fetchAirtableRoomsForUtilization,
   resolveCurrentTerm
 } from './classroomUtilizationCalc';
@@ -38,31 +39,62 @@ function computeAll({ courseMeetingDocs, termDocs, airtableRooms }) {
   const { campusRollups } = computeCampusUtilizationByTerm(classroom.rooms);
   const { heatmaps } = computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs });
   const { sizeRangeTables } = computeSizeRangeUtilizationByTerm({ courseMeetingDocs, termDocs, airtableRooms });
+  const outsideHeatmapCountByTerm = countMeetingsOutsideHeatmapByTerm({ courseMeetingDocs, termDocs });
   return {
     rooms: classroom.rooms,
     buildingSummary: classroom.buildingSummary,
     unmatchedMeetings: classroom.unmatchedMeetings,
     campusRollups,
     heatmaps,
-    sizeRangeTables
+    sizeRangeTables,
+    outsideHeatmapCountByTerm
   };
 }
 
-// termId -> { rooms, campusRollup, heatmap, sizeRangeTable } -- the same
+// termId -> { rooms, campusRollup, heatmap, sizeRangeTable, outsideHeatmapCount } -- the same
 // all-terms results above, just regrouped. buildingSummary and
 // unmatchedMeetings aren't per-term (the first sums across terms, the
 // second has no term by definition), so they stay on `results` only.
 function groupResultsByTerm(results) {
   const byTerm = {};
   const entry = (termId) => {
-    if (!byTerm[termId]) byTerm[termId] = { rooms: [], campusRollup: null, heatmap: null, sizeRangeTable: null };
+    if (!byTerm[termId]) {
+      byTerm[termId] = { rooms: [], campusRollup: null, heatmap: null, sizeRangeTable: null, outsideHeatmapCount: 0 };
+    }
     return byTerm[termId];
   };
   results.rooms.forEach((r) => entry(r.termId).rooms.push(r));
   results.campusRollups.forEach((c) => { entry(c.termId).campusRollup = c; });
   results.heatmaps.forEach((h) => { entry(h.termId).heatmap = h; });
   results.sizeRangeTables.forEach((t) => { entry(t.termId).sizeRangeTable = t; });
+  Object.entries(results.outsideHeatmapCountByTerm || {}).forEach(([termId, count]) => {
+    if (byTerm[termId]) byTerm[termId].outsideHeatmapCount = count;
+  });
   return byTerm;
+}
+
+function termStartTime(termDoc) {
+  const start = termDoc?.data?.startDate?.toDate ? termDoc.data.startDate.toDate() : null;
+  return start instanceof Date && !Number.isNaN(start.getTime()) ? start.getTime() : null;
+}
+
+// The current term if it has scheduled classes. Otherwise, among terms that
+// do: the latest one that has already started; failing that, the soonest
+// upcoming one; and for terms with no start date, the last by termId.
+function pickDefaultTermId({ termDocs, resultsByTerm, currentTermId, now = new Date() }) {
+  const hasClasses = (termId) => Boolean(resultsByTerm[termId]?.rooms?.length);
+  if (currentTermId && hasClasses(currentTermId)) return currentTermId;
+
+  const withClasses = termDocs.filter((t) => hasClasses(t.id));
+  if (!withClasses.length) return currentTermId ?? null;
+
+  const nowTime = now.getTime();
+  const dated = withClasses.map((t) => ({ id: t.id, start: termStartTime(t) })).filter((t) => t.start != null);
+  const started = dated.filter((t) => t.start <= nowTime).sort((a, b) => b.start - a.start);
+  if (started.length) return started[0].id;
+  const upcoming = dated.sort((a, b) => a.start - b.start);
+  if (upcoming.length) return upcoming[0].id;
+  return withClasses.map((t) => t.id).sort((a, b) => b.localeCompare(a))[0];
 }
 
 export function useClassroomUtilizationData({ enabled = false, universityId } = {}) {
@@ -123,11 +155,18 @@ export function useClassroomUtilizationData({ enabled = false, universityId } = 
 
   const currentTermId = useMemo(() => resolveCurrentTerm(termDocs).termId, [termDocs]);
 
-  // Default the selection to the current term until someone picks one.
-  // Not rendered anywhere yet -- the sections still show every term.
-  const effectiveSelectedTermId = selectedTermId ?? currentTermId ?? null;
-
   const resultsByTerm = useMemo(() => (results ? groupResultsByTerm(results) : {}), [results]);
+
+  // Default selection until someone picks a term: the current term, unless
+  // it has no scheduled classes (e.g. an upcoming term entered early) -- then
+  // the most recent term that does. currentTermId itself is unchanged, so the
+  // picker still marks the true current term "(current)" and it stays
+  // selectable.
+  const defaultTermId = useMemo(
+    () => pickDefaultTermId({ termDocs, resultsByTerm, currentTermId }),
+    [termDocs, resultsByTerm, currentTermId]
+  );
+  const effectiveSelectedTermId = selectedTermId ?? defaultTermId ?? null;
 
   return {
     status,
