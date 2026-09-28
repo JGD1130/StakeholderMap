@@ -437,3 +437,66 @@ export function computeDepartmentSpaceGrowth({
     taggedRoomsMissingDepartment
   };
 }
+
+// --- Headline space gap (Phase 5.3) ------------------------------------------
+// The number the Executive Dashboard leads with: the DEPARTMENT method, not the
+// campus-wide one above. Need is counted only for (category, department) pairs
+// where the department has tagged rooms of that category, priced on that
+// department's own headcount with its department override where one exists
+// (computeDepartmentSpaceGrowth's rows, unchanged). Classroom and Lab only:
+// Office and any other SF/FTE category are left out -- inventory only, until
+// staff FTE exists (the enrollment workbook's Admin/Staff FTE is 0 throughout).
+// computeSpaceGrowth (the campus method) stays available as a comparison.
+export const HEADLINE_GAP_CATEGORIES = ['Classroom', 'Lab'];
+
+export function isHeadlineGapRow(row) {
+  return HEADLINE_GAP_CATEGORIES.includes(row?.category) && row?.formulaType !== 'fte';
+}
+
+// departmentRows: computeDepartmentSpaceGrowth(...).rows for the year.
+// institutionRows: computeSpaceGrowth(...).rows (same year) -- read only for
+//   the office inventory (current SF and tagged room count per category).
+// officeCategories: category ids that are FTE-based (e.g. ['Office']).
+export function computeHeadlineSpaceGap({ departmentRows, institutionRows, officeCategories }) {
+  const rows = (Array.isArray(departmentRows) ? departmentRows : []).filter(isHeadlineGapRow);
+  const priced = rows.filter((r) => r.gapTarget != null);
+
+  const addTo = (map, key, row) => {
+    if (!map.has(key)) map.set(key, { key, currentSF: 0, needSF: 0, gapTarget: 0, pairs: 0 });
+    const agg = map.get(key);
+    agg.currentSF += Number(row.currentSF) || 0;
+    agg.needSF += Number(row.idealSfTarget) || 0;
+    agg.gapTarget += row.gapTarget;
+    agg.pairs += 1;
+  };
+  const byCategoryMap = new Map();
+  const byDepartmentMap = new Map();
+  priced.forEach((r) => {
+    addTo(byCategoryMap, r.category, r);
+    addTo(byDepartmentMap, r.department, r);
+  });
+  const toList = (map, name) => Array.from(map.values())
+    .map(({ key, ...rest }) => ({ [name]: key, ...rest }))
+    .sort((a, b) => a.gapTarget - b.gapTarget);
+
+  const officeSet = new Set(Array.isArray(officeCategories) ? officeCategories : []);
+  const officeRows = (Array.isArray(institutionRows) ? institutionRows : []).filter((r) => officeSet.has(r.category));
+
+  return {
+    totalGapTarget: priced.length ? priced.reduce((s, r) => s + r.gapTarget, 0) : null,
+    totalCurrentSF: priced.reduce((s, r) => s + (Number(r.currentSF) || 0), 0),
+    totalNeedSF: priced.reduce((s, r) => s + (Number(r.idealSfTarget) || 0), 0),
+    pairsIncluded: priced.length,
+    // Classroom/Lab pairs with tagged rooms but no computable need (no target
+    // or no department headcount for the year).
+    pairsExcluded: rows.length - priced.length,
+    rows,
+    byCategory: toList(byCategoryMap, 'category'),
+    byDepartment: toList(byDepartmentMap, 'department'),
+    officeInventory: {
+      categories: officeRows.map((r) => r.category),
+      currentSF: officeRows.reduce((s, r) => s + (Number(r.currentSF) || 0), 0),
+      roomCount: officeRows.reduce((s, r) => s + (Number(r.taggedRoomCount) || 0), 0)
+    }
+  };
+}

@@ -29,7 +29,9 @@ export function printSpaceGrowthReconciliation({
   campusLive, // the campus result actually shown (per PRICE_OFFICE_IN_CAMPUS_GAP) -- part c reconciles this one
   officePricedLive,
   department, // computeDepartmentSpaceGrowth result
-  divisions, // computeDivisionSpaceGapSummary result
+  divisions, // computeDivisionSpaceGapSummary result (every department row)
+  headline, // computeHeadlineSpaceGap result -- the dashboard's number
+  headlineDivisions, // computeDivisionSpaceGapSummary of the headline rows -- the dashboard's chart
   roomUtilizationMetaDocs,
   airtableAreaByRoomKey,
   enrollmentProjectionDocs
@@ -121,6 +123,18 @@ export function printSpaceGrowthReconciliation({
   }));
 
   console.info(`%cSpace Growth reconciliation (DEV ONLY, temporary) — ${targetYear}`, 'font-weight:bold');
+  const headlineDivisionTotal = sum(headlineDivisions.filter((d) => d.gapTarget != null), (d) => d.gapTarget);
+  console.info(`%cHEADLINE (dashboard KPI): ${round(headline.totalGapTarget)} SF — Classroom + Lab, department method`, 'font-weight:bold');
+  console.info(`   current ${round(headline.totalCurrentSF)} SF − need ${round(headline.totalNeedSF)} SF; ${headline.pairsIncluded} pairs priced, ${headline.pairsExcluded} Classroom/Lab pairs with rooms but no computable need`);
+  console.info('   Old campus method (comparison, not shown on the dashboard):', round(campusTotal), 'SF');
+  console.info(`   Office inventory (not in the gap): ${round(headline.officeInventory.currentSF)} SF in ${headline.officeInventory.roomCount} rooms`, headline.officeInventory.categories);
+  console.info('   Headline by category:');
+  console.table(headline.byCategory.map((c) => ({ category: c.category, pairs: c.pairs, currentSF: round(c.currentSF), need: round(c.needSF), gap: round(c.gapTarget) })));
+  console.info('   Headline by department:');
+  console.table(headline.byDepartment.map((d) => ({ department: d.department, pairs: d.pairs, currentSF: round(d.currentSF), need: round(d.needSF), gap: round(d.gapTarget) })));
+  console.info(`   Division chart (Office excluded) — total ${round(headlineDivisionTotal)} SF${Math.round(headlineDivisionTotal) === Math.round(headline.totalGapTarget ?? NaN) ? ', matches the KPI' : ' — DOES NOT match the KPI (a priced department has no division)'}:`);
+  console.table(headlineDivisions.map((d) => ({ division: d.label, currentSF: round(d.currentSF), need: round(d.needSF), gap: round(d.gapTarget), pairs: d.categoriesIncluded, pairsWithoutData: d.categoriesExcluded })));
+  console.info('--- Below: the Phase 5.2 campus-vs-division reconciliation (unchanged) ---');
   console.info('a) Campus gap by category — BEFORE the Office fix (total', round(sum(campusBefore.rows.filter((r) => r.gapTarget != null), (r) => r.gapTarget)), 'SF)');
   console.table(campusTable(campusBefore));
   console.info('a) Campus gap by category — AFTER the Office fix (total', round(sum(campusAfter.rows.filter((r) => r.gapTarget != null), (r) => r.gapTarget)), 'SF)');

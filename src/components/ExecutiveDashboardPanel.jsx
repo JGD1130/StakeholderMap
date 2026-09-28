@@ -205,17 +205,20 @@ export default function ExecutiveDashboardPanel({
     };
   }, [capitalReady, capitalData?.buildings, capitalData?.phasingDocs]);
 
-  // Space Growth parts, from the shared hook's 2036 results (the same
-  // calculation the Space Growth / Right-Sizing section shows) -- no
-  // Firestore read here. The campus gap includes Office priced from its
-  // SF/FTE target (see useSpaceGrowthData.js).
+  // Space Growth parts, from the shared hook's 2036 results -- no Firestore
+  // read here. The headline is the department method for Classroom + Lab;
+  // Office is inventory only (see spaceGrowthCalc.js computeHeadlineSpaceGap).
   const spaceResults = spaceGrowthData?.dashboardResults || null;
   const spaceSettled = Boolean(spaceResults) || spaceGrowthData?.status === 'error';
   const spaceSummary = useMemo(() => {
     if (!spaceSettled) return null;
     return {
+      // Headline (KPI) and the Space Gap by Division chart: department
+      // method, Classroom + Lab only -- the same rows, so they agree.
+      headlineGap: spaceResults ? spaceResults.headline : null,
+      spaceGapBuckets: spaceResults ? spaceResults.headlineDivisions : [],
+      // Old campus method -- comparison only, not displayed on the dashboard.
       institutionGap: spaceResults ? spaceResults.institutionGap : null,
-      spaceGapBuckets: spaceResults ? spaceResults.divisions : [],
       targetYear: SPACE_GROWTH_DASHBOARD_YEAR,
       hasAnySpaceConfig: (spaceGrowthData?.raw?.spaceConfig || []).length > 0,
       spaceAirtableFailed: Boolean(spaceGrowthData?.airtableError)

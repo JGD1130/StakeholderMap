@@ -99,13 +99,14 @@ function nearTermKpi(data) {
 
 export function spaceGapKpi(data) {
   const base = { key: 'spaceGap', label: `Space gap (${data.targetYear})` };
-  const gap = data.institutionGap?.totalGapTarget;
+  // Headline: department method, Classroom + Lab only (spaceGrowthCalc.js
+  // computeHeadlineSpaceGap). The campus-method figure is not shown here.
+  const gap = data.headlineGap?.totalGapTarget;
   if (gap == null || !Number.isFinite(gap)) return { ...base, value: null, missing: { reason: 'Space data unavailable' } };
   const rounded = Math.round(gap);
   // What the figure covers, not its sign (the signed value and the indicator
-  // accent already say deficit/surplus). Revisit "office not yet priced" if
-  // spaceGrowthCalc.js's PRICE_OFFICE_IN_CAMPUS_GAP is turned on.
-  const context = 'Classroom and lab, headcount method · office not yet priced';
+  // accent already say deficit/surplus).
+  const context = 'Classroom and lab · by department';
   const indicator = rounded < 0 ? 'deficit' : rounded > 0 ? 'surplus' : undefined;
   return { ...base, value: formatSignedSf(gap), context, indicator };
 }
@@ -225,18 +226,19 @@ export function spaceGapRows(buckets, targetYear) {
     });
 }
 
-// The KPI's institution-wide gap and the division bars come from two
-// different calculations (spaceGrowthCalc.js computeSpaceGrowth vs.
-// computeDepartmentSpaceGrowth), so they don't have to add up. Say so, with
-// the actual numbers, whenever they differ.
+// The KPI and the division bars are the same department-method rows (Classroom
+// and Lab only), so they add up. The only way they can differ is a priced
+// department with no division on file -- say so, with the numbers, if it happens.
+export const SPACE_GAP_OFFICE_NOTE = 'Office space is excluded until staff FTE is available.';
+
 export function spaceGapFootnote(data) {
-  const kpi = data.institutionGap?.totalGapTarget;
+  const kpi = data.headlineGap?.totalGapTarget;
   const withGap = data.spaceGapBuckets.filter((b) => Number.isFinite(b.gapTarget));
-  if (!Number.isFinite(kpi) || !withGap.length) return null;
+  if (!Number.isFinite(kpi) || !withGap.length) return SPACE_GAP_OFFICE_NOTE;
   const divisionsTotal = withGap.reduce((sum, b) => sum + b.gapTarget, 0);
-  if (Math.round(divisionsTotal) === Math.round(kpi)) return null;
-  return `Divisions total ${formatSignedSf(divisionsTotal)}; the ${formatSignedSf(kpi)} campus figure above also counts space `
-    + 'not assigned to an academic department and uses campus-wide enrollment rather than each department’s own.';
+  if (Math.round(divisionsTotal) === Math.round(kpi)) return SPACE_GAP_OFFICE_NOTE;
+  return `${SPACE_GAP_OFFICE_NOTE} Divisions total ${formatSignedSf(divisionsTotal)} of the ${formatSignedSf(kpi)} above; `
+    + 'the rest is in departments with no academic division on file.';
 }
 
 // --- Row 3 (right): Tier 1 ranked table ---------------------------------------

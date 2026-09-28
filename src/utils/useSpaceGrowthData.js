@@ -33,7 +33,13 @@ import {
   SPACE_CONFIG_DEPARTMENT_OVERRIDES_COLLECTION
 } from './classroomUtilizationSchema';
 import { fetchAirtableRoomsForUtilization, buildAirtableAreaMap } from './classroomUtilizationCalc';
-import { computeSpaceGrowth, computeDepartmentSpaceGrowth, PRICE_OFFICE_IN_CAMPUS_GAP } from './spaceGrowthCalc';
+import {
+  computeSpaceGrowth,
+  computeDepartmentSpaceGrowth,
+  computeHeadlineSpaceGap,
+  isHeadlineGapRow,
+  PRICE_OFFICE_IN_CAMPUS_GAP
+} from './spaceGrowthCalc';
 import { computeDivisionSpaceGapSummary, computeInstitutionWideSpaceGapTotal } from './executiveDashboardCalc';
 import { printSpaceGrowthReconciliation } from './spaceGrowthReconciliation';
 
@@ -171,6 +177,8 @@ export function useSpaceGrowthData({ enabled = false, universityId } = {}) {
     return {
       stationSpaceConfigDocs,
       campusSpaceConfigDocs,
+      // FTE-based categories (e.g. Office): inventory only in the headline.
+      officeCategories: campusSpaceConfigDocs.filter((d) => d.sfPerFteTarget !== undefined).map((d) => d.category),
       roomUtilizationMetaDocs: raw.roomUtilizationMeta.map((d) => ({ roomKey: d.id, ...d.data })),
       enrollmentProjectionDocs: raw.enrollmentProjections.map((d) => d.data),
       departmentOverrideDocs: raw.departmentOverrides.map((d) => d.data),
@@ -195,9 +203,24 @@ export function useSpaceGrowthData({ enabled = false, universityId } = {}) {
     return {
       institution,
       department,
+      // Old campus method -- kept as a comparison, no longer the headline.
       institutionGap: computeInstitutionWideSpaceGapTotal(institution.rows),
+      // Every department row (Office included) -- the dev reconciliation's
+      // division total.
       divisions: computeDivisionSpaceGapSummary({
         departmentRows: department.rows,
+        enrollmentProjectionDocs: inputs.enrollmentProjectionDocs
+      }),
+      // Headline (Phase 5.3): department method, Classroom + Lab only, and
+      // the division split of exactly those rows, so the dashboard's KPI and
+      // Space Gap by Division chart agree.
+      headline: computeHeadlineSpaceGap({
+        departmentRows: department.rows,
+        institutionRows: institution.rows,
+        officeCategories: inputs.officeCategories
+      }),
+      headlineDivisions: computeDivisionSpaceGapSummary({
+        departmentRows: department.rows.filter(isHeadlineGapRow),
         enrollmentProjectionDocs: inputs.enrollmentProjectionDocs
       })
     };
@@ -227,7 +250,11 @@ export function useSpaceGrowthData({ enabled = false, universityId } = {}) {
     // Both sides of the Office fix, whatever PRICE_OFFICE_IN_CAMPUS_GAP is set to.
     const campusBefore = computeSpaceGrowth({ ...printCommon, priceFteCategories: false });
     const campusAfter = computeSpaceGrowth({ ...printCommon, priceFteCategories: true });
-    const signature = JSON.stringify([dashboardResults.institutionGap, dashboardResults.divisions.map((d) => d.gapTarget)]);
+    const signature = JSON.stringify([
+      dashboardResults.institutionGap,
+      dashboardResults.headline.totalGapTarget,
+      dashboardResults.divisions.map((d) => d.gapTarget)
+    ]);
     if (signature === lastPrintRef.current) return;
     lastPrintRef.current = signature;
     printSpaceGrowthReconciliation({
@@ -240,6 +267,8 @@ export function useSpaceGrowthData({ enabled = false, universityId } = {}) {
       officePricedLive: PRICE_OFFICE_IN_CAMPUS_GAP,
       department: dashboardResults.department,
       divisions: dashboardResults.divisions,
+      headline: dashboardResults.headline,
+      headlineDivisions: dashboardResults.headlineDivisions,
       roomUtilizationMetaDocs: inputs.roomUtilizationMetaDocs,
       airtableAreaByRoomKey: inputs.airtableAreaByRoomKey,
       enrollmentProjectionDocs: inputs.enrollmentProjectionDocs
