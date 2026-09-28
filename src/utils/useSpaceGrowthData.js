@@ -37,11 +37,9 @@ import {
   computeSpaceGrowth,
   computeDepartmentSpaceGrowth,
   computeHeadlineSpaceGap,
-  isHeadlineGapRow,
-  PRICE_OFFICE_IN_CAMPUS_GAP
+  isHeadlineGapRow
 } from './spaceGrowthCalc';
 import { computeDivisionSpaceGapSummary, computeInstitutionWideSpaceGapTotal } from './executiveDashboardCalc';
-import { printSpaceGrowthReconciliation } from './spaceGrowthReconciliation';
 
 const HASTINGS_UNIVERSITY_ID = 'hastings';
 export const SPACE_GROWTH_BASELINE_YEAR = 2026;
@@ -205,8 +203,7 @@ export function useSpaceGrowthData({ enabled = false, universityId } = {}) {
       department,
       // Old campus method -- kept as a comparison, no longer the headline.
       institutionGap: computeInstitutionWideSpaceGapTotal(institution.rows),
-      // Every department row (Office included) -- the dev reconciliation's
-      // division total.
+      // Every department row (Office included), by division.
       divisions: computeDivisionSpaceGapSummary({
         departmentRows: department.rows,
         enrollmentProjectionDocs: inputs.enrollmentProjectionDocs
@@ -232,48 +229,6 @@ export function useSpaceGrowthData({ enabled = false, universityId } = {}) {
     () => (ready ? computeForYear(SPACE_GROWTH_DASHBOARD_YEAR) : null),
     [ready, computeForYear]
   );
-
-  // TEMPORARY (Phase 5.2 investigation, dev builds only) -- REMOVE with
-  // spaceGrowthReconciliation.js once the campus vs. division gap is
-  // understood. Prints once per distinct result, for 2036.
-  const lastPrintRef = useRef('');
-  useEffect(() => {
-    if (!import.meta.env.DEV || !dashboardResults || !airtable.loaded) return;
-    const printCommon = {
-      spaceConfigDocs: inputs.campusSpaceConfigDocs,
-      roomUtilizationMetaDocs: inputs.roomUtilizationMetaDocs,
-      airtableAreaByRoomKey: inputs.airtableAreaByRoomKey,
-      baselineYear: SPACE_GROWTH_BASELINE_YEAR,
-      targetYear: SPACE_GROWTH_DASHBOARD_YEAR,
-      enrollmentProjectionDocs: inputs.enrollmentProjectionDocs
-    };
-    // Both sides of the Office fix, whatever PRICE_OFFICE_IN_CAMPUS_GAP is set to.
-    const campusBefore = computeSpaceGrowth({ ...printCommon, priceFteCategories: false });
-    const campusAfter = computeSpaceGrowth({ ...printCommon, priceFteCategories: true });
-    const signature = JSON.stringify([
-      dashboardResults.institutionGap,
-      dashboardResults.headline.totalGapTarget,
-      dashboardResults.divisions.map((d) => d.gapTarget)
-    ]);
-    if (signature === lastPrintRef.current) return;
-    lastPrintRef.current = signature;
-    printSpaceGrowthReconciliation({
-      targetYear: SPACE_GROWTH_DASHBOARD_YEAR,
-      campusBefore,
-      campusAfter,
-      // The campus figure actually shown (section and dashboard) -- the one
-      // part c reconciles against the division total.
-      campusLive: dashboardResults.institution,
-      officePricedLive: PRICE_OFFICE_IN_CAMPUS_GAP,
-      department: dashboardResults.department,
-      divisions: dashboardResults.divisions,
-      headline: dashboardResults.headline,
-      headlineDivisions: dashboardResults.headlineDivisions,
-      roomUtilizationMetaDocs: inputs.roomUtilizationMetaDocs,
-      airtableAreaByRoomKey: inputs.airtableAreaByRoomKey,
-      enrollmentProjectionDocs: inputs.enrollmentProjectionDocs
-    });
-  }, [dashboardResults, inputs, airtable.loaded]);
 
   return {
     status,

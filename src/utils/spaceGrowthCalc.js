@@ -61,11 +61,12 @@ export function getInstitutionWideTotalFte(enrollmentProjectionDocs, year) {
 }
 
 // Office fix switch (Phase 5.2). false: FTE-based categories (Office) are NOT
-// priced in the campus figure -- they read "not set" and add nothing to the
-// campus gap or the dashboard, exactly as before the fix. true: priced as
-// SF/FTE x institution-wide Total FTE (see below). Held at false until Clark
-// confirms which FTE should drive Office. The dev reconciliation printout
-// passes priceFteCategories explicitly to show both.
+// priced in the campus-method figure -- they read "not set" and add nothing
+// to it. true: priced as SF/FTE x institution-wide Total FTE (see below).
+// Held at false until staff FTE exists (the enrollment workbook's Total FTE
+// is faculty only). The campus method is a comparison figure only since
+// Phase 5.3; the headline (computeHeadlineSpaceGap) never includes Office.
+// Callers can pass priceFteCategories explicitly to override.
 export const PRICE_OFFICE_IN_CAMPUS_GAP = false;
 
 // spaceConfigDocs: [{category, sfPerStationTarget, targetUtilizationRate,

@@ -1,8 +1,11 @@
 // src/components/SpaceGrowthWorkspace.jsx
 //
 // The Space Growth workspace, on the shared mf/ components: a workspace-size
-// WorkspaceShell (Recalculate in the title bar) with Overview, Departments and
-// Enrollment tabs, and a target-year picker at the right end of the tab row.
+// WorkspaceShell (Recalculate in the title bar) with Overview, Departments,
+// Enrollment and Setup tabs, and a target-year picker at the right end of the
+// tab row (hidden on Setup). Setup (SpaceGrowthSetupTab.jsx) holds the admin
+// tools; while any of its cards has unsaved edits, switching tabs or closing
+// asks "Discard unsaved changes?" first.
 //
 // Pure presentation over the useSpaceGrowthData result (`data`, mounted once
 // in StakeholderMap.jsx) -- no fetching here. The year picker is the hook's
@@ -10,10 +13,18 @@
 // uses); the Executive Dashboard always reads the hook's 2036 results, so it
 // never moves with this picker. Values, labels and orderings come from
 // spaceGrowthView.js; signed values use MF.diverging only.
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { MF } from '../theme/mfTokens';
 import { WorkspaceShell, MfGrid, MfCol, KpiCard, ChartCard } from './mf';
-import { mfOnBarButtonStyle, mfInputStyle, mfTableHeaderCell, mfTableBodyCell, mfPillStyle } from './mf/mfStyles';
+import {
+  mfOnBarButtonStyle,
+  mfInputStyle,
+  mfTableHeaderCell,
+  mfTableBodyCell,
+  mfPillStyle,
+  mfPrimaryButtonStyle,
+  mfSecondaryButtonStyle
+} from './mf/mfStyles';
 import { DivergingBars, DivergingLegend, LineChart } from './mf/charts';
 import { formatSignedSf } from './executiveDashboardView';
 import {
@@ -46,11 +57,13 @@ import {
   formatHeadcount,
   enrollmentTableRows
 } from './spaceGrowthView';
+import SpaceGrowthSetupTab from './SpaceGrowthSetupTab.jsx';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'departments', label: 'Departments' },
-  { id: 'enrollment', label: 'Enrollment' }
+  { id: 'enrollment', label: 'Enrollment' },
+  { id: 'setup', label: 'Setup' }
 ];
 
 const emptyStyle = { fontSize: 12, color: MF.ink.muted };
@@ -370,13 +383,63 @@ function EnrollmentTab({ data }) {
   );
 }
 
+// --- Unsaved-changes guard -----------------------------------------------------
+function DiscardChangesDialog({ onCancel, onDiscard }) {
+  const buttonStyle = (primary) => ({ ...(primary ? mfPrimaryButtonStyle : mfSecondaryButtonStyle), '--mf-focus-color': MF.util.base });
+  return (
+    <WorkspaceShell size="dialog" title="Discard unsaved changes?" onClose={onCancel}>
+      <div style={{ fontSize: 13, color: MF.ink.primary, lineHeight: 1.5 }}>
+        You have edits in Setup that haven&apos;t been saved. Leaving now discards them.
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+        <button type="button" className="mf-shell-button" style={buttonStyle(false)} onClick={onCancel}>Keep editing</button>
+        <button type="button" className="mf-shell-button" style={buttonStyle(true)} onClick={onDiscard}>Discard changes</button>
+      </div>
+    </WorkspaceShell>
+  );
+}
+
 // --- Shell --------------------------------------------------------------------
 export default function SpaceGrowthWorkspace({ data, onClose }) {
   const [activeTab, setActiveTab] = useState('overview');
+  // cardId -> true while that Setup card has unsaved edits.
+  const [dirtyCards, setDirtyCards] = useState({});
+  // The tab switch or close waiting on the discard dialog: { tab } | { close: true }.
+  const [pendingLeave, setPendingLeave] = useState(null);
   const busy = data.status === 'loading' || data.refreshing;
+  const hasUnsaved = Object.values(dirtyCards).some(Boolean);
+
+  const handleDirtyChange = useCallback((cardId, dirty) => {
+    setDirtyCards((prev) => (Boolean(prev[cardId]) === dirty ? prev : { ...prev, [cardId]: dirty }));
+  }, []);
+
+  const handleTabChange = (tab) => {
+    if (tab === activeTab) return;
+    if (activeTab === 'setup' && hasUnsaved) {
+      setPendingLeave({ tab });
+      return;
+    }
+    setActiveTab(tab);
+  };
+  const handleClose = () => {
+    if (hasUnsaved) {
+      setPendingLeave({ close: true });
+      return;
+    }
+    onClose();
+  };
+  const handleDiscard = () => {
+    const leave = pendingLeave;
+    setPendingLeave(null);
+    setDirtyCards({});
+    if (leave?.close) onClose();
+    else if (leave?.tab) setActiveTab(leave.tab);
+  };
 
   let body;
-  if (!data.results) {
+  if (activeTab === 'setup') {
+    body = <SpaceGrowthSetupTab data={data} onDirtyChange={handleDirtyChange} />;
+  } else if (!data.results) {
     body = <div style={emptyStyle}>{busy ? 'Calculating…' : 'No space growth data loaded.'}</div>;
   } else if (activeTab === 'departments') {
     body = <DepartmentsTab data={data} />;
@@ -398,14 +461,15 @@ export default function SpaceGrowthWorkspace({ data, onClose }) {
       )}
       tabs={TABS}
       activeTab={activeTab}
-      onTabChange={setActiveTab}
-      tabsEnd={<YearPicker data={data} />}
-      onClose={onClose}
+      onTabChange={handleTabChange}
+      tabsEnd={activeTab === 'setup' ? null : <YearPicker data={data} />}
+      onClose={handleClose}
     >
       {data.error ? (
         <div role="alert" style={{ marginBottom: 12, fontSize: 12, color: MF.status.error }}>{data.error}</div>
       ) : null}
       {body}
+      {pendingLeave ? <DiscardChangesDialog onCancel={() => setPendingLeave(null)} onDiscard={handleDiscard} /> : null}
     </WorkspaceShell>
   );
 }

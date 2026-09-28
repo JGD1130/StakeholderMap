@@ -124,6 +124,28 @@ export function overviewKpis(data) {
   ];
 }
 
+// --- Side-panel card ----------------------------------------------------------------
+// Two compact KPIs, always for the dashboard year (2036), from the hook's
+// dashboardResults -- the same numbers the Executive Dashboard shows.
+export function sideCardKpis(spaceGrowthData) {
+  const results = spaceGrowthData?.dashboardResults || null;
+  const year = SPACE_GROWTH_DASHBOARD_YEAR;
+  const gap = results?.headline?.totalGapTarget;
+  const gapKpi = { key: 'gap', label: `Space gap (${year})` };
+  const start = results?.institution?.baselineEnrollment;
+  const end = results?.institution?.targetEnrollment;
+  const enrollment = { key: 'enrollment', label: `Enrollment (${year})` };
+  const pct = Number.isFinite(start) && Number.isFinite(end) && start > 0 ? ((end - start) / start) * 100 : null;
+  return [
+    Number.isFinite(gap)
+      ? { ...gapKpi, value: formatSignedSf(gap), context: HEADLINE_CONTEXT, indicator: indicatorFor(gap) }
+      : { ...gapKpi, value: null, missing: { reason: 'Space data unavailable' } },
+    Number.isFinite(start) && Number.isFinite(end)
+      ? { ...enrollment, value: formatCount(end), context: `${formatCount(start)} → ${formatCount(end)}${pct != null ? ` (${formatSignedPct(pct)})` : ''}` }
+      : { ...enrollment, value: null, missing: { reason: 'No projections uploaded' } }
+  ];
+}
+
 // --- Overview charts ----------------------------------------------------------------
 export const DIVISION_TITLE = 'Gap by Division';
 export function divisionSubtitle(data) {
