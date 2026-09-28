@@ -27,98 +27,36 @@
 // docs; every display (room row, room detail, campus rollup) recomputes
 // from them.
 //
-// Room scope: the 342-room Lab+Office universe from researchSpaceRoomScope.js
-// (275 Office + 67 Lab, confirmed 2026-09-17 against live Airtable data,
-// broad "all Laboratory - * / Office - * subtypes" interpretation per
-// Clark's explicit decision).
+// Room scope: every Airtable room whose type is "Office - *" or
+// "Laboratory - *" (all subtypes -- the broad interpretation, per Clark's
+// explicit decision), minus demolished buildings; see researchSpaceRoomScope.js.
+//
+// Data, the campus rollup and the room editor's draft all live in
+// useResearchSpaceData (`data`, mounted once in StakeholderMap.jsx): the
+// panel reads the rollup, and reads/writes the draft through
+// useResearchSpaceDraft(data), so unmounting the panel keeps unsaved edits.
+// Reads and writes go to data.universityId.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, deleteDoc, doc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
-import {
-  HASTINGS_UNIVERSITY_ID,
-  RESEARCH_SPACE_OCCUPANTS_COLLECTION,
-  RESEARCH_SPACE_ROOM_STATUS_COLLECTION
-} from '../utils/useResearchSpaceData';
+import { useResearchSpaceDraft } from '../utils/useResearchSpaceData';
 import {
   FUNCTIONAL_CATEGORIES,
   FUNCTIONAL_CATEGORY_LABEL_BY_CODE,
   ROOM_EXCLUSION_STATUSES,
-  validateFundingSourcesSumTo100,
   validateFootprintWeightsSumTo100,
-  validateInstructionDefaultRule,
-  computeRoomFunctionalProfile,
-  computeResearchSpaceRollup
+  computeRoomFunctionalProfile
 } from '../utils/researchSpaceClassification';
-
-const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase
+import {
+  ROLE_OPTIONS,
+  newFundingSourceRow,
+  newOccupantDraft,
+  draftToFundingSourcesForValidation,
+  validateOccupantDraft
+} from '../utils/researchSpaceDraft';
 
 // Shared module header color (src/utils/brandColors.js) -- this panel used
 // the undarkened logo orange (#f75024) while every other module used #cb421e.
 const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
-
-const ROLE_OPTIONS = ['PI', 'Postdoc', 'Grad Student', 'Staff', 'Other'];
-
-function newFundingSourceRow() {
-  return { source: '', percentage: '', category: '' };
-}
-
-function newOccupantDraft() {
-  return {
-    _draftId: `new_${Math.random().toString(36).slice(2)}`,
-    id: null, // Firestore doc id -- null until first save
-    occupantName: '',
-    role: ROLE_OPTIONS[0],
-    footprintWeight: '',
-    fundingSources: [newFundingSourceRow()]
-  };
-}
-
-function occupantDocToDraft(docSnap) {
-  const data = docSnap.data() || {};
-  return {
-    _draftId: docSnap.id,
-    id: docSnap.id,
-    occupantName: data.occupantName || '',
-    role: data.role || ROLE_OPTIONS[0],
-    footprintWeight: data.footprintWeight != null ? String(data.footprintWeight) : '',
-    fundingSources: Array.isArray(data.fundingSources) && data.fundingSources.length
-      ? data.fundingSources.map((row) => ({
-          source: row?.source || '',
-          percentage: row?.percentage != null ? String(row.percentage) : '',
-          category: row?.category || ''
-        }))
-      : [newFundingSourceRow()]
-  };
-}
-
-function draftToFundingSourcesForValidation(occupant) {
-  return (occupant.fundingSources || []).map((row) => ({
-    source: row.source,
-    percentage: Number(row.percentage),
-    category: row.category
-  }));
-}
-
-// Full validation for one occupant draft -- both rules that apply within a
-// single occupant. Returns null when valid, else a list of human messages.
-function validateOccupantDraft(occupant) {
-  const messages = [];
-  if (!String(occupant.occupantName || '').trim()) messages.push('Occupant name is required.');
-  const weight = Number(occupant.footprintWeight);
-  if (!Number.isFinite(weight) || weight <= 0 || weight > 100) messages.push('Footprint weight must be a number between 0 and 100.');
-  const rows = draftToFundingSourcesForValidation(occupant);
-  if (!rows.length) messages.push('At least one funding source row is required.');
-  rows.forEach((row, idx) => {
-    if (!row.category) messages.push(`Row ${idx + 1}: a functional category must be selected.`);
-    if (!Number.isFinite(row.percentage) || row.percentage < 0) messages.push(`Row ${idx + 1}: percentage must be a non-negative number.`);
-  });
-  const sumCheck = validateFundingSourcesSumTo100(rows);
-  if (!sumCheck.valid) messages.push(`Funding source percentages must sum to exactly 100% (currently ${sumCheck.total}%).`);
-  const instructionDefault = validateInstructionDefaultRule(rows);
-  if (!instructionDefault.valid) instructionDefault.errors.forEach((e) => messages.push(e.message));
-  return messages;
-}
 
 // Airtable numeric floor (0 = basement) -> short label.
 function formatFloorLabel(floor) {
@@ -159,13 +97,15 @@ export default function ResearchSpaceClassificationPanel({
     airtableError,
     loadError,
     reload,
-    occupantsByRoomKey,
-    roomStatusDocs,
-    roomRows
+    roomRows,
+    rollup
   } = data;
-  const [selectedRoomKey, setSelectedRoomKey] = useState('');
-  const [draftOccupants, setDraftOccupants] = useState(null); // null = no room selected / not yet loaded into draft
-  const [draftMode, setDraftMode] = useState('occupants'); // 'occupants' | 'vacant_unassigned' | 'ineligible_non_assignable'
+  // The open room's draft lives in the hook (survives this panel unmounting).
+  const { draft, openDraft, setDraft, discardDraft, saveDraft } = useResearchSpaceDraft(data);
+  const selectedRoomKey = draft?.roomKey || '';
+  const draftOccupants = draft ? draft.occupants : null; // null = no room open
+  const draftMode = draft ? draft.mode : 'occupants'; // 'occupants' | 'vacant_unassigned' | 'ineligible_non_assignable'
+  const setDraftMode = useCallback((mode) => setDraft({ mode }), [setDraft]);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -173,25 +113,6 @@ export default function ResearchSpaceClassificationPanel({
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'classified' | 'remaining'
   const [sectionOpen, setSectionOpen] = useState(true);
   const rootRef = useRef(null);
-
-  const occupantsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, RESEARCH_SPACE_OCCUPANTS_COLLECTION),
-    []
-  );
-  const roomStatusCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, RESEARCH_SPACE_ROOM_STATUS_COLLECTION),
-    []
-  );
-
-  const rollup = useMemo(() => {
-    const entries = roomRows.map((r) => ({
-      roomKey: r.roomKey,
-      areaSF: r.areaSF,
-      occupants: (occupantsByRoomKey.get(r.roomKey) || []).map((d) => d.data()),
-      exclusionStatus: r.exclusionStatus
-    }));
-    return computeResearchSpaceRollup(entries);
-  }, [roomRows, occupantsByRoomKey]);
 
   const filteredRoomRows = useMemo(() => {
     const text = filterText.trim().toLowerCase();
@@ -206,69 +127,84 @@ export default function ResearchSpaceClassificationPanel({
   const selectedRoom = roomRows.find((r) => r.roomKey === selectedRoomKey) || null;
 
   const openRoom = useCallback((room) => {
-    setSelectedRoomKey(room.roomKey);
+    openDraft(room.roomKey);
     onSelectedRoomKeyChange?.(room.roomKey);
     setSaveMessage('');
     setSaveError('');
-    const existingDocs = occupantsByRoomKey.get(room.roomKey) || [];
-    const status = roomStatusDocs[room.roomKey] || '';
-    setDraftMode(status || 'occupants');
-    setDraftOccupants(existingDocs.length ? existingDocs.map(occupantDocToDraft) : [newOccupantDraft()]);
-  }, [occupantsByRoomKey, roomStatusDocs, onSelectedRoomKeyChange]);
+  }, [openDraft, onSelectedRoomKeyChange]);
 
   const closeRoom = useCallback(() => {
-    setSelectedRoomKey('');
+    discardDraft();
     onSelectedRoomKeyChange?.('');
-    setDraftOccupants(null);
     setSaveMessage('');
     setSaveError('');
-  }, [onSelectedRoomKeyChange]);
+  }, [discardDraft, onSelectedRoomKeyChange]);
 
-  // Parent-driven selection (map click). Only acts when the parent's key
-  // differs from what's already open, so a snapshot-driven openRoom identity
-  // change can never re-open the room and clobber an in-progress draft.
+  // Parent-driven selection (map click). Acts only when the parent's key
+  // actually changes -- not on every render or remount -- and only when it
+  // differs from the room already open, so a remount (panel collapsed and
+  // re-expanded) or a snapshot-driven identity change can never re-open the
+  // room and clobber an in-progress draft. On mount the "previous" key is the
+  // open draft's room, so a map click made while the panel was unmounted
+  // still opens that room.
+  const lastControlledKeyRef = useRef(selectedRoomKey);
   useEffect(() => {
-    if (controlledRoomKey === undefined || controlledRoomKey === selectedRoomKey) return;
-    if (!controlledRoomKey) { closeRoom(); return; }
+    if (controlledRoomKey === undefined) return;
+    if (controlledRoomKey === lastControlledKeyRef.current) return;
+    if (!controlledRoomKey) {
+      lastControlledKeyRef.current = controlledRoomKey;
+      if (selectedRoomKey) closeRoom();
+      return;
+    }
+    if (controlledRoomKey === selectedRoomKey) {
+      lastControlledKeyRef.current = controlledRoomKey;
+      return;
+    }
     const room = roomRows.find((r) => r.roomKey === controlledRoomKey);
-    if (!room) return;
+    if (!room) return; // scope still loading -- try again when roomRows arrives
+    lastControlledKeyRef.current = controlledRoomKey;
     openRoom(room);
     try { rootRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } catch {}
   }, [controlledRoomKey, selectedRoomKey, roomRows, openRoom, closeRoom]);
 
+  // Every draft edit goes through setDraft (the hook's store).
+  const updateOccupants = useCallback((mapOccupants) => {
+    setDraft((prev) => ({ occupants: mapOccupants(prev.occupants || []) }));
+  }, [setDraft]);
+
   const updateOccupant = useCallback((draftId, patch) => {
-    setDraftOccupants((prev) => (prev || []).map((o) => (o._draftId === draftId ? { ...o, ...patch } : o)));
-  }, []);
+    updateOccupants((list) => list.map((o) => (o._draftId === draftId ? { ...o, ...patch } : o)));
+  }, [updateOccupants]);
 
   const updateFundingSourceRow = useCallback((draftId, rowIndex, patch) => {
-    setDraftOccupants((prev) => (prev || []).map((o) => {
+    updateOccupants((list) => list.map((o) => {
       if (o._draftId !== draftId) return o;
       const fundingSources = o.fundingSources.map((row, idx) => (idx === rowIndex ? { ...row, ...patch } : row));
       return { ...o, fundingSources };
     }));
-  }, []);
+  }, [updateOccupants]);
 
   const addFundingSourceRow = useCallback((draftId) => {
-    setDraftOccupants((prev) => (prev || []).map((o) => (
+    updateOccupants((list) => list.map((o) => (
       o._draftId === draftId ? { ...o, fundingSources: [...o.fundingSources, newFundingSourceRow()] } : o
     )));
-  }, []);
+  }, [updateOccupants]);
 
   const removeFundingSourceRow = useCallback((draftId, rowIndex) => {
-    setDraftOccupants((prev) => (prev || []).map((o) => {
+    updateOccupants((list) => list.map((o) => {
       if (o._draftId !== draftId) return o;
       const fundingSources = o.fundingSources.filter((_, idx) => idx !== rowIndex);
       return { ...o, fundingSources: fundingSources.length ? fundingSources : [newFundingSourceRow()] };
     }));
-  }, []);
+  }, [updateOccupants]);
 
   const addOccupant = useCallback(() => {
-    setDraftOccupants((prev) => [...(prev || []), newOccupantDraft()]);
-  }, []);
+    updateOccupants((list) => [...list, newOccupantDraft()]);
+  }, [updateOccupants]);
 
   const removeOccupant = useCallback((draftId) => {
-    setDraftOccupants((prev) => (prev || []).filter((o) => o._draftId !== draftId));
-  }, []);
+    updateOccupants((list) => list.filter((o) => o._draftId !== draftId));
+  }, [updateOccupants]);
 
   // Live validation of the draft, recomputed every render off current draft
   // state -- both Golden Rules plus the Instruction Default guardrail, all
@@ -295,62 +231,20 @@ export default function ResearchSpaceClassificationPanel({
     return computeRoomFunctionalProfile(occupantsForCalc);
   }, [draftMode, draftOccupants, canSaveOccupants]);
 
+  // Writes happen in the hook (saveDraft); this only shows the outcome.
   const handleSave = useCallback(async () => {
     if (!selectedRoom || saving) return;
     setSaving(true);
     setSaveMessage('');
     setSaveError('');
     try {
-      const roomKey = selectedRoom.roomKey;
-      const roomStatusRef = doc(roomStatusCollection, roomKey);
-      const existingDocs = occupantsByRoomKey.get(roomKey) || [];
-
-      if (draftMode !== 'occupants') {
-        // Exclusion state: write the status doc, delete every existing
-        // occupant for this room (mutually exclusive by design).
-        await setDoc(roomStatusRef, { status: draftMode, updatedAt: serverTimestamp() });
-        for (let i = 0; i < existingDocs.length; i += BATCH_CHUNK_SIZE) {
-          const chunk = existingDocs.slice(i, i + BATCH_CHUNK_SIZE);
-          const batch = writeBatch(db);
-          chunk.forEach((docSnap) => batch.delete(docSnap.ref));
-          await batch.commit();
-        }
-        setSaveMessage(`Saved as ${ROOM_EXCLUSION_STATUSES.find((s) => s.code === draftMode)?.label || draftMode}.`);
-      } else {
-        if (!canSaveOccupants) throw new Error('Fix the validation errors above before saving.');
-        await deleteDoc(roomStatusRef).catch(() => {}); // clears any prior exclusion status; no-op if none exists
-
-        const existingIds = new Set(existingDocs.map((d) => d.id));
-        const keptIds = new Set(draftOccupants.filter((o) => o.id).map((o) => o.id));
-        const removedIds = [...existingIds].filter((id) => !keptIds.has(id));
-
-        const batch = writeBatch(db);
-        draftOccupants.forEach((o) => {
-          const ref = o.id ? doc(occupantsCollection, o.id) : doc(occupantsCollection);
-          batch.set(ref, {
-            roomKey,
-            occupantName: o.occupantName.trim(),
-            role: o.role,
-            footprintWeight: Number(o.footprintWeight),
-            fundingSources: o.fundingSources.map((row) => ({
-              source: row.source.trim(),
-              percentage: Number(row.percentage),
-              category: row.category
-            })),
-            updatedAt: serverTimestamp(),
-            ...(o.id ? {} : { createdAt: serverTimestamp() })
-          }, { merge: true });
-        });
-        removedIds.forEach((id) => batch.delete(doc(occupantsCollection, id)));
-        await batch.commit();
-        setSaveMessage(`Saved ${draftOccupants.length} occupant${draftOccupants.length === 1 ? '' : 's'}.`);
-      }
+      setSaveMessage(await saveDraft());
     } catch (error) {
       setSaveError(String(error?.message || 'Failed to save.'));
     } finally {
       setSaving(false);
     }
-  }, [selectedRoom, saving, draftMode, draftOccupants, canSaveOccupants, occupantsByRoomKey, occupantsCollection, roomStatusCollection]);
+  }, [selectedRoom, saving, saveDraft]);
 
   if (!enabled) return null;
 

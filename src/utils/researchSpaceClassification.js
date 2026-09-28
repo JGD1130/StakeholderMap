@@ -167,16 +167,24 @@ export function computeRoomOrganizedResearchSF(areaSF, categoryPercentages) {
 
 // Campus-wide rollup across every classified room (rooms with either a
 // computed occupant profile or an exclusion status). roomEntries:
-// [{ roomKey, areaSF, occupants, exclusionStatus }].
+// [{ roomKey, areaSF, exclusionStatus, occupantCount, profile }] -- the rows
+// useResearchSpaceData already built, so each room's profile is computed once
+// (there) and reused here. Entries carrying raw `occupants` instead of
+// occupantCount/profile are still accepted and computed on the spot.
+function entryOccupantCount(row) {
+  if (Number.isFinite(row?.occupantCount)) return row.occupantCount;
+  return Array.isArray(row?.occupants) ? row.occupants.length : 0;
+}
+
 export function computeResearchSpaceRollup(roomEntries) {
   const rows = Array.isArray(roomEntries) ? roomEntries : [];
-  const classifiedRows = rows.filter((r) => r.exclusionStatus || (Array.isArray(r.occupants) && r.occupants.length > 0));
+  const classifiedRows = rows.filter((r) => r.exclusionStatus || entryOccupantCount(r) > 0);
   const categoryTotals = {};
   let totalOrganizedResearchSF = 0;
   let knownAreaSF = 0;
   classifiedRows.forEach((row) => {
     if (row.exclusionStatus) return; // excluded rooms carry no category percentages
-    const { categoryPercentages } = computeRoomFunctionalProfile(row.occupants);
+    const { categoryPercentages } = row.profile || computeRoomFunctionalProfile(row.occupants);
     const area = Number(row.areaSF);
     const hasArea = Number.isFinite(area) && area > 0;
     if (hasArea) knownAreaSF += area;

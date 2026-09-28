@@ -13965,6 +13965,7 @@ const StakeholderMap = ({
   const researchSpaceEnabled = isAdminMode && Boolean(config?.enableResearchSpaceClassification);
   const researchSpaceData = useResearchSpaceData({
     enabled: researchSpaceEnabled,
+    universityId,
     resolveBuildingFolder: getBuildingFolderKey
   });
   // ---- Classroom Utilization (admin-only, flag-gated) ----

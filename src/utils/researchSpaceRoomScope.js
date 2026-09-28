@@ -11,15 +11,14 @@
 // than ROOM_TYPE_TO_SPACE_CATEGORY's exact-membership list, so a future new
 // subtype still surfaces here rather than staying invisible).
 //
-// Scope confirmed 2026-09-17 via a live pull of all 2,986 Hastings Airtable
-// room records (scripts/investigate-research-space-room-counts.mjs):
-//   - Office - * (all 17 subtypes): 275 rooms
-//   - Laboratory - * (all 6 subtypes, incl. Special Nonclass/Service/Music
-//     Practice/Computer non-scheduled, not just the 2 subtypes
-//     ROOM_TYPE_TO_SPACE_CATEGORY already maps to "Lab"): 67 rooms
-//   Combined scope: 342 rooms in the raw Airtable pull; 306 after the Hayes
-//   M. Fuhr Hall of Music exclusion below (36 rooms). Deliberately the BROAD
-//   interpretation, per
+// The rule: a room is in scope when its Airtable room type starts with
+// "Office - " or "Laboratory - " (every subtype -- e.g. Laboratory - Special
+// Nonclass / Service / Studio / Computer (non-scheduled), not just the lab
+// subtypes ROOM_TYPE_TO_SPACE_CATEGORY maps to "Lab"), it has a building and
+// room number, and its building isn't one of the demolished buildings below.
+// Counts follow the live Airtable inventory; nothing here is a fixed number
+// (scripts/investigate-research-space-room-counts.mjs reports them).
+// Deliberately the BROAD interpretation, per
 //   Clark's explicit decision -- the occupant-based model itself is what
 //   determines a room's real functional mix (a Music Practice room with no
 //   grant-funded occupant simply rolls up to 100% Instruction/IDR), so
