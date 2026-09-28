@@ -439,3 +439,49 @@ export function panelKpis(data, mapBuildingCount) {
     { key: 'scored', label: 'Buildings scored', value: scored.length, context: `${scored.length} of ${mapBuildingCount || scored.length}` }
   ];
 }
+
+// --- Map: "Capital Compass tiers" view --------------------------------------------------
+export const MAP_LEGEND_TITLE = 'Capital Compass tiers';
+export const MAP_UNSCORED_COLOR = MF.line.border;
+
+// [[buildingName, color], ...] for a Mapbox ['match', ['get', 'id'], ...]
+// expression: every fully scored building in its tier color. Names are
+// unique (a match label may appear only once).
+export function mapTierColorEntries(data) {
+  const seen = new Set();
+  const entries = [];
+  scoredBuildings(data?.buildings).forEach((b) => {
+    const name = String(b.name || '').trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    entries.push([name, tierColor(b.tier.level)]);
+  });
+  return entries;
+}
+
+export function mapLegendRows() {
+  return [
+    ...TIERS.map((t) => ({ key: `tier${t.level}`, label: `Tier ${t.level}`, detail: TIER_SHORT_HORIZON[t.level], color: tierColor(t.level) })),
+    { key: 'unscored', label: 'Not scored', detail: '', color: MAP_UNSCORED_COLOR }
+  ];
+}
+
+// Building popup line, e.g. "Capital Compass: Tier 1 · score 94 · $385K (0–5 yr DM)".
+export function mapPopupLine(data, buildingName) {
+  const name = String(buildingName || '').trim();
+  const b = scoredBuildings(data?.buildings).find((x) => x.name === name);
+  if (!b) return 'Capital Compass: Not scored';
+  const cost = b.cost.amount != null
+    ? `${formatUsdCompact(b.cost.amount)}${COST_SOURCE_TAGS[b.cost.source] ? ` (${COST_SOURCE_TAGS[b.cost.source]})` : ''}`
+    : 'cost not entered';
+  return `Capital Compass: Tier ${b.tier.level} · score ${b.total} · ${cost}`;
+}
+
+// mapPopupLine, HTML-escaped for the Mapbox popup's HTML string.
+export function mapPopupLineHtml(data, buildingName) {
+  return mapPopupLine(data, buildingName)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

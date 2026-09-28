@@ -187,7 +187,9 @@ function OverviewTab({ data, mapBuildingCount }) {
 // buildingNames: every building on the map (for scoring and the deferred
 // maintenance name match). getBuildingResourceEntry: building-resources.json
 // lookup, for the scoring suggestions.
-export default function CapitalCompassWorkspace({ data, buildingNames = [], getBuildingResourceEntry = null, onClose }) {
+// onShowOnMap: switches the map to the "Capital Compass tiers" view; the
+// workspace closes so the map is visible.
+export default function CapitalCompassWorkspace({ data, buildingNames = [], getBuildingResourceEntry = null, onShowOnMap = null, onClose }) {
   const mapBuildingCount = buildingNames.length;
   const [activeTab, setActiveTab] = useState('overview');
   const loading = data.status === 'loading';
@@ -198,9 +200,14 @@ export default function CapitalCompassWorkspace({ data, buildingNames = [], getB
       title={WORKSPACE_TITLE}
       subtitle={workspaceSubtitle(data, mapBuildingCount)}
       actions={(
-        <BarButton onClick={() => void data.reload()} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </BarButton>
+        <>
+          {onShowOnMap ? (
+            <BarButton onClick={() => { onShowOnMap(); onClose(); }}>Show on map</BarButton>
+          ) : null}
+          <BarButton onClick={() => void data.reload()} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </BarButton>
+        </>
       )}
       tabs={TABS}
       activeTab={activeTab}

@@ -24,7 +24,9 @@ export default function CapitalPrioritiesPanel({
   buildingFeatures = [],
   getBuildingResourceEntry = null,
   // useCapitalCompassData's result (mounted once in StakeholderMap.jsx).
-  capitalData = null
+  capitalData = null,
+  // Switches the map to the "Capital Compass tiers" view (null = not offered).
+  onShowOnMap = null
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
@@ -101,6 +103,7 @@ export default function CapitalPrioritiesPanel({
           data={capitalData}
           buildingNames={buildingNames}
           getBuildingResourceEntry={getBuildingResourceEntry}
+          onShowOnMap={onShowOnMap}
           onClose={() => setWorkspaceOpen(false)}
         />
       ) : null}

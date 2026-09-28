@@ -29,6 +29,8 @@ import ComponentGallery from './dev/ComponentGallery.jsx';
 import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import { useClassroomUtilizationData } from '../utils/useClassroomUtilizationData';
 import { useCapitalCompassData } from '../utils/useCapitalCompassData';
+import { mapTierColorEntries, mapPopupLineHtml, MAP_UNSCORED_COLOR } from './capitalCompassView';
+import CapitalTiersMapLegend from './CapitalTiersMapLegend.jsx';
 import {
   RS_STATUS,
   RS_STATUS_COLORS,
@@ -12331,7 +12333,9 @@ const StakeholderMap = ({
     SPACE_DATA: 'space-data',
     ASSESSMENT: 'assessment',
     TECHNICAL: 'technical',
-    MAINTENANCE: 'maintenance'
+    MAINTENANCE: 'maintenance',
+    // Admin-only, Capital Compass enabled: buildings shaded by priority tier.
+    CAPITAL_TIERS: 'capital-tiers'
   };
   const isAdminMode = mode === 'admin';
   const isClientMode = mode === 'client';
@@ -12422,13 +12426,17 @@ const StakeholderMap = ({
     }
   });
   const [presentationExporting, setPresentationExporting] = useState(false);
+  // "Capital Compass tiers" map view: full admin controls + Capital Compass on.
+  const capitalTiersViewAvailable = showFullMapfluenceControls && Boolean(config?.enableCapitalPriorities);
+  const capitalTiersViewActive = capitalTiersViewAvailable && mapView === MAP_VIEWS.CAPITAL_TIERS;
   const MAP_VIEW_OPTIONS = useMemo(() => {
     if (showFullMapfluenceControls) {
       return [
         { value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' },
         { value: MAP_VIEWS.ASSESSMENT, label: 'Engagement' },
         { value: MAP_VIEWS.TECHNICAL, label: 'Technical' },
-        { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' }
+        { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' },
+        ...(capitalTiersViewAvailable ? [{ value: MAP_VIEWS.CAPITAL_TIERS, label: 'Capital Compass tiers' }] : [])
       ];
     }
     if (isDemoPublicMode) {
@@ -12447,8 +12455,12 @@ const StakeholderMap = ({
       return [{ value: MAP_VIEWS.TECHNICAL, label: 'Technical' }];
     }
     return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, capitalTiersViewAvailable]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
+  // Leave the tiers view if it stops being available (e.g. the flag is off).
+  useEffect(() => {
+    if (mapView === MAP_VIEWS.CAPITAL_TIERS && !capitalTiersViewAvailable) setMapView(defaultMapView);
+  }, [mapView, capitalTiersViewAvailable, defaultMapView]);
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
   const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
@@ -13972,6 +13984,17 @@ const StakeholderMap = ({
     universityId,
     getBuildingResourceEntry
   });
+  // "Capital Compass tiers" map view: each scored building's tier color
+  // (live tiers, recomputed when scores change), the latest data for the
+  // building-click popup (read through a ref so the big map-layer effect
+  // doesn't re-run on every score change), and the workspace's "Show on map".
+  const capitalTierColorEntries = useMemo(
+    () => (capitalTiersViewActive ? mapTierColorEntries(capitalCompassData) : []),
+    [capitalTiersViewActive, capitalCompassData.buildings]
+  );
+  const capitalCompassDataRef = useRef(capitalCompassData);
+  capitalCompassDataRef.current = capitalCompassData;
+  const showCapitalTiersOnMap = useCallback(() => setMapView(MAP_VIEWS.CAPITAL_TIERS), []);
 
   const [faSelectedRoomKey, setFaSelectedRoomKey] = useState('');
   const [faJumpTick, setFaJumpTick] = useState(0);
@@ -27895,6 +27918,11 @@ useEffect(() => {
         const fmtArea = (val) => (Number.isFinite(val) ? Math.round(val).toLocaleString() : '-');
         const fmtCount = (val) => (Number.isFinite(val) ? Number(val).toLocaleString() : '-');
         const deptListHtml = renderDeptListHTML(statsRaw.keyDepts || []);
+        // Admin "Capital Compass tiers" view only: the building's tier, score
+        // and cost (or "Not scored"), keyed by the feature id the map colors by.
+        const capitalLineHtml = mapView === MAP_VIEWS.CAPITAL_TIERS
+          ? `<div style="margin-top:6px;">${mapPopupLineHtml(capitalCompassDataRef.current, id)}</div>`
+          : '';
       const popupHtml = `
           <div class="mf-popup mf-popup--building" style="min-width:280px;padding:8px 10px;">
             <div style="display:flex;gap:18px;align-items:flex-start;">
@@ -27904,6 +27932,7 @@ useEffect(() => {
                 <div><b>Rooms:</b> ${fmtCount(statsRaw.rooms)}</div>
                 ${isSarpyCountyInstance ? '' : `<div><b>Classroom SF:</b> ${fmtArea(statsRaw.classroomSf)}</div>`}
                 ${isSarpyCountyInstance ? '' : `<div><b>Classrooms:</b> ${fmtCount(statsRaw.classroomCount)}</div>`}
+                ${capitalLineHtml}
               </div>
               <div style="min-width:180px;">
                 <div style="font-weight:600;margin-bottom:4px;">Key Departments</div>
@@ -28407,6 +28436,25 @@ useEffect(() => {
     return;
   }
 
+  // Capital Compass tiers (admin-only view): each scored building in its
+  // tier color (MF.tier), every other building MF.line.border. Unlike the
+  // other themes, a scored building's tier wins over the no-floorplan gray --
+  // the override only applies to the unscored fallback.
+  if (capitalTiersViewActive) {
+    const unscoredExpr = withNoFloorplanOverride(MAP_UNSCORED_COLOR, MAP_UNSCORED_COLOR);
+    const colorExpr = capitalTierColorEntries.length
+      ? ['match', ['get', 'id'], ...capitalTierColorEntries.flat(), unscoredExpr]
+      : unscoredExpr;
+    try {
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', colorExpr);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.85);
+      if (map.getLayer('buildings-fill')) {
+        map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
+      }
+    } catch {}
+    return;
+  }
+
   if (map.getLayer('buildings-fill')) {
     try {
       map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
@@ -28463,7 +28511,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, isSarpyCountyInstance]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, isSarpyCountyInstance, capitalTiersViewActive, capitalTierColorEntries]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -29956,6 +30004,12 @@ useEffect(() => {
       </div>
     </div>
 
+    {/* Admin "Capital Compass tiers" map view legend: bottom-left, above the
+        Mapbox logo, to the right of the controls panel while it's open. */}
+    {capitalTiersViewActive && (
+      <CapitalTiersMapLegend style={{ position: 'absolute', left: isControlsVisible ? 316 : 20, bottom: 36, zIndex: 9 }} />
+    )}
+
     {(isSarpyCountyInstance || isCherokeeMentalHealthInstance) && floorAdjustPending && (
       <div
         style={{
@@ -31210,6 +31264,7 @@ useEffect(() => {
               buildingFeatures={Array.isArray(config?.buildings?.features) ? config.buildings.features : []}
               getBuildingResourceEntry={getBuildingResourceEntry}
               capitalData={capitalCompassData}
+              onShowOnMap={capitalTiersViewAvailable ? showCapitalTiersOnMap : null}
             />
           </div>
         )}
