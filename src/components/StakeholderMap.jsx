@@ -28,6 +28,7 @@ import TokenSwatches from './dev/TokenSwatches.jsx';
 import ComponentGallery from './dev/ComponentGallery.jsx';
 import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import { useClassroomUtilizationData } from '../utils/useClassroomUtilizationData';
+import { useCapitalCompassData } from '../utils/useCapitalCompassData';
 import {
   RS_STATUS,
   RS_STATUS_COLORS,
@@ -13960,6 +13961,16 @@ const StakeholderMap = ({
   const classroomUtilizationData = useClassroomUtilizationData({
     enabled: classroomUtilizationEnabled,
     universityId
+  });
+
+  // ---- Capital Compass (admin-only, flag-gated) ----
+  // One shared load of scores, phasing, uploaded deferred maintenance and the
+  // saved budget, with live tiers and the one cost rule -- handed to
+  // CapitalPrioritiesPanel and the Executive Dashboard below.
+  const capitalCompassData = useCapitalCompassData({
+    enabled: isAdminMode && Boolean(config?.enableCapitalPriorities),
+    universityId,
+    getBuildingResourceEntry
   });
 
   const [faSelectedRoomKey, setFaSelectedRoomKey] = useState('');
@@ -31188,17 +31199,17 @@ useEffect(() => {
             <ExecutiveDashboardPanel
               universityId={universityId}
               enabled={isAdminMode && Boolean(config?.enableCapitalPriorities) && Boolean(config?.enableClassroomUtilization)}
-              getBuildingResourceEntry={getBuildingResourceEntry}
+              capitalData={capitalCompassData}
             />
           </div>
         )}
         {isAdminMode && Boolean(config?.enableCapitalPriorities) && (
           <div className="dashboard-box">
             <CapitalPrioritiesPanel
-              universityId={universityId}
               enabled={isAdminMode && Boolean(config?.enableCapitalPriorities)}
               buildingFeatures={Array.isArray(config?.buildings?.features) ? config.buildings.features : []}
               getBuildingResourceEntry={getBuildingResourceEntry}
+              capitalData={capitalCompassData}
             />
           </div>
         )}

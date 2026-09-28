@@ -8,9 +8,8 @@
 //
 // Small, additive aggregations, none of which modify or re-derive the logic of
 // the functions they sit on top of:
-//   1. computeTier1CapitalSummary -- Tier 1 (score >= 80) buildings from capitalPriorities,
-//      with the same "auto" (deferred-maintenance) cost resolution CapitalPrioritiesPanel.jsx's
-//      own getResolvedBuildingCost prefers.
+//   1. (Tier 1 buildings and costs now come from capitalCompassCalc.js
+//      computeTier1Summary, over the shared useCapitalCompassData hook.)
 //   2. computeNearTermCapitalPhasing -- splits capitalPhasingProjects into near-term
 //      (a phase window overlapping the next ~2 years) vs longer-term, using
 //      capitalPhasingImport.js's own computeCapitalPhasingSchedule (not re-derived).
@@ -26,18 +25,11 @@
 // unrelated modules, so a single shared source is the safer choice.
 
 import { computeCapitalPhasingSchedule } from './capitalPhasingImport';
-import { firstCurrencyValue } from './currency';
 import { bucketRangeForCapacity } from './classroomUtilizationCalc';
+import { formatUsdCompact } from './capitalCompassCalc';
 
-export function formatUsdCompact(value) {
-  // null/'' must not become "$0" -- Number(null) is 0.
-  if (value == null || value === '') return '';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '';
-  if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1000) return `$${Math.round(n / 1000)}K`;
-  return `$${Math.round(n)}`;
-}
+// The one money formatter lives in capitalCompassCalc.js (missing -> "—").
+export { formatUsdCompact };
 
 export function formatPct(value) {
   return Number.isFinite(value) ? `${Math.round(value)}%` : '—';
@@ -77,59 +69,6 @@ export function formatGapSf(value) {
   if (!Number.isFinite(value)) return '—';
   const rounded = Math.round(value);
   return `${rounded >= 0 ? '+' : ''}${rounded.toLocaleString()} SF`;
-}
-
-// CapitalPrioritiesPanel.jsx's own TIERS[0] threshold ("Tier 1: 80-100, fund
-// immediately") -- TIERS/getTier aren't exported from that file, so this is a
-// standalone copy, same isolation convention classroomUtilizationCalc.js/
-// roomUtilizationMeta.js already use for small shared constants. A capitalPriorities
-// doc with no numeric `total` (not yet fully scored) never counts as Tier 1.
-const TIER1_MIN_SCORE = 80;
-
-// capitalPriorityDocs: [{buildingId, originalId, total, ...}] -- raw docs from the
-// `capitalPriorities` collection, same shape CapitalPrioritiesPanel.jsx reads.
-//
-// Cost resolution deliberately mirrors ONLY the "auto" (deferred-maintenance data)
-// branch of that panel's getResolvedBuildingCost -- its "manual" branch
-// (manualCosts state) is local-only React state in that component, never written to
-// Firestore, so this independent read has no way to see it. Per Clark's explicit
-// decision, this function also never computes a funded/deferred split: that split in
-// CapitalPrioritiesPanel.jsx depends on `budgetCap`, which is local UI state that
-// defaults to "everything funded" and is never persisted -- reproducing it here would
-// silently show a fabricated 100%-funded number that reflects a default nobody chose,
-// not a real budget decision. Only the honest totals (count, total known cost) are
-// returned.
-export function computeTier1CapitalSummary({ capitalPriorityDocs, getBuildingResourceEntry }) {
-  const tier1Buildings = (Array.isArray(capitalPriorityDocs) ? capitalPriorityDocs : [])
-    .filter((d) => typeof d?.total === 'number' && d.total >= TIER1_MIN_SCORE)
-    .map((d) => {
-      const entry = typeof getBuildingResourceEntry === 'function'
-        ? getBuildingResourceEntry(d.originalId || d.buildingId)
-        : null;
-      const deferred = entry?.deferredMaintenance;
-      const resolvedCost = deferred
-        ? firstCurrencyValue([deferred.totalCost, deferred.totalHigh, deferred.totalLow])
-        : null;
-      return {
-        buildingId: d.buildingId,
-        originalId: d.originalId || d.buildingId,
-        total: d.total,
-        resolvedCost
-      };
-    })
-    .sort((a, b) => (b.total - a.total) || String(a.originalId).localeCompare(String(b.originalId)));
-
-  const withCost = tier1Buildings.filter((b) => b.resolvedCost != null);
-
-  return {
-    tier1Buildings,
-    tier1Count: tier1Buildings.length,
-    // null (not 0) when no Tier 1 building has cost data, so the KPI can show
-    // "—" instead of a misleading $0.
-    totalKnownCost: withCost.length ? withCost.reduce((sum, b) => sum + b.resolvedCost, 0) : null,
-    knownCostCount: withCost.length,
-    unresolvedCostCount: tier1Buildings.length - withCost.length
-  };
 }
 
 // One display rule for the Tier 1 capital need KPI, shared by the modal, the

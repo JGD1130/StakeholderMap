@@ -3,21 +3,29 @@
 // Capital Priorities module (Capital Compass integration, Option B).
 // Reads building names from the tenant's existing `buildings` config
 // (in-memory prop, no Firestore read, never modified) so a user can pick
-// a building to score. All reads/writes for scoring go to the new
-// `capitalPriorities` collection only — this panel never reads or writes
-// any existing rooms/buildings/buildingAssessments/buildingConditions data.
+// a building to score.
 //
-// Scoring rubric (7 criteria, 100 pts) and tier thresholds are taken
-// verbatim from the Capital Compass reference tool:
-//   Tier 1: 80-100  (Short-term, 0-5 yrs)  — fund immediately
-//   Tier 2: 60-79   (Mid-term, 5-10 yrs)   — advance planning/funding/grants
-//   Tier 3: 40-59   (Long-term, 10-20 yrs) — continue planning, reassess at CIP updates
-//   Tier 4: <40     (Deferred / opportunistic) — reevaluate scope/funding/strategic importance
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
-import { db, auth } from '../firebaseConfig';
-import { firstCurrencyValue } from '../utils/currency';
+// All Capital Compass data -- scores (capitalPriorities), phasing
+// (capitalPhasingProjects), uploaded deferred maintenance
+// (deferredMaintenanceBuildings) and the saved budget (capitalCompassSettings)
+// -- comes from useCapitalCompassData (mounted once in StakeholderMap.jsx,
+// passed in as `capitalData`), which also owns every write. The rubric, tier
+// thresholds, cost rule and score suggestions live in capitalCompassCalc.js;
+// tiers are always computed live from each building's total.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
+import {
+  SCORE_FIELDS,
+  TIERS,
+  getTier,
+  sanitizeBuildingDocId,
+  formatUsdCompact,
+  COST_SOURCE_LABELS,
+  suggestFinancialDelayCost,
+  suggestCriticalCoreService,
+  scoredBuildings,
+  computeFundingLine
+} from '../utils/capitalCompassCalc';
 import {
   CAPITAL_PHASING_SHEET_NAME,
   parseCapitalPhasingFile,
@@ -31,199 +39,26 @@ import {
   toDeferredMaintenanceDocs
 } from '../utils/deferredMaintenanceImport';
 
-// Mirrors the existing writeBatch chunking convention in
-// ClassroomUtilizationPanel.jsx (BATCH_CHUNK_SIZE) -- Firestore's own cap
-// is 500 ops/batch, kept comfortably under that.
-const CAPITAL_PHASING_BATCH_CHUNK_SIZE = 400;
-
 // Shared module header color -- see src/utils/brandColors.js.
 const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 
-const SCORE_FIELDS = [
-  {
-    key: 'criticalCoreService',
-    label: 'Critical Core Service',
-    fullName: 'Criticality to mission & safety',
-    max: 25,
-    levels: [
-      { score: 25, label: 'Immediate threat', desc: 'Immediate threat to life safety, regulatory compliance, or continuity of academic/research operations' },
-      { score: 20, label: '3-5 yr risk', desc: 'Major degradation of instructional, research, or clinical capacity likely within 3-5 years' },
-      { score: 15, label: 'Noticeable', desc: 'Noticeable impacts to academic operations, research productivity, or asset reliability' },
-      { score: 8, label: 'Minor', desc: 'Minor or limited impact on core academic or research functions' }
-    ]
-  },
-  {
-    key: 'publicBenefit',
-    label: 'Public Benefit',
-    fullName: 'Student & institutional benefit',
-    max: 20,
-    levels: [
-      { score: 20, label: 'System/institution-wide', desc: 'Benefit spans multiple campuses or the full student/faculty population' },
-      { score: 15, label: 'Multi-college', desc: 'Significant benefit to multiple colleges, departments, or large user groups' },
-      { score: 10, label: 'Department/program', desc: 'Moderate benefit to a defined department, program, or user group' },
-      { score: 5, label: 'Limited', desc: 'Limited benefit to a small or specialized group' }
-    ]
-  },
-  {
-    key: 'organizationalCapacity',
-    label: 'Organizational Capacity',
-    fullName: 'Operational capacity & efficiency',
-    max: 15,
-    levels: [
-      { score: 15, label: 'Transformational', desc: 'Transformational improvement to research capacity, instructional delivery, or operational efficiency' },
-      { score: 10, label: 'Significant', desc: 'Significant operational improvement' },
-      { score: 7, label: 'Moderate', desc: 'Moderate efficiency gains' },
-      { score: 2, label: 'Minor', desc: 'Minor or no measurable institutional benefit' }
-    ]
-  },
-  {
-    key: 'financialDelayCost',
-    label: 'Financial Delay Cost',
-    fullName: 'Financial impact of delay',
-    max: 15,
-    levels: [
-      { score: 15, label: 'Substantial', desc: 'Delay substantially increases costs, deferred maintenance backlog, or risk of asset failure' },
-      { score: 10, label: 'Moderate', desc: 'Moderate escalation or increased project complexity expected' },
-      { score: 7, label: 'Manageable', desc: 'Manageable cost increases expected' },
-      { score: 2, label: 'Minimal', desc: 'Minimal financial consequence if delayed' }
-    ]
-  },
-  {
-    key: 'fundingLeverage',
-    label: 'Funding Leverage',
-    fullName: 'Funding availability & leverage',
-    max: 10,
-    levels: [
-      { score: 10, label: '>50% external', desc: 'More than 50% of project cost potentially funded via grants, gifts, or indirect cost recovery' },
-      { score: 8, label: 'Strong leverage', desc: 'Significant grant, philanthropic, or partnership funding opportunity' },
-      { score: 5, label: 'Moderate', desc: 'Moderate funding leverage available' },
-      { score: 1, label: 'Limited', desc: 'Limited or no outside funding source available' }
-    ]
-  },
-  {
-    key: 'politicalReadiness',
-    label: 'Political Readiness',
-    fullName: 'Board & stakeholder expectations',
-    max: 10,
-    levels: [
-      { score: 10, label: 'High visibility', desc: 'Strong Board of Regents, donor, or legislative visibility and expectation' },
-      { score: 8, label: 'Broad support', desc: 'Broad stakeholder support and visibility' },
-      { score: 5, label: 'Moderate', desc: 'Moderate stakeholder interest' },
-      { score: 1, label: 'Limited', desc: 'Limited stakeholder awareness or support' }
-    ]
-  },
-  {
-    key: 'readinessScore',
-    label: 'Readiness Score',
-    fullName: 'Project readiness',
-    max: 5,
-    levels: [
-      { score: 5, label: 'Ready', desc: 'Design complete, permits secured, funding identified, ready to proceed' },
-      { score: 4, label: 'Advanced', desc: 'Advanced planning complete' },
-      { score: 3, label: 'Preliminary', desc: 'Preliminary planning complete' },
-      { score: 1, label: 'Concept', desc: 'Early-stage concept or undefined project' }
-    ]
-  }
-];
+// Tier text colors in this panel (display only; thresholds live in
+// capitalCompassCalc.js getTier).
+const TIER_COLORS = { 1: '#15803d', 2: '#b45309', 3: '#b45309', 4: '#b42318' };
 
-const TIERS = [
-  { level: 1, range: '80-100', horizon: 'Short-term (0-5 years)', action: 'Fund immediately or position for immediate implementation', color: '#15803d' },
-  { level: 2, range: '60-79', horizon: 'Mid-term (5-10 years)', action: 'Advance planning, design, funding development, and grant pursuit', color: '#b45309' },
-  { level: 3, range: '40-59', horizon: 'Long-term (10-20 years)', action: 'Continue planning and reassess during future CIP updates', color: '#b45309' },
-  { level: 4, range: 'Below 40', horizon: 'Deferred / opportunistic', action: 'Reevaluate scope, funding, and strategic importance', color: '#b42318' }
-];
-
-function getTier(total) {
-  if (total >= 80) return TIERS[0];
-  if (total >= 60) return TIERS[1];
-  if (total >= 40) return TIERS[2];
-  return TIERS[3];
-}
-
-// Suggestion logic for 2 of the 7 criteria, read-only against the same
-// building-resources.json-backed data the "Deferred + Condition" modal
-// already displays (passed in via the getBuildingResourceEntry prop).
-// These only ever produce a starting-point score for the user to accept
-// or override in the <select> below — nothing here writes anywhere.
-const FINANCIAL_DELAY_COST_LEVELS_ASC = [...SCORE_FIELDS.find((f) => f.key === 'financialDelayCost').levels].reverse();
-const CRITICAL_CORE_SERVICE_LEVELS_ASC = [...SCORE_FIELDS.find((f) => f.key === 'criticalCoreService').levels].reverse();
-
-function formatUsdCompact(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '';
-  if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1000) return `$${Math.round(n / 1000)}K`;
-  return `$${Math.round(n)}`;
-}
-
-// Buckets chosen to line up with Hastings' actual deferred-maintenance priority
-// labels/dollar amounts (Very High: ~$2.6-2.9M, High: ~$1.2-1.8M, Medium: ~$345-789K,
-// Low: ~$18-297K) so the priority label and the dollar amount agree in the common
-// case; either signal alone can still drive a suggestion if only one is present.
-function suggestFinancialDelayCost(deferred) {
-  if (!deferred) return null;
-  const cost = [deferred.totalCost, deferred.totalHigh, deferred.totalLow]
-    .map(Number)
-    .find((n) => Number.isFinite(n));
-
-  const priorityText = String(deferred.priority || '').toLowerCase();
-  let priorityTier = null;
-  if (priorityText.includes('very high')) priorityTier = 3;
-  else if (priorityText.includes('high')) priorityTier = 2;
-  else if (priorityText.includes('medium') || priorityText.includes('moderate')) priorityTier = 1;
-  else if (priorityText.includes('low')) priorityTier = 0;
-
-  let costTier = null;
-  if (Number.isFinite(cost)) {
-    if (cost >= 2000000) costTier = 3;
-    else if (cost >= 1000000) costTier = 2;
-    else if (cost >= 300000) costTier = 1;
-    else costTier = 0;
-  }
-
-  if (priorityTier == null && costTier == null) return null;
-  const tier = Math.max(priorityTier ?? -1, costTier ?? -1);
-  const level = FINANCIAL_DELAY_COST_LEVELS_ASC[tier];
-
-  const parts = [];
-  if (deferred.priority) parts.push(`${deferred.priority} priority`);
-  if (Number.isFinite(cost)) parts.push(`~${formatUsdCompact(cost)} deferred maintenance`);
-
-  return { score: level.score, levelLabel: level.label, rationale: parts.join(', ') || 'deferred maintenance data' };
-}
-
-// Lower Life Safety and/or lower overall average condition (1=very poor, 5=excellent,
-// per building-resources.json's own scale) suggest higher criticality. Either signal
-// alone can drive a suggestion; the worse of the two wins.
-function suggestCriticalCoreService(lifeSafetyScore, averageScore) {
-  let lsTier = null;
-  if (Number.isFinite(lifeSafetyScore)) {
-    if (lifeSafetyScore <= 2) lsTier = 3;
-    else if (lifeSafetyScore <= 3) lsTier = 2;
-    else if (lifeSafetyScore <= 4) lsTier = 1;
-    else lsTier = 0;
-  }
-  let avgTier = null;
-  if (Number.isFinite(averageScore)) {
-    if (averageScore <= 2.5) avgTier = 3;
-    else if (averageScore <= 3.25) avgTier = 2;
-    else if (averageScore <= 4) avgTier = 1;
-    else avgTier = 0;
-  }
-
-  if (lsTier == null && avgTier == null) return null;
-  const tier = Math.max(lsTier ?? -1, avgTier ?? -1);
-  const level = CRITICAL_CORE_SERVICE_LEVELS_ASC[tier];
-
-  const parts = [];
-  if (Number.isFinite(lifeSafetyScore)) parts.push(`Life Safety ${lifeSafetyScore}/5`);
-  if (Number.isFinite(averageScore)) parts.push(`avg condition ${averageScore.toFixed(1)}/5`);
-
-  return { score: level.score, levelLabel: level.label, rationale: parts.join(', ') || 'condition data' };
-}
-
-function sanitizeBuildingDocId(buildingId) {
-  return String(buildingId || '').trim().replace(/\//g, '__');
+// A scored building (useCapitalCompassData `buildings` entry) in the shape
+// the Portfolio Prioritizer JSX reads.
+function toPortfolioRow(b) {
+  return {
+    buildingId: b.docId,
+    originalId: b.name,
+    total: b.total,
+    resolvedCost: b.cost.amount,
+    costSource: b.cost.source,
+    tierLevel: b.tier.level,
+    tierHorizon: b.tier.horizon,
+    tierColor: TIER_COLORS[b.tier.level]
+  };
 }
 
 function emptyScores() {
@@ -263,9 +98,10 @@ function PortfolioStat({ label, value, color }) {
 // exactly the new project set, never merge-accumulating stale projects a
 // newer workbook version dropped.
 //
-// Writes ONLY to universities/{universityId}/capitalPhasingProjects/{projectId}
-// -- no other collection is read or written by this section.
-function CapitalPhasingSection({ universityId }) {
+// Saved projects come from the shared hook (already sorted by completion
+// date); Confirm & Save replaces universities/{universityId}/
+// capitalPhasingProjects through capitalData.replacePhasingProjects.
+function CapitalPhasingSection({ capitalData }) {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState('');
@@ -273,39 +109,9 @@ function CapitalPhasingSection({ universityId }) {
   const [savePhase, setSavePhase] = useState(null); // null | 'clearing' | 'writing'
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [savedProjects, setSavedProjects] = useState([]);
-  const [savedLoading, setSavedLoading] = useState(false);
-  const [savedLoadError, setSavedLoadError] = useState('');
-
-  const capitalPhasingCollection = useMemo(
-    () => collection(db, 'universities', universityId, 'capitalPhasingProjects'),
-    [universityId]
-  );
-
-  const loadSavedProjects = useCallback(async () => {
-    if (!universityId) {
-      setSavedProjects([]);
-      return;
-    }
-    setSavedLoading(true);
-    setSavedLoadError('');
-    try {
-      const snap = await getDocs(capitalPhasingCollection);
-      const docs = snap.docs.map((docSnap) => ({ projectId: docSnap.id, ...(docSnap.data() || {}) }));
-      // Chronological, per the display spec -- completionDate is stored as
-      // an ISO "YYYY-MM-01" string, which sorts correctly lexicographically.
-      docs.sort((a, b) => String(a.completionDate || '').localeCompare(String(b.completionDate || '')));
-      setSavedProjects(docs);
-    } catch (error) {
-      setSavedLoadError(String(error?.message || 'Failed to load saved capital phasing projects.'));
-    } finally {
-      setSavedLoading(false);
-    }
-  }, [capitalPhasingCollection, universityId]);
-
-  useEffect(() => {
-    void loadSavedProjects();
-  }, [loadSavedProjects]);
+  const savedProjects = capitalData?.phasingDocs || [];
+  const savedLoading = capitalData?.status === 'loading' || capitalData?.status === 'idle';
+  const savedLoadError = capitalData?.status === 'error' ? capitalData.error : '';
 
   const previewDocs = useMemo(
     () => (parsedResult ? toCapitalPhasingDocs(parsedResult) : []),
@@ -343,56 +149,26 @@ function CapitalPhasingSection({ universityId }) {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (savePhase || !previewDocs.length || !universityId) return;
+    if (savePhase || !previewDocs.length || !capitalData) return;
+    // Delete-then-write (in the hook): always lands on exactly
+    // len(previewDocs) docs; a failure while clearing stops before writing.
     let phase = 'clearing';
     setSavePhase(phase);
     setSaveMessage('');
     setSaveError('');
     try {
-      // Delete-then-write, same idempotency pattern as Import Schedule/
-      // Enrollment Projections: always lands on exactly len(previewDocs)
-      // docs instead of merge-only accumulating a stale project a newer
-      // workbook version removed. If this fails partway, we stop here and
-      // never reach the write step below.
-      const existingSnap = await getDocs(capitalPhasingCollection);
-      const existingRefs = existingSnap.docs.map((docSnap) => docSnap.ref);
-      for (let i = 0; i < existingRefs.length; i += CAPITAL_PHASING_BATCH_CHUNK_SIZE) {
-        const chunk = existingRefs.slice(i, i + CAPITAL_PHASING_BATCH_CHUNK_SIZE);
-        if (!chunk.length) continue;
-        const batch = writeBatch(db);
-        chunk.forEach((ref) => batch.delete(ref));
-        await batch.commit();
-      }
-
-      phase = 'writing';
-      setSavePhase(phase);
-      for (let i = 0; i < previewDocs.length; i += CAPITAL_PHASING_BATCH_CHUNK_SIZE) {
-        const chunk = previewDocs.slice(i, i + CAPITAL_PHASING_BATCH_CHUNK_SIZE);
-        if (!chunk.length) continue;
-        const batch = writeBatch(db);
-        chunk.forEach((entry) => {
-          batch.set(doc(capitalPhasingCollection, entry.projectId), {
-            projectName: entry.projectName,
-            completionDate: entry.completionDate,
-            projectCost2026: entry.projectCost2026,
-            escalatedCost: entry.escalatedCost,
-            phases: entry.phases,
-            notes: entry.notes,
-            importedAt: serverTimestamp()
-          }, { merge: true });
-        });
-        await batch.commit();
-      }
-
+      const { clearedCount } = await capitalData.replacePhasingProjects(previewDocs, (next) => {
+        phase = next;
+        setSavePhase(next);
+      });
       setSaveMessage(
-        `Cleared ${existingRefs.length.toLocaleString()} old project${existingRefs.length === 1 ? '' : 's'}, `
+        `Cleared ${clearedCount.toLocaleString()} old project${clearedCount === 1 ? '' : 's'}, `
         + `imported ${previewDocs.length.toLocaleString()} project${previewDocs.length === 1 ? '' : 's'} `
         + `from "${parsedResult?.sourceFileName || 'the uploaded file'}".`
       );
       // Clear the preview after a successful save -- requires a fresh file
       // selection before Save can be clicked again.
       setParsedResult(null);
-      await loadSavedProjects();
     } catch (error) {
       const phaseLabel = phase === 'clearing'
         ? 'Failed while clearing old data (nothing new was written): '
@@ -401,7 +177,7 @@ function CapitalPhasingSection({ universityId }) {
     } finally {
       setSavePhase(null);
     }
-  }, [savePhase, previewDocs, capitalPhasingCollection, universityId, parsedResult, loadSavedProjects]);
+  }, [savePhase, previewDocs, capitalData, parsedResult]);
 
   const summaryLabel = previewDocs.length
     ? `Capital Phasing & Costs (previewing ${previewDocs.length} unsaved project${previewDocs.length === 1 ? '' : 's'})`
@@ -423,8 +199,8 @@ function CapitalPhasingSection({ universityId }) {
             </div>
           </div>
           <div style={{ textAlign: 'right', flexShrink: 0, fontSize: 10.5 }}>
-            <div>2026 cost: <strong>{formatUsdCompact(project.projectCost2026) || '—'}</strong></div>
-            <div>Escalated: <strong>{formatUsdCompact(project.escalatedCost) || '—'}</strong></div>
+            <div>2026 cost: <strong>{formatUsdCompact(project.projectCost2026)}</strong></div>
+            <div>Escalated: <strong>{formatUsdCompact(project.escalatedCost)}</strong></div>
           </div>
         </div>
 
@@ -609,20 +385,20 @@ function CapitalPhasingSection({ universityId }) {
 // still counted in the campus totals below, but flagged visibly as
 // "No mapped location" rather than being silently dropped.
 //
-// Writes ONLY to universities/{universityId}/deferredMaintenanceBuildings/
-// {docId} -- a collection separate from capitalPriorities (the hand-scored
-// prioritization matrix) since these are a different concept with a
-// different doc-id scheme (some ids are "unmapped__..." rather than a real
-// building id) -- no other collection is read or written by this section.
-const DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE = 400;
-
+// Saved buildings come from the shared hook; Confirm & Save replaces
+// universities/{universityId}/deferredMaintenanceBuildings through
+// capitalData.replaceDeferredMaintenance -- a collection separate from
+// capitalPriorities (the hand-scored prioritization matrix) with its own
+// doc-id scheme (some ids are "unmapped__..." rather than a real building
+// id). A mapped building's 0-5 yr project cost is now the second step of
+// the cost rule (capitalCompassCalc.js resolveBuildingCost).
 function formatUsdFull(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
   return `$${Math.round(n).toLocaleString()}`;
 }
 
-function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
+function DeferredMaintenanceSection({ capitalData, realBuildingNames }) {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState('');
@@ -630,37 +406,9 @@ function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
   const [savePhase, setSavePhase] = useState(null); // null | 'clearing' | 'writing'
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [savedBuildings, setSavedBuildings] = useState([]);
-  const [savedLoading, setSavedLoading] = useState(false);
-  const [savedLoadError, setSavedLoadError] = useState('');
-
-  const deferredMaintenanceCollection = useMemo(
-    () => collection(db, 'universities', universityId, 'deferredMaintenanceBuildings'),
-    [universityId]
-  );
-
-  const loadSavedBuildings = useCallback(async () => {
-    if (!universityId) {
-      setSavedBuildings([]);
-      return;
-    }
-    setSavedLoading(true);
-    setSavedLoadError('');
-    try {
-      const snap = await getDocs(deferredMaintenanceCollection);
-      const docs = snap.docs.map((docSnap) => ({ docId: docSnap.id, ...(docSnap.data() || {}) }));
-      docs.sort((a, b) => String(a.rawBuildingName || '').localeCompare(String(b.rawBuildingName || '')));
-      setSavedBuildings(docs);
-    } catch (error) {
-      setSavedLoadError(String(error?.message || 'Failed to load saved deferred maintenance data.'));
-    } finally {
-      setSavedLoading(false);
-    }
-  }, [deferredMaintenanceCollection, universityId]);
-
-  useEffect(() => {
-    void loadSavedBuildings();
-  }, [loadSavedBuildings]);
+  const savedBuildings = capitalData?.deferredMaintenanceDocs || [];
+  const savedLoading = capitalData?.status === 'loading' || capitalData?.status === 'idle';
+  const savedLoadError = capitalData?.status === 'error' ? capitalData.error : '';
 
   const previewDocs = useMemo(
     () => (parsedResult ? toDeferredMaintenanceDocs(parsedResult) : []),
@@ -699,61 +447,27 @@ function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
   }, [realBuildingNames]);
 
   const handleSave = useCallback(async () => {
-    if (savePhase || !previewDocs.length || !universityId) return;
+    if (savePhase || !previewDocs.length || !capitalData) return;
+    // Delete-then-write (in the hook): always lands on exactly
+    // len(previewDocs) docs; a failure while clearing stops before writing.
     let phase = 'clearing';
     setSavePhase(phase);
     setSaveMessage('');
     setSaveError('');
     try {
-      // Delete-then-write, same idempotency pattern as Capital Phasing/
-      // Import Schedule/Enrollment Projections: always lands on exactly
-      // len(previewDocs) docs instead of merge-only accumulating a stale
-      // building a newer workbook version removed or renamed.
-      const existingSnap = await getDocs(deferredMaintenanceCollection);
-      const existingRefs = existingSnap.docs.map((docSnap) => docSnap.ref);
-      for (let i = 0; i < existingRefs.length; i += DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE) {
-        const chunk = existingRefs.slice(i, i + DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE);
-        if (!chunk.length) continue;
-        const batch = writeBatch(db);
-        chunk.forEach((ref) => batch.delete(ref));
-        await batch.commit();
-      }
-
-      phase = 'writing';
-      setSavePhase(phase);
-      for (let i = 0; i < previewDocs.length; i += DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE) {
-        const chunk = previewDocs.slice(i, i + DEFERRED_MAINTENANCE_BATCH_CHUNK_SIZE);
-        if (!chunk.length) continue;
-        const batch = writeBatch(db);
-        chunk.forEach((entry) => {
-          batch.set(doc(deferredMaintenanceCollection, entry.docId), {
-            rawBuildingName: entry.rawBuildingName,
-            matchedBuildingId: entry.matchedBuildingId,
-            matchMethod: entry.matchMethod,
-            demolitionProjectCost: entry.demolitionProjectCost,
-            deferredMaint0to5: entry.deferredMaint0to5,
-            deferredMaint0to5ConstructionCost: entry.deferredMaint0to5ConstructionCost,
-            deferredMaint6to10: entry.deferredMaint6to10,
-            deferredMaint6to10ConstructionCost: entry.deferredMaint6to10ConstructionCost,
-            renovationCostPerSf: entry.renovationCostPerSf,
-            renovationConstructionCost: entry.renovationConstructionCost,
-            sourceFileName: parsedResult?.sourceFileName || null,
-            sourceSheetName: parsedResult?.sheetName || null,
-            importedAt: serverTimestamp()
-          }, { merge: true });
-        });
-        await batch.commit();
-      }
-
+      const { clearedCount } = await capitalData.replaceDeferredMaintenance(
+        previewDocs,
+        { sourceFileName: parsedResult?.sourceFileName, sheetName: parsedResult?.sheetName },
+        (next) => { phase = next; setSavePhase(next); }
+      );
       setSaveMessage(
-        `Cleared ${existingRefs.length.toLocaleString()} old building record${existingRefs.length === 1 ? '' : 's'}, `
+        `Cleared ${clearedCount.toLocaleString()} old building record${clearedCount === 1 ? '' : 's'}, `
         + `imported ${previewDocs.length.toLocaleString()} building record${previewDocs.length === 1 ? '' : 's'} `
         + `from "${parsedResult?.sourceFileName || 'the uploaded file'}".`
       );
       // Clear the preview after a successful save -- requires a fresh file
       // selection before Save can be clicked again.
       setParsedResult(null);
-      await loadSavedBuildings();
     } catch (error) {
       const phaseLabel = phase === 'clearing'
         ? 'Failed while clearing old data (nothing new was written): '
@@ -762,7 +476,7 @@ function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
     } finally {
       setSavePhase(null);
     }
-  }, [savePhase, previewDocs, deferredMaintenanceCollection, universityId, parsedResult, loadSavedBuildings]);
+  }, [savePhase, previewDocs, capitalData, parsedResult]);
 
   // Headline totals -- computed over whichever data set is currently being
   // displayed (preview takes priority while one exists, same convention as
@@ -1015,37 +729,29 @@ function DeferredMaintenanceSection({ universityId, realBuildingNames }) {
 }
 
 export default function CapitalPrioritiesPanel({
-  universityId,
   enabled = false,
   title = 'Capital Compass',
   buildingFeatures = [],
-  getBuildingResourceEntry = null
+  getBuildingResourceEntry = null,
+  // useCapitalCompassData's result (mounted once in StakeholderMap.jsx).
+  capitalData = null
 }) {
-  const normalizedUniversityId = String(universityId || '').trim();
   // Collapsed by default -- this only gates the <details> disclosure below;
-  // refreshRows() (data load) already runs unconditionally via its own
-  // useEffect regardless of open/collapsed state, so expanding never has to
-  // trigger a load itself, it just reveals data that's already there.
+  // the shared hook loads regardless of open/collapsed state.
   const [panelOpen, setPanelOpen] = useState(false);
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const loading = capitalData?.status === 'loading' || capitalData?.status === 'idle';
+  const dataReady = capitalData?.status === 'ready';
+  const errorMessage = capitalData?.status === 'error' ? capitalData.error : '';
+  const buildings = useMemo(() => capitalData?.buildings || [], [capitalData?.buildings]);
+  const refreshRows = useCallback(() => capitalData?.reload?.(), [capitalData]);
 
   const [selectedBuildingId, setSelectedBuildingId] = useState('');
   const [scores, setScores] = useState(emptyScores);
   const [notes, setNotes] = useState('');
-  const [loadingSelection, setLoadingSelection] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
-
-  // Portfolio view state. Purely client-side — no Firestore reads/writes beyond the
-  // existing `rows` (capitalPriorities collection, already read-only above). Manual
-  // cost overrides live only in this component's state (session-only, not persisted)
-  // for buildings with no deferred-maintenance cost data to draw from.
-  const [manualCosts, setManualCosts] = useState({});
-  const [budgetCap, setBudgetCap] = useState(0);
-  const [budgetCapTouched, setBudgetCapTouched] = useState(false);
+  const loadingSelection = Boolean(selectedBuildingId) && !dataReady && !buildings.length;
 
   // Read-only: names come from the tenant's existing buildings config, never written back to it.
   const buildingOptions = useMemo(() => {
@@ -1069,17 +775,21 @@ export default function CapitalPrioritiesPanel({
   );
 
   // Read-only: same building-resources.json data the "Deferred + Condition" modal
-  // renders from. No Firestore read, no write, ever, to deferred maintenance or
-  // condition data through this panel.
+  // renders from (condition scores and the deferred-maintenance priority label).
   const resourceEntry = useMemo(() => {
     if (typeof getBuildingResourceEntry !== 'function' || !selectedBuildingId) return null;
     return getBuildingResourceEntry(selectedBuildingId) || null;
   }, [getBuildingResourceEntry, selectedBuildingId]);
 
-  const financialDelayCostSuggestion = useMemo(
-    () => suggestFinancialDelayCost(resourceEntry?.deferredMaintenance || null),
-    [resourceEntry]
-  );
+  // Financial Delay Cost suggestion uses the one cost rule (manual ->
+  // uploaded 0-5 yr deferred maintenance -> building-resources.json).
+  const financialDelayCostSuggestion = useMemo(() => {
+    if (!selectedBuildingId || !capitalData?.costFor) return null;
+    return suggestFinancialDelayCost(
+      capitalData.costFor(selectedBuildingId),
+      resourceEntry?.deferredMaintenance?.priority || ''
+    );
+  }, [capitalData, selectedBuildingId, resourceEntry]);
 
   const criticalCoreServiceSuggestion = useMemo(() => {
     const lifeSafety = Number(resourceEntry?.conditionAssessment?.architecture?.lifeSafety);
@@ -1095,61 +805,20 @@ export default function CapitalPrioritiesPanel({
     criticalCoreService: criticalCoreServiceSuggestion
   };
 
-  const refreshRows = useCallback(async () => {
-    if (!enabled || !normalizedUniversityId) {
-      setRows([]);
-      return;
-    }
-    setLoading(true);
-    setErrorMessage('');
-    try {
-      const snap = await getDocs(collection(db, 'universities', normalizedUniversityId, 'capitalPriorities'));
-      const nextRows = snap.docs.map((docSnap) => ({ buildingId: docSnap.id, ...(docSnap.data() || {}) }));
-      setRows(nextRows);
-    } catch (error) {
-      setErrorMessage(String(error?.message || 'Failed to load capital priorities.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled, normalizedUniversityId]);
-
+  // Pre-fill the form from the building's saved score. Runs when the
+  // selection changes (or data first arrives) -- not on every data refresh,
+  // so a manual-cost or budget change elsewhere never wipes unsaved edits.
+  const buildingsRef = useRef(buildings);
+  buildingsRef.current = buildings;
   useEffect(() => {
-    void refreshRows();
-  }, [refreshRows]);
-
-  // Pre-fill the form if this building already has a capitalPriorities doc.
-  useEffect(() => {
-    if (!enabled || !normalizedUniversityId || !selectedBuildingId) {
-      setScores(emptyScores());
-      setNotes('');
-      return;
-    }
-    let cancelled = false;
-    setLoadingSelection(true);
     setSaveMessage('');
     setSaveError('');
-    const docId = sanitizeBuildingDocId(selectedBuildingId);
-    getDoc(doc(db, 'universities', normalizedUniversityId, 'capitalPriorities', docId))
-      .then((snap) => {
-        if (cancelled) return;
-        const data = snap.exists() ? snap.data() : null;
-        const nextScores = emptyScores();
-        if (data) {
-          SCORE_FIELDS.forEach((field) => {
-            if (typeof data[field.key] === 'number') nextScores[field.key] = data[field.key];
-          });
-        }
-        setScores(nextScores);
-        setNotes(String(data?.notes || ''));
-      })
-      .catch((error) => {
-        if (!cancelled) setSaveError(String(error?.message || 'Failed to load existing score.'));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSelection(false);
-      });
-    return () => { cancelled = true; };
-  }, [enabled, normalizedUniversityId, selectedBuildingId]);
+    const saved = selectedBuildingId
+      ? buildingsRef.current.find((b) => b.docId === sanitizeBuildingDocId(selectedBuildingId))
+      : null;
+    setScores(saved ? { ...emptyScores(), ...saved.scores } : emptyScores());
+    setNotes(saved?.notes || '');
+  }, [selectedBuildingId, dataReady]);
 
   const allScored = SCORE_FIELDS.every((field) => typeof scores[field.key] === 'number');
   const total = SCORE_FIELDS.reduce((sum, field) => sum + (Number(scores[field.key]) || 0), 0);
@@ -1160,134 +829,56 @@ export default function CapitalPrioritiesPanel({
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!enabled || !normalizedUniversityId || !selectedBuildingId) return;
+    if (!enabled || !capitalData || !selectedBuildingId) return;
     setSaving(true);
     setSaveError('');
     setSaveMessage('');
     try {
-      const docId = sanitizeBuildingDocId(selectedBuildingId);
-      const payload = {
-        originalId: selectedBuildingId,
-        notes: String(notes || '').trim(),
-        total: allScored ? total : null,
-        tier: allScored ? currentTier.level : null,
-        tierHorizon: allScored ? currentTier.horizon : null,
-        tierAction: allScored ? currentTier.action : null,
-        updatedAt: serverTimestamp(),
-        updatedByEmail: String(auth.currentUser?.email || '').toLowerCase()
-      };
-      SCORE_FIELDS.forEach((field) => {
-        payload[field.key] = typeof scores[field.key] === 'number' ? scores[field.key] : null;
-      });
-      // Writes ONLY to universities/{universityId}/capitalPriorities/{docId} — no other collection is touched.
-      await setDoc(doc(db, 'universities', normalizedUniversityId, 'capitalPriorities', docId), payload, { merge: true });
+      // Writes ONLY to universities/{universityId}/capitalPriorities/{docId}.
+      await capitalData.saveScore(selectedBuildingId, { scores, notes });
       setSaveMessage('Saved.');
-      await refreshRows();
     } catch (error) {
       setSaveError(String(error?.message || 'Failed to save.'));
     } finally {
       setSaving(false);
     }
-  }, [enabled, normalizedUniversityId, selectedBuildingId, notes, scores, allScored, total, currentTier, refreshRows]);
+  }, [enabled, capitalData, selectedBuildingId, scores, notes]);
 
-  // Portfolio Prioritizer — read-only across all scored buildings (`rows`, already
-  // loaded above). Cost per building prefers deferred-maintenance data (same
-  // building-resources.json-backed source used elsewhere in this panel) and falls
-  // back to a manual per-building estimate when no such data exists. No writes.
-  const getResolvedBuildingCost = useCallback((row) => {
-    const entry = typeof getBuildingResourceEntry === 'function'
-      ? getBuildingResourceEntry(row.originalId || row.buildingId)
-      : null;
-    const deferred = entry?.deferredMaintenance;
-    // firstCurrencyValue skips null/'' -- Number(null) is 0, which used to
-    // resolve a missing totalCost as a real $0 before totalHigh/totalLow.
-    const auto = deferred
-      ? firstCurrencyValue([deferred.totalCost, deferred.totalHigh, deferred.totalLow])
-      : null;
-    if (auto != null) return { cost: auto, source: 'auto' };
-    const manual = Number(manualCosts[row.buildingId]);
-    if (Number.isFinite(manual) && manual > 0) return { cost: manual, source: 'manual' };
-    return { cost: null, source: null };
-  }, [getBuildingResourceEntry, manualCosts]);
+  // Every capitalPriorities doc, for the read-only "scored buildings" list.
+  const rows = useMemo(() => buildings.map((b) => ({
+    ...b.scores,
+    buildingId: b.docId,
+    originalId: b.name,
+    total: b.total,
+    tier: b.tier?.level ?? null,
+    tierHorizon: b.tier?.horizon ?? '',
+    notes: b.notes,
+    updatedAt: b.updatedAt
+  })), [buildings]);
 
-  const portfolioRows = useMemo(() => {
-    const scored = rows.filter((row) => typeof row.total === 'number');
-    const withCost = scored.map((row) => {
-      const { cost, source } = getResolvedBuildingCost(row);
-      const tierInfo = TIERS.find((t) => t.level === row.tier) || getTier(row.total);
-      return {
-        ...row,
-        resolvedCost: cost,
-        costSource: source,
-        tierLevel: tierInfo.level,
-        tierHorizon: tierInfo.horizon,
-        tierColor: tierInfo.color
-      };
-    });
-    withCost.sort((a, b) => (
-      (b.total - a.total) ||
-      String(a.originalId || a.buildingId).localeCompare(String(b.originalId || b.buildingId))
-    ));
-    return withCost;
-  }, [rows, getResolvedBuildingCost]);
+  // Portfolio Prioritizer -- every fully scored building, highest total
+  // first, with its live tier and its cost from the one cost rule.
+  const portfolioRows = useMemo(() => scoredBuildings(buildings).map(toPortfolioRow), [buildings]);
 
-  const totalKnownCost = useMemo(
-    () => portfolioRows.reduce((sum, row) => sum + (Number.isFinite(row.resolvedCost) ? row.resolvedCost : 0), 0),
-    [portfolioRows]
+  const totalKnownCost = capitalData?.knownCostTotal || 0;
+  // Saved budget cap, or (nothing saved) the total known cost -- "everything
+  // funded" -- which keeps following costs as they're filled in.
+  const budgetCap = capitalData?.budgetCap ?? 0;
+  const manualCosts = capitalData?.manualCosts || {};
+  const handleBudgetCapChange = useCallback((value) => capitalData?.setBudgetCap(value), [capitalData]);
+  const handleManualCostChange = useCallback(
+    (buildingName, rawValue) => capitalData?.setManualCost(buildingName, rawValue),
+    [capitalData]
   );
 
-  // Budget cap tracks total known cost until the user explicitly adjusts it, so it
-  // starts "everything funded" and stays sensible as costs are filled in.
-  useEffect(() => {
-    if (!budgetCapTouched) setBudgetCap(totalKnownCost);
-  }, [totalKnownCost, budgetCapTouched]);
-
-  const handleBudgetCapChange = useCallback((value) => {
-    setBudgetCapTouched(true);
-    setBudgetCap(Math.max(0, Number(value) || 0));
-  }, []);
-
-  const handleManualCostChange = useCallback((buildingId, rawValue) => {
-    setManualCosts((prev) => {
-      const next = { ...prev };
-      const n = Number(rawValue);
-      if (rawValue === '' || !Number.isFinite(n) || n <= 0) {
-        delete next[buildingId];
-      } else {
-        next[buildingId] = n;
-      }
-      return next;
-    });
-  }, []);
-
-  // Funding line: walk buildings highest-score-first, funding each while the
-  // running cost stays within budget; once one doesn't fit, it and everything
-  // after it (by priority order) is Deferred. Buildings with no resolved cost
-  // can't be placed on either side of the line yet.
   const { fundedRows, deferredRows, needsCostRows } = useMemo(() => {
-    const funded = [];
-    const deferred = [];
-    const needsCost = [];
-    let cumulative = 0;
-    let cutoff = false;
-    portfolioRows.forEach((row) => {
-      if (row.resolvedCost == null) {
-        needsCost.push(row);
-        return;
-      }
-      if (!cutoff) {
-        const next = cumulative + row.resolvedCost;
-        if (next <= budgetCap) {
-          cumulative = next;
-          funded.push(row);
-          return;
-        }
-        cutoff = true;
-      }
-      deferred.push(row);
-    });
-    return { fundedRows: funded, deferredRows: deferred, needsCostRows: needsCost };
-  }, [portfolioRows, budgetCap]);
+    const line = computeFundingLine(buildings, budgetCap);
+    return {
+      fundedRows: line.funded.map(toPortfolioRow),
+      deferredRows: line.deferred.map(toPortfolioRow),
+      needsCostRows: line.needsCost.map(toPortfolioRow)
+    };
+  }, [buildings, budgetCap]);
 
   const fundedIds = useMemo(() => new Set(fundedRows.map((r) => r.buildingId)), [fundedRows]);
   const deferredIds = useMemo(() => new Set(deferredRows.map((r) => r.buildingId)), [deferredRows]);
@@ -1298,7 +889,7 @@ export default function CapitalPrioritiesPanel({
     const inTier = portfolioRows.filter((r) => r.tierLevel === tier.level);
     const cost = inTier.reduce((sum, r) => sum + (Number.isFinite(r.resolvedCost) ? r.resolvedCost : 0), 0);
     const knownCostCount = inTier.filter((r) => r.resolvedCost != null).length;
-    return { ...tier, count: inTier.length, cost, knownCostCount };
+    return { ...tier, color: TIER_COLORS[tier.level], count: inTier.length, cost, knownCostCount };
   }), [portfolioRows]);
 
   const budgetSliderMax = totalKnownCost > 0 ? totalKnownCost : 1;
@@ -1456,7 +1047,7 @@ export default function CapitalPrioritiesPanel({
                   </div>
                   {currentTier ? (
                     <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: currentTier.color }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: TIER_COLORS[currentTier.level] }}>
                         Tier {currentTier.level} — {currentTier.horizon}
                       </div>
                       <div style={{ fontSize: 10.5, color: '#667085', marginTop: 2 }}>{currentTier.action}</div>
@@ -1537,10 +1128,10 @@ export default function CapitalPrioritiesPanel({
         )}
       </div>
 
-      {/* Portfolio Prioritizer — all scored buildings together as a capital plan.
-          Read-only against `rows` (capitalPriorities collection, loaded above) plus
-          getBuildingResourceEntry (also read-only). No Firestore writes here — the
-          budget cap and any manual cost entries are client-side-only computation. */}
+      {/* Portfolio Prioritizer — all scored buildings together as a capital plan,
+          costs from the one cost rule (capitalCompassCalc.js). The budget cap and
+          manual cost entries are saved by the shared hook
+          (capitalCompassSettings/budget, ~800ms after the last change). */}
       <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
         <h4 style={{ margin: '0 0 4px', fontSize: 12.5 }}>Portfolio Prioritizer</h4>
         <div style={{ fontSize: 10.5, color: '#667085', marginBottom: 6, lineHeight: 1.35 }}>
@@ -1647,24 +1238,26 @@ export default function CapitalPrioritiesPanel({
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 11.5, fontWeight: 700 }}>
-                          {row.resolvedCost != null ? formatUsdCompact(row.resolvedCost) : '—'}
+                          {formatUsdCompact(row.resolvedCost)}
                         </div>
                         {row.costSource ? (
                           <div style={{ fontSize: 9.5, color: '#94a3b8' }}>
-                            {row.costSource === 'auto' ? 'from deferred maint.' : 'manual entry'}
+                            {row.costSource === 'manual' ? COST_SOURCE_LABELS.manual : `from ${COST_SOURCE_LABELS[row.costSource]}`}
                           </div>
                         ) : null}
                       </div>
                     </div>
 
-                    {row.costSource !== 'auto' ? (
+                    {/* Manual entry for buildings with no cost data, or one already
+                        entered (a manual cost overrides every other source). */}
+                    {row.costSource === 'manual' || row.costSource == null ? (
                       <div style={{ marginTop: 4 }}>
-                        <label style={{ fontSize: 10, color: '#667085' }}>Manual cost estimate ($, not saved)</label>
+                        <label style={{ fontSize: 10, color: '#667085' }}>Manual cost estimate ($)</label>
                         <input
                           type="number"
                           min={0}
-                          value={manualCosts[row.buildingId] ?? ''}
-                          onChange={(e) => handleManualCostChange(row.buildingId, e.target.value)}
+                          value={manualCosts[row.originalId] ?? ''}
+                          onChange={(e) => handleManualCostChange(row.originalId, e.target.value)}
                           placeholder="e.g. 1500000"
                           style={{ width: '100%', fontSize: 11, padding: '3px 6px', marginTop: 2 }}
                         />
@@ -1686,8 +1279,8 @@ export default function CapitalPrioritiesPanel({
         )}
       </div>
 
-      <CapitalPhasingSection universityId={normalizedUniversityId} />
-      <DeferredMaintenanceSection universityId={normalizedUniversityId} realBuildingNames={realBuildingNames} />
+      <CapitalPhasingSection capitalData={capitalData} />
+      <DeferredMaintenanceSection capitalData={capitalData} realBuildingNames={realBuildingNames} />
       </div>
       </details>
     </div>

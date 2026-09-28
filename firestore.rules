@@ -169,6 +169,14 @@ service cloud.firestore {
         allow read, write: if isUniversityAdmin(universityId);
       }
 
+      // Capital Compass settings (budget cap + manual cost estimates), one
+      // doc: capitalCompassSettings/budget. Same admin-only posture as
+      // capitalPriorities/capitalPhasingProjects/deferredMaintenanceBuildings
+      // above -- internal planning tool, not exposed to any public/client route.
+      match /capitalCompassSettings/{docId} {
+        allow read, write: if isUniversityAdmin(universityId);
+      }
+
       // Classroom Utilization Planner. Admin-only in both directions, same
       // posture as capitalPriorities immediately above — internal planning
       // tool, not exposed to any public/client route. Hastings-only is

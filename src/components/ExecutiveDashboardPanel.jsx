@@ -7,19 +7,20 @@
 // since this panel is nothing but a synthesis of exactly those two feature areas; a
 // tenant with either one off has no data for this panel to meaningfully summarize).
 //
-// READ-ONLY, always: this panel never writes to Firestore. It independently re-fetches
-// the same four collections/data sources CapitalPrioritiesPanel.jsx and
-// ClassroomUtilizationPanel.jsx already read, and calls the exact same already-shipped
-// calc functions those panels use (computeSpaceGrowth, computeDepartmentSpaceGrowth,
+// READ-ONLY, always: this panel never writes to Firestore. Capital Compass data (Tier 1
+// buildings with live tiers and costs from the one cost rule, and capital phasing) comes
+// from the shared useCapitalCompassData hook (`capitalData`, the same object
+// CapitalPrioritiesPanel.jsx reads), so saved manual costs show here too. Space and
+// classroom data are still re-fetched here, and run through the exact same calc
+// functions those panels use (computeSpaceGrowth, computeDepartmentSpaceGrowth,
 // computeClassroomUtilization, computeCampusUtilizationByTerm, resolveCurrentTerm) --
 // nothing in this file modifies any of those functions or any other panel's logic.
 // executiveDashboardCalc.js adds only new, additive aggregation on top of their output.
 //
 // Capital Priorities' "budget vs. need" is deliberately NOT shown as a funded/deferred
-// split -- see executiveDashboardCalc.js's header comment: that split in
-// CapitalPrioritiesPanel.jsx depends on a local-only, non-persisted UI slider that
-// defaults to "everything funded," so reproducing it here would show a fabricated
-// number, not a real decision. Only Tier 1 count + total known cost are shown.
+// split: the budget cap defaults to "everything funded" until someone sets it, so
+// showing it here could present a default nobody chose as a decision. Only Tier 1
+// count + total known cost are shown.
 //
 // Same "flag visibly, never a blank/broken section" philosophy as every other module
 // in this codebase: a section with no underlying data (no terms configured, no capital
@@ -47,8 +48,8 @@ import {
   buildAirtableAreaMap
 } from '../utils/classroomUtilizationCalc';
 import { computeSpaceGrowth, computeDepartmentSpaceGrowth } from '../utils/spaceGrowthCalc';
+import { computeTier1Summary } from '../utils/capitalCompassCalc';
 import {
-  computeTier1CapitalSummary,
   computeNearTermCapitalPhasing,
   computeDivisionSpaceGapSummary,
   computeInstitutionWideSpaceGapTotal,
@@ -79,22 +80,16 @@ const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 export default function ExecutiveDashboardPanel({
   universityId,
   enabled = false,
-  getBuildingResourceEntry = null
+  // useCapitalCompassData's result (mounted once in StakeholderMap.jsx).
+  capitalData = null
 }) {
   const normalizedUniversityId = String(universityId || '').trim();
-  const [loading, setLoading] = useState(false);
+  const [baseLoading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [data, setData] = useState(null);
+  // Space + classroom results; Capital Compass parts are merged in below.
+  const [baseData, setData] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const capitalPrioritiesCollection = useMemo(
-    () => collection(db, 'universities', normalizedUniversityId, 'capitalPriorities'),
-    [normalizedUniversityId]
-  );
-  const capitalPhasingCollection = useMemo(
-    () => collection(db, 'universities', normalizedUniversityId, 'capitalPhasingProjects'),
-    [normalizedUniversityId]
-  );
   const spaceConfigCollection = useMemo(
     () => collection(db, 'universities', normalizedUniversityId, SPACE_CONFIG_COLLECTION),
     [normalizedUniversityId]
@@ -120,12 +115,9 @@ export default function ExecutiveDashboardPanel({
     [normalizedUniversityId]
   );
 
-  // Latest-run-wins guard. runCalculation re-runs whenever
-  // getBuildingResourceEntry changes -- notably when building-resources.json
-  // finishes loading, a moment after the first run already started against an
-  // empty catalog (every Tier 1 cost unresolved). Both runs await the same slow
-  // Airtable fetch, so the stale first run could finish last and overwrite the
-  // correct result. Only the newest run may write state.
+  // Latest-run-wins guard: overlapping runs (e.g. Recalculate clicked while the
+  // first load is still waiting on the slow Airtable fetch) must not let the
+  // older run overwrite the newer result. Only the newest run may write state.
   const runIdRef = useRef(0);
 
   const runCalculation = useCallback(async () => {
@@ -154,8 +146,6 @@ export default function ExecutiveDashboardPanel({
       // happens to already be warm, which board-facing use can't assume.
       let airtableFetchFailed = false;
       const [
-        capitalPrioritiesSnap,
-        capitalPhasingSnap,
         spaceConfigSnap,
         roomMetaSnap,
         enrollmentSnap,
@@ -164,8 +154,6 @@ export default function ExecutiveDashboardPanel({
         termsSnap,
         airtableRooms
       ] = await Promise.all([
-        getDocs(capitalPrioritiesCollection),
-        getDocs(capitalPhasingCollection),
         getDocs(spaceConfigCollection),
         getDocs(roomUtilizationMetaCollection),
         getDocs(enrollmentProjectionsCollection),
@@ -186,8 +174,6 @@ export default function ExecutiveDashboardPanel({
         })
       ]);
 
-      const capitalPriorityDocs = capitalPrioritiesSnap.docs.map((d) => ({ buildingId: d.id, ...(d.data() || {}) }));
-      const capitalPhasingDocs = capitalPhasingSnap.docs.map((d) => ({ projectId: d.id, ...(d.data() || {}) }));
       // Deliberately mirrors ClassroomUtilizationPanel.jsx's own spaceConfigDocs
       // mapping EXACTLY (no sfPerFteTarget field) -- an earlier version of this
       // mapping included it and broke the Space Gap chart below. Root cause:
@@ -218,30 +204,6 @@ export default function ExecutiveDashboardPanel({
 
       if (isStale()) return;
 
-      const tier1Summary = computeTier1CapitalSummary({ capitalPriorityDocs, getBuildingResourceEntry });
-      // Diagnostic trace of every Tier 1 cost input (Chrome: enable "Verbose"
-      // to see console.debug). Read-only.
-      console.debug('Executive Dashboard: Tier 1 cost inputs', tier1Summary.tier1Buildings.map((b) => {
-        const deferred = typeof getBuildingResourceEntry === 'function'
-          ? getBuildingResourceEntry(b.originalId)?.deferredMaintenance
-          : undefined;
-        return {
-          buildingId: b.buildingId,
-          originalId: b.originalId,
-          score: b.total,
-          catalogEntryFound: deferred !== undefined,
-          totalCost: deferred?.totalCost,
-          totalCostType: typeof deferred?.totalCost,
-          totalHigh: deferred?.totalHigh,
-          totalLow: deferred?.totalLow,
-          resolvedCost: b.resolvedCost
-        };
-      }));
-      const phasingSummary = computeNearTermCapitalPhasing({
-        capitalPhasingDocs,
-        now: new Date(),
-        horizonMonths: CAPITAL_PHASING_HORIZON_MONTHS
-      });
 
       const institutionSpace = computeSpaceGrowth({
         spaceConfigDocs,
@@ -275,8 +237,6 @@ export default function ExecutiveDashboardPanel({
       const currentTerm = resolveCurrentTerm(termDocs);
 
       setData({
-        tier1Summary,
-        phasingSummary,
         institutionGap,
         spaceGapBuckets,
         // Surfaced so SpaceGapCard (ExecutiveDashboardModal.jsx) can show a
@@ -291,8 +251,6 @@ export default function ExecutiveDashboardPanel({
         campusRollups,
         sizeRangeByTerm,
         currentTerm,
-        hasAnyCapitalPriorities: capitalPriorityDocs.length > 0,
-        hasAnyCapitalPhasing: capitalPhasingDocs.length > 0,
         hasAnySpaceConfig: spaceConfigDocs.length > 0
       });
     } catch (error) {
@@ -305,20 +263,48 @@ export default function ExecutiveDashboardPanel({
   }, [
     enabled,
     normalizedUniversityId,
-    capitalPrioritiesCollection,
-    capitalPhasingCollection,
     spaceConfigCollection,
     roomUtilizationMetaCollection,
     enrollmentProjectionsCollection,
     departmentOverridesCollection,
     courseMeetingsCollection,
-    termsCollection,
-    getBuildingResourceEntry
+    termsCollection
   ]);
 
   useEffect(() => {
     void runCalculation();
   }, [runCalculation]);
+
+  // Capital Compass parts, from the shared hook: Tier 1 buildings (live tier,
+  // one cost rule, saved manual costs) and near-term phasing. Recomputed when
+  // the hook's data changes -- no Firestore read here.
+  const capitalReady = capitalData?.status === 'ready' || capitalData?.status === 'error';
+  const capitalSummary = useMemo(() => {
+    if (!capitalReady) return null;
+    const buildings = capitalData.buildings || [];
+    const phasingDocs = capitalData.phasingDocs || [];
+    return {
+      tier1Summary: computeTier1Summary(buildings),
+      phasingSummary: computeNearTermCapitalPhasing({
+        capitalPhasingDocs: phasingDocs,
+        now: new Date(),
+        horizonMonths: CAPITAL_PHASING_HORIZON_MONTHS
+      }),
+      hasAnyCapitalPriorities: buildings.length > 0,
+      hasAnyCapitalPhasing: phasingDocs.length > 0
+    };
+  }, [capitalReady, capitalData?.buildings, capitalData?.phasingDocs]);
+
+  const data = useMemo(
+    () => (baseData && capitalSummary ? { ...baseData, ...capitalSummary } : null),
+    [baseData, capitalSummary]
+  );
+  const loading = baseLoading || capitalData?.status === 'loading';
+
+  const handleRecalculate = useCallback(() => {
+    void runCalculation();
+    void capitalData?.reload?.();
+  }, [runCalculation, capitalData]);
 
   const handleExportPdf = useCallback(async () => {
     if (!data) return;
@@ -420,7 +406,7 @@ export default function ExecutiveDashboardPanel({
           data={data}
           loading={loading}
           loadError={loadError}
-          onRecalculate={() => void runCalculation()}
+          onRecalculate={handleRecalculate}
           onExportPdf={() => void handleExportPdf()}
           onClose={() => setModalOpen(false)}
         />

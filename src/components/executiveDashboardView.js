@@ -7,8 +7,8 @@
 // `data` object runCalculation() produces -- no React, no aggregation of its
 // own; every number still comes from executiveDashboardCalc.js.
 
+import { formatUsdCompact, COST_SOURCE_LABELS } from '../utils/capitalCompassCalc';
 import {
-  formatUsdCompact,
   formatTier1CapitalNeed,
   formatTermSubtitle,
   formatPhasingTitle
@@ -254,7 +254,7 @@ export function tier1Rows(tier1Summary) {
         title: b.originalId,
         rows: [
           ['Priority score', `${b.total} / 100`],
-          ['Est. cost', b.resolvedCost != null ? `${cost} (deferred maintenance estimate)` : 'Not entered']
+          ['Est. cost', b.resolvedCost != null ? `${cost} (${COST_SOURCE_LABELS[b.costSource] || 'estimate'})` : 'Not entered']
         ]
       }
     };
