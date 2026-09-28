@@ -2279,7 +2279,9 @@ function SpaceGrowthSection() {
     []
   );
 
-  const runCalculation = useCallback(async () => {
+  // forceAirtable (the Recalculate button): fetch Airtable rooms again instead
+  // of reusing the page-wide shared copy.
+  const runCalculation = useCallback(async ({ forceAirtable = false } = {}) => {
     setLoading(true);
     setLoadError('');
     try {
@@ -2293,7 +2295,7 @@ function SpaceGrowthSection() {
         // category just falls back to 0 tagged/resolved SF instead of the
         // whole section erroring out, same fail-soft convention
         // UtilizationResultsSection already uses for this endpoint.
-        fetchAirtableRoomsForUtilization().catch((error) => {
+        fetchAirtableRoomsForUtilization({ force: forceAirtable }).catch((error) => {
           console.warn('Airtable rooms fetch failed for space growth calc:', error);
           return [];
         })
@@ -2385,7 +2387,7 @@ function SpaceGrowthSection() {
               ))}
             </select>
           </label>
-          <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+          <button className="btn" type="button" onClick={() => void runCalculation({ forceAirtable: true })} disabled={loading}>
             {loading ? 'Calculating...' : 'Recalculate'}
           </button>
         </div>

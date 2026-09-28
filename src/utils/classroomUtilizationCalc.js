@@ -28,6 +28,7 @@
 import { canon } from './idUtils';
 import { buildRoomUtilizationMetaKey } from './roomUtilizationMeta';
 import { fetchWithTimeout, isAbortError } from './fetchWithTimeout';
+import { getSharedAirtableRooms, airtableRoomsCacheKey } from './airtableRoomsCache';
 
 // Static, hardcoded industry-standard reference for Time Utilization --
 // not fetched from Airtable, Firestore, or anywhere external, per Clark's
@@ -140,15 +141,34 @@ export { fetchWithTimeout, isAbortError };
 // Default timeout is 60s, not 20s: the AI server runs on Render's free tier,
 // which commonly takes 30-50s+ to wake from idle (see ExecutiveDashboardPanel's
 // note on its own 60s override). 20s aborted every cold-start page load.
-export async function fetchAirtableRoomsForUtilization({ timeoutMs = 60000 } = {}) {
+//
+// Goes through the shared rooms cache (airtableRoomsCache.js): callers on the
+// same page share one request and reuse its result; `force: true` fetches
+// again (Recalculate). The request itself always allows the full 60s -- a
+// caller with a shorter `timeoutMs` (the building popup) stops waiting on
+// time without cutting the shared request short for everyone else.
+const ROOMS_REQUEST_TIMEOUT_MS = 60000;
+
+async function requestAirtableRooms(timeoutMs) {
   const res = await fetchWithTimeout(resolveRoomsUrl(), { cache: 'no-store' }, timeoutMs);
   const raw = await res.text();
   let json = null;
   try { json = JSON.parse(raw); } catch {}
   if (!res.ok || !json?.ok) {
-    throw new Error(json?.error || raw || `HTTP ${res.status}`);
+    const error = new Error(json?.error || raw || `HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
   }
   return Array.isArray(json.rooms) ? json.rooms : [];
+}
+
+export async function fetchAirtableRoomsForUtilization({ timeoutMs = 60000, force = false } = {}) {
+  return getSharedAirtableRooms({
+    cacheKey: airtableRoomsCacheKey(resolveRoomsUrl()),
+    load: () => requestAirtableRooms(Math.max(timeoutMs, ROOMS_REQUEST_TIMEOUT_MS)),
+    force,
+    timeoutMs
+  });
 }
 
 // building+room -> Airtable Seat Count, keyed with the exact same

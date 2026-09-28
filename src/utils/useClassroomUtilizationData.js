@@ -123,7 +123,10 @@ export function useClassroomUtilizationData({ enabled = false, universityId } = 
   const airtableRoomsRef = useRef(null); // null = not fetched yet
   const requestIdRef = useRef(0); // latest-wins guard against overlapping loads
 
-  const load = useCallback(async ({ refetchAirtable }) => {
+  // refetchAirtable: ask for Airtable rooms again rather than reuse this
+  // hook's copy. forceAirtable: bypass the page-wide shared rooms cache too
+  // (Recalculate) -- otherwise another panel's load is reused.
+  const load = useCallback(async ({ refetchAirtable, forceAirtable = false }) => {
     const requestId = ++requestIdRef.current;
     setStatus('loading');
     setError('');
@@ -133,7 +136,7 @@ export function useClassroomUtilizationData({ enabled = false, universityId } = 
         getDocs(collection(db, 'universities', resolvedUniversityId, COURSE_MEETINGS_COLLECTION)),
         getDocs(collection(db, 'universities', resolvedUniversityId, TERMS_COLLECTION)),
         needAirtable
-          ? fetchAirtableRoomsForUtilization({ timeoutMs: AIRTABLE_TIMEOUT_MS })
+          ? fetchAirtableRoomsForUtilization({ timeoutMs: AIRTABLE_TIMEOUT_MS, force: forceAirtable })
             .then((rooms) => ({ rooms, failed: false }))
             .catch((fetchError) => {
               // Airtable is capacity-only input (Seat Utilization). A failed
@@ -163,7 +166,7 @@ export function useClassroomUtilizationData({ enabled = false, universityId } = 
   }, [resolvedUniversityId]);
 
   const reload = useCallback(() => load({ refetchAirtable: false }), [load]);
-  const recalculate = useCallback(() => load({ refetchAirtable: true }), [load]);
+  const recalculate = useCallback(() => load({ refetchAirtable: true, forceAirtable: true }), [load]);
 
   useEffect(() => {
     if (!enabled) return undefined;

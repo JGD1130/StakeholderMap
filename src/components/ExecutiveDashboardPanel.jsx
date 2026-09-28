@@ -120,7 +120,9 @@ export default function ExecutiveDashboardPanel({
   // older run overwrite the newer result. Only the newest run may write state.
   const runIdRef = useRef(0);
 
-  const runCalculation = useCallback(async () => {
+  // forceAirtable (Recalculate): fetch Airtable rooms again instead of reusing
+  // the page-wide shared copy.
+  const runCalculation = useCallback(async ({ forceAirtable = false } = {}) => {
     const runId = ++runIdRef.current;
     const isStale = () => runId !== runIdRef.current;
     if (!enabled || !normalizedUniversityId) {
@@ -167,7 +169,7 @@ export default function ExecutiveDashboardPanel({
         // before Promise.all does, single-threaded JS, no race) lets the Space
         // Gap card below distinguish "fetch actually failed" from "genuinely
         // zero gaps" instead of showing the same generic empty state for both.
-        fetchAirtableRoomsForUtilization({ timeoutMs: 60000 }).catch((error) => {
+        fetchAirtableRoomsForUtilization({ timeoutMs: 60000, force: forceAirtable }).catch((error) => {
           console.warn('Airtable rooms fetch failed for Executive Dashboard:', error);
           airtableFetchFailed = true;
           return [];
@@ -302,7 +304,7 @@ export default function ExecutiveDashboardPanel({
   const loading = baseLoading || capitalData?.status === 'loading';
 
   const handleRecalculate = useCallback(() => {
-    void runCalculation();
+    void runCalculation({ forceAirtable: true });
     void capitalData?.reload?.();
   }, [runCalculation, capitalData]);
 

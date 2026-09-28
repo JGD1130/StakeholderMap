@@ -30,6 +30,7 @@ import { useResearchSpaceData } from '../utils/useResearchSpaceData';
 import { useClassroomUtilizationData } from '../utils/useClassroomUtilizationData';
 import { useCapitalCompassData } from '../utils/useCapitalCompassData';
 import { mapTierColorEntries, mapPopupLineHtml, MAP_UNSCORED_COLOR } from './capitalCompassView';
+import { getSharedAirtableRooms, airtableRoomsCacheKey, AIRTABLE_BUSY_MESSAGE, isAirtableRateLimitError } from '../utils/airtableRoomsCache';
 import CapitalTiersMapLegend from './CapitalTiersMapLegend.jsx';
 import {
   RS_STATUS,
@@ -19034,7 +19035,10 @@ const StakeholderMap = ({
     return query ? `/ai/api/rooms?${query}` : '/ai/api/rooms';
   }, [universityId, config?.universityId, floorplanCampus, activeUniversityName, isSarpyCountyInstance]);
 
-  const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false } = {}) => {
+  // Goes through the shared rooms cache (airtableRoomsCache.js), so this and
+  // every other /api/rooms caller on the page share one request; `force`
+  // (Refresh Airtable Data) fetches again.
+  const fetchCampusRoomsPayload = useCallback(async ({ preferWarmup = false, force = false } = {}) => {
     if (!getAiBaseUrl()) {
       throw new Error('AI backend unavailable for this campus');
     }
@@ -19043,22 +19047,28 @@ const StakeholderMap = ({
     let lastError = null;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
-        const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs });
-        let data = null;
-        try {
-          data = await res.json();
-        } catch {}
-        if (!res.ok) {
-          const msg = data?.error || data?.message || ('Rooms fetch failed (' + res.status + ')');
-          throw new Error(msg);
-        }
-        if (data?.ok && Array.isArray(data.rooms)) {
-          return {
-            rawRooms: data.rooms,
-            scopedRooms: filterRoomsToConfiguredCampus(data.rooms)
-          };
-        }
-        throw new Error('Rooms payload missing or invalid');
+        const rawRooms = await getSharedAirtableRooms({
+          cacheKey: airtableRoomsCacheKey(resolveAiUrl('/ai/api/rooms'), isSarpyCountyInstance ? 'Grid view' : ''),
+          force,
+          load: async () => {
+            const res = await guardedAiFetch(buildRoomsApiPath(), { cache: 'no-store', timeoutMs });
+            let data = null;
+            try {
+              data = await res.json();
+            } catch {}
+            if (!res.ok) {
+              const error = new Error(data?.error || data?.message || ('Rooms fetch failed (' + res.status + ')'));
+              error.status = res.status;
+              throw error;
+            }
+            if (data?.ok && Array.isArray(data.rooms)) return data.rooms;
+            throw new Error('Rooms payload missing or invalid');
+          }
+        });
+        return {
+          rawRooms,
+          scopedRooms: filterRoomsToConfiguredCampus(rawRooms)
+        };
       } catch (err) {
         lastError = err;
         if (attempt < attempts - 1 && isAbortLikeError(err)) {
@@ -19069,7 +19079,7 @@ const StakeholderMap = ({
       }
     }
     throw lastError || new Error('Rooms payload missing or invalid');
-  }, [aiStatus, buildRoomsApiPath, filterRoomsToConfiguredCampus]);
+  }, [aiStatus, buildRoomsApiPath, filterRoomsToConfiguredCampus, isSarpyCountyInstance]);
 
   const refreshCampusRoomsFromApi = useCallback(async () => {
     if (!getAiBaseUrl()) {
@@ -19088,7 +19098,7 @@ const StakeholderMap = ({
       });
     }
     try {
-      const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: aiStatus !== 'ok' });
+      const { rawRooms, scopedRooms } = await fetchCampusRoomsPayload({ preferWarmup: aiStatus !== 'ok', force: true });
       setAirtableRooms(scopedRooms);
       await syncAirtableRoomEditOptions(scopedRooms);
       setAirtableLastSyncedAt(new Date());
@@ -19097,7 +19107,9 @@ const StakeholderMap = ({
     } catch (err) {
       const detail = isAbortLikeError(err)
         ? 'AI server is still waking up. Please try again in a few seconds.'
-        : 'Airtable sync failed before scope validation.';
+        : isAirtableRateLimitError(err)
+          ? AIRTABLE_BUSY_MESSAGE
+          : 'Airtable sync failed before scope validation.';
       setAirtableScopeCheck({
         level: 'warn',
         label: 'Refresh failed',
