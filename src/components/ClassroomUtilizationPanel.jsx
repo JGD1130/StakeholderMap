@@ -37,11 +37,7 @@ import {
 } from '../utils/classroomScheduleImport';
 import { deriveDistinctRoomsFromCourseMeetings } from '../utils/roomUtilizationMeta';
 import {
-  computeClassroomUtilization,
-  computeCampusUtilizationByTerm,
-  computeDayTimeHeatmapByTerm,
   formatHeatmapHourLabel,
-  computeSizeRangeUtilizationByTerm,
   fetchAirtableRoomsForUtilization,
   buildAirtableAreaMap,
   INDUSTRY_TARGET_TIME_UTILIZATION
@@ -522,7 +518,9 @@ function validateTermRow(row) {
   return errors;
 }
 
-function TermsSection() {
+// onSaved: called after a successful save so the shared utilization results
+// (useClassroomUtilizationData) re-read terms and recompute.
+function TermsSection({ onSaved }) {
   const [form, setForm] = useState({});
   const [persisted, setPersisted] = useState({});
   const [termOrder, setTermOrder] = useState([]);
@@ -687,12 +685,13 @@ function TermsSection() {
       }
       setSaveMessage(`Saved ${dirtyTermIds.length.toLocaleString()} term${dirtyTermIds.length === 1 ? '' : 's'}.`);
       await loadTerms();
+      void onSaved?.();
     } catch (error) {
       setSaveError(String(error?.message || 'Failed to save terms.'));
     } finally {
       setSaving(false);
     }
-  }, [saving, dirtyTermIds, form, termsCollection, loadTerms]);
+  }, [saving, dirtyTermIds, form, termsCollection, loadTerms, onSaved]);
 
   // Term count visible in the summary label without expanding, same
   // convention as SpaceConfigSection above.
@@ -3073,71 +3072,33 @@ function TimeUtilizationTargetBadge({ pct }) {
   );
 }
 
-function UtilizationResultsSection() {
-  const [result, setResult] = useState(null); // { rooms, buildingSummary, unmatchedMeetings }
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
-  // Collapsed by default -- same disclosure pattern as RoomUtilizationMetaSection
-  // (layout-only addition; runCalculation()'s useEffect below still runs
-  // unconditionally on mount regardless of open/collapsed state). No count in
-  // the summary label -- this section's content is a full calculation result
-  // table, not a simple count, same reasoning Space Growth below follows.
+// The three results sections below (Utilization Results, Heat Map, Size
+// Range) no longer fetch on their own -- they read the one shared result
+// from useClassroomUtilizationData (mounted once in StakeholderMap.jsx and
+// passed down as `data`). "Loading" covers the pre-first-load 'idle' state
+// too, so the first paint still says "Calculating..." rather than "no data".
+function sharedLoadState(data) {
+  const status = data?.status || 'idle';
+  return {
+    loading: status === 'loading' || status === 'idle',
+    loadError: status === 'error' ? String(data?.error || '') : ''
+  };
+}
+
+function UtilizationResultsSection({ data }) {
+  const result = data?.results || null; // { rooms, buildingSummary, unmatchedMeetings, campusRollups, ... }
+  const { loading, loadError } = sharedLoadState(data);
+  // Collapsed by default -- same disclosure pattern as RoomUtilizationMetaSection.
+  // No count in the summary label -- this section's content is a full
+  // calculation result table, not a simple count, same reasoning Space
+  // Growth below follows.
   const [sectionOpen, setSectionOpen] = useState(false);
-
-  const courseMeetingsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
-    []
-  );
-  const termsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
-    []
-  );
-
-  const runCalculation = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      // Airtable fetched via the existing, already-read-only /ai/api/rooms
-      // endpoint (same one StakeholderMap.jsx's Airtable sync uses) -- not
-      // fetched in parallel with the two Firestore reads below on purpose,
-      // no shared failure-handling need, but Promise.all is fine here since
-      // none of the three depends on another's result.
-      const [meetingsSnap, termsSnap, airtableRooms] = await Promise.all([
-        getDocs(courseMeetingsCollection),
-        getDocs(termsCollection),
-        fetchAirtableRoomsForUtilization().catch((error) => {
-          // Airtable is capacity-only input here (Seat Utilization). A
-          // failed fetch shouldn't block Time Utilization from computing --
-          // every room just falls back to "capacity unknown" instead of the
-          // whole section erroring out. The error is still surfaced below.
-          console.warn('Airtable rooms fetch failed for utilization calc:', error);
-          return [];
-        })
-      ]);
-      const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
-      const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
-      setResult(computeClassroomUtilization({ courseMeetingDocs, termDocs, airtableRooms }));
-    } catch (error) {
-      setLoadError(String(error?.message || 'Failed to compute utilization.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [courseMeetingsCollection, termsCollection]);
-
-  useEffect(() => {
-    void runCalculation();
-  }, [runCalculation]);
 
   const unmatchedCount = result?.unmatchedMeetings?.length || 0;
 
-  // Campus-wide rollup, split by term (never blended) -- purely additive
-  // aggregation on top of result.rooms, computed here rather than inside
-  // runCalculation() so it stays a plain derived value, same convention as
-  // every other useMemo in this file.
-  const campusRollups = useMemo(
-    () => (result?.rooms?.length ? computeCampusUtilizationByTerm(result.rooms).campusRollups : []),
-    [result]
-  );
+  // Campus-wide rollup, split by term (never blended) -- computed once in
+  // the shared hook from the same result.rooms this table renders.
+  const campusRollups = result?.rooms?.length ? (result.campusRollups || []) : [];
 
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
@@ -3147,7 +3108,7 @@ function UtilizationResultsSection() {
         </summary>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+          <button className="btn" type="button" onClick={() => void data?.recalculate?.()} disabled={loading}>
             {loading ? 'Calculating...' : 'Recalculate'}
           </button>
         </div>
@@ -3327,10 +3288,10 @@ function UtilizationResultsSection() {
 // never built until now. See classroomUtilizationCalc.js's
 // computeDayTimeHeatmapByTerm for the full aggregation reasoning (room
 // universe = every room with a scheduled meeting that term, independent of
-// Room Utilization Tagging; split by term, never blended). Same fetch
-// pattern as UtilizationResultsSection immediately above -- same two
-// Firestore collections, no Airtable read needed here since this is a pure
-// scheduling-density view, not a capacity-relative one.
+// Room Utilization Tagging; split by term, never blended). Reads the shared
+// useClassroomUtilizationData result, same as UtilizationResultsSection
+// immediately above -- a pure scheduling-density view that uses no Airtable
+// capacity.
 //
 // Color intensity is a fixed blue-alpha ramp (0.08 - 0.90) over the same
 // #2563eb family the rest of this module already uses for its "Time
@@ -3358,46 +3319,12 @@ function heatmapCellBackground(pct) {
   return `rgba(37, 99, 235, ${alpha.toFixed(2)})`;
 }
 
-function DayTimeHeatmapSection() {
-  const [heatmaps, setHeatmaps] = useState(null); // Array<{ termId, termLabel, roomCount, days, dayLabels, hours, grid }> | null
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
+function DayTimeHeatmapSection({ data }) {
+  const heatmaps = data?.results?.heatmaps || null; // Array<{ termId, termLabel, roomCount, days, dayLabels, hours, grid }> | null
+  const { loading, loadError } = sharedLoadState(data);
   // Collapsed by default -- same disclosure pattern as every other section
-  // in this panel. runCalculation()'s effect below still runs unconditionally
-  // on mount regardless of open/collapsed state.
+  // in this panel.
   const [sectionOpen, setSectionOpen] = useState(false);
-
-  const courseMeetingsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
-    []
-  );
-  const termsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
-    []
-  );
-
-  const runCalculation = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const [meetingsSnap, termsSnap] = await Promise.all([
-        getDocs(courseMeetingsCollection),
-        getDocs(termsCollection)
-      ]);
-      const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
-      const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
-      const { heatmaps: computed } = computeDayTimeHeatmapByTerm({ courseMeetingDocs, termDocs });
-      setHeatmaps(computed);
-    } catch (error) {
-      setLoadError(String(error?.message || 'Failed to compute the Day/Time heat map.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [courseMeetingsCollection, termsCollection]);
-
-  useEffect(() => {
-    void runCalculation();
-  }, [runCalculation]);
 
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
@@ -3407,7 +3334,7 @@ function DayTimeHeatmapSection() {
         </summary>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+          <button className="btn" type="button" onClick={() => void data?.recalculate?.()} disabled={loading}>
             {loading ? 'Calculating...' : 'Recalculate'}
           </button>
         </div>
@@ -3498,54 +3425,12 @@ function DayTimeHeatmapSection() {
 // full bucketing/aggregation reasoning (reuses computeClassroomUtilization's
 // rows wholesale -- same Airtable capacity join, same room universe as
 // Utilization Results and the heat map above, independent of Room
-// Utilization Tagging). Same fetch pattern as UtilizationResultsSection --
-// same two Firestore collections plus the same read-only Airtable rooms
-// fetch UtilizationResultsSection already uses for capacity.
-function SizeRangeUtilizationSection() {
-  const [sizeRangeTables, setSizeRangeTables] = useState(null); // Array | null
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
+// Utilization Tagging). Reads the shared useClassroomUtilizationData result,
+// same as UtilizationResultsSection.
+function SizeRangeUtilizationSection({ data }) {
+  const sizeRangeTables = data?.results?.sizeRangeTables || null; // Array | null
+  const { loading, loadError } = sharedLoadState(data);
   const [sectionOpen, setSectionOpen] = useState(false);
-
-  const courseMeetingsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, COURSE_MEETINGS_COLLECTION),
-    []
-  );
-  const termsCollection = useMemo(
-    () => collection(db, 'universities', HASTINGS_UNIVERSITY_ID, TERMS_COLLECTION),
-    []
-  );
-
-  const runCalculation = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const [meetingsSnap, termsSnap, airtableRooms] = await Promise.all([
-        getDocs(courseMeetingsCollection),
-        getDocs(termsCollection),
-        fetchAirtableRoomsForUtilization().catch((error) => {
-          console.warn('Airtable rooms fetch failed for size-range utilization:', error);
-          return [];
-        })
-      ]);
-      const courseMeetingDocs = meetingsSnap.docs.map((docSnap) => docSnap.data());
-      const termDocs = termsSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
-      const { sizeRangeTables: computed } = computeSizeRangeUtilizationByTerm({
-        courseMeetingDocs,
-        termDocs,
-        airtableRooms
-      });
-      setSizeRangeTables(computed);
-    } catch (error) {
-      setLoadError(String(error?.message || 'Failed to compute the size range table.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [courseMeetingsCollection, termsCollection]);
-
-  useEffect(() => {
-    void runCalculation();
-  }, [runCalculation]);
 
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid #edf2f7', paddingTop: 8 }}>
@@ -3555,7 +3440,7 @@ function SizeRangeUtilizationSection() {
         </summary>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button className="btn" type="button" onClick={() => void runCalculation()} disabled={loading}>
+          <button className="btn" type="button" onClick={() => void data?.recalculate?.()} disabled={loading}>
             {loading ? 'Calculating...' : 'Recalculate'}
           </button>
         </div>
@@ -3685,8 +3570,13 @@ export default function ClassroomUtilizationPanel({
   // Deliberately distinct from SpaceDashboardPanel's pre-existing, unrelated
   // "Classroom Utilization" section (static-CSV-backed, always on for
   // non-Sarpy tenants) so the two aren't mistaken for one another in the UI.
-  title = 'Classroom Utilization'
+  title = 'Classroom Utilization',
+  // Return value of useClassroomUtilizationData (mounted once in
+  // StakeholderMap.jsx): the one shared courseMeetings/terms/Airtable read
+  // and computed results every results section below renders from.
+  utilizationData = null
 }) {
+  const reloadUtilization = utilizationData?.reload;
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
@@ -3786,6 +3676,7 @@ export default function ClassroomUtilizationPanel({
         + `(${rawRows.length.toLocaleString()} raw rows deduped).`
       );
       await refreshSummary();
+      void reloadUtilization?.();
     } catch (error) {
       const phaseLabel = phase === 'clearing'
         ? 'Failed while clearing old data (nothing new was written): '
@@ -3799,7 +3690,7 @@ export default function ClassroomUtilizationPanel({
     } finally {
       setImportPhase(null);
     }
-  }, [enabled, importPhase, refreshSummary]);
+  }, [enabled, importPhase, refreshSummary, reloadUtilization]);
 
   if (!enabled) return null;
 
@@ -3874,10 +3765,10 @@ export default function ClassroomUtilizationPanel({
         </details>
       </div>
 
-      <TermsSection />
-      <UtilizationResultsSection />
-      <DayTimeHeatmapSection />
-      <SizeRangeUtilizationSection />
+      <TermsSection onSaved={reloadUtilization} />
+      <UtilizationResultsSection data={utilizationData} />
+      <DayTimeHeatmapSection data={utilizationData} />
+      <SizeRangeUtilizationSection data={utilizationData} />
     </div>
   );
 }

@@ -27,6 +27,7 @@ import ResearchSpaceClassificationPanel from './ResearchSpaceClassificationPanel
 import TokenSwatches from './dev/TokenSwatches.jsx';
 import ComponentGallery from './dev/ComponentGallery.jsx';
 import { useResearchSpaceData } from '../utils/useResearchSpaceData';
+import { useClassroomUtilizationData } from '../utils/useClassroomUtilizationData';
 import {
   RS_STATUS,
   RS_STATUS_COLORS,
@@ -13951,6 +13952,16 @@ const StakeholderMap = ({
     enabled: researchSpaceEnabled,
     resolveBuildingFolder: getBuildingFolderKey
   });
+  // ---- Classroom Utilization (admin-only, flag-gated) ----
+  // One shared courseMeetings/terms/Airtable read + computed results, handed
+  // to ClassroomUtilizationPanel's results sections below. The Executive
+  // Dashboard and building/room popups still compute on their own for now.
+  const classroomUtilizationEnabled = isAdminMode && Boolean(config?.enableClassroomUtilization);
+  const classroomUtilizationData = useClassroomUtilizationData({
+    enabled: classroomUtilizationEnabled,
+    universityId
+  });
+
   const [faSelectedRoomKey, setFaSelectedRoomKey] = useState('');
   const [faJumpTick, setFaJumpTick] = useState(0);
   const faPendingJumpRef = useRef(null);
@@ -31195,6 +31206,7 @@ useEffect(() => {
           <div className="dashboard-box">
             <ClassroomUtilizationPanel
               enabled={isAdminMode && Boolean(config?.enableClassroomUtilization)}
+              utilizationData={classroomUtilizationData}
             />
           </div>
         )}
