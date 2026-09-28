@@ -32,6 +32,8 @@ import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import { MF } from '../theme/mfTokens';
 import { KpiCard } from './mf';
 import ClassroomUtilizationWorkspace from './ClassroomUtilizationWorkspace.jsx';
+import SpaceGrowthWorkspace from './SpaceGrowthWorkspace.jsx';
+import { mfPrimaryButtonStyle } from './mf/mfStyles';
 import { summaryKpis, termDisplayLabel } from './classroomUtilizationView';
 
 const BATCH_CHUNK_SIZE = 400; // mirrors the existing writeBatch chunking convention elsewhere in this codebase (Firestore's own cap is 500 ops/batch)
@@ -2545,7 +2547,13 @@ export function SpaceGrowthProjectionsPanel({
   // the one shared Space Growth load and calculation.
   spaceGrowthData = null
 }) {
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+
   if (!enabled || !spaceGrowthData) return null;
+
+  // Open once the first load has settled -- after an error too, so the
+  // workspace can show why.
+  const canOpenWorkspace = Boolean(spaceGrowthData.results) || spaceGrowthData.status === 'error';
 
   return (
     <div
@@ -2562,6 +2570,25 @@ export function SpaceGrowthProjectionsPanel({
       }}
     >
       <h4 style={{ margin: '0 0 6px 0', padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: CLARK_ENERSEN_ORANGE, borderRadius: 6 }}>{title}</h4>
+
+      <button
+        type="button"
+        onClick={() => setWorkspaceOpen(true)}
+        disabled={!canOpenWorkspace}
+        style={{
+          ...mfPrimaryButtonStyle,
+          width: '100%',
+          padding: '8px 12px',
+          fontSize: 12.5,
+          cursor: canOpenWorkspace ? 'pointer' : 'default',
+          opacity: canOpenWorkspace ? 1 : 0.55
+        }}
+      >
+        {canOpenWorkspace ? 'Open Space Growth' : 'Calculating…'}
+      </button>
+      {workspaceOpen && canOpenWorkspace ? (
+        <SpaceGrowthWorkspace data={spaceGrowthData} onClose={() => setWorkspaceOpen(false)} />
+      ) : null}
 
       <SpaceConfigSection data={spaceGrowthData} />
       <RoomUtilizationMetaSection data={spaceGrowthData} />
