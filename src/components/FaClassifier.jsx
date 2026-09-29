@@ -16,6 +16,8 @@
 //   selectedRoomKey StakeholderMap's selected F&A room (map click, jump)
 //   onSelectRoom(roomKey)  select + highlight a room on the map
 //   onDone()        leave classify mode
+//   demo            client presentation mode: saves stay in the hook's
+//                   in-memory overlay (useResearchSpaceData demoMode)
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MF } from '../theme/mfTokens';
 import { CE_ORANGE_HEADER } from '../utils/brandColors';
@@ -58,8 +60,13 @@ const labelStyle = { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', tex
 const noteStyle = { fontSize: 12, color: MF.ink.secondary, lineHeight: 1.45 };
 const mutedStyle = { fontSize: 11, color: MF.ink.muted, lineHeight: 1.4 };
 const errorStyle = { fontSize: 12, color: MF.status.error, lineHeight: 1.4 };
-const inputStyle = { ...mfInputStyle, width: '100%' };
-const cardStyle = { border: `1px solid ${MF.line.border}`, borderRadius: 8, padding: 10, background: MF.surface.page };
+// Every field fills its row and never sets the dock's width (a select's
+// min-content is its widest option).
+const inputStyle = { ...mfInputStyle, width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' };
+const fieldLabelStyle = { display: 'block', marginTop: 6, minWidth: 0 };
+const cardStyle = { border: `1px solid ${MF.line.border}`, borderRadius: 8, padding: 10, background: MF.surface.page, minWidth: 0 };
+// Single-column grid whose track can shrink below its items' min-content.
+const stackStyle = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' };
 
 function Button({ primary = false, small = false, onClick, disabled, title, children, style }) {
   return (
@@ -175,35 +182,33 @@ function OccupantCard({ occupant, index, showErrors, onChange, onRowChange, onAd
         onChange={(e) => onChange(id, { occupantName: e.target.value })}
         style={inputStyle}
       />
-      <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'flex-start' }}>
-        <label style={{ flex: '1 1 0', minWidth: 0 }}>
-          <span style={mutedStyle}>Role</span>
-          <select value={occupant.role} onChange={(e) => onChange(id, { role: e.target.value })} style={{ ...inputStyle, marginTop: 2 }}>
-            {roles.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
-        <label style={{ flex: '0 0 96px' }}>
-          <span style={mutedStyle}>Share of room</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              aria-label={`Occupant ${index + 1} share of room, percent`}
-              value={occupant.footprintWeight}
-              onChange={(e) => onChange(id, { footprintWeight: e.target.value })}
-              style={{ ...inputStyle, width: 64 }}
-            />
-            <span style={noteStyle}>%</span>
-          </span>
-        </label>
-      </div>
+      <label style={fieldLabelStyle}>
+        <span style={mutedStyle}>Role</span>
+        <select value={occupant.role} onChange={(e) => onChange(id, { role: e.target.value })} style={{ ...inputStyle, display: 'block', marginTop: 2 }}>
+          {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </label>
+      <label style={fieldLabelStyle}>
+        <span style={mutedStyle}>Share of room</span>
+        <span style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: 4, marginTop: 2 }}>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            aria-label={`Occupant ${index + 1} share of room, percent`}
+            value={occupant.footprintWeight}
+            onChange={(e) => onChange(id, { footprintWeight: e.target.value })}
+            style={inputStyle}
+          />
+          <span style={noteStyle}>%</span>
+        </span>
+      </label>
       <div style={{ ...mutedStyle, marginTop: 2 }}>How much of this room this person uses</div>
 
       <div style={{ ...labelStyle, marginTop: 10 }}>Funding</div>
-      <div style={{ display: 'grid', gap: 8, marginTop: 4 }}>
+      <div style={{ ...stackStyle, gap: 8, marginTop: 4 }}>
         {occupant.fundingSources.map((row, rowIdx) => (
-          <div key={rowIdx} style={{ borderTop: rowIdx ? `1px solid ${MF.line.hairline}` : 'none', paddingTop: rowIdx ? 8 : 0 }}>
+          <div key={rowIdx} style={{ minWidth: 0, borderTop: rowIdx ? `1px solid ${MF.line.hairline}` : 'none', paddingTop: rowIdx ? 8 : 0 }}>
             <input
               type="text"
               aria-label={`Funding row ${rowIdx + 1} source`}
@@ -212,7 +217,8 @@ function OccupantCard({ occupant, index, showErrors, onChange, onRowChange, onAd
               onChange={(e) => onRowChange(id, rowIdx, { source: e.target.value })}
               style={inputStyle}
             />
-            <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+            {/* Second line: % | function | remove. */}
+            <div style={{ display: 'grid', gridTemplateColumns: '60px auto minmax(0, 1fr) auto', gap: 6, marginTop: 4, alignItems: 'center' }}>
               <input
                 type="number"
                 min="0"
@@ -220,14 +226,14 @@ function OccupantCard({ occupant, index, showErrors, onChange, onRowChange, onAd
                 aria-label={`Funding row ${rowIdx + 1} percent`}
                 value={row.percentage}
                 onChange={(e) => onRowChange(id, rowIdx, { percentage: e.target.value })}
-                style={{ ...mfInputStyle, width: 56 }}
+                style={inputStyle}
               />
               <span style={noteStyle}>%</span>
               <select
                 aria-label={`Funding row ${rowIdx + 1} function`}
                 value={row.category}
                 onChange={(e) => onRowChange(id, rowIdx, { category: e.target.value })}
-                style={{ ...mfInputStyle, flex: '1 1 0', minWidth: 0 }}
+                style={inputStyle}
               >
                 <option value="">Function…</option>
                 <optgroup label="Direct">
@@ -257,7 +263,7 @@ function OccupantCard({ occupant, index, showErrors, onChange, onRowChange, onAd
   );
 }
 
-export default function FaClassifier({ data, selectedRoomKey: controlledKey, onSelectRoom, onDone }) {
+export default function FaClassifier({ data, selectedRoomKey: controlledKey, onSelectRoom, onDone, demo = false }) {
   const { draft, isDirty, openDraft, setDraft, discardDraft, saveDraft } = useResearchSpaceDraft(data);
   const roomKey = draft?.roomKey || '';
   const room = useMemo(() => data.roomRows.find((r) => r.roomKey === roomKey) || null, [data.roomRows, roomKey]);
@@ -386,17 +392,20 @@ export default function FaClassifier({ data, selectedRoomKey: controlledKey, onS
   const progress = progressKpi(data);
 
   return (
-    <div className="control-section" style={{ background: MF.surface.page, padding: 8, border: `1px solid ${MF.line.border}`, borderRadius: 6, marginTop: 6, display: 'flex', flexDirection: 'column', gap: 10, fontFamily: MF.type.family }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: CE_ORANGE_HEADER, borderRadius: 6 }}>
-        <h4 style={{ margin: 0, flex: '1 1 auto', fontSize: 12.5, fontWeight: 700, color: MF.surface.page }}>F&amp;A Compass · Classify</h4>
-        <button
-          type="button"
-          className="mf-shell-button"
-          onClick={requestDone}
-          style={{ padding: '3px 10px', borderRadius: 6, border: `1px solid ${MF.surface.page}`, background: 'transparent', color: MF.surface.page, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', '--mf-focus-color': MF.surface.page }}
-        >
-          Done
-        </button>
+    <div className="control-section" style={{ background: MF.surface.page, padding: 8, border: `1px solid ${MF.line.border}`, borderRadius: 6, marginTop: 6, display: 'flex', flexDirection: 'column', gap: 10, fontFamily: MF.type.family, boxSizing: 'border-box', minWidth: 0, maxWidth: '100%', overflowX: 'hidden', overflowWrap: 'anywhere' }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: CE_ORANGE_HEADER, borderRadius: 6 }}>
+          <h4 style={{ margin: 0, flex: '1 1 auto', fontSize: 12.5, fontWeight: 700, color: MF.surface.page }}>F&amp;A Compass · Classify</h4>
+          <button
+            type="button"
+            className="mf-shell-button"
+            onClick={requestDone}
+            style={{ padding: '3px 10px', borderRadius: 6, border: `1px solid ${MF.surface.page}`, background: 'transparent', color: MF.surface.page, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', '--mf-focus-color': MF.surface.page }}
+          >
+            Done
+          </button>
+        </div>
+        {demo ? <div style={{ fontSize: 11, color: MF.ink.muted, margin: '4px 2px 0' }}>Demo — changes aren&apos;t saved</div> : null}
       </div>
 
       {!room ? (
@@ -456,7 +465,7 @@ export default function FaClassifier({ data, selectedRoomKey: controlledKey, onS
           </div>
 
           {mode === 'occupants' ? (
-            <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ ...stackStyle, gap: 8 }}>
               {occupants.map((o, i) => (
                 <OccupantCard
                   key={o._draftId}

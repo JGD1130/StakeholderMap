@@ -14,6 +14,12 @@
 // The room editor's draft also lives here (an external store, see
 // researchSpaceDraft.js), so unmounting the panel doesn't lose unsaved edits.
 // Components read it with useResearchSpaceDraft(data).
+//
+// demoMode (client presentation mode): saveDraft writes nothing to Firestore.
+// Saved rooms go into an in-memory session overlay that replaces those rooms'
+// saved occupants/status in everything derived here (roomRows, rollup, map
+// status), so the demo looks real. The overlay is dropped when demoMode turns
+// off (and, being in memory, on reload).
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
@@ -48,12 +54,28 @@ const BATCH_CHUNK_SIZE = 400; // Firestore's cap is 500 ops per batch
 const AIRTABLE_LOAD_ERROR_MESSAGE = "Couldn't load research space data.";
 const FIRESTORE_LOAD_ERROR_MESSAGE = "Couldn't load saved classifications — refresh the page to retry.";
 
-export function useResearchSpaceData({ enabled = false, universityId, resolveBuildingFolder } = {}) {
+// Stand-in for a Firestore docSnap in the demo overlay (id + data() is all the
+// readers here and in researchSpaceDraft.js use).
+function demoOccupantDoc(id, fields) {
+  return { id, ref: null, data: () => fields };
+}
+
+function newDemoId() {
+  return `demo_${Math.random().toString(36).slice(2)}`;
+}
+
+const EMPTY_OVERLAY = new Map();
+
+export function useResearchSpaceData({ enabled = false, universityId, resolveBuildingFolder, demoMode = false } = {}) {
   const resolvedUniversityId = String(universityId || '').trim() || DEFAULT_UNIVERSITY_ID;
   const [airtableRoomsRaw, setAirtableRoomsRaw] = useState(null); // null = not loaded yet
   const [airtableError, setAirtableError] = useState('');
   const [occupantDocs, setOccupantDocs] = useState([]); // raw Firestore docs, all rooms
-  const [roomStatusDocs, setRoomStatusDocs] = useState({}); // roomKey -> exclusion status code
+  const [savedRoomStatusDocs, setRoomStatusDocs] = useState({}); // roomKey -> exclusion status code
+  // Demo overlay: roomKey -> { status: exclusion code | '', docs: demoOccupantDoc[] }.
+  const [demoOverlayState, setDemoOverlay] = useState(EMPTY_OVERLAY);
+  // Ignored the moment demoMode turns off (the effect below then clears it).
+  const demoOverlay = demoMode ? demoOverlayState : EMPTY_OVERLAY;
   const [loadError, setLoadError] = useState('');
 
   const occupantsCollection = useMemo(
@@ -146,7 +168,7 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
 
   // occupantDocs grouped by roomKey, kept as raw docSnap references so the
   // draft editor can diff (added/removed/changed) against them on save.
-  const occupantsByRoomKey = useMemo(() => {
+  const savedOccupantsByRoomKey = useMemo(() => {
     const map = new Map();
     occupantDocs.forEach((docSnap) => {
       const roomKey = docSnap.data()?.roomKey;
@@ -156,6 +178,27 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
     });
     return map;
   }, [occupantDocs]);
+
+  // Saved data with the demo overlay's rooms swapped in -- what everything
+  // below (and the draft editor) reads.
+  const occupantsByRoomKey = useMemo(() => {
+    if (!demoOverlay.size) return savedOccupantsByRoomKey;
+    const map = new Map(savedOccupantsByRoomKey);
+    demoOverlay.forEach((entry, roomKey) => {
+      if (entry.docs.length) map.set(roomKey, entry.docs);
+      else map.delete(roomKey);
+    });
+    return map;
+  }, [savedOccupantsByRoomKey, demoOverlay]);
+  const roomStatusDocs = useMemo(() => {
+    if (!demoOverlay.size) return savedRoomStatusDocs;
+    const next = { ...savedRoomStatusDocs };
+    demoOverlay.forEach((entry, roomKey) => {
+      if (entry.status) next[roomKey] = entry.status;
+      else delete next[roomKey];
+    });
+    return next;
+  }, [savedRoomStatusDocs, demoOverlay]);
 
   // One row per scope room, with its status and (unless excluded) its
   // functional profile -- the only place a room's profile is computed.
@@ -197,10 +240,13 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
   if (!draftStoreRef.current) draftStoreRef.current = createResearchSpaceDraftStore();
   const draftStore = draftStoreRef.current;
   const latestRef = useRef(null);
-  latestRef.current = { occupantsByRoomKey, roomStatusDocs, occupantsCollection, roomStatusCollection };
+  latestRef.current = { occupantsByRoomKey, roomStatusDocs, occupantsCollection, roomStatusCollection, demoMode };
 
-  // A draft belongs to one university's data.
-  useEffect(() => () => draftStore.set(null), [draftStore, resolvedUniversityId]);
+  // A draft (and any demo overlay) belongs to one university's data.
+  useEffect(() => () => {
+    draftStore.set(null);
+    setDemoOverlay(EMPTY_OVERLAY);
+  }, [draftStore, resolvedUniversityId]);
 
   // Opens (replaces) the draft for a room from what's saved for it.
   const openDraft = useCallback((roomKey) => {
@@ -229,6 +275,18 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
 
   const discardDraft = useCallback(() => draftStore.set(null), [draftStore]);
 
+  // Leaving demo mode: drop the overlay, and reopen any open room from what's
+  // really saved, so demo edits (and demo ids) can't reach a real save.
+  const wasDemoRef = useRef(demoMode);
+  useEffect(() => {
+    const wasDemo = wasDemoRef.current;
+    wasDemoRef.current = demoMode;
+    if (!wasDemo || demoMode) return;
+    setDemoOverlay(EMPTY_OVERLAY);
+    const open = draftStore.getSnapshot();
+    if (open) openDraft(open.roomKey);
+  }, [demoMode, draftStore, openDraft]);
+
   // Saves the open draft; resolves to a confirmation message, throws on a
   // validation or Firestore error.
   //   - Vacant / Ineligible: write the status doc, delete the room's occupants.
@@ -240,14 +298,49 @@ export function useResearchSpaceData({ enabled = false, universityId, resolveBui
   const saveDraft = useCallback(async () => {
     const draft = draftStore.getSnapshot();
     if (!draft) throw new Error('No room is open.');
-    const { occupantsByRoomKey: byRoom, occupantsCollection: occRef, roomStatusCollection: statusRef } = latestRef.current;
+    const { occupantsByRoomKey: byRoom, occupantsCollection: occRef, roomStatusCollection: statusRef, demoMode: demo } = latestRef.current;
     const { roomKey, mode, occupants } = draft;
     const roomStatusDoc = doc(statusRef, roomKey);
     const existingDocs = byRoom.get(roomKey) || [];
 
     let message;
     let savedIds = null; // _draftId -> Firestore id, after an occupants save
-    if (mode === CLASS_LAB_MODE) {
+    if (demo) {
+      // Demo sandbox: the same outcomes as below, into the overlay only.
+      let entry;
+      if (mode === CLASS_LAB_MODE) {
+        const reuse = existingDocs.find((d) => d.data()?.kind === classLabOccupantFields(roomKey).kind);
+        entry = { status: '', docs: [demoOccupantDoc(reuse?.id || newDemoId(), classLabOccupantFields(roomKey))] };
+        message = 'Saved as a class lab (100% Instruction and Departmental Research).';
+      } else if (mode !== 'occupants') {
+        entry = { status: mode, docs: [] };
+        message = `Saved as ${ROOM_EXCLUSION_STATUSES.find((s) => s.code === mode)?.label || mode}.`;
+      } else {
+        const valid = occupants.length > 0
+          && occupants.every((o) => validateOccupantDraft(o).length === 0)
+          && validateFootprintWeightsSumTo100(occupants.map((o) => ({ footprintWeight: Number(o.footprintWeight) }))).valid;
+        if (!valid) throw new Error('Fix the highlighted fields before saving.');
+        savedIds = new Map();
+        const docs = occupants.map((o) => {
+          const id = o.id || newDemoId();
+          savedIds.set(o._draftId, id);
+          return demoOccupantDoc(id, {
+            roomKey,
+            occupantName: o.occupantName.trim(),
+            role: o.role,
+            footprintWeight: Number(o.footprintWeight),
+            fundingSources: o.fundingSources.map((row) => ({
+              source: row.source.trim(),
+              percentage: Number(row.percentage),
+              category: row.category
+            }))
+          });
+        });
+        entry = { status: '', docs };
+        message = `Saved ${occupants.length} occupant${occupants.length === 1 ? '' : 's'}.`;
+      }
+      setDemoOverlay((prev) => new Map(prev).set(roomKey, entry));
+    } else if (mode === CLASS_LAB_MODE) {
       await deleteDoc(roomStatusDoc).catch(() => {}); // no-op if none exists
       const reuse = existingDocs.find((d) => d.data()?.kind === classLabOccupantFields(roomKey).kind);
       const batch = writeBatch(db);

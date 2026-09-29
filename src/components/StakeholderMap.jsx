@@ -5320,8 +5320,35 @@ function applyFloorFillExpression(map, mode = 'department', targetLayerId = FLOO
   } catch {}
 }
 
+// Selected-room style: the app-wide cyan wash + 6px cyan border, or F&A
+// Compass's (status fill left showing -- cyan over the amber "Not started"
+// reads green -- and a 3px cyan outline). Kept here, not only on the layers,
+// because loading a floor removes and re-adds the highlight layers
+// (unloadFloorplan / ensureFloorHighlightLayer); they come back in this style.
+let floorHighlightFaStyle = false;
+function floorHighlightPaint(faStyle) {
+  return {
+    fillOpacity: faStyle ? 0 : 1,
+    lineColor: '#00ffff',
+    lineWidth: faStyle ? 3 : 6
+  };
+}
+function setFloorHighlightStyle(map, faStyle) {
+  floorHighlightFaStyle = Boolean(faStyle);
+  if (!map) return;
+  const paint = floorHighlightPaint(floorHighlightFaStyle);
+  try {
+    if (map.getLayer(FLOOR_HL_ID)) map.setPaintProperty(FLOOR_HL_ID, 'fill-opacity', paint.fillOpacity);
+    if (map.getLayer(FLOOR_HL_BORDER_ID)) {
+      map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-color', paint.lineColor);
+      map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-width', paint.lineWidth);
+    }
+  } catch {}
+}
+
 function ensureFloorHighlightLayer(map) {
   if (!map || map.getLayer(FLOOR_HL_ID)) return;
+  const paint = floorHighlightPaint(floorHighlightFaStyle);
   try {
     map.addLayer(
       {
@@ -5330,7 +5357,8 @@ function ensureFloorHighlightLayer(map) {
         source: FLOOR_SOURCE,
         paint: {
           'fill-color': 'rgba(0,255,255,0.4)',
-          'fill-outline-color': '#00ffff'
+          'fill-outline-color': '#00ffff',
+          'fill-opacity': paint.fillOpacity
         },
         filter: ['==', ['id'], -1]
       },
@@ -5347,8 +5375,8 @@ function ensureFloorHighlightLayer(map) {
           'line-cap': 'round'
         },
         paint: {
-          'line-color': '#00ffff',
-          'line-width': 6,
+          'line-color': paint.lineColor,
+          'line-width': paint.lineWidth,
           'line-opacity': 1,
           'line-gap-width': 0
         },
@@ -13239,6 +13267,9 @@ const StakeholderMap = ({
   // building folder is read from the loaded floor URL, not selection state.
   const applyFaCompassColors = useCallback(() => {
     const map = mapRef.current;
+    // Selected room: keeps its status fill, 3px cyan outline only (set before
+    // a floor is loaded too, so its highlight layers are created that way).
+    setFloorHighlightStyle(map, true);
     if (!map || !map.getLayer(FLOOR_FILL_ID)) return;
     const src = getGeojsonSource(map, FLOOR_SOURCE);
     const fc = toFeatureCollection(src ? (src._data || src.serialize?.().data || null) : null);
@@ -13251,11 +13282,6 @@ const StakeholderMap = ({
       map.setPaintProperty(FLOOR_FILL_ID, 'fill-color', fillExpr);
       map.setPaintProperty(FLOOR_FILL_ID, 'fill-opacity', 1);
       syncScenarioBaselineFillColor(map, fillExpr);
-      // Selected room: an ink outline instead of the usual cyan.
-      if (map.getLayer(FLOOR_HL_BORDER_ID)) {
-        map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-color', MF.ink.primary);
-        map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-width', 3);
-      }
     } catch {}
     const normalizeId = (val) => {
       const asNum = Number(val);
@@ -13286,15 +13312,10 @@ const StakeholderMap = ({
   }, [syncScenarioBaselineFillColor]);
   faApplyRef.current = applyFaCompassColors;
 
-  // Back to the app-wide selected-room style (ensureFloorHighlightLayer's
-  // cyan 6px border) when the F&A colors are off.
+  // Back to the app-wide selected-room style (cyan fill and 6px border) when
+  // the F&A colors are off.
   const restoreFloorHighlightStyle = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !map.getLayer(FLOOR_HL_BORDER_ID)) return;
-    try {
-      map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-color', '#00ffff');
-      map.setPaintProperty(FLOOR_HL_BORDER_ID, 'line-width', 6);
-    } catch {}
+    setFloorHighlightStyle(mapRef.current, false);
   }, []);
 
   const applyFloorColorMode = useCallback((mode) => {
@@ -14017,7 +14038,8 @@ const StakeholderMap = ({
   const researchSpaceData = useResearchSpaceData({
     enabled: researchSpaceEnabled,
     universityId,
-    resolveBuildingFolder: getBuildingFolderKey
+    resolveBuildingFolder: getBuildingFolderKey,
+    demoMode: clientPresentationMode
   });
   // ---- Classroom Utilization (admin-only, flag-gated) ----
   // One shared courseMeetings/terms/Airtable read + computed results, handed
@@ -14064,8 +14086,9 @@ const StakeholderMap = ({
   // "Classify on map": the docked F&A Classifier replaces the right rail's
   // panels, the floors use the F&A colors, and room clicks go to it.
   const [faClassifyActive, setFaClassifyActive] = useState(false);
-  // Presentation mode keeps F&A read-only: never the docked Classifier.
-  const faClassifierDocked = researchSpaceEnabled && faClassifyActive && !clientPresentationMode;
+  // Presentation mode docks it too, as a demo sandbox: saves go to the hook's
+  // in-memory overlay, not Firestore (useResearchSpaceData demoMode).
+  const faClassifierDocked = researchSpaceEnabled && faClassifyActive;
   const [faJumpTick, setFaJumpTick] = useState(0);
   const faPendingJumpRef = useRef(null);
   const faExtraColorModes = useMemo(
@@ -31367,7 +31390,7 @@ useEffect(() => {
     )}
 
       {!presentationMode && !maintenanceWorkflowActive && (
-      <div className="mf-right-rail">
+      <div className={isAdminMode ? 'mf-right-rail mf-right-rail--admin' : 'mf-right-rail'}>
         {/* Presentation mode: C&E + Mapfluence only, larger, in the logo row. */}
         <div className={clientPresentationMode ? 'mf-right-logos mf-right-logos--presenting' : 'mf-right-logos'}>
           {universityLogoFile && !clientPresentationMode && (
@@ -31397,10 +31420,12 @@ useEffect(() => {
               selectedRoomKey={faSelectedRoomKey}
               onSelectRoom={selectFaRoom}
               onDone={endFaClassify}
+              demo={clientPresentationMode}
             />
           </div>
         )}
-        {!faClassifierDocked && !stakeholderWorkflowActive && !technicalMode && (
+        {/* Campus Summary: hidden in client presentation mode (admin only). */}
+        {!faClassifierDocked && !stakeholderWorkflowActive && !technicalMode && !clientPresentationMode && (
           <div className="dashboard-box">
             <SpaceDashboardPanel
               title={dashboardTitle}
@@ -31415,7 +31440,9 @@ useEffect(() => {
               onToggleDensityLayer={setShowPopulationDensityLayer}
               densityLegend={sarpyPopulationDensityLegend}
               densityPeriodLabel={sarpyPopulationDensityPeriodLabel}
-              showStrategicSection={showStrategicDashboard}
+              // "Strategic Space Dashboard" disclosure removed from the admin
+              // rail (it only ever showed on admin).
+              showStrategicSection={false}
               strategic={isAdminMode && showStrategicDashboard ? {
                 scenarioName: 'Baseline',
                 selectedYear: strategicSelectedYear,
@@ -31479,7 +31506,7 @@ useEffect(() => {
               universityName={activeUniversityName}
               data={researchSpaceData}
               onStartClassify={() => startFaClassify()}
-              onShowRoomOnMap={clientPresentationMode ? (room) => { void handleFaJumpToFloor(room); } : startFaClassify}
+              onShowRoomOnMap={startFaClassify}
               resolveRoomFloor={resolveFaRoomFloor}
             />
           </div>

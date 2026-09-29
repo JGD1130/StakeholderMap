@@ -974,6 +974,9 @@
 }
 
 .mf-right-rail { width: 345px; }
+/* Admin rail: a card's width:100% + padding is otherwise wider than the rail,
+   whose overflow-x: hidden clips the card's right 24px. */
+.mf-right-rail--admin .dashboard-box { box-sizing: border-box; min-width: 0; }
 .mf-right-logos .logo-box { width: 100%; }
 .logo-box { width: 100%; box-shadow: var(--mf-panel-shadow-soft); }
 
