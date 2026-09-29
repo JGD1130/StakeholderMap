@@ -167,8 +167,8 @@ export default function BuildingPanel({
           ))}
         </select>
         <button className="btn primary" onClick={onLoadFloorplan}>Load</button>
-        <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
-        <button className="btn" onClick={onExportCSV}>Export CSV</button>
+        {onExportPDF ? <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button> : null}
+        {onExportCSV ? <button className="btn" onClick={onExportCSV}>Export CSV</button> : null}
         {onOpenDeferredMaintenance ? (
           <button
             className="btn"

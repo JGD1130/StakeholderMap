@@ -22,6 +22,7 @@ import ClassroomUtilizationWorkspace from './ClassroomUtilizationWorkspace.jsx';
 import SpaceGrowthWorkspace from './SpaceGrowthWorkspace.jsx';
 import { summaryKpis, termDisplayLabel } from './classroomUtilizationView';
 import { sideCardKpis } from './spaceGrowthView';
+import { useCloseWhenPresenting } from './presentationMode';
 
 // Shared module header color (src/utils/brandColors.js). Used by both panel
 // titles this file exports (ClassroomUtilizationPanel and
@@ -81,6 +82,7 @@ export default function ClassroomUtilizationPanel({
   utilizationData = null
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  useCloseWhenPresenting(() => setWorkspaceOpen(false));
 
   if (!enabled) return null;
 
@@ -144,6 +146,7 @@ export function SpaceGrowthProjectionsPanel({
   spaceGrowthData = null
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  useCloseWhenPresenting(() => setWorkspaceOpen(false));
 
   if (!enabled || !spaceGrowthData) return null;
 

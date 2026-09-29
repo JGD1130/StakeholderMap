@@ -16,6 +16,7 @@ import { INDUSTRY_TARGET_TIME_UTILIZATION } from '../utils/classroomUtilizationC
 import { MF } from '../theme/mfTokens';
 import { WorkspaceShell, MfGrid, MfCol, KpiCard, ChartCard, Gauge } from './mf';
 import { mfOnBarButtonStyle } from './mf/mfStyles';
+import { usePresentationMode } from './presentationMode';
 import { HBarChart, DivergingBars, DivergingLegend, ScoreTable, PhasingTimeline, ChartLegend } from './mf/charts';
 import {
   dashboardSubtitle,
@@ -139,10 +140,12 @@ function PhasingCard({ nearTerm }) {
 
 // --- Shell --------------------------------------------------------------
 export default function ExecutiveDashboardModal({ data, loading, loadError, onRecalculate, onExportPdf, onClose }) {
+  // Presentation mode hides the export.
+  const presenting = usePresentationMode();
   const actions = (
     <>
       <BarButton onClick={onRecalculate} disabled={loading}>{loading ? 'Calculating…' : 'Recalculate'}</BarButton>
-      <BarButton onClick={onExportPdf} disabled={!data}>Export to PDF</BarButton>
+      {presenting ? null : <BarButton onClick={onExportPdf} disabled={!data}>Export to PDF</BarButton>}
     </>
   );
 

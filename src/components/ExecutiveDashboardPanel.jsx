@@ -52,6 +52,7 @@ import { CE_ORANGE_HEADER } from '../utils/brandColors';
 import { MF } from '../theme/mfTokens';
 import { KpiCard } from './mf';
 import { tier1NeedKpi, spaceGapKpi } from './executiveDashboardView';
+import { useCloseWhenPresenting } from './presentationMode';
 
 // Same near-term window computeNearTermCapitalPhasing defaults to -- named here so the
 // UI copy ("next ~2 years") and the calc call always agree.
@@ -75,6 +76,7 @@ export default function ExecutiveDashboardPanel({
   // Classroom results; Space Growth and Capital Compass parts are merged in below.
   const [baseData, setData] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useCloseWhenPresenting(() => setModalOpen(false));
 
   const courseMeetingsCollection = useMemo(
     () => collection(db, 'universities', normalizedUniversityId, COURSE_MEETINGS_COLLECTION),

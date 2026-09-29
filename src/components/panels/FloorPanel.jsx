@@ -173,7 +173,7 @@ export default function FloorPanel({
           {onUnloadFloorplan ? <button className="btn" onClick={onUnloadFloorplan}>Unload</button> : null}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-          <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button>
+          {onExportPDF ? <button className="btn secondary" onClick={onExportPDF}>Export to PDF</button> : null}
           {onExportCSV ? <button className="btn" onClick={onExportCSV}>Export CSV</button> : null}
           {onOpenDeferredMaintenance ? (
             <button

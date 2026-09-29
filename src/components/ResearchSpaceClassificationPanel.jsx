@@ -36,6 +36,7 @@ import { KpiCard } from './mf';
 import { mfSecondaryButtonStyle } from './mf/mfStyles';
 import FaCompassWorkspace from './FaCompassWorkspace.jsx';
 import { sideCardKpis } from './faCompassView';
+import { usePresentationMode, useCloseWhenPresenting } from './presentationMode';
 
 const CLARK_ENERSEN_ORANGE = CE_ORANGE_HEADER;
 
@@ -66,6 +67,9 @@ export default function ResearchSpaceClassificationPanel({
   resolveRoomFloor
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  // Presentation mode: status views are read-only (no Classify on map).
+  const presenting = usePresentationMode();
+  useCloseWhenPresenting(() => setWorkspaceOpen(false));
 
   if (!enabled) return null;
 
@@ -115,6 +119,7 @@ export default function ResearchSpaceClassificationPanel({
       <button type="button" onClick={() => setWorkspaceOpen(true)} style={{ ...primaryButton, marginTop: 8 }}>
         Open F&amp;A Compass
       </button>
+      {presenting ? null : (
       <button
         type="button"
         className="mf-shell-button"
@@ -124,6 +129,7 @@ export default function ResearchSpaceClassificationPanel({
       >
         Classify on map
       </button>
+      )}
 
       {workspaceOpen ? (
         <FaCompassWorkspace

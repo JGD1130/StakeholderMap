@@ -69,6 +69,20 @@
   align-items: center;
 }
 
+/* Client presentation mode: university logo hidden; the C&E + Mapfluence
+   marks take the whole row, larger. */
+.mf-right-logos--presenting {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mf-right-logos--presenting .mapfluence-title {
+  font-size: 30px;
+}
+
+.mf-right-logos--presenting .mf-logo--mapfluence {
+  max-height: 150px;
+}
+
 .mf-logo {
   display: block;
   width: 100%;

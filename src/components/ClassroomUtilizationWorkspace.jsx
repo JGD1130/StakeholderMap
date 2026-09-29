@@ -51,6 +51,7 @@ import {
 } from './classroomUtilizationView';
 import ClassroomUtilizationRoomsTab from './ClassroomUtilizationRoomsTab.jsx';
 import ClassroomUtilizationSetupTab from './ClassroomUtilizationSetupTab.jsx';
+import { usePresentationMode, presentationTabs } from './presentationMode';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -215,7 +216,11 @@ function HeatmapTab({ entry }) {
 
 // --- Shell --------------------------------------------------------------------
 export default function ClassroomUtilizationWorkspace({ data, onClose }) {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [chosenTab, setActiveTab] = useState('overview');
+  // Presentation mode hides the Setup tab (admin tools).
+  const presenting = usePresentationMode();
+  const tabs = presentationTabs(TABS, presenting);
+  const activeTab = tabs.some((t) => t.id === chosenTab) ? chosenTab : 'overview';
   const loading = data.status === 'loading';
   const entry = selectedTermEntry(data);
 
@@ -246,7 +251,7 @@ export default function ClassroomUtilizationWorkspace({ data, onClose }) {
       title={WORKSPACE_TITLE}
       subtitle={workspaceSubtitle(data)}
       actions={actions}
-      tabs={TABS}
+      tabs={tabs}
       activeTab={activeTab}
       onTabChange={setActiveTab}
       tabsEnd={activeTab === 'setup' ? null : <TermPicker data={data} />}

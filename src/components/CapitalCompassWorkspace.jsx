@@ -25,6 +25,7 @@ import CapitalCompassBudgetTab from './CapitalCompassBudgetTab.jsx';
 import CapitalCompassPhasingTab from './CapitalCompassPhasingTab.jsx';
 import CapitalCompassDeferredTab from './CapitalCompassDeferredTab.jsx';
 import CapitalCompassSetupTab from './CapitalCompassSetupTab.jsx';
+import { usePresentationMode, presentationTabs } from './presentationMode';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -191,7 +192,11 @@ function OverviewTab({ data, mapBuildingCount }) {
 // workspace closes so the map is visible.
 export default function CapitalCompassWorkspace({ data, buildingNames = [], getBuildingResourceEntry = null, onShowOnMap = null, onClose }) {
   const mapBuildingCount = buildingNames.length;
-  const [activeTab, setActiveTab] = useState('overview');
+  const [chosenTab, setActiveTab] = useState('overview');
+  // Presentation mode hides the Setup tab (admin tools).
+  const presenting = usePresentationMode();
+  const tabs = presentationTabs(TABS, presenting);
+  const activeTab = tabs.some((t) => t.id === chosenTab) ? chosenTab : 'overview';
   const loading = data.status === 'loading';
 
   return (
@@ -209,7 +214,7 @@ export default function CapitalCompassWorkspace({ data, buildingNames = [], getB
           </BarButton>
         </>
       )}
-      tabs={TABS}
+      tabs={tabs}
       activeTab={activeTab}
       onTabChange={setActiveTab}
       onClose={onClose}

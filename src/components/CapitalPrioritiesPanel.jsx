@@ -17,6 +17,7 @@ import { MF } from '../theme/mfTokens';
 import { KpiCard } from './mf';
 import CapitalCompassWorkspace from './CapitalCompassWorkspace.jsx';
 import { panelKpis } from './capitalCompassView';
+import { useCloseWhenPresenting } from './presentationMode';
 
 export default function CapitalPrioritiesPanel({
   enabled = false,
@@ -29,6 +30,7 @@ export default function CapitalPrioritiesPanel({
   onShowOnMap = null
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  useCloseWhenPresenting(() => setWorkspaceOpen(false));
 
   const buildingNames = useMemo(() => {
     const seen = new Set();

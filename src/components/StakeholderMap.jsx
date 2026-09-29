@@ -36,6 +36,12 @@ import { mapTierColorEntries, mapPopupLineHtml, MAP_UNSCORED_COLOR } from './cap
 import { getSharedAirtableRooms, airtableRoomsCacheKey, AIRTABLE_BUSY_MESSAGE, isAirtableRateLimitError } from '../utils/airtableRoomsCache';
 import CapitalTiersMapLegend from './CapitalTiersMapLegend.jsx';
 import {
+  PresentationModeContext,
+  readInitialPresentationMode,
+  readCaptureMode,
+  rememberPresentationMode
+} from './presentationMode';
+import {
   RS_STATUS,
   RS_STATUS_COLORS,
   RS_STATUS_LABELS,
@@ -8423,6 +8429,28 @@ function bboxFromFC(fc) {
   return [minX, minY, maxX, maxY];
 }
 
+// fitBounds options for the campus boundary (config.boundaryFitPadding /
+// boundaryFitMaxZoom), used on map load and when presentation mode starts.
+function boundaryFitOptions(config, duration = 0) {
+  const rawFitPadding = config?.boundaryFitPadding;
+  const padding = Number.isFinite(rawFitPadding)
+    ? Number(rawFitPadding)
+    : (rawFitPadding && typeof rawFitPadding === 'object'
+        ? {
+            top: Number.isFinite(rawFitPadding.top) ? Number(rawFitPadding.top) : 40,
+            right: Number.isFinite(rawFitPadding.right) ? Number(rawFitPadding.right) : 40,
+            bottom: Number.isFinite(rawFitPadding.bottom) ? Number(rawFitPadding.bottom) : 40,
+            left: Number.isFinite(rawFitPadding.left) ? Number(rawFitPadding.left) : 40
+          }
+        : 40);
+  const maxZoom = Number(config?.boundaryFitMaxZoom);
+  return {
+    padding,
+    duration,
+    ...(Number.isFinite(maxZoom) ? { maxZoom } : {})
+  };
+}
+
 function getBboxCorners(bbox) {
   if (!Array.isArray(bbox) || bbox.length !== 4) return null;
   const [minX, minY, maxX, maxY] = bbox;
@@ -12430,6 +12458,11 @@ const StakeholderMap = ({
     }
   });
   const [presentationExporting, setPresentationExporting] = useState(false);
+  // Client presentation mode (admin workspace only; see presentationMode.js).
+  // Not the engagement `presentationMode` above.
+  const [clientPresentationOn, setClientPresentationOn] = useState(readInitialPresentationMode);
+  const clientPresentationMode = showFullMapfluenceControls && clientPresentationOn;
+  const [presentationCaptureMode] = useState(readCaptureMode);
   // "Capital Compass tiers" map view: full admin controls + Capital Compass on.
   const capitalTiersViewAvailable = showFullMapfluenceControls && Boolean(config?.enableCapitalPriorities);
   const capitalTiersViewActive = capitalTiersViewAvailable && mapView === MAP_VIEWS.CAPITAL_TIERS;
@@ -12568,7 +12601,7 @@ const StakeholderMap = ({
   }, [showFullMapfluenceControls, isDemoPublicMode, isSharedPublicPlanningMode, isAdminCombinedMode, isTechnicalOnlyMode, engagementMode, mapView, MAP_VIEWS.MAINTENANCE, activeUniversityName]);
   const [isControlsVisible, setIsControlsVisible] = useState(() => !isTechnicalOnlyMode);
   const [isTechnicalPanelOpen, setIsTechnicalPanelOpen] = useState(false);
-  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode;
+  const showControlsToggle = (showAuthAccessControls || isTechnicalOnlyMode) && !presentationMode && !clientPresentationMode;
   useEffect(() => {
     if (isTechnicalOnlyMode && mapView !== MAP_VIEWS.TECHNICAL) {
       setMapView(MAP_VIEWS.TECHNICAL);
@@ -14031,7 +14064,8 @@ const StakeholderMap = ({
   // "Classify on map": the docked F&A Classifier replaces the right rail's
   // panels, the floors use the F&A colors, and room clicks go to it.
   const [faClassifyActive, setFaClassifyActive] = useState(false);
-  const faClassifierDocked = researchSpaceEnabled && faClassifyActive;
+  // Presentation mode keeps F&A read-only: never the docked Classifier.
+  const faClassifierDocked = researchSpaceEnabled && faClassifyActive && !clientPresentationMode;
   const [faJumpTick, setFaJumpTick] = useState(0);
   const faPendingJumpRef = useRef(null);
   const faExtraColorModes = useMemo(
@@ -23221,6 +23255,33 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     });
   }, []);
 
+  const toggleClientPresentationMode = useCallback(() => {
+    setClientPresentationOn((prev) => {
+      rememberPresentationMode(!prev);
+      return !prev;
+    });
+  }, []);
+
+  // Turning client presentation mode on (or landing with it on): workspaces
+  // close themselves (useCloseWhenPresenting), then Space Data, no floors,
+  // whole campus. The ref keeps the effect keyed on the mode alone.
+  const enterClientPresentationRef = useRef(null);
+  enterClientPresentationRef.current = () => {
+    endFaClassify();
+    cancelFloorAdjust();
+    setMapView(MAP_VIEWS.SPACE_DATA);
+    if (loadedSingleFloor || currentFloorUrlRef.current) handleUnloadFloorplan();
+    const map = mapRef.current;
+    const boundaryFC = toFeatureCollection(config?.boundary);
+    if (!map || !boundaryFC?.features?.length) return;
+    const [minX, minY, maxX, maxY] = bboxFromFC(boundaryFC);
+    if (![minX, minY, maxX, maxY].every(Number.isFinite)) return;
+    map.fitBounds([[minX, minY], [maxX, maxY]], boundaryFitOptions(config, 600));
+  };
+  useEffect(() => {
+    if (clientPresentationMode && mapLoaded) enterClientPresentationRef.current?.();
+  }, [clientPresentationMode, mapLoaded]);
+
   const exportCleanMapPng = useCallback(() => {
     const map = mapRef.current;
     const canvas = map?.getCanvas?.();
@@ -26259,23 +26320,7 @@ useEffect(() => {
               Number.isFinite(maxX) &&
               Number.isFinite(maxY)
             ) {
-              const rawFitPadding = config?.boundaryFitPadding;
-              const fitPadding = Number.isFinite(rawFitPadding)
-                ? Number(rawFitPadding)
-                : (rawFitPadding && typeof rawFitPadding === 'object'
-                    ? {
-                        top: Number.isFinite(rawFitPadding.top) ? Number(rawFitPadding.top) : 40,
-                        right: Number.isFinite(rawFitPadding.right) ? Number(rawFitPadding.right) : 40,
-                        bottom: Number.isFinite(rawFitPadding.bottom) ? Number(rawFitPadding.bottom) : 40,
-                        left: Number.isFinite(rawFitPadding.left) ? Number(rawFitPadding.left) : 40
-                      }
-                    : 40);
-              const boundaryFitMaxZoom = Number(config?.boundaryFitMaxZoom);
-              mapInstance.fitBounds([[minX, minY], [maxX, maxY]], {
-                padding: fitPadding,
-                duration: 0,
-                ...(Number.isFinite(boundaryFitMaxZoom) ? { maxZoom: boundaryFitMaxZoom } : {})
-              });
+              mapInstance.fitBounds([[minX, minY], [maxX, maxY]], boundaryFitOptions(config));
             }
           }
         } catch (e) {
@@ -30096,6 +30141,7 @@ useEffect(() => {
   }, [availableFloors, activeBuildingName, buildFloorUrl, buildingStats, exportFloorplanDocument, floorColorMode, selectedBuilding, selectedBuildingId]);
 
   return (
+  <PresentationModeContext.Provider value={clientPresentationMode}>
   <div ref={mapPageRef} className="map-page-container">
     {/* Height chain wrappers to ensure container gets height */}
     <div className="page">
@@ -30108,7 +30154,7 @@ useEffect(() => {
     {/* Admin "Capital Compass tiers" map view legend: bottom-left, above the
         Mapbox logo, to the right of the controls panel while it's open. */}
     {capitalTiersViewActive && (
-      <CapitalTiersMapLegend style={{ position: 'absolute', left: isControlsVisible ? 316 : 20, bottom: 36, zIndex: 9 }} />
+      <CapitalTiersMapLegend style={{ position: 'absolute', left: isControlsVisible && !clientPresentationMode ? 316 : 20, bottom: 36, zIndex: 9 }} />
     )}
 
     {(isSarpyCountyInstance || isCherokeeMentalHealthInstance) && floorAdjustPending && (
@@ -30153,7 +30199,7 @@ useEffect(() => {
       </div>
     )}
 
-    {programTestFitOpen && programTestFitTarget && (
+    {programTestFitOpen && programTestFitTarget && !clientPresentationMode && (
       <div
         style={{
           position: 'fixed',
@@ -30400,6 +30446,33 @@ useEffect(() => {
     {showControlsToggle && (
       <button className="controls-toggle-button" onClick={() => setIsControlsVisible(v => !v)}>
         {isControlsVisible ? 'Hide Controls' : 'Show Controls'}
+      </button>
+    )}
+    {/* Client presentation mode marker, beside the Mapbox logo; also the way
+        out, since the controls panel (and its toggle) is hidden. ?capture=1
+        hides it for screenshots. */}
+    {clientPresentationMode && !presentationCaptureMode && (
+      <button
+        type="button"
+        onClick={toggleClientPresentationMode}
+        title="Turn off presentation mode"
+        style={{
+          position: 'absolute',
+          left: 108,
+          bottom: 12,
+          zIndex: 9,
+          padding: '2px 8px',
+          borderRadius: 999,
+          border: `1px solid ${MF.line.border}`,
+          background: 'rgba(255,255,255,0.85)',
+          color: MF.ink.muted,
+          fontSize: 11,
+          fontFamily: MF.type.family,
+          lineHeight: 1.4,
+          cursor: 'pointer'
+        }}
+      >
+        Presentation mode
       </button>
     )}
     {engagementMode && presentationMode && !presentationExporting && (
@@ -31295,8 +31368,9 @@ useEffect(() => {
 
       {!presentationMode && !maintenanceWorkflowActive && (
       <div className="mf-right-rail">
-        <div className="mf-right-logos">
-          {universityLogoFile && (
+        {/* Presentation mode: C&E + Mapfluence only, larger, in the logo row. */}
+        <div className={clientPresentationMode ? 'mf-right-logos mf-right-logos--presenting' : 'mf-right-logos'}>
+          {universityLogoFile && !clientPresentationMode && (
             <div className="logo-box">
               <img
                 className="mf-logo mf-logo--hc"
@@ -31405,7 +31479,7 @@ useEffect(() => {
               universityName={activeUniversityName}
               data={researchSpaceData}
               onStartClassify={() => startFaClassify()}
-              onShowRoomOnMap={startFaClassify}
+              onShowRoomOnMap={clientPresentationMode ? (room) => { void handleFaJumpToFloor(room); } : startFaClassify}
               resolveRoomFloor={resolveFaRoomFloor}
             />
           </div>
@@ -31415,8 +31489,8 @@ useEffect(() => {
 
     {/* Dev aids, admin page only: design-token swatches (?tokens=1) and the
         shared-component gallery (?components=1). Each renders nothing without its param. */}
-    {isAdminMode && <TokenSwatches />}
-    {isAdminMode && <ComponentGallery />}
+    {isAdminMode && !clientPresentationMode && <TokenSwatches />}
+    {isAdminMode && !clientPresentationMode && <ComponentGallery />}
 
     {(mode === 'admin' || technicalMode) && (
       <>
@@ -31553,7 +31627,7 @@ useEffect(() => {
               selectedFloor={panelSelectedFloor}
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
-              onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onExportCSV={clientPresentationMode ? undefined : () => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
               onOpenDeferredMaintenance={hasDeferredMaintenanceForActiveBuilding ? () => openBuildingResourceModal('deferred') : undefined}
               deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
               onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
@@ -31571,7 +31645,7 @@ useEffect(() => {
                 setPanelStats(null);
                 setPopupMode('building');
               }}
-              onExportPDF={handleExportBuilding}
+              onExportPDF={clientPresentationMode ? undefined : handleExportBuilding}
               onExplainBuilding={aiChatFeaturesEnabledForCurrentView ? onExplainBuilding : null}
               explainBuildingLoading={aiBuildingLoading}
               explainBuildingDisabled={!aiChatFeaturesEnabledForCurrentView || aiIsDown || !buildingStats}
@@ -31601,7 +31675,7 @@ useEffect(() => {
               onChangeFloor={(fl) => setSelectedFloor(fl)}
               onLoadFloorplan={loadSelectedFloor}
               onUnloadFloorplan={handleUnloadFloorplan}
-              onExportCSV={() => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
+              onExportCSV={clientPresentationMode ? undefined : () => exportSpaceCsv(activeBuildingName || selectedBuildingId || selectedBuilding)}
               onOpenDeferredMaintenance={hasDeferredMaintenanceForActiveBuilding ? () => openBuildingResourceModal('deferred') : undefined}
               deferredMaintenanceAvailable={hasDeferredMaintenanceForActiveBuilding}
               onOpenRemodelScenarios={hasRemodelPdfsForActiveBuilding ? () => openBuildingResourceModal('remodel') : undefined}
@@ -31634,13 +31708,13 @@ useEffect(() => {
                 setPanelStats(null);
                 setPopupMode('building');
               }}
-              onExportPDF={handleExportFloor}
+              onExportPDF={clientPresentationMode ? undefined : handleExportFloor}
               onExplainFloor={aiChatFeaturesEnabledForCurrentView ? onExplain : null}
               explainLoading={aiLoading}
               explainDisabled={!aiChatFeaturesEnabledForCurrentView || aiIsDown || !floorStats}
               explainError={aiErr}
               moveScenarioMode={moveScenarioMode}
-              onToggleMoveScenarioMode={planningScenarioControlsEnabled ? handleToggleMoveScenarioMode : undefined}
+              onToggleMoveScenarioMode={planningScenarioControlsEnabled && !clientPresentationMode ? handleToggleMoveScenarioMode : undefined}
               rotateActive={mode === 'admin' && floorAdjustMode === 'rotate'}
               moveActive={mode === 'admin' && floorAdjustMode === 'move'}
               rotateValue={mode === 'admin' ? floorRotateValue : 0}
@@ -31648,7 +31722,7 @@ useEffect(() => {
               rotateNotice={mode === 'admin' ? floorAdjustNotice : ''}
               rotateStored={mode === 'admin' ? floorAdjustStored : false}
               adjustDebugInfo={mode === 'admin' ? floorAdjustDebugInfo : null}
-              onStartRotate={mode === 'admin' ? startFloorRotate : undefined}
+              onStartRotate={mode === 'admin' && !clientPresentationMode ? startFloorRotate : undefined}
               onStartMove={mode === 'admin' ? startFloorMove : undefined}
               onCancelRotate={mode === 'admin' ? cancelFloorAdjust : undefined}
               onClearRotate={mode === 'admin' ? clearFloorAdjustForFloor : undefined}
@@ -31765,7 +31839,7 @@ useEffect(() => {
       />
 
     {/* Planning Scenario Summary Panel */}
-    {moveScenarioMode && scenarioPanelVisible && (
+    {moveScenarioMode && scenarioPanelVisible && !clientPresentationMode && (
       <div
         ref={scenarioPanelRef}
         className="floating-panel mf-move-scenario-panel"
@@ -32301,7 +32375,7 @@ useEffect(() => {
       </div>
     )}
 
-    {renoScenarioVisible && scenarioSelection.size > 0 && (
+    {renoScenarioVisible && scenarioSelection.size > 0 && !clientPresentationMode && (
       <div
         ref={renoPanelRef}
         className="floating-panel mf-reno-scenario-panel"
@@ -32463,7 +32537,7 @@ useEffect(() => {
       </div>
     )}
 
-    {isControlsVisible && !presentationMode && (
+    {isControlsVisible && !presentationMode && !clientPresentationMode && (
       <div
         className="map-controls-panel"
         style={{
@@ -32488,6 +32562,19 @@ useEffect(() => {
           >
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{routeModeMeta.title}</div>
             <div style={{ fontSize: 11, color: '#465569' }}>{routeModeMeta.subtitle}</div>
+            {showFullMapfluenceControls && (
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11.5, cursor: 'pointer' }}
+                title="Client-facing view: hides admin tools, keeps the map, cards and workspaces"
+              >
+                <input
+                  type="checkbox"
+                  checked={clientPresentationMode}
+                  onChange={toggleClientPresentationMode}
+                />
+                Presentation mode
+              </label>
+            )}
           </div>
 
           {/* Admin access - compact header layout */}
@@ -34115,7 +34202,7 @@ useEffect(() => {
       </div>
     )}
 
-    {showFullMapfluenceControls && isControlsVisible && !presentationMode && (
+    {showFullMapfluenceControls && isControlsVisible && !presentationMode && !clientPresentationMode && (
       <div
         style={{
           position: 'absolute',
@@ -35472,6 +35559,7 @@ useEffect(() => {
       </div>
     )}
   </div>
+  </PresentationModeContext.Provider>
 );
 
 }

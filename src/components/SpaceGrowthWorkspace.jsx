@@ -58,6 +58,7 @@ import {
   enrollmentTableRows
 } from './spaceGrowthView';
 import SpaceGrowthSetupTab from './SpaceGrowthSetupTab.jsx';
+import { usePresentationMode, presentationTabs } from './presentationMode';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -401,7 +402,11 @@ function DiscardChangesDialog({ onCancel, onDiscard }) {
 
 // --- Shell --------------------------------------------------------------------
 export default function SpaceGrowthWorkspace({ data, onClose }) {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [chosenTab, setActiveTab] = useState('overview');
+  // Presentation mode hides the Setup tab (admin tools).
+  const presenting = usePresentationMode();
+  const tabs = presentationTabs(TABS, presenting);
+  const activeTab = tabs.some((t) => t.id === chosenTab) ? chosenTab : 'overview';
   // cardId -> true while that Setup card has unsaved edits.
   const [dirtyCards, setDirtyCards] = useState({});
   // The tab switch or close waiting on the discard dialog: { tab } | { close: true }.
@@ -459,7 +464,7 @@ export default function SpaceGrowthWorkspace({ data, onClose }) {
           {busy ? 'Calculating…' : 'Recalculate'}
         </BarButton>
       )}
-      tabs={TABS}
+      tabs={tabs}
       activeTab={activeTab}
       onTabChange={handleTabChange}
       tabsEnd={activeTab === 'setup' ? null : <YearPicker data={data} />}
