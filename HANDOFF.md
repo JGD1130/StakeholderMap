@@ -83,7 +83,7 @@ stakeholder-map/
 │   │   └── geojson/                 # Boundary + building footprint GeoJSON per client
 │   │
 │   ├── components/                  # ⚠️ SHARED — changes here affect every client
-│   │   ├── StakeholderMap.jsx       # Core map component (~25k lines)
+│   │   ├── StakeholderMap.jsx       # Core map component (~35k lines)
 │   │   ├── AssessmentPanel.jsx      # Technical assessment form + draft autosave
 │   │   ├── BuildingInteractionPanel.jsx
 │   │   ├── SpaceDashboardPanel.jsx
@@ -239,6 +239,135 @@ mf:technical-assessment-draft:{universityId}:{buildingId}:{draftOwnerKey}
 ```
 
 On cloud save success, the local draft is deleted. On cloud save failure, the draft is kept. On panel open, any stored draft is restored automatically.
+
+---
+
+## Recent Changes (2026-09-28 → 09-29) — Admin module redesign, Phases 3–7.1: shared data hooks, full-screen workspaces, Capital tiers map view, docked F&A Classifier, shared Airtable cache, presentation mode
+
+### Summary
+
+Sixteen commits (`4d083b1` → `1fa2b62`), all pushed to `feature/multi-university-refactor`. These continue the Phase 0–2 work below. Each admin module (Classroom Utilization, Capital Compass, Space Growth, F&A Compass) gets the same treatment:
+
+- **One data hook**, mounted once in `StakeholderMap.jsx` and passed as a prop to the side card, the workspace and the Executive Dashboard. So the numbers are loaded once and always agree.
+- **A full-screen workspace** on `mf/WorkspaceShell`.
+- **A small side card** in the right rail.
+- **The old in-panel sections are retired.**
+
+Every module is admin-only and flag-gated (`enableClassroomUtilization`, `enableCapitalPriorities`, `enableResearchSpaceClassification`), so today that means Hastings only. This work is **frontend only**, apart from the Firestore rules change in 4.2 (see "Needs checking"). No `ai-server/` changes, so no Render deploy is needed.
+
+**Pattern to follow for any new module:** `use<Module>Data.js` hook (data + writes) → `<module>View.js` (pure display logic: labels, sort orders, footnotes) → `<Module>Workspace.jsx` + tab files (presentation only, no fetching). Put display logic in the view module, not in a surface, or the surfaces drift apart.
+
+### Phase 3 — Classroom Utilization (`4d083b1`, `c853757`, `0d16706`)
+
+- **`src/utils/useClassroomUtilizationData.js`:** one read of `courseMeetings` + `terms` and one Airtable rooms fetch. Before this, every results section fetched all three itself.
+  - `reload()` re-reads Firestore only; Save Terms and Import Schedule call it.
+  - `recalculate()` refetches Firestore and Airtable.
+  - All numbers still come from the unchanged `classroomUtilizationCalc.js`.
+- **`ClassroomUtilizationWorkspace.jsx`:** Overview / Heat Map / Rooms / Setup tabs, plus a term picker. New `mf/charts/HeatmapGrid` and `UtilBar`.
+  - Setup (`ClassroomUtilizationSetupTab.jsx`) holds schedule import, terms and data quality.
+  - Rooms is `ClassroomUtilizationRoomsTab.jsx`.
+  - There's a peak-hour fallback when a term has no data.
+  - The room-size chart uses `executiveDashboardView.js`, so it matches the dashboard.
+- The old dropdown sections were removed from `ClassroomUtilizationPanel.jsx` (−1,200 lines). Shared form styles are in `mf/mfStyles.js`.
+
+### Phase 4 — Capital Compass (`15860ac`, `c5b26e5`, `3aaea0f`, `4e674cf`)
+
+- **`src/utils/useCapitalCompassData.js`:** one read each of `capitalPriorities`, `capitalPhasingProjects`, `deferredMaintenanceBuildings` and the new `capitalCompassSettings/budget` doc. It feeds the side card and the Executive Dashboard.
+- **`src/utils/capitalCompassCalc.js`:** the only copy of the tier thresholds (`getTier`: 80+ / 60–79 / 40–59 / <40). Tiers are always computed live from a building's total. The `tier*` fields frozen into saved `capitalPriorities` docs are ignored.
+- **One cost rule (`resolveBuildingCost`), first match wins:**
+  1. saved manual cost
+  2. uploaded deferred maintenance, 0–5 yr project cost
+  3. `building-resources.json` deferred maintenance total
+  4. none
+- **Saved budget** (`{ budgetCap, manualCosts, updatedAt, updatedBy }`) is debounced ~800ms. With no saved cap, the cap follows total known cost (the old behavior). If the doc can't be read or written, the hook keeps in-memory values and logs one `console.warn`.
+- **`CapitalCompassWorkspace.jsx`:** Overview, Budget (open-book scores, funding line), Phasing, Deferred Maintenance and Setup tabs. New charts: `CategoryBars`, `FundingLine`, `StackedBars`. The old panel body was retired (−1,300 lines).
+- **Map view "Capital Compass tiers"** (4.5), admin only:
+  - Scored buildings are shaded in `MF.tier[1–4]`; all other buildings use `MF.line.border`.
+  - The building popup shows tier, score and cost.
+  - `CapitalTiersMapLegend.jsx` shows bottom-left.
+  - "Show on map" in the workspace and side card switches to this view.
+
+### Shared Airtable rooms cache (`7559e43`)
+
+`src/utils/airtableRoomsCache.js` replaces separate `/api/rooms` calls. Before it, up to seven callers each fetched the same ~3,000 records (~30 Airtable pages each) on page load. Together they tripped Airtable's 5 req/s limit, which ai-server passes on as a 500 containing `429 … RATE_LIMIT_REACHED`.
+
+- **One shared request.** Concurrent callers join the same in-flight request.
+- **Session cache.** A successful result is kept for the session. `force: true` (Recalculate, Refresh Airtable Data) fetches again.
+- **429 retries.** A rate-limited request retries after 1s / 2s / 4s, then fails with the friendly `AIRTABLE_BUSY_MESSAGE`.
+- **Failures aren't cached.**
+- **Per-caller timeouts.** A short-timeout caller gives up on time; the shared request carries on for the others.
+- **Isolation.** Each caller gets shallow copies of the rooms, so one caller mutating a room can't affect the others.
+
+### Phase 5 — Space Growth (`f4347d6`, `b1af974`, `0e90b35`, `04f32ae`)
+
+- **`src/utils/useSpaceGrowthData.js`:** one read each of `spaceConfig`, `enrollmentProjections`, `roomUtilizationMeta` and `spaceConfigDepartmentOverrides`, plus the shared rooms cache.
+  - **No live listeners.** Every write calls `reloadCollection(name)` instead.
+  - **Two years are computed:** the workspace's `targetYear` (default 2036), and always 2036 for the Executive Dashboard, so the picker never moves the dashboard.
+- **Office switch:** `PRICE_OFFICE_IN_CAMPUS_GAP = false` in `spaceGrowthCalc.js`. Office isn't priced in the campus-method gap because staff FTE doesn't exist yet (the workbook's Total FTE is faculty only). **Waiting on Clark to decide which FTE to use.**
+- **Headline space gap (5.3):** the dashboard now leads with the **department method** (`computeHeadlineSpaceGap`), Classroom + Lab only, with Office excluded. The campus method remains as a comparison figure.
+- **`SpaceGrowthWorkspace.jsx`:** Overview / Departments / Enrollment / Setup tabs, plus a year picker. New `mf/charts/LineChart`. Setup (`SpaceGrowthSetupTab.jsx`, ~1,600 lines moved from the panel) asks "Discard unsaved changes?" before switching tabs or closing with unsaved edits. `spaceGrowthReconciliation.js` was added in 5.2 and mostly retired in 5.5. The panel lost ~2,500 lines.
+
+### Phase 6 — F&A Compass (`db1dd66`, `9a5a98f`, `825d369`)
+
+- **6.2 plumbing:** `useResearchSpaceData` now takes `universityId` and does the rollup in a single pass.
+  - New **`src/utils/researchSpaceDraft.js`**: the draft shape, per-occupant validation (moved unchanged from the panel), and a tiny external store for the one open draft.
+  - The store lives in the hook, so a draft survives the panel unmounting.
+  - Only subscribers re-render on a keystroke (`useResearchSpaceDraft`), not all of StakeholderMap.
+- **6.3 `FaCompassWorkspace.jsx`:** Overview / Rooms / Method tabs, read-only, with display logic in `faCompassView.js`.
+  - Each room's floorplan is checked up front (`resolveRoomFloor`), so a room with no floorplan shows "No floorplan" instead of a broken "Show on map".
+- **6.4 docked Classifier (`FaClassifier.jsx`):** "Classify on map" (side card) or "Show on map" (workspace) replaces the right rail with the Classifier until Done, and the map stays clickable.
+  - Clicking an in-scope room opens it, and "Next not started on this floor" walks through the floor.
+  - Validation shows after Save or on blur, not on every keystroke.
+  - Switching rooms or pressing Done with unsaved changes asks first.
+  - The old in-panel editor is gone (−570 lines).
+- **New "Class lab (instruction)" mode:** stored as one marked occupant doc (`kind: 'class_lab'`, 100% footprint, 100% IDR funding). So the status, rollup and validation logic need no special case: the room reads Classified and its SF lands in IDR.
+- F&A map status colors now come from tokens.
+
+### Phase 7.1 — Client presentation mode (`1fa2b62`)
+
+A one-switch, client-facing view of the admin workspace for demos and brochure screenshots. It is **separate from** the older engagement `presentationMode` / `?presentation=1`, which hides the whole right rail for a PNG export. The state is `clientPresentationMode` in `StakeholderMap.jsx`; the helpers are in `src/components/presentationMode.js`.
+
+- **On / off:**
+  - A "Presentation mode" checkbox in the "Admin Workspace" header box (left panel).
+  - `?present=1` / `?present=0` (the URL wins); otherwise the choice made in this browser session (sessionStorage key `mf.clientPresentationMode`).
+  - Toggling keeps `?present` in the address bar in sync.
+  - Only active when `showFullMapfluenceControls` (admin route, not engagement/technical).
+- **Context:** `PresentationModeContext.Provider` wraps the page. Components read it with `usePresentationMode()`, and workspace portals still see it.
+- **While on:**
+  - **Logos:** the university logo is hidden; the MAPFLUENCE title and C&E logo fill the logo row, larger (`.mf-right-logos--presenting`).
+  - **Left side hidden:** the whole left controls panel (so Last synced, Instance check, AI Online, Refresh Airtable Data and Space Data Export), the Show/Hide Controls button and the Data Filters box.
+  - **Exports hidden:** Export PDF/CSV in the building and floor panels (those buttons are now optional props), and Executive Dashboard "Export to PDF".
+  - **Floorplan and scenario tools hidden:** floorplan Adjust tools, the Planning Scenario Mode button, and the Planning Scenario, Reno and Program Test Fit panels.
+  - **Dev pages hidden:** `?tokens` and `?components`.
+  - **Workspaces:** every Setup tab is hidden (`presentationTabs`).
+  - **F&A is read-only:** "Classify on map" is hidden and the docked Classifier never shows. "Show on map" loads the floor in F&A colors and highlights the room.
+- **On turning on (or loading with it on):**
+  - Each panel closes its workspace (`useCloseWhenPresenting`).
+  - The F&A classifier and any floor adjust are cancelled.
+  - Map View switches to Space Data and any loaded floor is unloaded.
+  - The map fits the campus boundary. The new module-level `boundaryFitOptions(config, duration)` is shared with the load-time fit.
+- **Pill:** a bottom-left "Presentation mode" pill, next to the Mapbox logo, in `MF.ink.muted` at 11px. It is also the **off switch**, since the left panel is hidden. `&capture=1` hides it; the only way out then is `?present=0`.
+- **Turning off** restores nothing and saves nothing: every hidden item simply renders again, and Show/Hide Controls is untouched. The map changes made on entry (view, unloaded floor, zoom) stay.
+- **Known gaps, deliberately left:**
+  - A selected building's panel stays open at campus zoom.
+  - If Planning Scenario mode was already on, room clicks on a reloaded floor still edit the scenario. Turning it off would clear the scenario.
+  - The room edit popup is not gated.
+
+### Verification
+
+- **Phases 3–6:** Clark reported tests passing before each commit.
+- **Phase 7.1:** `vite build` passes, and Clark tested it in the browser before the commit.
+- There are no automated UI tests for these modules.
+
+### Needs checking
+
+- **`firestore.rules` (4.2) adds `capitalCompassSettings/{docId}`** (admin read/write). Confirm it has been deployed with `firebase deploy --only firestore:rules`. Until it is, saved budgets and manual costs don't persist (the hook falls back to in-memory values and logs a warning).
+- **The Office FTE decision** (Phase 5, above).
+
+### Local-only files, still deliberately not committed
+
+- `functions/index.js` / `functions/package.json`: the Cloud Functions v1→v2 migration, still unreviewed and undeployed. Excluded from the 7.1 commit on purpose.
+- `scripts/_extensionless-esm-loader.mjs`: an untracked local helper.
 
 ---
 
