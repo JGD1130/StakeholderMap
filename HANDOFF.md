@@ -242,11 +242,11 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
-## Recent Changes (2026-09-28 → 09-29) — Admin module redesign, Phases 3–7.1: shared data hooks, full-screen workspaces, Capital tiers map view, docked F&A Classifier, shared Airtable cache, presentation mode
+## Recent Changes (2026-09-28 → 09-29) — Admin module redesign, Phases 3–7.2: shared data hooks, full-screen workspaces, Capital tiers map view, docked F&A Classifier, shared Airtable cache, presentation mode, F&A demo sandbox
 
 ### Summary
 
-Sixteen commits (`4d083b1` → `1fa2b62`), all pushed to `feature/multi-university-refactor`. These continue the Phase 0–2 work below. Each admin module (Classroom Utilization, Capital Compass, Space Growth, F&A Compass) gets the same treatment:
+Seventeen feature commits (`4d083b1` → `8ea3892`), all pushed to `feature/multi-university-refactor`. These continue the Phase 0–2 work below. Each admin module (Classroom Utilization, Capital Compass, Space Growth, F&A Compass) gets the same treatment:
 
 - **One data hook**, mounted once in `StakeholderMap.jsx` and passed as a prop to the side card, the workspace and the Executive Dashboard. So the numbers are loaded once and always agree.
 - **A full-screen workspace** on `mf/WorkspaceShell`.
@@ -340,7 +340,7 @@ A one-switch, client-facing view of the admin workspace for demos and brochure s
   - **Floorplan and scenario tools hidden:** floorplan Adjust tools, the Planning Scenario Mode button, and the Planning Scenario, Reno and Program Test Fit panels.
   - **Dev pages hidden:** `?tokens` and `?components`.
   - **Workspaces:** every Setup tab is hidden (`presentationTabs`).
-  - **F&A is read-only:** "Classify on map" is hidden and the docked Classifier never shows. "Show on map" loads the floor in F&A colors and highlights the room.
+  - **F&A is read-only:** "Classify on map" is hidden and the docked Classifier never shows. "Show on map" loads the floor in F&A colors and highlights the room. *(Superseded in 7.2: the Classifier now opens as a demo sandbox.)*
 - **On turning on (or loading with it on):**
   - Each panel closes its workspace (`useCloseWhenPresenting`).
   - The F&A classifier and any floor adjust are cancelled.
@@ -353,10 +353,37 @@ A one-switch, client-facing view of the admin workspace for demos and brochure s
   - If Planning Scenario mode was already on, room clicks on a reloaded floor still edit the scenario. Turning it off would clear the scenario.
   - The room edit popup is not gated.
 
+### Phase 7.2 — F&A demo sandbox, Classifier layout, rail clipping, presentation cleanup (`8ea3892`)
+
+- **F&A demo sandbox in presentation mode.** This replaces 7.1's read-only F&A.
+  - The docked Classifier opens in presentation mode, from map room clicks and from Rooms-tab "Show on map", the same as on admin. The side card's "Classify on map" button stays hidden.
+  - Save writes **nothing to Firestore**. `useResearchSpaceData({ demoMode })` (passed `clientPresentationMode`) keeps saved rooms in an in-memory overlay, `roomKey → { status, docs }`, which replaces those rooms' saved occupants and status. So `roomRows`, the rollup, map status colors, the Overview (progress, function mix, by-building) and the Rooms table all show the demo edits.
+  - Overlay docs are Firestore-docSnap stand-ins (`{ id, data() }`, ids `demo_…`).
+  - The overlay is cleared when presentation mode turns off, when the university changes, and on reload. Turning presentation mode off also reopens any open room from the real saved data, so demo edits and demo ids can't reach a real save.
+  - The Classifier header shows "Demo — changes aren't saved" (`MF.ink.muted`, 11px). Everything else in presentation mode stays read-only.
+- **Classifier layout (`FaClassifier.jsx`):**
+  - Role and Share of room are on separate full-width rows.
+  - Every field is `width:100%`, `box-sizing:border-box`, `minWidth:0`.
+  - Each funding row has the source on one line, then % | function | × on the next.
+  - Single-column `minmax(0,1fr)` grids and `overflowX: hidden` mean the dock never scrolls sideways.
+- **Right-rail clipping.** Root cause: `.dashboard-box` is `width:100%` + 12px padding in content-box, so each card was 354px in the 330px rail content area, and the rail's `overflow-x:hidden` cut off every card's right 24px.
+  - Fix: the rail gets `mf-right-rail--admin` on the admin page only, and `.mf-right-rail--admin .dashboard-box { box-sizing: border-box; min-width: 0; }`.
+  - This covers Campus Summary, Executive Dashboard, Capital Compass, Classroom Utilization, Space Growth, F&A and the docked Classifier. **The public page's rail is unchanged and still clips.**
+- **F&A selected-room style.** In F&A mode the selected room keeps its status fill: no cyan wash, which over the amber "Not started" read green. It gets a **3px cyan outline** (the normal selection cyan; the normal style is a cyan fill + 6px border).
+  - Root cause of the earlier failed fix: `unloadFloorplan` / `ensureFloorHighlightLayer` delete and re-create the highlight layers on every floor load, so a reload of the same floor brought the cyan fill back.
+  - The style now lives at module level (`floorHighlightFaStyle`, `setFloorHighlightStyle(map, faStyle)`), so the layers are always re-created in the current style.
+  - `applyFaCompassColors` sets it even before a floor is loaded; `restoreFloorHighlightStyle` switches it back.
+- **Campus Summary hidden in presentation mode.** Presentation mode is admin-only, so the normal admin view and the public page are unchanged.
+- **"Strategic Space Dashboard" disclosure removed from Campus Summary** (`showStrategicSection={false}`). It only ever showed on admin, since `strategic` is passed only when `isAdminMode`. The strategic state and calculations in `StakeholderMap.jsx` were left in place because other code shares them.
+
 ### Verification
 
 - **Phases 3–6:** Clark reported tests passing before each commit.
 - **Phase 7.1:** `vite build` passes, and Clark tested it in the browser before the commit.
+- **Phase 7.2:**
+  - Vite compiles every changed file.
+  - The Classifier layout and all six rail cards were checked in headless Chrome at the real 345px rail width (a temporary harness, since deleted). Nothing crosses the rail edge, and the rail has no horizontal overflow.
+  - **Not browser-tested in the live app:** the demo sandbox flow and the selected-room outline, which need the admin login and a loaded floor.
 - There are no automated UI tests for these modules.
 
 ### Needs checking
@@ -366,8 +393,9 @@ A one-switch, client-facing view of the admin workspace for demos and brochure s
 
 ### Local-only files, still deliberately not committed
 
-- `functions/index.js` / `functions/package.json`: the Cloud Functions v1→v2 migration, still unreviewed and undeployed. Excluded from the 7.1 commit on purpose.
+- `functions/index.js` / `functions/package.json`: the Cloud Functions v1→v2 migration, still unreviewed and undeployed. Excluded from the 7.1 and 7.2 commits on purpose.
 - `scripts/_extensionless-esm-loader.mjs`: an untracked local helper.
+- `src/components/stakeholder-map.code-workspace`: an untracked VS Code workspace file.
 
 ---
 
