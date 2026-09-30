@@ -263,7 +263,7 @@ All in `src/components/StakeholderMap.jsx`: the `BASEMAP_VIEWS` / `show*BasemapO
   - The layer order and visibility came from `window.__map`.
   - No aerial tile request returned a 404.
   - Screenshots show county aerial north of the Platte and Satellite in Cass County with no gap.
-- Clark tested it on the dev server before the commit. It is deployed to GitHub Pages; the live bundle contains `Aerials2026` and no NAIP references. The ai-server is not affected.
+- Hand-tested on the dev server before the commit. It is deployed to GitHub Pages; the live bundle contains `Aerials2026` and no NAIP references. The ai-server is not affected.
 
 ---
 
