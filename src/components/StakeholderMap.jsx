@@ -11924,10 +11924,13 @@ const setMapLayerVisibility = (map, layerId, visible) => {
 };
 const SATELLITE_BASEMAP_SOURCE_ID = 'mf-satellite-basemap-source';
 const SATELLITE_BASEMAP_LAYER_ID = 'mf-satellite-basemap-layer';
-const USGS_NAIP_BASEMAP_SOURCE_ID = 'mf-usgs-naip-basemap-source';
-const USGS_NAIP_BASEMAP_LAYER_ID = 'mf-usgs-naip-basemap-layer';
-const USGS_NAIP_TILES = [
-  'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=false&interpolation=RSP_BilinearInterpolation&renderingRule=%7B%22rasterFunction%22%3A%22NaturalColor%22%7D&f=image'
+// Sarpy county aerial caches (2025 + 2026): ArcGIS paths are /tile/{level}/{row}/{col}, i.e. z/y/x,
+// cached for LOD 10–21 over the county extent only.
+const SARPY_AERIALS_BOUNDS = [-96.3468, 40.9921, -95.8388, 41.1952];
+const SARPY_AERIALS_2026_BASEMAP_SOURCE_ID = 'mf-sarpy-aerials-2026-basemap-source';
+const SARPY_AERIALS_2026_BASEMAP_LAYER_ID = 'mf-sarpy-aerials-2026-basemap-layer';
+const SARPY_AERIALS_2026_TILES = [
+  'https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Aerials2026/MapServer/tile/{z}/{y}/{x}'
 ];
 const SARPY_AERIALS_2025_BASEMAP_SOURCE_ID = 'mf-sarpy-aerials-2025-basemap-source';
 const SARPY_AERIALS_2025_BASEMAP_LAYER_ID = 'mf-sarpy-aerials-2025-basemap-layer';
@@ -12153,7 +12156,7 @@ const StakeholderMap = ({
   const BASEMAP_VIEWS = {
     STREETS: 'streets',
     SATELLITE: 'satellite',
-    NAIP: 'naip',
+    SARPY_AERIALS_2026: 'sarpy-aerials-2026',
     SARPY_AERIALS_2025: 'sarpy-aerials-2025'
   };
   const hasRuntimeMapboxToken = Boolean((mapboxgl.accessToken || '').trim());
@@ -12528,7 +12531,10 @@ const StakeholderMap = ({
   }, [mapView, capitalTiersViewAvailable, defaultMapView]);
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
-  const showSarpyNaipBasemapOption = showBasemapSelector && isSarpyCountyInstance;
+  // Sarpy's county aerials replace the Satellite option there (Satellite still renders beneath them
+  // as the fallback); other clients keep Satellite.
+  const showSatelliteBasemapOption = showBasemapSelector && !isSarpyCountyInstance;
+  const showSarpyAerials2026BasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const showSarpyAerials2025BasemapOption = showBasemapSelector && isSarpyCountyInstance;
   const sarpyPopulationSummary = isSarpyCountyInstance ? SARPY_POPULATION_SUMMARY : null;
   const sarpyPopulationDensityLegend = isSarpyCountyInstance ? SARPY_POPULATION_DENSITY_LEGEND : [];
@@ -26427,6 +26433,8 @@ useEffect(() => {
     };
 
     const applyBasemapView = () => {
+      // Satellite is added first so the county aerials (each inserted just below the first
+      // symbol layer) stack above it; it shows through below z10 and outside the county.
       ensureRasterBasemapLayer({
         sourceId: SATELLITE_BASEMAP_SOURCE_ID,
         layerId: SATELLITE_BASEMAP_LAYER_ID,
@@ -26436,15 +26444,18 @@ useEffect(() => {
           tileSize: 256
         }
       });
-      if (showSarpyNaipBasemapOption) {
+      if (showSarpyAerials2026BasemapOption) {
         ensureRasterBasemapLayer({
-          sourceId: USGS_NAIP_BASEMAP_SOURCE_ID,
-          layerId: USGS_NAIP_BASEMAP_LAYER_ID,
+          sourceId: SARPY_AERIALS_2026_BASEMAP_SOURCE_ID,
+          layerId: SARPY_AERIALS_2026_BASEMAP_LAYER_ID,
           sourceConfig: {
             type: 'raster',
-            tiles: USGS_NAIP_TILES,
+            tiles: SARPY_AERIALS_2026_TILES,
             tileSize: 256,
-            attribution: 'USGS NAIP'
+            minzoom: 10,
+            maxzoom: 21,
+            bounds: SARPY_AERIALS_BOUNDS,
+            attribution: 'Sarpy County GIS'
           }
         });
       }
@@ -26456,12 +26467,17 @@ useEffect(() => {
             type: 'raster',
             tiles: SARPY_AERIALS_2025_TILES,
             tileSize: 256,
+            minzoom: 10,
+            maxzoom: 21,
+            bounds: SARPY_AERIALS_BOUNDS,
             attribution: 'Sarpy County GIS'
           }
         });
       }
-      setMapLayerVisibility(map, SATELLITE_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SATELLITE);
-      setMapLayerVisibility(map, USGS_NAIP_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.NAIP);
+      const sarpyAerialSelected = basemapView === BASEMAP_VIEWS.SARPY_AERIALS_2026
+        || basemapView === BASEMAP_VIEWS.SARPY_AERIALS_2025;
+      setMapLayerVisibility(map, SATELLITE_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SATELLITE || sarpyAerialSelected);
+      setMapLayerVisibility(map, SARPY_AERIALS_2026_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SARPY_AERIALS_2026);
       setMapLayerVisibility(map, SARPY_AERIALS_2025_BASEMAP_LAYER_ID, basemapView === BASEMAP_VIEWS.SARPY_AERIALS_2025);
     };
 
@@ -26472,7 +26488,7 @@ useEffect(() => {
         map.off('style.load', applyBasemapView);
       } catch {}
     };
-  }, [mapLoaded, basemapView, showBasemapSelector, showSarpyNaipBasemapOption, showSarpyAerials2025BasemapOption, BASEMAP_VIEWS.SATELLITE, BASEMAP_VIEWS.NAIP, BASEMAP_VIEWS.SARPY_AERIALS_2025]);
+  }, [mapLoaded, basemapView, showBasemapSelector, showSarpyAerials2026BasemapOption, showSarpyAerials2025BasemapOption, BASEMAP_VIEWS.SATELLITE, BASEMAP_VIEWS.SARPY_AERIALS_2026, BASEMAP_VIEWS.SARPY_AERIALS_2025]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !isSarpyCountyInstance) return;
@@ -32648,9 +32664,11 @@ useEffect(() => {
                 onChange={(e) => setBasemapView(e.target.value)}
               >
                 <option value={BASEMAP_VIEWS.STREETS}>Map</option>
-                <option value={BASEMAP_VIEWS.SATELLITE}>Satellite</option>
-                {showSarpyNaipBasemapOption && (
-                  <option value={BASEMAP_VIEWS.NAIP}>NAIP Test</option>
+                {showSatelliteBasemapOption && (
+                  <option value={BASEMAP_VIEWS.SATELLITE}>Satellite</option>
+                )}
+                {showSarpyAerials2026BasemapOption && (
+                  <option value={BASEMAP_VIEWS.SARPY_AERIALS_2026}>2026 Aerial</option>
                 )}
                 {showSarpyAerials2025BasemapOption && (
                   <option value={BASEMAP_VIEWS.SARPY_AERIALS_2025}>2025 Aerial</option>
