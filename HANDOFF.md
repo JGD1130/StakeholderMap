@@ -164,6 +164,7 @@ Client-specific behavior is controlled entirely through:
 | Map center, zoom, pitch, bearing | `src/Configs/{Client}.json` |
 | Feature flags (`enableDrawingEntry`, `enableFloorplans`, `technicalAssessmentSaveMode`) | `src/Configs/{Client}.json` |
 | Mapbox style (streets vs satellite) | `src/Configs/{Client}.json` |
+| Basemap dropdown options (Sarpy: county aerials; others: Satellite) | `StakeholderMap.jsx` `show*BasemapOption` flags, gated on `isSarpyCountyInstance` |
 | Client logo | `src/Configs/{Client}.json` → references file in `public/Data/` |
 | Boundary and building footprint GeoJSON | `src/Configs/geojson/` |
 | Floor plan room geometry and metadata | `public/floorplans/{Campus}/` |
@@ -239,6 +240,30 @@ mf:technical-assessment-draft:{universityId}:{buildingId}:{draftOwnerKey}
 ```
 
 On cloud save success, the local draft is deleted. On cloud save failure, the draft is kept. On panel open, any stored draft is restored automatically.
+
+---
+
+## Recent Changes (2026-09-30) — Sarpy basemaps: 2026 county aerials added, NAIP removed, Satellite kept as a fallback under the aerials (`c1be131`)
+
+All in `src/components/StakeholderMap.jsx`: the `BASEMAP_VIEWS` / `show*BasemapOption` flags, the basemap `useEffect` (`applyBasemapView`), and the `#basemap-select` dropdown. None of it is in the client config.
+
+- **Sarpy's dropdown is now Map / 2026 Aerial / 2025 Aerial.** Hastings and Cherokee still show Map / Satellite. That was checked in the browser, and their map still has only the Satellite raster layer.
+- **2026 Aerial** uses `https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Aerials2026/MapServer/tile/{z}/{y}/{x}`.
+  - ArcGIS cache paths are `/tile/{level}/{row}/{col}`, so the URL template is `{z}/{y}/{x}`, **not** Mapbox's usual `{z}/{x}/{y}`. With x and y swapped, the service returns 404s, not shifted imagery.
+- **NAIP removed.** It was the USGS NAIP `exportImage` source labeled "NAIP Test," and only Sarpy ever showed it.
+- **Satellite is a fallback under the aerials on Sarpy.** Sarpy's dropdown has no Satellite option, but the Satellite layer is always added. It turns on whenever 2025 or 2026 Aerial is selected (`sarpyAerialSelected`).
+  - Satellite is added first, and each aerial is inserted just below the first symbol layer. So the live stack is Satellite → 2026 → 2025 → labels, with only one aerial visible at a time.
+  - There is no zoom-switching code. The aerial sources carry `minzoom: 10`, `maxzoom: 21` and `bounds: SARPY_AERIALS_BOUNDS` (`[-96.3468, 40.9921, -95.8388, 41.1952]`, the service's full extent). So Satellite shows through outside the county and below the cache's zoom range.
+- **2025 Aerial got the same `minzoom`/`maxzoom`/`bounds` settings.** Before this it had none and requested tiles that don't exist, which returned 404s. Both services report LOD 10–21 over the same extent.
+- **⚠️ Zoom gotcha:** the service's LOD 10 is **not** the map's zoom 10. With `tileSize: 256`, Mapbox requests tiles about one level above the map zoom, rounded. So LOD 10 tiles load down to about **map zoom 8.5**, and the switch to Satellite happens there, not at 10. If you ever want the switch at map zoom 10, add `minzoom: 10` to the aerial *layers*; the source already has it.
+
+### Verification
+- Direct tile fetches over the county returned 200 for LOD 10–21 and 404 for LOD 9 and 22. A 3×3 block of LOD-17 tiles stitched together with no seams.
+- Headless Chrome ran against the dev server via `puppeteer-core` (a temporary harness, not committed). It switched Map / 2026 / 2025 and zoomed through z14, z11 at the south county edge, z10.2, z9.8, z8 and z21.5.
+  - The layer order and visibility came from `window.__map`.
+  - No aerial tile request returned a 404.
+  - Screenshots show county aerial north of the Platte and Satellite in Cass County with no gap.
+- Clark tested it on the dev server before the commit. It is deployed to GitHub Pages; the live bundle contains `Aerials2026` and no NAIP references. The ai-server is not affected.
 
 ---
 
