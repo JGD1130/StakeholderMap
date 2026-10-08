@@ -10608,7 +10608,11 @@ function getAirtableRoomPatch(props = {}, lookup, buildingId, floor, allowBlankD
           }) || ranked[0] || null;
       }
     }
-    if (!room && roomIdKey) {
+    // Sarpy (allowBlankDepartment): a number-only match ignores the building, so
+    // a room whose GUID is ambiguous could take another building's row (1102
+    // Building 107 showed Sheriff's Garage 107's department). Fall through to
+    // the blank patch below instead.
+    if (!room && roomIdKey && !allowBlankDepartment) {
       room = lookup.byRoomId?.get(roomIdKey) || null;
     }
   }
@@ -13768,6 +13772,9 @@ const StakeholderMap = ({
   const selectedBuildingIdRef = useRef(null);
   const selectedBuildingFeatureRef = useRef(null);
   const currentFloorUrlRef = useRef(null);
+  // Set by handleRefreshAirtable (Sarpy) when the displayed floor must reload
+  // once the refreshed airtableRoomLookup has rendered.
+  const airtableRefreshReloadPendingRef = useRef(false);
   const lastFloorUrlRef = useRef(null);
   const currentFloorContextRef = useRef({ url: null, key: null, buildingId: null, floorId: null });
   const currentRoomFeatureRef = useRef(null);
@@ -19234,22 +19241,31 @@ const StakeholderMap = ({
     setAirtableRefreshMessage('');
     const ok = await refreshCampusRoomsFromApi();
     if (ok && isSarpyCountyInstance && currentFloorUrlRef.current) {
-      // airtableRooms/airtableRoomLookup just updated, but the currently-displayed
-      // floor's room properties were baked in by getAirtableRoomPatch at load time
-      // and don't re-patch on their own -- without this, the map/popup keep showing
-      // stale data even though the refresh itself succeeded. Force a reload so this
-      // floor re-bakes with the fresh Airtable data, and clear the cache entry too
-      // so navigating away and back doesn't hit the same stale cached result.
-      floorCache.delete(currentFloorUrlRef.current);
-      floorTransformCache.delete(currentFloorUrlRef.current);
-      try {
-        await handleLoadFloorplan(selectedFloor);
-      } catch {}
+      // The displayed floor's room properties were baked in by getAirtableRoomPatch
+      // at load time, so it must reload to show the refresh. Not here, though:
+      // this closure still holds the pre-refresh airtableRoomLookup. The effect
+      // below reloads once the new lookup has rendered.
+      airtableRefreshReloadPendingRef.current = true;
     }
     const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setAirtableRefreshMessage(ok ? `Refreshed ${timeLabel}` : 'Refresh failed');
     setAirtableRefreshPending(false);
-  }, [aiStatus, airtableRefreshPending, refreshCampusRoomsFromApi, isSarpyCountyInstance, selectedFloor, handleLoadFloorplan]);
+  }, [aiStatus, airtableRefreshPending, refreshCampusRoomsFromApi, isSarpyCountyInstance]);
+
+  // Sarpy: reload the displayed floor after Refresh Airtable Data, once
+  // airtableRoomLookup holds the refreshed rows. handleLoadFloorplan is a plain
+  // function redeclared each render, so this render's copy reads the new lookup.
+  // The cache entries are cleared too so navigating away and back doesn't hit
+  // the stale cached result.
+  useEffect(() => {
+    if (!airtableRefreshReloadPendingRef.current) return;
+    airtableRefreshReloadPendingRef.current = false;
+    const url = currentFloorUrlRef.current;
+    if (!isSarpyCountyInstance || !url) return;
+    floorCache.delete(url);
+    floorTransformCache.delete(url);
+    Promise.resolve(handleLoadFloorplan(selectedFloor)).catch(() => {});
+  }, [airtableRoomLookup]);
 
   useEffect(() => () => {
     if (campusRoomsRefreshTimerRef.current) {
@@ -26215,11 +26231,19 @@ useEffect(() => {
       }
       const typeLabel = getRoomTypeLabelFromProps(mergedProps);
       const nextRoomType = typeLabel ? String(typeLabel).trim() : (mergedProps.__roomType || '');
-      if (!didPatch && nextRoomType === props.__roomType) return feature;
+      // Sarpy: refresh __dept from the merged department, as loadFloorGeojson
+      // does. The room labels read __dept ahead of department, so a stale
+      // snapshot would leave labels disagreeing with the fill color.
+      const nextDept = isSarpyCountyInstance ? getDeptFromProps(mergedProps) : mergedProps.__dept;
+      if (!didPatch && nextRoomType === props.__roomType && nextDept === props.__dept) return feature;
       changed = true;
       return {
         ...feature,
-        properties: { ...mergedProps, __roomType: nextRoomType }
+        properties: {
+          ...mergedProps,
+          __roomType: nextRoomType,
+          ...(isSarpyCountyInstance ? { __dept: nextDept } : {})
+        }
       };
     });
 
