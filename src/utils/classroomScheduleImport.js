@@ -124,7 +124,9 @@ const ALL_WEEKDAYS_TOKENS = ['M', 'T', 'W', 'R', 'F'];
 // present on `entry` (scheduleGroupKeyParts() above already reads
 // entry.daysText), and this file is the Hastings-only, no-shared-file-risk
 // place to make the correction -- server.js's parser itself is untouched.
-function resolveDayTokens(entry) {
+// Also used by StakeholderMap.jsx's Ask availability query so it reads days
+// the same way the heat map (built from these imported docs) does.
+export function resolveDayTokens(entry) {
   const daysText = String(entry?.daysText || '').trim();
   if (daysText.toUpperCase() === 'ALL') return [...ALL_WEEKDAYS_TOKENS];
   return Array.isArray(entry?.dayTokens) ? entry.dayTokens.filter(Boolean) : [];

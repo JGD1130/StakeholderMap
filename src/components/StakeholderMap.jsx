@@ -57,6 +57,7 @@ import {
   computeStrategicSeatGapByYear
 } from '../dashboard/spaceDashboard';
 import { computeBuildingUtilizationForCurrentTerm, fetchAirtableRoomsForUtilization } from '../utils/classroomUtilizationCalc';
+import { resolveDayTokens } from '../utils/classroomScheduleImport';
 import { COURSE_MEETINGS_COLLECTION, TERMS_COLLECTION } from '../utils/classroomUtilizationSchema';
 import { buildRoomUtilizationMetaKey } from '../utils/roomUtilizationMeta';
 
@@ -9388,21 +9389,55 @@ const formatMinutesAsClockLabel = (minutes) => {
   return `${hours12}:${String(mins).padStart(2, '0')} ${meridiem}`;
 };
 
-// Describes only what was explicitly stated in the question (not any fallback-to-"now"
-// values used internally for filtering), for the answer/bullets text.
-const describeQueryMoment = (dayTokens = [], minutes = null) => {
-  const dayLabel = (Array.isArray(dayTokens) && dayTokens.length)
+// Length of the availability window the Ask availability query checks. A room counts
+// as free only if no class overlaps the whole window -- not just the starting instant,
+// which listed rooms whose class starts 20 minutes later as "free". Defaults to 60
+// minutes (the full requested hour, or now -> now+60); a duration stated in the question
+// ("for 2 hours", "for 90 minutes", "a 1.5-hour block") overrides it. Requires an
+// hour/minute unit word, so seat counts and room numbers never read as a duration.
+const DEFAULT_AVAILABILITY_WINDOW_MINUTES = 60;
+const extractQueryDurationMinutes = (question = '') => {
+  const text = String(question || '').toLowerCase();
+  if (!text) return null;
+  if (/\bhalf\s+an?\s+hour\b/.test(text)) return 30;
+  const hoursMatch = text.match(/\b(\d+(?:\.\d+)?)\s*-?\s*(?:hours?|hrs?)\b(?:\s*(?:and\s+)?(\d+)\s*-?\s*(?:minutes?|mins?)\b)?/);
+  if (hoursMatch) {
+    const total = (Number(hoursMatch[1]) * 60) + Number(hoursMatch[2] || 0);
+    if (Number.isFinite(total) && total > 0) return Math.round(total);
+  }
+  if (/\b(?:for\s+)?(?:an|one)\s+hour\b/.test(text)) return 60;
+  const minutesMatch = text.match(/\b(\d+)\s*-?\s*(?:minutes?|mins?)\b/);
+  if (minutesMatch) {
+    const total = Number(minutesMatch[1]);
+    if (Number.isFinite(total) && total > 0) return total;
+  }
+  return null;
+};
+
+// "10:00–11:00 AM" when both ends share AM/PM, else "11:30 AM–12:30 PM".
+const formatClockRangeLabel = (startMinutes, endMinutes) => {
+  const startLabel = formatMinutesAsClockLabel(startMinutes);
+  const endLabel = formatMinutesAsClockLabel(endMinutes);
+  const startMeridiem = startLabel.slice(-2);
+  if (startMeridiem === endLabel.slice(-2)) return `${startLabel.slice(0, -3)}–${endLabel}`;
+  return `${startLabel}–${endLabel}`;
+};
+
+// The availability window as stated in the answer, e.g. "Monday 10:00–11:00 AM" or,
+// with neither a day nor a time in the question, "now (2:45–3:45 PM)". Only a day the
+// question actually names is shown; otherwise the window is today's.
+const describeQueryWindow = (statedDayTokens = [], startMinutes, endMinutes, isNow = false) => {
+  const dayLabel = (Array.isArray(statedDayTokens) && statedDayTokens.length)
     ? SCHEDULE_DAY_QUERY_OPTIONS
-      .filter((option) => option.tokens.some((token) => dayTokens.includes(token)))
+      .filter((option) => option.tokens.some((token) => statedDayTokens.includes(token)))
       .map((option) => option.label)
       .join(' and ')
     : '';
-  const timeLabel = formatMinutesAsClockLabel(minutes);
-  if (dayLabel && timeLabel) return `on ${dayLabel} at ${timeLabel}`;
-  if (dayLabel) return `on ${dayLabel}`;
-  if (timeLabel) return `at ${timeLabel}`;
-  return 'currently';
+  const rangeLabel = formatClockRangeLabel(startMinutes, endMinutes);
+  if (dayLabel) return `${dayLabel} ${rangeLabel}`;
+  return isNow ? `now (${rangeLabel})` : `today ${rangeLabel}`;
 };
+
 
 const isScheduleEntryActiveAt = (entry, date = new Date()) => {
   if (!entry) return false;
@@ -9431,22 +9466,33 @@ const getScheduleEntriesForToday = (entries = [], date = new Date()) => {
 // parameterized by explicit dayTokens/minutes instead of a Date -- needed because a
 // query-stated day/time override (e.g. "Tuesdays and Thursdays") can name more than one
 // day, which a single Date object can't represent.
-const filterScheduleEntriesByDayAndMinutes = (entries = [], { dayTokens = [], minutes = null } = {}) => {
+//
+// Used only by the Ask availability query, and matches the Classroom Utilization heat
+// map's rules (classroomUtilizationCalc.js computeDayTimeHeatmapByTerm):
+// - a class is active if it overlaps [minutes, windowEndMinutes) at all, not just at
+//   the instant `minutes`;
+// - days resolve through resolveDayTokens, so "ALL" is Mon-Fri, and a class with no
+//   resolvable days (TBA) is never placed on any day;
+// - upcomingEntries are classes starting at or after the window ends ("Next").
+const filterScheduleEntriesByDayAndMinutes = (entries = [], { dayTokens = [], minutes = null, windowEndMinutes = null } = {}) => {
   const targetTokens = Array.isArray(dayTokens) ? dayTokens.filter(Boolean) : [];
+  const windowEnd = Number.isFinite(windowEndMinutes) ? windowEndMinutes : minutes;
   const todaysEntries = (entries || []).filter((entry) => {
-    const entryTokens = Array.isArray(entry?.dayTokens) ? entry.dayTokens : [];
-    if (!entryTokens.length || !targetTokens.length) return true;
+    const entryTokens = resolveDayTokens(entry);
+    if (!entryTokens.length) return false;
+    if (!targetTokens.length) return true;
     return targetTokens.some((token) => entryTokens.includes(token));
   });
   const activeEntries = todaysEntries.filter((entry) => {
     const startMinutes = Number(entry?.startMinutes);
     const endMinutes = Number(entry?.endMinutes);
     if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || !Number.isFinite(minutes)) return false;
+    if (windowEnd > minutes) return startMinutes < windowEnd && endMinutes > minutes;
     return minutes >= startMinutes && minutes < endMinutes;
   });
   const upcomingEntries = todaysEntries.filter((entry) => {
     const startMinutes = Number(entry?.startMinutes);
-    return Number.isFinite(startMinutes) && Number.isFinite(minutes) && startMinutes >= minutes;
+    return Number.isFinite(startMinutes) && Number.isFinite(windowEnd) && startMinutes >= windowEnd;
   });
   return { todaysEntries, activeEntries, upcomingEntries };
 };
@@ -9458,6 +9504,17 @@ const formatScheduleEntryTime = (entry) => {
   const endText = String(entry?.endTime || '').trim();
   if (startText && endText) return `${startText} - ${endText}`;
   return startText || endText || 'Time TBD';
+};
+
+// Ask availability rows only: start-end when both are known. Some workbooks' timeText
+// holds only the start ("10:20 AM"), which formatScheduleEntryTime would show alone.
+const formatScheduleEntryTimeRange = (entry) => {
+  const startMinutes = Number(entry?.startMinutes);
+  const endMinutes = Number(entry?.endMinutes);
+  if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes) {
+    return formatClockRangeLabel(startMinutes, endMinutes);
+  }
+  return formatScheduleEntryTime(entry);
 };
 
 const formatScheduleEntryCourseLabel = (entry, options = {}) => {
@@ -13076,16 +13133,24 @@ const StakeholderMap = ({
   // since overriding day-of-week/time-of-day says nothing about which term/block is meant --
   // per Clark's decision, that always resolves to whichever block is currently/next active.
   // When `override` is omitted, behavior is byte-for-byte unchanged from before.
+  // override.sessionKey (Ask availability query) pins every room to one block chosen for
+  // the whole query, instead of each room's own preferred block -- otherwise a room whose
+  // only classes are in Block 1 gets checked against Block 1 during Block 2.
+  // override.windowEndMinutes makes "active" mean overlapping [minutes, windowEndMinutes).
   const getRoomScheduleSnapshot = useCallback((buildingName, roomLabel, date = new Date(), override = null) => {
     const entries = getScheduleEntriesForRoom(buildingName, roomLabel);
-    const preferredSession = getPreferredRoomScheduleSession(entries, date);
+    const hasPinnedSession = typeof override?.sessionKey === 'string' && override.sessionKey !== '';
+    const preferredSession = hasPinnedSession
+      ? { key: override.sessionKey }
+      : getPreferredRoomScheduleSession(entries, date);
     const sessionEntries = getScheduleEntriesForSession(entries, preferredSession?.key || '');
     if (override && (override.dayTokens?.length || Number.isFinite(override.minutes))) {
       const { todaysEntries, activeEntries, upcomingEntries } = filterScheduleEntriesByDayAndMinutes(sessionEntries, {
         dayTokens: override.dayTokens || [],
-        minutes: Number.isFinite(override.minutes) ? override.minutes : ((date.getHours() * 60) + date.getMinutes())
+        minutes: Number.isFinite(override.minutes) ? override.minutes : ((date.getHours() * 60) + date.getMinutes()),
+        windowEndMinutes: override.windowEndMinutes
       });
-      return { entries, todaysEntries, activeEntries, upcomingEntries };
+      return { entries, sessionEntries, todaysEntries, activeEntries, upcomingEntries };
     }
     const todaysEntries = getScheduleEntriesForToday(sessionEntries, date);
     const activeEntries = todaysEntries.filter((entry) => isScheduleEntryActiveAt(entry, date));
@@ -13124,12 +13189,21 @@ const StakeholderMap = ({
       hasMultipleSessions: sessionLabels.length > 1
     };
   }, [getPreferredRoomScheduleSession, getScheduleEntriesForRoom]);
+  // Ask availability query (Hastings). `override` = { dayTokens, minutes, windowEndMinutes };
+  // a room is free only if no class in the query's block overlaps that whole window.
+  // Every room is checked against ONE block for the whole query (the same Block 1/Block 2
+  // rule getPreferredRoomScheduleSession applies), and rooms with no classes at all in
+  // that block come back separately as unscheduledRows rather than as "free" -- the
+  // Classroom Utilization heat map leaves them out of its room count entirely.
   const buildCurrentlyAvailableClassroomRows = useCallback((rooms = [], options = {}) => {
     const now = options?.now instanceof Date ? options.now : new Date();
     const minimumSeats = Math.max(0, Number(options?.minimumSeats || 0));
-    const override = options?.override || null;
-    const momentLabel = override ? (options?.momentLabel || 'at the requested time') : 'now';
+    const querySession = getPreferredRoomScheduleSession([], now);
+    const override = { ...(options?.override || {}), sessionKey: querySession?.key || '' };
+    const windowLabel = options?.windowLabel || 'for the requested window';
+    const sessionLabel = String(querySession?.label || '').trim();
     const rows = [];
+    const unscheduledRows = [];
     const seen = new Set();
     (rooms || []).forEach((room) => {
       if (!isScheduledTeachingTypeLabel(room?.type ?? room?.roomType ?? '')) return;
@@ -13142,29 +13216,41 @@ const StakeholderMap = ({
       if (seen.has(dedupeKey)) return;
       seen.add(dedupeKey);
       const schedule = getRoomScheduleSnapshot(building, roomNumber, now, override);
-      if (schedule.activeEntries.length) return;
-      const nextEntry = schedule.upcomingEntries[0] || null;
-      rows.push({
+      const baseRow = {
         Building: building,
         'Room Number': roomNumber,
         Seats: Number.isFinite(seatCount) && seatCount > 0 ? Math.round(seatCount) : '',
-        'Room Type': String(room?.type ?? room?.roomType ?? '').trim(),
+        'Room Type': String(room?.type ?? room?.roomType ?? '').trim()
+      };
+      if (!schedule.sessionEntries?.length) {
+        unscheduledRows.push({
+          ...baseRow,
+          Status: `No classes scheduled${sessionLabel ? ` in ${sessionLabel}` : ''}`,
+          'Next Class': '—'
+        });
+        return;
+      }
+      if (schedule.activeEntries.length) return;
+      const nextEntry = schedule.upcomingEntries[0] || null;
+      rows.push({
+        ...baseRow,
         Status: nextEntry
-          ? `Available ${momentLabel} | Next: ${formatScheduleEntryTime(nextEntry)}`
-          : `Available ${momentLabel}`,
+          ? `Free ${windowLabel} | Next: ${formatScheduleEntryTimeRange(nextEntry)}`
+          : `Free ${windowLabel}`,
         'Next Class': nextEntry
-          ? `${String(nextEntry?.courseCode || nextEntry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTime(nextEntry)})`
-          : 'No more classes today'
+          ? `${String(nextEntry?.courseCode || nextEntry?.title || 'Scheduled class').trim()} (${formatScheduleEntryTimeRange(nextEntry)})`
+          : 'No more classes that day'
       });
     });
-    return rows.sort((a, b) => {
+    const sortRows = (list) => list.sort((a, b) => {
       const seatDiff = Number(b?.Seats || 0) - Number(a?.Seats || 0);
       if (seatDiff !== 0) return seatDiff;
       const buildingCompare = String(a?.Building || '').localeCompare(String(b?.Building || ''));
       if (buildingCompare !== 0) return buildingCompare;
       return String(a?.['Room Number'] || '').localeCompare(String(b?.['Room Number'] || ''));
     });
-  }, [getRoomScheduleSnapshot]);
+    return { rows: sortRows(rows), unscheduledRows: sortRows(unscheduledRows), sessionLabel };
+  }, [getRoomScheduleSnapshot, getPreferredRoomScheduleSession]);
   const [scenarioBaselineTotals, setScenarioBaselineTotals] = useState(null);
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState('unknown'); // "ok" | "down" | "unknown"
@@ -22201,44 +22287,52 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
           return;
         }
         const minimumSeats = extractMinimumSeatCountFromQuestion(q);
-        // Day/time stated in the question (e.g. "Tuesdays at 9:30") overrides the real
-        // wall-clock day/time used for filtering; block/session resolution still always
-        // uses the real current date (see getRoomScheduleSnapshot). When neither a day
-        // nor a time is stated, `override` stays null and behavior is unchanged from
-        // before this query text can also mention a day/time.
+        // A room is free only if no class overlaps the whole window: from the stated
+        // time (or now) for the stated duration, default 60 minutes. A day/time stated
+        // in the question (e.g. "Tuesdays at 9:30") overrides the real wall-clock
+        // day/time; the block is still resolved from the real current date, once for
+        // the whole query (see buildCurrentlyAvailableClassroomRows).
         const queryDayTokens = extractQueryDayTokens(q);
         const queryTimeMinutes = extractQueryTimeMinutes(q);
-        const hasQueryMomentOverride = queryDayTokens.length > 0 || Number.isFinite(queryTimeMinutes);
+        const queryDurationMinutes = extractQueryDurationMinutes(q);
         const nowForQuery = new Date();
-        const override = hasQueryMomentOverride
-          ? {
-            dayTokens: queryDayTokens.length ? queryDayTokens : getScheduleDayTokensForDate(nowForQuery),
-            minutes: Number.isFinite(queryTimeMinutes) ? queryTimeMinutes : ((nowForQuery.getHours() * 60) + nowForQuery.getMinutes())
-          }
-          : null;
-        const momentLabel = describeQueryMoment(queryDayTokens, queryTimeMinutes);
-        const rows = buildCurrentlyAvailableClassroomRows(scopeRooms, {
+        const isNowWindow = !Number.isFinite(queryTimeMinutes);
+        const windowStartMinutes = isNowWindow
+          ? ((nowForQuery.getHours() * 60) + nowForQuery.getMinutes())
+          : queryTimeMinutes;
+        const windowEndMinutes = Math.min(
+          24 * 60,
+          windowStartMinutes + (queryDurationMinutes || DEFAULT_AVAILABILITY_WINDOW_MINUTES)
+        );
+        const override = {
+          dayTokens: queryDayTokens.length ? queryDayTokens : getScheduleDayTokensForDate(nowForQuery),
+          minutes: windowStartMinutes,
+          windowEndMinutes
+        };
+        const windowLabel = describeQueryWindow(queryDayTokens, windowStartMinutes, windowEndMinutes, isNowWindow);
+        const { rows: freeRows, unscheduledRows, sessionLabel } = buildCurrentlyAvailableClassroomRows(scopeRooms, {
           minimumSeats,
           now: nowForQuery,
           override,
-          momentLabel
+          windowLabel
         });
         const scopeLabel = forceCampusScope
           ? 'campus'
           : (inferredBuilding ? inferredBuilding : 'selected scope');
-        const answer = hasQueryMomentOverride
-          ? (rows.length
-            ? `Found ${rows.length.toLocaleString()} classrooms free ${momentLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
-            : `No classrooms free ${momentLabel}${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`)
-          : (rows.length
-            ? `Found ${rows.length.toLocaleString()} currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} in ${scopeLabel}.`
-            : `No currently empty classrooms${minimumSeats ? ` with at least ${minimumSeats} seats` : ''} were found in ${scopeLabel}.`);
+        const seatsText = minimumSeats ? ` with at least ${minimumSeats} seats` : '';
+        const sessionText = sessionLabel ? ` (${sessionLabel})` : '';
+        const unscheduledText = unscheduledRows.length
+          ? ` Plus ${unscheduledRows.length.toLocaleString()} classroom${unscheduledRows.length === 1 ? '' : 's'}${seatsText} with no classes scheduled${sessionLabel ? ` in ${sessionLabel}` : ''}, listed separately below.`
+          : '';
+        const answer = freeRows.length
+          ? `Found ${freeRows.length.toLocaleString()} classrooms free for all of ${windowLabel}${sessionText}${seatsText} in ${scopeLabel}.${unscheduledText}`
+          : `No scheduled classrooms are free for all of ${windowLabel}${sessionText}${seatsText} in ${scopeLabel}.${unscheduledText}`;
+        const rows = [...freeRows, ...unscheduledRows];
         setAskResult({
           answer,
           bullets: [
-            hasQueryMomentOverride
-              ? 'Availability is based on the stated day/time, the loaded class schedule workbook (resolved to the current or next active block), and classroom seat counts from the room inventory.'
-              : 'Availability is based on the current local time, the loaded class schedule workbook, and classroom seat counts from the room inventory.'
+            `"Free" means no class overlaps any part of ${windowLabel}. A class starting partway through the window makes the room busy.`,
+            `Uses one block for every room${sessionText}, the loaded class schedule workbook, and classroom seat counts from the room inventory. Ask "for 2 hours" or "for 30 minutes" to change the window.`
           ],
           resultType: rows.length ? 'table' : 'none',
           columns: rows.length ? ['Building', 'Room Number', 'Seats', 'Room Type', 'Status', 'Next Class'] : [],
