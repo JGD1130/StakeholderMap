@@ -243,6 +243,73 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-10-15) — Capital Compass Condition tab + condition map view (`006b369`), full-strength Capital map fills (`f6baf3b`), Hastings "Name1" renamed "Bronco Bikes" (`e5f6413`)
+
+All admin-only, Hastings. No scoring, tier or cost-rule changes. GitHub Pages deploy only; nothing in `ai-server`, so no Render deploy.
+
+### Condition tab (`006b369`)
+**Data:** the facility condition assessment already in `public/Data/building-resources.json` (`conditionAssessment` per building), from `HC MP - Building Assessment Scoring MP.xlsx`, dated 2026-04-01. Scale 1 (very poor) to 5 (excellent), whole numbers. 29 entries, 16 systems in three groups:
+- **Architecture:** exterior, entrances, interiorFinishes, lifeSafety, codesAccessibility, superstructure, conveyingSystems
+- **Engineering:** fireProtection, plumbing, mechanical, power, lighting, telecomm, fireAlarm
+- **Functionality:** spaceSize, technology
+
+Some systems are absent rather than blank (conveyingSystems for 19 buildings, likely no elevator; technology for 10; fireAlarm for Barrett Alumni). `averageScore` = mean of the systems present. Each entry also has free-text `notes`.
+
+**Wiring:** `useCapitalCompassData` takes the catalog StakeholderMap already loads (`buildingResources: buildingResourcesCatalog`, no new fetch) and returns `conditionEntries`. All display logic is in the new `src/components/conditionView.js`; the tab is the new `src/components/CapitalCompassConditionTab.jsx`. The tab sits between Deferred Maintenance and Setup and only appears when condition data is loaded (so other tenants never see it).
+- **KPIs:** Buildings assessed ("29 of 41 on the map"); Campus average; Buildings in poor condition (average **below 2.5**, i.e. rounds into "Poor"); Weakest system (systems tied at one decimal are shown together).
+- **Matrix:** worst average first, Average column first, systems under group headers, campus average per system as the bottom row. Cells use `MF.diverging`: 1 = deficit, 3 = zero, 5 = surplus, 2 and 4 halfway; averages use the same ramp continuously. Text is whichever of white / `MF.ink.primary` has more contrast (dark wins on all five). Missing systems show "—". Names stay pinned while the matrix scrolls sideways.
+- **Building table:** Building · Average · Lowest systems (up to 3 below that building's own average) · Notes · Tier · Est. cost (same cost rule and source tag).
+- **Footnote:** source file and month from the data ("HC MP - Building Assessment Scoring MP, Apr 2026").
+- **Bronco Village** is one display row, "Bronco Village Apartments (6 buildings)", counted once in every average and KPI (`CONDITION_COMPLEXES` in `conditionView.js`; the data file keeps the six identical `Bronco Village Apt 911…923` entries). On the map it shades all six "Bronco Village Apartments 1–6" footprints; the popup says "assessed as one complex". Its tier shows only if all scored units share one ("Mixed tiers" otherwise); its cost is the sum of the units' known costs ("n of 6 costed").
+- **Taylor Hall:** added the alias "Taylor Hall Residence" in `building-resources.json` so it matches the map. Side effect, accepted: that map building now also shows the "Deferred + Condition" window, and the cost rule's building-estimate fallback gives it $277K (when no manual cost or uploaded 0–5 yr figure applies).
+- **Values at release:** 24 assessed rows, 29 of 41 map buildings covered, campus average 2.9, 10 buildings below 2.5, weakest systems Mechanical 2.3 · Fire Protection 2.3.
+
+**Map:** new map view "Capital Compass condition" (`MAP_VIEWS.CAPITAL_CONDITION`), offered where "Capital Compass tiers" is, Hastings only. Buildings shaded by average on the same scale, unassessed `MF.line.border`, legend bottom-left (`CapitalTiersMapLegend` now takes `title`/`rows`), popup line "Condition: 2.7 average (1 very poor · 5 excellent)". The workspace's "Show on map" opens this view while the Condition tab is active, the tiers view otherwise.
+
+### Full-strength fills in the tiers and condition views (`f6baf3b`)
+The extrusion lighting washed the colors out. In these two views only: extrusion opacity 0.9 (was 0.85), map light intensity 0, and `fill-extrusion-vertical-gradient` off, so every face is the legend color. The light is map-wide, so the recolor effect saves the original (`capitalFlatShadingRef`) and restores it, and the gradient, when leaving these views. Other views are unchanged.
+
+### "Name1" → "Bronco Bikes" (`e5f6413`)
+The footprint ~51 m north of Kiewit Building was labeled "Name1". The building's only property is `id`, which is both its label and its key, so the rename changes the id. Changed in all five copies: `src/Configs/geojson/Hastings_College_Buildings.geojson` (the one `configLoader.js` loads), `src/Configs/geojson/Hastings_College_Buildings.json`, `public/Hastings_College_Buildings.json`, `public/Hastings_College_Buildings.kml`, `public/Data/Hastings_College_Buildings.kml`. Added "Bronco Bikes" to `NO_FLOORPLAN_BUILDINGS` (the old "Name1" entry is still there, harmless). No floorplan folder and no room edits exist for it (room edits need a floorplan). Hastings has no Airtable building list.
+
+### Open items
+- **Re-upload deferred maintenance** on the Capital Compass Setup tab. The importer matches "Bronco Bikes" directly now, but the saved `deferredMaintenanceBuildings` doc still says `unmapped` until the next upload. (The only local copy, `ai-server/Docs/Hastings College Deferred Maint.xlsx`, is an older `Sheet1` layout the current importer rejects, so the match wasn't replayed against the real upload.)
+- **Firestore not checked for "Name1" keys** (no service-account key locally): `buildingConditions/Name1`, `buildingAssessments`, `capitalPriorities/Name1`, `maintenanceIssues` with `buildingId: "Name1"`, and `capitalCompassSettings/budget` `manualCosts["Name1"]`. Check in the Firebase console, or run `scripts/export-firestore-data.cjs` with a service account.
+- **Condition scale labels 2–4** ("Poor", "Adequate", "Good") come from `AssessmentPanel.jsx`'s scale; the workbook only names 1 and 5.
+
+---
+
+## Recent Changes (2026-10-14) — Hastings Ask Mapfluence classroom availability now means free for a time window and uses one block (`065fa06`)
+
+**Report:** for Fall 2026 Block 2, "show classrooms available Monday at 10 AM with at least 20 seats" returned 24 rooms, while the Classroom Utilization heat map showed Mon 10 AM at 71% (30 of 42 rooms in use). Many rows read "Next: 10:20 AM".
+
+**Why the two disagreed:** the heat map was right; the Ask query was answering a different question. Replaying both against the live `/class-schedule` and `/api/rooms` data reproduced both numbers exactly. The 24 broke down as:
+- **9 truly free for the whole hour.** These match the heat map.
+- **9 busy within the hour.** The Ask query tested only the instant 10:00 (`minutes >= start && minutes < end`), so a class starting at 10:20 didn't count. The heat map (`computeDayTimeHeatmapByTerm`) counts any overlap with the hour.
+- **6 rooms with no Block 2 classes at all.** Ask counted them as free; the heat map leaves them out of its room count.
+- **Block chosen per room.** `getPreferredRoomScheduleSession` picked each room's own block, so a room with only Block 1 classes was checked against Block 1 during Block 2 (FC-141, MRSC 142).
+- **Day parsing differed.** Ask read raw `/class-schedule` rows, where `"ALL"` days parse to `[]`, and treated empty days as every day. The heat map reads Firestore `courseMeetings`, where the import turns `"ALL"` into Mon–Fri.
+
+The heat map's 12 free rooms = the 9 above + 3 the 20-seat filter removes (Hurley-McDonald 222, JDAC 123, Kiewit SPC).
+
+**The fix** is in `src/components/StakeholderMap.jsx`, plus `resolveDayTokens` now exported from `src/utils/classroomScheduleImport.js`. Hastings Ask availability path only. `server.js` was not touched; the room-click popup's "now" behavior and time display are unchanged.
+- **Free for a window.** A room is busy if any class overlaps [start, start + duration). Start is the stated time, or now. Duration defaults to 60 minutes (`DEFAULT_AVAILABILITY_WINDOW_MINUTES`), or comes from the question via `extractQueryDurationMinutes` ("for 2 hours", "for 90 minutes", "half an hour", "a 1.5-hour block"). "Right now" questions use now → now+60. "Next" is the first class starting at or after the window ends.
+- **One block per query.** `buildCurrentlyAvailableClassroomRows` resolves the block once (`getPreferredRoomScheduleSession([], now)`, same Block 1/Block 2 month rule) and pins every room to it through `override.sessionKey` in `getRoomScheduleSnapshot`.
+- **Unscheduled rooms listed separately.** Rooms with no classes in that block appear after the free rooms with the status "No classes scheduled in Fall 2026 Block 2", and the answer counts them separately.
+- **Same day parsing as the heat map.** `filterScheduleEntriesByDayAndMinutes` (used only by this path) reads days through `resolveDayTokens`, so `"ALL"` is Mon–Fri, and classes with no days (TBA) block no day.
+- **Answer states the window and block**, e.g. "Found 9 classrooms free for all of Monday 10:00–11:00 AM (Fall 2026 Block 2) with at least 20 seats in campus. Plus 7 classrooms … with no classes scheduled in Fall 2026 Block 2, listed separately below." Rows read "Free Monday 10:00–11:00 AM | Next: 12:20–2:00 PM". `formatScheduleEntryTimeRange` shows start–end, because this workbook's `timeText` holds only the start time.
+- Removed `describeQueryMoment`, which nothing used afterwards.
+
+### Verification
+- A replay running the real helpers taken from the edited file against live data gave 9 free + 7 unscheduled, all Block 2. The 7th unscheduled room, MRSC 142, is correct: it only has Block 1 classes and was previously counted busy against Block 1.
+- Clark tested it on the local dev server (`npm run dev`, then `http://localhost:5173/StakeholderMap/hastings/admin`) and confirmed it working. Pushed to GitHub Pages. No Render deploy is needed.
+
+### Open items
+- **Routing gap:** `isCurrentEmptyClassroomQuery` needs "show/find/list/which/what" or "now/currently" alongside "available/free/open". Without one of those words, "classrooms available Monday at 10 AM…" never reaches this path. Not changed; worth widening if users phrase it the short way.
+- **`"ALL"` days at the source:** `server.js` `normalizeScheduleDayTokens` still returns `[]` for `"ALL"`. Both client paths now work around it. Fixing it in `server.js` would need sign-off and a manual Render deploy.
+
+---
+
 ## Recent Changes (2026-09-30) — Sarpy basemaps: 2026 county aerials added, NAIP removed, Satellite kept as a fallback under the aerials (`c1be131`)
 
 All in `src/components/StakeholderMap.jsx`: the `BASEMAP_VIEWS` / `show*BasemapOption` flags, the basemap `useEffect` (`applyBasemapView`), and the `#basemap-select` dropdown. None of it is in the client config.
