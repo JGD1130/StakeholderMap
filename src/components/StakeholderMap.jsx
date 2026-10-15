@@ -14208,6 +14208,9 @@ const StakeholderMap = ({
     });
     return [...seen];
   }, [config?.buildings?.features]);
+  // Whether the recolor effect has the tiers/condition flat shading on, and
+  // the map light it replaced (restored when leaving those views).
+  const capitalFlatShadingRef = useRef({ on: false, light: null });
   const capitalConditionMapNamesRef = useRef(capitalConditionMapNames);
   capitalConditionMapNamesRef.current = capitalConditionMapNames;
   const capitalConditionColorEntries = useMemo(
@@ -28699,6 +28702,24 @@ useEffect(() => {
 useEffect(() => {
   if (!mapLoaded || !mapRef.current || !mapRef.current.getSource('buildings')) return;
   const map = mapRef.current;
+  // Capital Compass tiers / condition views: flat extrusion shading, so the
+  // buildings show the legend colors. Light intensity 0 makes every face the
+  // paint color; no vertical gradient keeps walls from darkening. The light
+  // is map-wide, so the original is saved and put back for every other view.
+  const flatShading = capitalTiersViewActive || capitalConditionViewActive;
+  const shading = capitalFlatShadingRef.current;
+  if (flatShading !== shading.on) {
+    try {
+      if (flatShading) {
+        shading.light = map.getLight();
+        map.setLight({ ...shading.light, intensity: 0 });
+      } else if (shading.light) {
+        map.setLight(shading.light);
+      }
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-vertical-gradient', !flatShading);
+      shading.on = flatShading;
+    } catch {}
+  }
   if (mapView === MAP_VIEWS.SPACE_DATA) {
     if (utilizationHeatmapOn && utilizationByBuildingId && Object.keys(utilizationByBuildingId).length > 0) {
       const matchExpr = ['match', ['get', 'id']];
@@ -28785,7 +28806,7 @@ useEffect(() => {
       : unscoredExpr;
     try {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', colorExpr);
-      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.85);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.9);
       if (map.getLayer('buildings-fill')) {
         map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
       }
@@ -28803,7 +28824,7 @@ useEffect(() => {
       : unassessedExpr;
     try {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', colorExpr);
-      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.85);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.9);
       if (map.getLayer('buildings-fill')) {
         map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
       }
