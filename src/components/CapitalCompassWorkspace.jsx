@@ -2,7 +2,7 @@
 //
 // The Capital Compass workspace, on the shared mf/ components: a
 // workspace-size WorkspaceShell (Refresh in the title bar) with Overview,
-// Budget, Phasing, Deferred Maintenance and Setup tabs. Pure presentation over the useCapitalCompassData result
+// Budget, Phasing, Deferred Maintenance, Condition and Setup tabs. Pure presentation over the useCapitalCompassData result
 // (`data`, mounted once in StakeholderMap.jsx) -- no fetching here; Refresh
 // calls the hook's reload(). Values, labels and orderings come from
 // capitalCompassView.js; tiers are always MF.tier[1-4].
@@ -24,6 +24,7 @@ import {
 import CapitalCompassBudgetTab from './CapitalCompassBudgetTab.jsx';
 import CapitalCompassPhasingTab from './CapitalCompassPhasingTab.jsx';
 import CapitalCompassDeferredTab from './CapitalCompassDeferredTab.jsx';
+import CapitalCompassConditionTab from './CapitalCompassConditionTab.jsx';
 import CapitalCompassSetupTab from './CapitalCompassSetupTab.jsx';
 import { usePresentationMode, presentationTabs } from './presentationMode';
 
@@ -32,6 +33,7 @@ const TABS = [
   { id: 'budget', label: 'Budget' },
   { id: 'phasing', label: 'Phasing' },
   { id: 'deferred', label: 'Deferred Maintenance' },
+  { id: 'condition', label: 'Condition' },
   { id: 'setup', label: 'Setup' }
 ];
 
@@ -189,15 +191,19 @@ function OverviewTab({ data, mapBuildingCount }) {
 // maintenance name match). getBuildingResourceEntry: building-resources.json
 // lookup, for the scoring suggestions.
 // onShowOnMap: switches the map to the "Capital Compass tiers" view; the
-// workspace closes so the map is visible.
-export default function CapitalCompassWorkspace({ data, buildingNames = [], getBuildingResourceEntry = null, onShowOnMap = null, onClose }) {
+// workspace closes so the map is visible. onShowConditionOnMap: the same for
+// the "Capital Compass condition" view, used while the Condition tab is open.
+// The Condition tab only appears when condition data is loaded.
+export default function CapitalCompassWorkspace({ data, buildingNames = [], getBuildingResourceEntry = null, onShowOnMap = null, onShowConditionOnMap = null, onClose }) {
   const mapBuildingCount = buildingNames.length;
   const [chosenTab, setActiveTab] = useState('overview');
   // Presentation mode hides the Setup tab (admin tools).
   const presenting = usePresentationMode();
-  const tabs = presentationTabs(TABS, presenting);
+  const hasCondition = (data.conditionEntries || []).length > 0;
+  const tabs = presentationTabs(TABS, presenting).filter((t) => t.id !== 'condition' || hasCondition);
   const activeTab = tabs.some((t) => t.id === chosenTab) ? chosenTab : 'overview';
   const loading = data.status === 'loading';
+  const showOnMap = activeTab === 'condition' ? onShowConditionOnMap : onShowOnMap;
 
   return (
     <WorkspaceShell
@@ -206,8 +212,8 @@ export default function CapitalCompassWorkspace({ data, buildingNames = [], getB
       subtitle={workspaceSubtitle(data, mapBuildingCount)}
       actions={(
         <>
-          {onShowOnMap ? (
-            <BarButton onClick={() => { onShowOnMap(); onClose(); }}>Show on map</BarButton>
+          {showOnMap ? (
+            <BarButton onClick={() => { showOnMap(); onClose(); }}>Show on map</BarButton>
           ) : null}
           <BarButton onClick={() => void data.reload()} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
@@ -225,6 +231,7 @@ export default function CapitalCompassWorkspace({ data, buildingNames = [], getB
       {activeTab === 'budget' ? <CapitalCompassBudgetTab data={data} /> : null}
       {activeTab === 'phasing' ? <CapitalCompassPhasingTab data={data} /> : null}
       {activeTab === 'deferred' ? <CapitalCompassDeferredTab data={data} /> : null}
+      {activeTab === 'condition' ? <CapitalCompassConditionTab data={data} buildingNames={buildingNames} /> : null}
       {activeTab === 'setup' ? (
         <CapitalCompassSetupTab data={data} buildingNames={buildingNames} getBuildingResourceEntry={getBuildingResourceEntry} />
       ) : null}

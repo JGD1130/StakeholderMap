@@ -58,7 +58,10 @@ async function replaceCollection(collectionRef, docs, onPhase) {
   return { clearedCount: existingRefs.length, writtenCount: docs.length };
 }
 
-export function useCapitalCompassData({ enabled = false, universityId, getBuildingResourceEntry = null } = {}) {
+// buildingResources: the building-resources.json catalog StakeholderMap
+// already loaded (Hastings only); its conditionAssessment entries come back
+// as conditionEntries for the Condition tab. Never fetched here.
+export function useCapitalCompassData({ enabled = false, universityId, getBuildingResourceEntry = null, buildingResources = null } = {}) {
   const uid = String(universityId || '').trim();
 
   // 'idle' | 'loading' | 'ready' | 'error'
@@ -210,6 +213,12 @@ export function useCapitalCompassData({ enabled = false, universityId, getBuildi
     };
   }), [priorityDocs, manualCosts, deferredMaintenanceByDocId, getBuildingResourceEntry]);
 
+  // building-resources.json entries with a condition assessment (read-only).
+  const conditionEntries = useMemo(
+    () => (Array.isArray(buildingResources?.buildings) ? buildingResources.buildings : []).filter((e) => e?.conditionAssessment),
+    [buildingResources]
+  );
+
   const knownCostTotal = useMemo(() => totalKnownCost(buildings), [buildings]);
   const budgetCap = savedBudgetCap ?? knownCostTotal;
 
@@ -296,6 +305,7 @@ export function useCapitalCompassData({ enabled = false, universityId, getBuildi
     buildings,
     phasingDocs,
     deferredMaintenanceDocs,
+    conditionEntries,
     budgetCap,
     budgetCapIsSaved: savedBudgetCap != null,
     manualCosts,

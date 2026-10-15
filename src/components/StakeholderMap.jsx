@@ -33,6 +33,13 @@ import { useSpaceGrowthData } from '../utils/useSpaceGrowthData';
 import { MF } from '../theme/mfTokens';
 import FaClassifier from './FaClassifier.jsx';
 import { mapTierColorEntries, mapPopupLineHtml, MAP_UNSCORED_COLOR } from './capitalCompassView';
+import {
+  mapConditionColorEntries,
+  mapConditionPopupLineHtml,
+  conditionMapLegendRows,
+  CONDITION_MAP_LEGEND_TITLE,
+  CONDITION_MAP_UNASSESSED_COLOR
+} from './conditionView';
 import { getSharedAirtableRooms, airtableRoomsCacheKey, AIRTABLE_BUSY_MESSAGE, isAirtableRateLimitError } from '../utils/airtableRoomsCache';
 import CapitalTiersMapLegend from './CapitalTiersMapLegend.jsx';
 import {
@@ -12459,7 +12466,10 @@ const StakeholderMap = ({
     TECHNICAL: 'technical',
     MAINTENANCE: 'maintenance',
     // Admin-only, Capital Compass enabled: buildings shaded by priority tier.
-    CAPITAL_TIERS: 'capital-tiers'
+    CAPITAL_TIERS: 'capital-tiers',
+    // Admin-only, Capital Compass + Hastings condition data: buildings shaded
+    // by condition assessment average.
+    CAPITAL_CONDITION: 'capital-condition'
   };
   const isAdminMode = mode === 'admin';
   const isClientMode = mode === 'client';
@@ -12558,6 +12568,10 @@ const StakeholderMap = ({
   // "Capital Compass tiers" map view: full admin controls + Capital Compass on.
   const capitalTiersViewAvailable = showFullMapfluenceControls && Boolean(config?.enableCapitalPriorities);
   const capitalTiersViewActive = capitalTiersViewAvailable && mapView === MAP_VIEWS.CAPITAL_TIERS;
+  // "Capital Compass condition" map view: the same gate, Hastings only (the
+  // condition data lives in Hastings' building-resources.json).
+  const capitalConditionViewAvailable = capitalTiersViewAvailable && isHastingsCollegeInstance;
+  const capitalConditionViewActive = capitalConditionViewAvailable && mapView === MAP_VIEWS.CAPITAL_CONDITION;
   const MAP_VIEW_OPTIONS = useMemo(() => {
     if (showFullMapfluenceControls) {
       return [
@@ -12565,7 +12579,8 @@ const StakeholderMap = ({
         { value: MAP_VIEWS.ASSESSMENT, label: 'Engagement' },
         { value: MAP_VIEWS.TECHNICAL, label: 'Technical' },
         { value: MAP_VIEWS.MAINTENANCE, label: 'Maintenance' },
-        ...(capitalTiersViewAvailable ? [{ value: MAP_VIEWS.CAPITAL_TIERS, label: 'Capital Compass tiers' }] : [])
+        ...(capitalTiersViewAvailable ? [{ value: MAP_VIEWS.CAPITAL_TIERS, label: 'Capital Compass tiers' }] : []),
+        ...(capitalConditionViewAvailable ? [{ value: MAP_VIEWS.CAPITAL_CONDITION, label: 'Capital Compass condition' }] : [])
       ];
     }
     if (isDemoPublicMode) {
@@ -12584,12 +12599,13 @@ const StakeholderMap = ({
       return [{ value: MAP_VIEWS.TECHNICAL, label: 'Technical' }];
     }
     return [{ value: MAP_VIEWS.SPACE_DATA, label: 'Space Data' }];
-  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, capitalTiersViewAvailable]);
+  }, [showFullMapfluenceControls, isDemoPublicMode, isAdminCombinedMode, isTechnicalOnlyMode, capitalTiersViewAvailable, capitalConditionViewAvailable]);
   const visibleMapViewOptions = MAP_VIEW_OPTIONS;
-  // Leave the tiers view if it stops being available (e.g. the flag is off).
+  // Leave the tiers / condition view if it stops being available (e.g. the flag is off).
   useEffect(() => {
     if (mapView === MAP_VIEWS.CAPITAL_TIERS && !capitalTiersViewAvailable) setMapView(defaultMapView);
-  }, [mapView, capitalTiersViewAvailable, defaultMapView]);
+    if (mapView === MAP_VIEWS.CAPITAL_CONDITION && !capitalConditionViewAvailable) setMapView(defaultMapView);
+  }, [mapView, capitalTiersViewAvailable, capitalConditionViewAvailable, defaultMapView]);
   const showMapViewSelector = visibleMapViewOptions.length > 1 || isTechnicalOnlyMode;
   const showBasemapSelector = hasRuntimeMapboxToken;
   // Sarpy's county aerials replace the Satellite option there (Satellite still renders beneath them
@@ -14167,7 +14183,8 @@ const StakeholderMap = ({
   const capitalCompassData = useCapitalCompassData({
     enabled: isAdminMode && Boolean(config?.enableCapitalPriorities),
     universityId,
-    getBuildingResourceEntry
+    getBuildingResourceEntry,
+    buildingResources: buildingResourcesCatalog
   });
   // "Capital Compass tiers" map view: each scored building's tier color
   // (live tiers, recomputed when scores change), the latest data for the
@@ -14180,6 +14197,24 @@ const StakeholderMap = ({
   const capitalCompassDataRef = useRef(capitalCompassData);
   capitalCompassDataRef.current = capitalCompassData;
   const showCapitalTiersOnMap = useCallback(() => setMapView(MAP_VIEWS.CAPITAL_TIERS), []);
+  // "Capital Compass condition" map view: each assessed building's average
+  // on the condition scale, matched to the map's building ids (the names the
+  // buildings layer colors by). Names read through a ref for the popup.
+  const capitalConditionMapNames = useMemo(() => {
+    const seen = new Set();
+    (Array.isArray(config?.buildings?.features) ? config.buildings.features : []).forEach((feature) => {
+      const name = String(feature?.properties?.id || feature?.properties?.name || '').trim();
+      if (name) seen.add(name);
+    });
+    return [...seen];
+  }, [config?.buildings?.features]);
+  const capitalConditionMapNamesRef = useRef(capitalConditionMapNames);
+  capitalConditionMapNamesRef.current = capitalConditionMapNames;
+  const capitalConditionColorEntries = useMemo(
+    () => (capitalConditionViewActive ? mapConditionColorEntries(capitalCompassData, capitalConditionMapNames) : []),
+    [capitalConditionViewActive, capitalCompassData.conditionEntries, capitalConditionMapNames]
+  );
+  const showCapitalConditionOnMap = useCallback(() => setMapView(MAP_VIEWS.CAPITAL_CONDITION), []);
 
   const [faSelectedRoomKey, setFaSelectedRoomKey] = useState('');
   // "Classify on map": the docked F&A Classifier replaces the right rail's
@@ -28223,7 +28258,9 @@ useEffect(() => {
         // and cost (or "Not scored"), keyed by the feature id the map colors by.
         const capitalLineHtml = mapView === MAP_VIEWS.CAPITAL_TIERS
           ? `<div style="margin-top:6px;">${mapPopupLineHtml(capitalCompassDataRef.current, id)}</div>`
-          : '';
+          : mapView === MAP_VIEWS.CAPITAL_CONDITION
+            ? `<div style="margin-top:6px;">${mapConditionPopupLineHtml(capitalCompassDataRef.current, id, capitalConditionMapNamesRef.current)}</div>`
+            : '';
       const popupHtml = `
           <div class="mf-popup mf-popup--building" style="min-width:280px;padding:8px 10px;">
             <div style="display:flex;gap:18px;align-items:flex-start;">
@@ -28756,6 +28793,24 @@ useEffect(() => {
     return;
   }
 
+  // Capital Compass condition (admin-only view, Hastings): each assessed
+  // building on the condition scale (MF.diverging), every other building
+  // MF.line.border. Same no-floorplan handling as the tiers view.
+  if (capitalConditionViewActive) {
+    const unassessedExpr = withNoFloorplanOverride(CONDITION_MAP_UNASSESSED_COLOR, CONDITION_MAP_UNASSESSED_COLOR);
+    const colorExpr = capitalConditionColorEntries.length
+      ? ['match', ['get', 'id'], ...capitalConditionColorEntries.flat(), unassessedExpr]
+      : unassessedExpr;
+    try {
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-color', colorExpr);
+      map.setPaintProperty('buildings-layer', 'fill-extrusion-opacity', 0.85);
+      if (map.getLayer('buildings-fill')) {
+        map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
+      }
+    } catch {}
+    return;
+  }
+
   if (map.getLayer('buildings-fill')) {
     try {
       map.setPaintProperty('buildings-fill', 'fill-opacity', 0.0);
@@ -28812,7 +28867,7 @@ useEffect(() => {
     } else {
       map.setPaintProperty('buildings-layer', 'fill-extrusion-color', withNoFloorplanOverride(defaultBuildingColor));
     }
-  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, isSarpyCountyInstance, capitalTiersViewActive, capitalTierColorEntries]);
+  }, [buildingConditions, sharedTechnicalBuildingAssessments, maintenanceWorkflowActive, maintenanceOpenByBuilding, mapLoaded, mode, technicalMode, technicalWorkflowActive, technicalBuildingColorMode, mapView, showFullMapfluenceControls, isAdminCombinedMode, adminEngagementToolsMode, stakeholderWorkflowActive, stakeholderConditionModeOn, utilizationHeatmapOn, utilizationByBuildingId, resolveBuildingNameFromInput, isSarpyCountyInstance, capitalTiersViewActive, capitalTierColorEntries, capitalConditionViewActive, capitalConditionColorEntries]);
 
   // ---------- Map click handlers ----------
   const resolveEngagementRoomFromClick = useCallback((event) => {
@@ -30313,6 +30368,13 @@ useEffect(() => {
     {capitalTiersViewActive && (
       <CapitalTiersMapLegend style={{ position: 'absolute', left: isControlsVisible && !clientPresentationMode ? 316 : 20, bottom: 36, zIndex: 9 }} />
     )}
+    {capitalConditionViewActive && (
+      <CapitalTiersMapLegend
+        title={CONDITION_MAP_LEGEND_TITLE}
+        rows={conditionMapLegendRows()}
+        style={{ position: 'absolute', left: isControlsVisible && !clientPresentationMode ? 316 : 20, bottom: 36, zIndex: 9 }}
+      />
+    )}
 
     {(isSarpyCountyInstance || isCherokeeMentalHealthInstance) && floorAdjustPending && (
       <div
@@ -31614,6 +31676,7 @@ useEffect(() => {
               getBuildingResourceEntry={getBuildingResourceEntry}
               capitalData={capitalCompassData}
               onShowOnMap={capitalTiersViewAvailable ? showCapitalTiersOnMap : null}
+              onShowConditionOnMap={capitalConditionViewAvailable ? showCapitalConditionOnMap : null}
             />
           </div>
         )}

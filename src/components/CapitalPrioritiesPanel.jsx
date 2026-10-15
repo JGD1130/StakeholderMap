@@ -27,7 +27,9 @@ export default function CapitalPrioritiesPanel({
   // useCapitalCompassData's result (mounted once in StakeholderMap.jsx).
   capitalData = null,
   // Switches the map to the "Capital Compass tiers" view (null = not offered).
-  onShowOnMap = null
+  onShowOnMap = null,
+  // Switches the map to the "Capital Compass condition" view (null = not offered).
+  onShowConditionOnMap = null
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   useCloseWhenPresenting(() => setWorkspaceOpen(false));
@@ -106,6 +108,7 @@ export default function CapitalPrioritiesPanel({
           buildingNames={buildingNames}
           getBuildingResourceEntry={getBuildingResourceEntry}
           onShowOnMap={onShowOnMap}
+          onShowConditionOnMap={onShowConditionOnMap}
           onClose={() => setWorkspaceOpen(false)}
         />
       ) : null}
