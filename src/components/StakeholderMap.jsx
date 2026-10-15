@@ -11517,6 +11517,7 @@ const NO_FLOORPLAN_BUILDINGS = [
   '905 N Elm Ave',
   'Name 1',
   'Name1',
+  'Bronco Bikes',
   '706 E. 7th St',
   '706 E 7th St',
   '706 E. 7th St. Residence',

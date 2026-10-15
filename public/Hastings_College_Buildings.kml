@@ -40,7 +40,7 @@
 -98.37470203634304,40.59087627765015</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
 <Placemark>
 <ExtendedData>
-  <Data name="id"><value>Name1</value></Data></ExtendedData>
+  <Data name="id"><value>Bronco Bikes</value></Data></ExtendedData>
   <Polygon>
 <outerBoundaryIs>
   <LinearRing><coordinates>-98.37353314553962,40.59087905110178
