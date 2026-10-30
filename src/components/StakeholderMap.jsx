@@ -67,6 +67,7 @@ import { computeBuildingUtilizationForCurrentTerm, fetchAirtableRoomsForUtilizat
 import { resolveDayTokens } from '../utils/classroomScheduleImport';
 import { COURSE_MEETINGS_COLLECTION, TERMS_COLLECTION } from '../utils/classroomUtilizationSchema';
 import { buildRoomUtilizationMetaKey } from '../utils/roomUtilizationMeta';
+import { buildAskCapitalPlan, CAPITAL_PLAN_INSTRUCTIONS } from '../utils/askCapitalPlanContext';
 
 const DEFAULT_PUBLIC_AI_BASE_URL = 'https://github-stakeholder-ai.onrender.com';
 const SCENARIO_OP_PERSIST_ENABLED = String(import.meta.env.VITE_SCENARIO_OP_PERSIST || 'false').toLowerCase() === 'true';
@@ -22717,6 +22718,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
               "requested day."
             : "");
       }
+      // Admin only: the Capital Compass collections are admin-read, and the hook
+      // only loads in admin mode with enableCapitalPriorities.
+      const capitalPlan = isAdminMode ? buildAskCapitalPlan(capitalCompassData) : null;
       const data = {
         campusStats,
         buildingStats: (!forceCampusScope && inferredBuilding && !shouldUseFloorScope)
@@ -22727,7 +22731,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         scopeSummary: fallbackSummary || undefined,
         roomRows: roomRowsPayload || undefined,
         classScheduleRows: classScheduleRowsPayload || undefined,
-        scheduleInstructions: classScheduleInstructions || undefined
+        scheduleInstructions: classScheduleInstructions || undefined,
+        capitalPlan: capitalPlan || undefined,
+        capitalPlanInstructions: capitalPlan ? CAPITAL_PLAN_INSTRUCTIONS : undefined
       };
 
       const out = await askMapfluence({ question: q, context, data });
@@ -22761,7 +22767,9 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     isHastingsCollegeInstance,
     classScheduleRows,
     classScheduleMeta,
-    buildCurrentlyAvailableClassroomRows
+    buildCurrentlyAvailableClassroomRows,
+    isAdminMode,
+    capitalCompassData
   ]);
 
   const onExportAskResultPdf = useCallback(() => {
