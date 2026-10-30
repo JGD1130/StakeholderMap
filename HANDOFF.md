@@ -243,6 +243,29 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-10-30) — Ask Mapfluence gets the Capital Compass plan on admin requests (`690c1fc`)
+
+Ask answered "no demolition data" for "What buildings are scheduled for demolition?" on Hastings. The data was in Capital Compass, but Ask's request never included it. Front-end only; nothing in `ai-server`, so no Render deploy.
+
+**What changed:** every admin-mode Ask request that goes to the AI (not the local intent paths: classroom count/availability, vacant offices, planning-doc links, room location) now carries `data.capitalPlan` + `data.capitalPlanInstructions` whenever `capitalCompassData.status === 'ready'`. Not keyword-gated. Built by the new pure `src/utils/askCapitalPlanContext.js` (`buildAskCapitalPlan`), called in `onAskRun` in `StakeholderMap.jsx`; `isAdminMode` and `capitalCompassData` added to its deps. Admin only because the four Capital Compass collections are admin-read in `firestore.rules` and the hook only loads with `isAdminMode && enableCapitalPriorities`. Client/public Ask still has no capital data.
+
+**`capitalPlan` contents:**
+- **projects** (`capitalPhasingProjects`): project, building, scope, type (`classifyProjectType`, from the name), sf, approxStart (completion minus phase months, back to back), completion month, **status** vs. today, projectCost2026, escalatedCost, phases string with the move-out/move-in notes after `|`.
+- **status rule:** completion month passed → "completed per plan"; start passed → "underway"; else "planned". Nothing hard-coded (e.g. Fuhr shows "completed per plan" from its Aug 2026 date).
+- **deferredMaintenance** (`deferredMaintenanceBuildings`): non-null cost fields only, whole dollars ($/sf keeps cents).
+- **priorities**: score + tier label. **condition**: average + note from `conditionEntries`, Bronco Village as one complex row.
+- **Instructions:** cite "Capital phasing plan" / "Deferred maintenance upload"; type comes from the project name; use the status and say "per the capital plan"; phasing costs and deferred maintenance demolition costs are separate estimates, so label which is which and never add them together.
+
+**Expected answer (live data, 2026-10-30):** 9 of 20 phasing projects are demolitions, $8.35M (2026 $) / $9.80M escalated in total, demolition line items $4.35M. Fuhr (Aug 2026, completed per plan); Altman, Taylor (Aug 2027, underway); 905 N. Elm/611 E. 9th, Campus Safety Building, Interior Parking Lot (Aug 2028); 603/607 E. 9th, Babcock, Bronc (Aug 2032). Matches master plan PDF pp. 37–40. Deferred maintenance demolition costs differ for some buildings (Altman $875K vs. $700K phasing, Taylor $700K vs. $900K, Bronc $775K vs. $800K).
+
+**Size:** adds ~18.3K chars (~4.5K tokens) per admin Ask. Sample campus question before ≈ 62.8K chars (schedule rows 42.8K measured, room rows ~19.4K estimated, excl. `campusStats`/`scopeSummary`), after ≈ 81.1K.
+
+### Open items
+- **Reference docs are effectively never attached on Hastings Ask.** `shouldSkipDocsForAsk` (`ai-server/server.js`) drops all `ai-server/Docs` files when the request JSON is ≥ 40,000 chars (`ASK_DOCS_SKIP_DATA_CHARS`); the 150 schedule rows alone are ~42.8K. So the master plan PDF only reaches the model for doc-priority/enrollment-worded questions. Left as is by decision. Fixes if wanted: send `classScheduleRows` only for schedule questions (front end), or raise the env var on Render. Either way the PDF adds ~50K tokens.
+- `isPlanningDocsQuery` returns doc links only, never doc text.
+
+---
+
 ## Recent Changes (2026-10-15) — Capital Compass Condition tab + condition map view (`006b369`), full-strength Capital map fills (`f6baf3b`), Hastings "Name1" renamed "Bronco Bikes" (`e5f6413`)
 
 All admin-only, Hastings. No scoring, tier or cost-rule changes. GitHub Pages deploy only; nothing in `ai-server`, so no Render deploy.
