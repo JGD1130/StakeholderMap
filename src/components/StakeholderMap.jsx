@@ -21160,7 +21160,13 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
         merged.roomId ??
         '';
       const typeVal = getRoomTypeLabelFromProps(merged) || merged.type || merged.Name || '';
-      const areaVal = resolveAreaSf(merged);
+      // /api/rooms rows carry Airtable "Room Area Sq Ft" as `areaSF`, which
+      // resolveAreaSf doesn't read. Use the floor-totals resolver first, then
+      // keep resolveAreaSf's keys as the fallback.
+      const patchedAreaVal = resolvePatchedArea(merged);
+      const areaVal = Number.isFinite(patchedAreaVal) && patchedAreaVal > 0
+        ? patchedAreaVal
+        : resolveAreaSf(merged);
       const seatCountVal = getSeatCount(merged);
       const occupantVal = getOccupantValue(merged);
       rows.push({
