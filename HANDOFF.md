@@ -243,6 +243,52 @@ On cloud save success, the local draft is deleted. On cloud save failure, the dr
 
 ---
 
+## Recent Changes (2026-11-20) — Ask Mapfluence "Zoom to" on room result rows (`646d38a`)
+
+When an Ask answer is a table with Building + Room columns, each row gets a "Zoom to" button in a last column. Front end only; `server.js` untouched, so no Render deploy.
+
+**On click** (`onAskZoomToRow`, `StakeholderMap.jsx`):
+1. The row is resolved to a floorplan when the answer arrives (`resolveAskRowFloorplan`). It finds the room in the inventory (`airtableRooms`, falling back to `campusRooms`) with `inventoryRoomMatchesFloorRoom`, then maps the room's floor to an available floorplan floor with `ensureFloorsForBuilding` + `resolveAvailableFloorId`.
+2. If that floor isn't loaded, it selects the building/floor and loads it with `handleLoadFloorplan`, using the same pending-ref + tick + effect shape as the F&A floor jump (`askZoomPendingRef` / `askZoomTick`).
+3. It calls `fitBounds` on the room (padding 70, 550 ms, maxZoom 20, the building-selection settings; no room-level zoom helper exists), then passes a synthetic click to the real floor click handler (`floorClickHandlerRef`, set in the floor-click effect). That gives the cyan outline and room details exactly as a map click does.
+4. The Ask modal collapses to a "← Back to results" pill at bottom-left (`askResultCollapsed`). × on the pill dismisses the answer.
+
+**Rules:**
+- Header detection is regex-based because Ask's columns are model-chosen: `Building` / `Building Name`; `Room` / `Room Number` / `Room No.` / `Room #`; an optional `Floor` / `Level` column is used as a floor hint.
+- Rows that don't resolve show a disabled button with the tooltip "No floorplan for this room." A row is also marked unresolved if the floor loads but has no room with that number.
+- The button column is UI-only (not in `askResult.columns`), so Copy CSV and Export PDF are unchanged.
+- Text-only answers and tables without room columns are unchanged.
+- Works on Sarpy when rows resolve; no Sarpy matching logic changed.
+
+**Refactor to know about:** the room details panel's inline inventory match in `onFloorClick` (GUID first, then building + floor + room number) was moved, unchanged, into the module-level `inventoryRoomMatchesFloorRoom`, so Ask and the panel share one matching chain. That function is on the Hastings and Sarpy room-click path.
+
+**Verified:** Wilson Center 10 is floor `0` in live `/api/rooms` (124 seats); `0` resolves to `BASEMENT`, which has exactly one room 10. The user tested locally in the browser (2026-11-20) and reported it working.
+
+### Open items
+- With no Floor column, the inventory lookup takes the first building + room-number match. A building that reuses a room number on two floors could zoom to the wrong floor.
+
+### Local testing note
+Cylance blocks PowerShell scripts on this machine, so `npm run dev` from PowerShell doesn't start. Use Git Bash: `npx vite` (repo root) and `cd ai-server && node server.js`. Test URL: `http://localhost:5173/StakeholderMap/hastings/admin`.
+
+---
+
+## Recent Changes (2026-11-17) — Space Data Export writes real AreaSF (`3b71a51`)
+
+"Export Space CSV" (left panel, Room rows) wrote AreaSF = 0 for every room on Hastings **and Sarpy**. Front end only; `server.js` untouched, so no Render deploy.
+
+**Cause:** `collectSpaceRows` (`StakeholderMap.jsx`) has two branches. When `campusRooms` is loaded (both sites), it read area with `resolveAreaSf`, which checks `Area_SF`/`area`/`Area`/`SF`/`'Area (SF)'`/`NetArea` but not `areaSF`. `/api/rooms` rows (both servers) only carry `airtableId, roomId, roomNumber, roomGuid, building, floor, areaSF, type, department, occupant, seatCount, occupancyStatus`, so every room fell through to 0. Only rooms edited in-session (the dashboard patch adds `area`/`sf`) had a value.
+
+**Fix:** that branch now tries `resolvePatchedArea` (the floor-totals resolver, reads `areaSF` first), and if it isn't > 0, falls back to `resolveAreaSf`. Only fallbacks were added. The GeoJSON branch (Revit export properties) is unchanged. `resolveAreaSf` itself wasn't changed because other Hastings map paths use it.
+
+**SeatCount / Occupant:** no change needed. `getSeatCount` reads `seatCount`, and `getOccupantValue` reads `occupant`. Blanks are rooms with no data: Hastings has 84 of 2,904 rooms with seats and 4 with an occupant; Sarpy has 37 of 1,189 with seats and 0 with an occupant.
+
+**Verified (live `/api/rooms`, 2026-11-17, real resolver functions run in Node, not a browser export):** Hastings 0 → 606,892 SF, Sarpy 0 → 265,311 SF. Both match the building summary SF for every building. Altman Hall 04 = 123.12 SF, Barrett 114 SeatCount = 40.
+
+### Open items
+- Confirm with a real browser export on Hastings and `/sarpy-county` after the Pages deploy.
+
+---
+
 ## Recent Changes (2026-10-30) — Ask Mapfluence gets the Capital Compass plan on admin requests (`690c1fc`)
 
 Ask answered "no demolition data" for "What buildings are scheduled for demolition?" on Hastings. The data was in Capital Compass, but Ask's request never included it. Front-end only; nothing in `ai-server`, so no Render deploy.
