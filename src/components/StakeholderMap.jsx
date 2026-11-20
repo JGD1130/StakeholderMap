@@ -10399,6 +10399,31 @@ const floorMatchesTokens = (roomFloor, targetTokens) => {
   return roomTokens.some((token) => targetTokens.includes(token));
 };
 
+// The room details panel's inventory match for a floor room: GUID first, then
+// building + floor + room number. Shared with Ask "Zoom to"; empty floorTokens
+// skips the floor check (see floorMatchesTokens).
+const inventoryRoomMatchesFloorRoom = (room, { roomGuid = '', buildingKey = '', floorTokens = [], roomNumberKey = '' } = {}) => {
+  if (!room) return false;
+  const roomIdValue = String(room?.roomId ?? room?.roomNumber ?? room?.roomLabel ?? '').trim();
+  const roomGuidFromRow = String(room?.roomGuid ?? room?.revitUniqueId ?? '').trim();
+  if (
+    roomGuid &&
+    (roomGuidFromRow === roomGuid || roomIdValue === roomGuid)
+  ) {
+    return true;
+  }
+  const roomBuildingKey = normalizeDashboardKey(
+    room?.building ?? room?.buildingName ?? room?.buildingLabel ?? ''
+  );
+  if (buildingKey && roomBuildingKey !== buildingKey) return false;
+  if (floorTokens.length &&
+    !floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
+  ) {
+    return false;
+  }
+  return Boolean(roomNumberKey) && roomIdValue === roomNumberKey;
+};
+
 const resolveAvailableFloorId = (value, availableFloors = []) => {
   const rawValue = normalizeFloorIdValue(value);
   if (!rawValue) return '';
@@ -12839,6 +12864,12 @@ const StakeholderMap = ({
   const [askLoading, setAskLoading] = useState(false);
   const [askErr, setAskErr] = useState('');
   const [askResult, setAskResult] = useState(null);
+  // Ask room-row "Zoom to": the modal collapses to a "Back to results" pill
+  // while the user looks at the room; targets[i] is row i's floorplan
+  // ({ folder, buildingName, floorId, roomNumber }), null when it has none,
+  // undefined while still resolving.
+  const [askResultCollapsed, setAskResultCollapsed] = useState(false);
+  const [askZoomTargets, setAskZoomTargets] = useState([]);
   const [dashboardMetrics, setDashboardMetrics] = useState(null);
   const [dashboardTitle, setDashboardTitle] = useState(defaultDashboardTitle);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -23195,6 +23226,140 @@ const collectSpaceRows = useCallback(async (buildingFilter = '__all__', deptFilt
     })();
   }, [faJumpTick, selectedBuilding, selectedBuildingId, getBuildingFolderKey, handleLoadFloorplan, setFloorHighlight]);
 
+  // --- Ask Mapfluence "Zoom to" on room rows ---
+  // Building + room number of an Ask table row, or null for non-room rows.
+  const getAskRowRoomRef = useCallback((row, columns = []) => {
+    if (!row || typeof row !== 'object') return null;
+    const buildingCol = columns.find((col) => /^building(\s*name)?$/i.test(String(col).trim()));
+    const roomCol = columns.find((col) => /^room(\s*(number|no\.?|#))?$/i.test(String(col).trim()));
+    const floorCol = columns.find((col) => /^(floor|level)(\s*(name|id))?$/i.test(String(col).trim()));
+    const building = String(buildingCol ? row[buildingCol] ?? '' : '').trim();
+    const roomNumber = String(roomCol ? row[roomCol] ?? '' : '').trim();
+    if (!building || !roomNumber) return null;
+    return { building, roomNumber, floorHint: String(floorCol ? row[floorCol] ?? '' : '').trim() };
+  }, []);
+
+  // Row -> floorplan (folder + available floor id), via the room details
+  // panel's inventory match (inventoryRoomMatchesFloorRoom, same room list
+  // preference), or null when there is no floorplan.
+  const resolveAskRowFloorplan = useCallback(async (ref) => {
+    if (!ref) return null;
+    const folder = getBuildingFolderKey(ref.building);
+    const buildingKey = normalizeDashboardKey(ref.building);
+    if (!folder || !buildingKey) return null;
+    const roomsForMatch = airtableRooms?.length ? airtableRooms : campusRooms;
+    const inventoryRoom = (Array.isArray(roomsForMatch) ? roomsForMatch : []).find((room) =>
+      inventoryRoomMatchesFloorRoom(room, {
+        buildingKey,
+        floorTokens: normalizeFloorTokens(ref.floorHint),
+        roomNumberKey: ref.roomNumber
+      })
+    );
+    const wantedFloor = String(inventoryRoom?.floor ?? inventoryRoom?.floorName ?? inventoryRoom?.floorId ?? '').trim() || ref.floorHint;
+    if (!wantedFloor) return null;
+    const available = await ensureFloorsForBuilding(folder);
+    const floorId = resolveAvailableFloorId(wantedFloor, available);
+    if (!floorId) return null;
+    return {
+      folder,
+      buildingName: resolveBuildingNameFromInput(folder) || ref.building,
+      floorId,
+      roomNumber: ref.roomNumber
+    };
+  }, [airtableRooms, campusRooms, ensureFloorsForBuilding, getBuildingFolderKey]);
+
+  useEffect(() => {
+    setAskResultCollapsed(false);
+    const columns = Array.isArray(askResult?.columns) ? askResult.columns : [];
+    const rows = (askResult?.resultType === 'table' && Array.isArray(askResult?.rows)) ? askResult.rows : [];
+    const refs = rows.map((row) => getAskRowRoomRef(row, columns));
+    if (!refs.some(Boolean)) { setAskZoomTargets([]); return; }
+    let cancelled = false;
+    setAskZoomTargets(refs.map((ref) => (ref ? undefined : null)));
+    Promise.all(refs.map((ref) => resolveAskRowFloorplan(ref).catch(() => null))).then((targets) => {
+      if (!cancelled) setAskZoomTargets(targets);
+    });
+    return () => { cancelled = true; };
+    // Resolve once per answer; resolveAskRowFloorplan changes as campus rooms reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askResult]);
+
+  // Set inside the floor-click effect below; Zoom to selects a room through it
+  // so it gets the same outline + room popup as a map click.
+  const floorClickHandlerRef = useRef(null);
+  const askZoomPendingRef = useRef(null);
+  const [askZoomTick, setAskZoomTick] = useState(0);
+
+  // Fly to the room on the loaded floor, then select it as a click would.
+  // false when the floor has no room with that number.
+  const focusAskZoomRoomOnLoadedFloor = useCallback((roomNumber) => {
+    const map = mapRef.current;
+    const src = map ? getGeojsonSource(map, FLOOR_SOURCE) : null;
+    const fc = toFeatureCollection(src ? (src._data || src.serialize?.().data || null) : null);
+    const feature = (fc?.features || []).find((f) => {
+      const props = f?.properties || {};
+      if (props.Element && props.Element !== 'Room') return false;
+      return String(props.Number ?? props.RoomNumber ?? props.number ?? props.Room ?? '').trim() === roomNumber;
+    });
+    if (!feature?.geometry) return false;
+    let bbox = null;
+    try { bbox = turf.bbox(feature); } catch {}
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every((v) => Number.isFinite(v))) return false;
+    const center = { lng: (bbox[0] + bbox[2]) / 2, lat: (bbox[1] + bbox[3]) / 2 };
+    let fired = false;
+    const selectRoom = () => {
+      if (fired) return;
+      fired = true;
+      clearRoomEditSelection();
+      const handler = floorClickHandlerRef.current;
+      if (!handler) return;
+      try {
+        handler({ features: [feature], lngLat: center, point: map.project(center) });
+      } catch (err) {
+        console.warn('Ask Zoom to: room select failed', err);
+      }
+    };
+    map.once('moveend', selectRoom);
+    setTimeout(selectRoom, 900);
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 70, duration: 550, maxZoom: 20 });
+    return true;
+  }, [clearRoomEditSelection]);
+
+  const onAskZoomToRow = useCallback((rowIndex) => {
+    const target = askZoomTargets[rowIndex];
+    if (!target) return;
+    setAskResultCollapsed(true);
+    const loadedUrl = currentFloorUrlRef.current || currentFloorContextRef.current?.url || '';
+    const targetUrl = buildFloorUrl(target.folder, target.floorId);
+    if (loadedUrl && targetUrl && loadedUrl === targetUrl) {
+      if (!focusAskZoomRoomOnLoadedFloor(target.roomNumber)) {
+        setAskZoomTargets((prev) => prev.map((t, i) => (i === rowIndex ? null : t)));
+      }
+      return;
+    }
+    askZoomPendingRef.current = { ...target, rowIndex };
+    setSelectedBuildingId(target.buildingName);
+    setSelectedBuilding(target.buildingName);
+    setSelectedFloor(target.floorId);
+    setAskZoomTick((n) => n + 1);
+  }, [askZoomTargets, buildFloorUrl, focusAskZoomRoomOnLoadedFloor]);
+
+  // Same pending-ref + selection-state + effect shape as the F&A jump above:
+  // handleLoadFloorplan reads the committed building selection.
+  useEffect(() => {
+    const pending = askZoomPendingRef.current;
+    if (!pending) return;
+    if (getBuildingFolderKey(selectedBuildingId) !== pending.folder) return;
+    if (getBuildingFolderKey(selectedBuilding) !== pending.folder) return;
+    askZoomPendingRef.current = null;
+    (async () => {
+      let loaded = false;
+      try { loaded = await handleLoadFloorplan(pending.floorId); } catch {}
+      if (loaded && focusAskZoomRoomOnLoadedFloor(pending.roomNumber)) return;
+      setAskZoomTargets((prev) => prev.map((t, i) => (i === pending.rowIndex ? null : t)));
+    })();
+  }, [askZoomTick, selectedBuilding, selectedBuildingId, getBuildingFolderKey, handleLoadFloorplan, focusAskZoomRoomOnLoadedFloor]);
+
   // --- F&A "Classify on map" ---
   // Select an F&A room: highlight it on the loaded floor when it's there,
   // otherwise load its floor first (same jump as above).
@@ -29755,27 +29920,12 @@ useEffect(() => {
       const roomNumberKey = String(roomNum2 ?? '').trim();
       const roomsForAirtableMatch = airtableRooms?.length ? airtableRooms : campusRooms;
       const matchingAirtableRoom = Array.isArray(roomsForAirtableMatch)
-        ? roomsForAirtableMatch.find((room) => {
-            if (!room) return false;
-            const roomIdValue = String(room?.roomId ?? room?.roomNumber ?? room?.roomLabel ?? '').trim();
-            const roomGuidFromRow = String(room?.roomGuid ?? room?.revitUniqueId ?? '').trim();
-            if (
-              roomGuidValue &&
-              (roomGuidFromRow === roomGuidValue || roomIdValue === roomGuidValue)
-            ) {
-              return true;
-            }
-            const roomBuildingKey = normalizeDashboardKey(
-              room?.building ?? room?.buildingName ?? room?.buildingLabel ?? ''
-            );
-            if (buildingKey && roomBuildingKey !== buildingKey) return false;
-            if (floorTokens.length &&
-              !floorMatchesTokens(room?.floor ?? room?.floorName ?? room?.floorId ?? '', floorTokens)
-            ) {
-              return false;
-            }
-            return roomNumberKey && roomIdValue === roomNumberKey;
-          })
+        ? roomsForAirtableMatch.find((room) => inventoryRoomMatchesFloorRoom(room, {
+            roomGuid: roomGuidValue,
+            buildingKey,
+            floorTokens,
+            roomNumberKey
+          }))
         : null;
       const airtableIdFromMatch =
         matchingAirtableRoom?.airtableId ||
@@ -30209,9 +30359,11 @@ useEffect(() => {
     map.on('click', FLOOR_FILL_ID, onFloorClick);
     map.on('mouseenter', FLOOR_FILL_ID, onEnter);
     map.on('mouseleave', FLOOR_FILL_ID, onLeave);
+    floorClickHandlerRef.current = onFloorClick;
     // Doors/stairs are visual only; keep them non-interactive.
 
     return () => {
+      if (floorClickHandlerRef.current === onFloorClick) floorClickHandlerRef.current = null;
       try {
         map.off('click', FLOOR_FILL_ID, onFloorClick);
         map.off('mouseenter', FLOOR_FILL_ID, onEnter);
@@ -30815,7 +30967,40 @@ useEffect(() => {
         </div>
       </div>
     )}
-    {askResult && (
+    {askResult && askResultCollapsed && (
+      <div
+        className="mf-ai-modal-panel"
+        style={{
+          position: 'fixed',
+          left: 16,
+          bottom: 24,
+          zIndex: 10004,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '4px 6px 4px 4px',
+          borderRadius: 999
+        }}
+      >
+        <button
+          className="btn"
+          style={{ borderRadius: 999 }}
+          onClick={() => setAskResultCollapsed(false)}
+        >
+          {'← Back to results'}
+        </button>
+        <button
+          className="btn"
+          title="Dismiss results"
+          aria-label="Dismiss results"
+          style={{ borderRadius: 999, padding: '2px 8px' }}
+          onClick={() => setAskResult(null)}
+        >
+          {'×'}
+        </button>
+      </div>
+    )}
+    {askResult && !askResultCollapsed && (
       <div
         style={{
           position: 'fixed',
@@ -30934,6 +31119,10 @@ useEffect(() => {
                     {askResult.columns.map((col) => (
                       <th key={col} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid #e0e0e0' }}>{col}</th>
                     ))}
+                    {/* UI-only column: not in askResult.columns, so Copy CSV / Export PDF skip it. */}
+                    {askZoomTargets.length ? (
+                      <th style={{ padding: '6px 8px', borderBottom: '1px solid #e0e0e0' }} aria-label="Zoom to" />
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -30944,6 +31133,22 @@ useEffect(() => {
                           {row && row[col] != null ? String(row[col]) : ''}
                         </td>
                       ))}
+                      {askZoomTargets.length ? (
+                        <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                          {getAskRowRoomRef(row, askResult.columns) ? (
+                            <span title={askZoomTargets[idx] === null ? 'No floorplan for this room.' : undefined}>
+                              <button
+                                className="btn"
+                                style={{ padding: '2px 8px', fontSize: 11 }}
+                                disabled={!askZoomTargets[idx]}
+                                onClick={() => onAskZoomToRow(idx)}
+                              >
+                                Zoom to
+                              </button>
+                            </span>
+                          ) : null}
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
